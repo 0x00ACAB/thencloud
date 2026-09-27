@@ -5,7 +5,8 @@
 //!
 //! Nodes in the trash (or below a trashed folder) are invisible to all of
 //! this: only the trash routes, which check ownership themselves, can reach
-//! them.
+//! them. The same goes for dropped files not yet taken in by their owner,
+//! which only `routes/drops.rs` reaches.
 
 use sqlx::SqlitePool;
 
@@ -74,11 +75,12 @@ pub async fn access(db: &SqlitePool, user_id: &str, node_id: &str) -> Result<Opt
         .max())
 }
 
-/// True if the node or any of its ancestors is in the trash.
+/// True if the node or any of its ancestors is in the trash, or it is a
+/// dropped file its owner hasn't taken in yet (see `routes/drops.rs`).
 pub async fn is_trashed(db: &SqlitePool, node_id: &str) -> Result<bool> {
     Ok(sqlx::query_scalar(concat!(
         ancestors_cte!(),
-        "SELECT EXISTS(SELECT 1 FROM anc JOIN nodes n ON n.id = anc.id WHERE n.trashed_at IS NOT NULL)"
+        "SELECT EXISTS(SELECT 1 FROM anc JOIN nodes n ON n.id = anc.id WHERE n.trashed_at IS NOT NULL OR n.dropped = 1)"
     ))
     .bind(node_id)
     .fetch_one(db)

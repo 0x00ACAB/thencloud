@@ -389,6 +389,11 @@ pub struct CreateLinkRequest {
     /// Unix seconds.
     #[serde(default)]
     pub expires_at: Option<i64>,
+    /// A file drop: visitors can add files to the folder but see nothing
+    /// in it. The link carries the owner's public key after `#` instead of
+    /// the folder key.
+    #[serde(default)]
+    pub upload_only: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -399,6 +404,8 @@ pub struct Link {
     pub has_password: bool,
     pub expires_at: Option<i64>,
     pub created_at: i64,
+    #[serde(default)]
+    pub upload_only: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -415,8 +422,32 @@ pub struct UnlockLinkResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublicLinkInfo {
-    pub node: Node,
+    /// Absent for upload-only links.
+    pub node: Option<Node>,
     pub expires_at: Option<i64>,
+    #[serde(default)]
+    pub upload_only: bool,
+    /// Who files dropped through an upload-only link go to, and the folder
+    /// id to bind into their sealed keys.
+    #[serde(default)]
+    pub owner: Option<String>,
+    #[serde(default)]
+    pub folder_id: Option<String>,
+}
+
+/// A file added through an upload-only link, waiting for the folder owner
+/// to open its sealed key and wrap it under the folder key.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DroppedFile {
+    pub node: Node,
+    /// The node key sealed to the owner's public key (see `seal_drop_key`).
+    pub sealed_key: B64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdoptDropRequest {
+    /// The node key wrapped under the folder's key.
+    pub enc_key: B64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -65,9 +65,10 @@
             </td>
             <td class="hidden sm:table-cell">
               <span class="flex flex-wrap gap-1.5">
+                {#if l.upload_only}<span class="badge"><Icon name="inbox" />File drop</span>{/if}
                 {#if l.has_password}<span class="badge"><Icon name="lock" />Password</span>{/if}
                 {#if l.expires_at}<span class="badge"><Time ms={l.expires_at * 1000} prefix="Expires " /></span>{/if}
-                {#if !l.has_password && !l.expires_at}<span class="text-[13px] text-fg-faint">None</span>{/if}
+                {#if !l.has_password && !l.expires_at && !l.upload_only}<span class="text-[13px] text-fg-faint">None</span>{/if}
               </span>
             </td>
             <td class="hidden text-fg-muted md:table-cell"><Time ms={l.created_at * 1000} /></td>

@@ -38,13 +38,30 @@ struct UploadRow {
     if_revision: Option<i64>,
 }
 
-async fn load_upload(state: &AppState, id: &str, user_id: &str) -> Result<UploadRow> {
-    sqlx::query_as(
+/// Who is uploading: a signed-in user, or a visitor to an upload-only link.
+pub enum Uploader<'a> {
+    User(&'a AuthUser),
+    Link(&'a DropLink),
+}
+
+/// An upload-only link: files go into `folder_id`, owned by `owner_id`.
+pub struct DropLink {
+    pub id: String,
+    pub folder_id: String,
+    pub owner_id: String,
+}
+
+async fn load_upload(state: &AppState, id: &str, who: &Uploader<'_>) -> Result<UploadRow> {
+    let (by, filter) = match who {
+        Uploader::User(u) => (&u.id, "user_id = ? AND link_id IS NULL"),
+        Uploader::Link(l) => (&l.id, "link_id = ?"),
+    };
+    sqlx::query_as(&format!(
         "SELECT id, owner_id, node_id, parent_id, enc_key, enc_metadata, version_id, enc_content_key, \
-         chunk_count, if_revision FROM uploads WHERE id = ? AND user_id = ? AND expires_at > ?",
-    )
+         chunk_count, if_revision FROM uploads WHERE id = ? AND {filter} AND expires_at > ?"
+    ))
     .bind(id)
-    .bind(user_id)
+    .bind(by)
     .bind(now())
     .fetch_optional(&state.db)
     .await?
@@ -55,10 +72,22 @@ async fn load_upload(state: &AppState, id: &str, user_id: &str) -> Result<Upload
 /// owner of the tree being written to.
 async fn check_target(
     state: &AppState,
-    user: &AuthUser,
+    who: &Uploader<'_>,
     node_id: &str,
     parent_id: Option<&str>,
 ) -> Result<String> {
+    let user = match who {
+        Uploader::User(u) => u,
+        Uploader::Link(l) => {
+            if parent_id != Some(l.folder_id.as_str()) {
+                return Err(AppError::Forbidden);
+            }
+            if access::is_trashed(&state.db, &l.folder_id).await? {
+                return Err(AppError::NotFound);
+            }
+            return Ok(l.owner_id.clone());
+        }
+    };
     if let Some(parent) = parent_id {
         access::require(&state.db, &user.id, parent, Access::Write).await?;
         let p = get_node(&state.db, parent)
@@ -85,6 +114,19 @@ pub async fn create(
     user: AuthUser,
     Json(req): Json<CreateUploadRequest>,
 ) -> Result<(StatusCode, Json<UploadResponse>)> {
+    start(&state, Uploader::User(&user), req).await
+}
+
+pub async fn start(
+    state: &AppState,
+    who: Uploader<'_>,
+    req: CreateUploadRequest,
+) -> Result<(StatusCode, Json<UploadResponse>)> {
+    // A dropped file's key is sealed to the owner, not wrapped.
+    let key_len = match who {
+        Uploader::User(_) => WRAPPED_KEY_LEN,
+        Uploader::Link(_) => SEALED_KEY_LEN,
+    };
     check_id(&req.node_id, "node_id")?;
     check_id(&req.version_id, "version_id")?;
     check_metadata(&req.enc_metadata)?;
@@ -97,14 +139,18 @@ pub async fn create(
     match (&req.parent_id, &req.enc_key) {
         (Some(p), Some(k)) => {
             check_id(p, "parent_id")?;
-            check_len(k, WRAPPED_KEY_LEN, "enc_key")?;
+            check_len(k, key_len, "enc_key")?;
         }
         (Some(_), None) => return Err(AppError::bad("enc_key is required for a new file")),
         (None, Some(_)) => return Err(AppError::bad("enc_key is only accepted for new files")),
         (None, None) => {}
     }
 
-    let owner_id = check_target(&state, &user, &req.node_id, req.parent_id.as_deref()).await?;
+    let owner_id = check_target(state, &who, &req.node_id, req.parent_id.as_deref()).await?;
+    let (user_id, link_id) = match who {
+        Uploader::User(u) => (u.id.clone(), None),
+        Uploader::Link(l) => (l.owner_id.clone(), Some(l.id.clone())),
+    };
     let existing = get_node(&state.db, &req.node_id).await?;
     match (&req.parent_id, existing) {
         (Some(_), Some(_)) => return Err(AppError::Conflict("node id already exists".into())),
@@ -128,10 +174,11 @@ pub async fn create(
     let expires_at = t + state.config.upload_ttl_hours * 3600;
     let res = sqlx::query(
         "INSERT INTO uploads (id, user_id, owner_id, node_id, parent_id, enc_key, enc_metadata, version_id, \
-         enc_content_key, chunk_count, if_revision, created_at, expires_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+         enc_content_key, chunk_count, if_revision, created_at, expires_at, link_id) \
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
     )
     .bind(&id)
-    .bind(&user.id)
+    .bind(&user_id)
     .bind(&owner_id)
     .bind(&req.node_id)
     .bind(&req.parent_id)
@@ -143,6 +190,7 @@ pub async fn create(
     .bind(req.if_revision)
     .bind(t)
     .bind(expires_at)
+    .bind(link_id)
     .execute(&state.db)
     .await;
     match res {
@@ -204,7 +252,17 @@ pub async fn put_chunk(
     Path((id, idx)): Path<(String, u32)>,
     body: Bytes,
 ) -> Result<StatusCode> {
-    let up = load_upload(&state, &id, &user.id).await?;
+    store_chunk(&state, Uploader::User(&user), &id, idx, body).await
+}
+
+pub async fn store_chunk(
+    state: &AppState,
+    who: Uploader<'_>,
+    id: &str,
+    idx: u32,
+    body: Bytes,
+) -> Result<StatusCode> {
+    let up = load_upload(state, id, &who).await?;
     if i64::from(idx) >= up.chunk_count {
         return Err(AppError::bad("chunk index out of range"));
     }
@@ -213,12 +271,12 @@ pub async fn put_chunk(
     }
     let old: Option<i64> =
         sqlx::query_scalar("SELECT size FROM upload_chunks WHERE upload_id = ? AND idx = ?")
-            .bind(&id)
+            .bind(id)
             .bind(idx)
             .fetch_optional(&state.db)
             .await?;
     let delta = body.len() as i64 - old.unwrap_or(0);
-    charge_or_prune(&state, &up.owner_id, delta).await?;
+    charge_or_prune(state, &up.owner_id, delta).await?;
 
     let recorded = async {
         state.blobs.put_chunk(&up.version_id, idx, &body).await?;
@@ -227,14 +285,14 @@ pub async fn put_chunk(
             "INSERT INTO upload_chunks (upload_id, idx, size) VALUES (?, ?, ?) \
              ON CONFLICT (upload_id, idx) DO UPDATE SET size = excluded.size",
         )
-        .bind(&id)
+        .bind(id)
         .bind(idx)
         .bind(body.len() as i64)
         .execute(&mut *tx)
         .await?;
         sqlx::query("UPDATE uploads SET received_bytes = received_bytes + ? WHERE id = ?")
             .bind(delta)
-            .bind(&id)
+            .bind(id)
             .execute(&mut *tx)
             .await?;
         tx.commit().await?;
@@ -242,7 +300,7 @@ pub async fn put_chunk(
     }
     .await;
     if let Err(e) = recorded {
-        charge(&state, &up.owner_id, -delta).await.ok();
+        charge(state, &up.owner_id, -delta).await.ok();
         return Err(match e {
             AppError::Db(ref d) if is_fk_violation(d) => AppError::NotFound,
             e => e,
@@ -256,11 +314,15 @@ pub async fn finish(
     user: AuthUser,
     Path(id): Path<String>,
 ) -> Result<Json<Node>> {
-    let up = load_upload(&state, &id, &user.id).await?;
+    publish(&state, Uploader::User(&user), &id).await
+}
+
+pub async fn publish(state: &AppState, who: Uploader<'_>, id: &str) -> Result<Json<Node>> {
+    let up = load_upload(state, id, &who).await?;
     let (count, total): (i64, i64) = sqlx::query_as(
         "SELECT COUNT(*), COALESCE(SUM(size), 0) FROM upload_chunks WHERE upload_id = ?",
     )
-    .bind(&id)
+    .bind(id)
     .fetch_one(&state.db)
     .await?;
     if count != up.chunk_count {
@@ -270,24 +332,29 @@ pub async fn finish(
         )));
     }
     // Permissions may have changed since the upload started.
-    check_target(&state, &user, &up.node_id, up.parent_id.as_deref()).await?;
+    check_target(state, &who, &up.node_id, up.parent_id.as_deref()).await?;
+    let (created_by, dropped) = match who {
+        Uploader::User(u) => (u.id.clone(), false),
+        Uploader::Link(l) => (l.owner_id.clone(), true),
+    };
 
     let t = now();
     let mut tx = state.db.begin().await?;
     if let Some(parent) = &up.parent_id {
         let res = sqlx::query(
             "INSERT INTO nodes (id, owner_id, created_by, parent_id, kind, enc_key, enc_metadata, \
-             current_version_id, created_at, updated_at) VALUES (?, ?, ?, ?, 'file', ?, ?, ?, ?, ?)",
+             current_version_id, created_at, updated_at, dropped) VALUES (?, ?, ?, ?, 'file', ?, ?, ?, ?, ?, ?)",
         )
         .bind(&up.node_id)
         .bind(&up.owner_id)
-        .bind(&user.id)
+        .bind(&created_by)
         .bind(parent)
         .bind(&up.enc_key)
         .bind(&up.enc_metadata)
         .bind(&up.version_id)
         .bind(t)
         .bind(t)
+        .bind(dropped)
         .execute(&mut *tx)
         .await;
         match res {
@@ -339,7 +406,7 @@ pub async fn finish(
     .bind(&up.enc_metadata)
     .bind(up.chunk_count)
     .bind(total)
-    .bind(&user.id)
+    .bind(&created_by)
     .bind(t)
     .execute(&mut *tx)
     .await?;
@@ -368,7 +435,7 @@ pub async fn abort(
     user: AuthUser,
     Path(id): Path<String>,
 ) -> Result<StatusCode> {
-    let up = load_upload(&state, &id, &user.id).await?;
+    let up = load_upload(&state, &id, &Uploader::User(&user)).await?;
     discard(&state, &up.id).await?;
     Ok(StatusCode::NO_CONTENT)
 }

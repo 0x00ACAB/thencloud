@@ -331,10 +331,47 @@ export async function keyOf(id) {
 }
 
 export async function listFolder(id, key) {
+  await adoptDrops();
   const nodes = await api('GET', `/api/nodes/${id}/children`);
   const rows = decryptChildren(key, nodes);
   for (const r of rows) keyCache.set(r.node.id, r.key);
   return sortEntries(rows);
+}
+
+// Files dropped through upload-only links arrive with their key sealed to
+// our public key. Open it, wrap it under the folder key and take the file in.
+let dropsChecked = 0;
+let adopting = null;
+
+export function adoptDrops() {
+  if (adopting) return adopting;
+  if (Date.now() - dropsChecked < 5000) return Promise.resolve(0);
+  adopting = (async () => {
+    let n = 0;
+    try {
+      const drops = await api('GET', '/api/drops');
+      // Only into folders we made a file drop link for.
+      const open = drops.length ? new Set((await api('GET', '/api/links')).filter((l) => l.upload_only).map((l) => l.node_id)) : null;
+      for (const d of drops) {
+        if (!open.has(d.node.parent_id)) continue;
+        try {
+          const folderKey = await keyOf(d.node.parent_id);
+          const key = tc.open_drop_key(sk, unb64(d.sealed_key), d.node.id, d.node.parent_id);
+          await api('POST', `/api/drops/${d.node.id}/adopt`, { body: { enc_key: b64(tc.wrap_node_key(folderKey, key, d.node.id)) } });
+          keyCache.set(d.node.id, key);
+          n++;
+        } catch {
+          /* left waiting; a file whose key doesn't open never shows up */
+        }
+      }
+    } catch {
+      /* the listing still works without it */
+    }
+    dropsChecked = Date.now();
+    adopting = null;
+    return n;
+  })();
+  return adopting;
 }
 
 export async function createFolder(parentId, parentKey, name) {
@@ -681,11 +718,17 @@ export function linkUrl(token, nodeKey) {
   return `${location.origin}/s/${token}#${b64(nodeKey)}`;
 }
 
-export async function createLink(entry, { password, expiresAt }) {
+/**
+ * An upload-only link carries our public key instead of the folder key, so
+ * visitors can seal files to us without being able to read anything.
+ */
+const urlFor = (link, entry) => (link.upload_only ? linkUrl(link.token, unb64(session.me.keys.public_key)) : linkUrl(link.token, entry.key));
+
+export async function createLink(entry, { password, expiresAt, uploadOnly = false }) {
   const link = await api('POST', '/api/links', {
-    body: { node_id: entry.node.id, password: password || null, expires_at: expiresAt ?? null },
+    body: { node_id: entry.node.id, password: password || null, expires_at: expiresAt ?? null, upload_only: uploadOnly },
   });
-  return { ...link, url: linkUrl(link.token, entry.key) };
+  return { ...link, url: urlFor(link, entry) };
 }
 
 export async function links(nodeId) {
@@ -694,7 +737,7 @@ export async function links(nodeId) {
   return Promise.all(
     list.map(async (l) => {
       const entry = await entryFor(l.node_id);
-      return { ...l, entry, url: entry ? linkUrl(l.token, entry.key) : null };
+      return { ...l, entry, url: entry ? urlFor(l, entry) : null };
     }),
   );
 }
