@@ -1,0 +1,6 @@
+/target
+/web/pkg
+/data
+*.db
+*.db-shm
+*.db-wal

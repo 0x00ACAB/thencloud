@@ -1,0 +1,3 @@
+# getrandom 0.3 needs an explicit backend opt-in for the browser.
+[target.wasm32-unknown-unknown]
+rustflags = ['--cfg', 'getrandom_backend="wasm_js"']

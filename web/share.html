@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>thencloud · shared</title>
+  <script type="module" src="/share.js"></script>
+</head>
+<body>
+  <h1>thencloud · shared with you</h1>
+  <p><i>The decryption key is in this page's address after the <code>#</code>. Your browser never sends it to the server; files are decrypted right here.</i></p>
+  <p><b>Status:</b> <span id="status">loading crypto…</span></p>
+
+  <form id="password-form" hidden>
+    <p>This link is password protected.</p>
+    <p><label>Password <input name="password" type="password" required></label> <button>Unlock</button></p>
+  </form>
+
+  <section id="content" hidden>
+    <p id="breadcrumbs"></p>
+    <table id="listing">
+      <thead><tr><th>Name</th><th>Size</th><th>Modified</th><th>Actions</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+</body>
+</html>

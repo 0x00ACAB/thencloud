@@ -1,0 +1,60 @@
+# thencloud milestones
+
+## ✅ Milestone 1: Files core
+
+- [x] Zero-knowledge accounts: Argon2id in the client, split into an `auth_key` (the server stores only its Argon2id hash) and a key-encryption key that never leaves the client
+- [x] Master key and X25519 keypair generated in the client, stored on the server only in wrapped form
+- [x] Encrypted key tree: every file and folder has its own key, wrapped by its parent's key
+- [x] Encrypted metadata: name, MIME type, size and mtime
+- [x] Client-chosen UUIDs bound into every ciphertext as AEAD associated data, so the server cannot swap or transplant ciphertexts
+- [x] Chunked, resumable uploads with 4 MiB XChaCha20-Poly1305 chunks. Chunks are bound to (version, index, is-last), which blocks reordering, truncation and version mixing
+- [x] Folders: create, rename, move (the key is re-wrapped under the new parent), and recursive delete
+- [x] New file versions replace the old content atomically
+- [x] Optimistic concurrency (`if_revision`, 409 on conflict)
+- [x] Per-user quotas, enforced per chunk and released on delete
+- [x] Sessions with bearer tokens (stored hashed), logout, and password change (re-wraps the master key and signs out other sessions)
+- [x] Username enumeration resistance: fake prelogin salts and a dummy hash check on login
+- [x] Brute-force throttling on login, password change and link unlock
+- [x] Janitor for expired uploads, sessions and links
+- [x] Strict CSP, `Referrer-Policy: no-referrer`, and no third-party scripts
+- [x] Proof-of-concept web client with no CSS; all crypto runs in WASM
+
+## ✅ Milestone 2: Sharing
+
+- [x] Share a file or folder with another user: the node key is sealed to their X25519 public key
+- [x] Read and write permissions. Write lets the recipient create, upload, rename, move and delete *inside* the share. Content created there belongs to, and is billed to, the tree owner
+- [x] Change permission, revoke (owner), leave (recipient)
+- [x] Public key fingerprints shown in the UI for out-of-band verification
+- [x] Public links in the form `/s/<token>#<key>`. The key lives only in the URL fragment and is never sent to the server
+- [x] Optional link password (a server-side gate, independent of the key) and optional expiry
+- [x] Anonymous link viewer: browse folders, decrypt and download
+
+## Milestone 3: Versions and trash
+
+- [ ] Keep previous file versions (the `file_versions` table is ready for this), with a configurable retention count and age
+- [ ] List, download and restore old versions
+- [ ] Count versions toward the quota, with automatic expiry when space runs low
+- [ ] Trash bin: deleted nodes are moved there instead of being purged. Keys stay wrapped under the original parent so a restore needs no re-wrapping
+- [ ] Restore from trash (to the original location or a chosen folder), empty trash, and auto-purge after N days
+- [ ] Decide how deletes inside shared folders interact with the owner's and recipient's trash
+
+## Milestone 4: Admin and devices
+
+- [ ] Admin UI and API: list users, set quotas, disable or delete users, open or close registration at runtime, invite links
+- [ ] Session and device list: see active sessions (device name, last seen) and revoke them
+- [ ] App passwords or per-device credentials for sync clients (scoped, revocable, never the account password)
+- [ ] Server stats for admins, without revealing anything encrypted: user count, storage used, blob count
+
+## Later
+
+- [ ] **Recovery key**: an optional printable key that also wraps the master key, since today a forgotten password means lost data
+- [ ] **Key rotation on revocation**: re-key a folder subtree when a share is revoked, so former recipients can't decrypt future content
+- [ ] **Contact verification / key transparency**: signed key directory or verified-contact store, so a malicious server can't substitute public keys when a user doesn't compare fingerprints
+- [ ] **Upload-only "file drop" links**
+- [ ] **S3-compatible blob store** behind the existing `BlobStore` interface
+- [ ] **Streaming downloads** through a service worker, so large files aren't buffered in memory
+- [ ] **Native CLI and desktop sync client** reusing `thencloud-crypto`
+- [ ] **Encrypted name index**: HMAC of name under the folder key, so the server can reject duplicate names without learning them
+- [ ] **Metadata padding**: pad sizes and chunk counts to hide exact file sizes
+- [ ] **A real web UI**
+- [ ] **Calendar and contacts**, end-to-end encrypted
