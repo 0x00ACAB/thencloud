@@ -106,7 +106,7 @@
 
 {#snippet section(title, description, body, footer)}
   <section class="card overflow-hidden">
-    <div class="grid gap-4 p-6">
+    <div class="grid grid-cols-1 gap-4 p-6">
       <div class="grid gap-1">
         <h2 class="text-base font-semibold tracking-tight">{title}</h2>
         {#if description}<p class="text-[13px] text-fg-muted">{description}</p>{/if}
@@ -121,7 +121,7 @@
 
 <h1 class="text-xl font-semibold tracking-tight">Settings</h1>
 
-<div class="mt-6 grid gap-6">
+<div class="mt-6 grid grid-cols-1 gap-6">
   {#snippet accountBody()}
     <dl class="grid gap-3 text-sm sm:grid-cols-[10rem_1fr]">
       <dt class="text-fg-muted">Username</dt>

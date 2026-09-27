@@ -597,3 +597,44 @@
     @apply -right-1.5 -bottom-1.5 cursor-nwse-resize;
   }
 }
+
+/* ------------------------------------------------------------------ phones */
+
+/* Height of the phone tab bar (Shell.svelte), or 0 where there is none, so
+ * fixed things can sit above it. */
+:root {
+  --bottom-bar: 0px;
+}
+@media (width < 48rem) {
+  :root.has-bottom-bar {
+    --bottom-bar: calc(3.5rem + env(safe-area-inset-bottom));
+  }
+}
+
+@layer components {
+  .tab-item {
+    @apply flex h-14 flex-1 cursor-pointer flex-col items-center justify-center gap-0.5 text-[11px] font-medium text-fg-muted transition-colors;
+  }
+  .tab-item[aria-current="page"] {
+    @apply text-fg;
+  }
+  .tab-item[aria-current="page"] svg {
+    @apply text-accent-text;
+  }
+}
+
+/* Fingers need bigger targets than a mouse pointer. */
+@media (pointer: coarse) {
+  .btn {
+    min-height: 2.5rem;
+  }
+  .btn-icon {
+    min-width: 2.5rem;
+  }
+  .menu-item {
+    @apply h-10;
+  }
+  .nav-item {
+    @apply h-10;
+  }
+}

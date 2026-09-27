@@ -235,7 +235,7 @@
                 class="h-6 cursor-pointer rounded px-2 text-xs transition-colors {aspectChoice === value ? 'bg-muted font-medium text-fg' : 'text-fg-muted hover:text-fg'}"
                 onclick={() => (aspectChoice = value)}>{label}</button>
             {/each}
-            <span class="mx-1 h-4 w-px bg-line" aria-hidden="true"></span>
+            <span class="mx-1 h-4 w-px bg-line max-sm:hidden" aria-hidden="true"></span>
             <button type="button" class="h-6 cursor-pointer rounded px-2 text-xs text-fg-muted hover:text-fg disabled:cursor-default disabled:opacity-40" disabled={!edited} onclick={resetEdits}>Reset</button>
           </div>
         </div>

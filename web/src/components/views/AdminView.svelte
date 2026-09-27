@@ -202,7 +202,7 @@
       </div>
     </div>
 
-    <div class="grid gap-4 border-t border-line p-6">
+    <div class="grid grid-cols-1 gap-4 border-t border-line p-6">
       <div class="flex flex-wrap items-end justify-between gap-3">
         <div class="grid gap-1">
           <h3 class="text-sm font-semibold">Invite links</h3>
