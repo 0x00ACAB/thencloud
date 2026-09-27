@@ -165,7 +165,7 @@ Smaller things:
 - [x] **Tables**: CSV and TSV shown as a sortable table instead of plain text, with a Source toggle and editing as text
 - [ ] **Office previews**: DOCX, XLSX, ODT and PPTX rendered in the browser, loaded only when needed and sanitised like Markdown
 - [ ] **PDF tools**: merge, split, rotate and reorder pages in the browser, saved as a new encrypted file
-- [ ] **Notes view**: a folder of Markdown files as a notebook, with a list, search and pinned notes
+- [x] **Notes view**: a folder of Markdown files as a notebook, with a list, search and pinned notes. Saved as you type as new versions, with a choice when a note changed elsewhere; search reads notes' text in the browser; pins are kept in the encrypted app data
 
 ## Milestone 11: People and organisations
 
