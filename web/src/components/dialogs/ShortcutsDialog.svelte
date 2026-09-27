@@ -11,10 +11,12 @@
         [['j', '↓'], 'Next item'],
         [['k', '↑'], 'Previous item'],
         [['Enter'], 'Open or preview'],
+        [['x'], 'Select or unselect'],
+        [['Esc'], 'Clear the selection'],
         [['Backspace'], 'Up to the parent folder'],
         [['n'], 'New folder'],
         [['u'], 'Upload files'],
-        [['Delete'], 'Move to trash (you can undo)'],
+        [['Delete'], 'Move the selection, or this item, to trash'],
       ],
     ],
     [
