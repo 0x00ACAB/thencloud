@@ -506,7 +506,6 @@
         thencloud is free software under the AGPL-3.0. Your files are encrypted in this browser with keys derived from your password; the server stores
         ciphertext and can see only sizes, dates and who shares with whom.
       </p>
-      <p>Parts of thencloud are written with the help of AI. The source is public so you can check exactly what it does.</p>
     </div>
   {/snippet}
   {@render section('About', null, aboutBody)}
