@@ -73,7 +73,8 @@ Bigger pieces:
 - [x] **Markdown preview**: rendered and sanitised, with a Source toggle
 - [x] **Markdown editor**: WYSIWYG (Milkdown), toolbar and shortcuts, Ctrl+S, saves each change as a new encrypted version with conflict detection; "New note" creates a file and opens it in the editor
 - [ ] Editor: clickable task-list checkboxes, tables toolbar, autosave drafts, and editing plain-text/code files
-- [ ] Previews: streamed video (today the whole file is decrypted into memory first, up to 256 MB), images referenced from Markdown by relative path, PDF text selection and links
+- [x] PDF previews: selectable text (pdf.js's text layer) and links (web and mail links open on click; links within the document jump to the page)
+- [ ] Previews: streamed video (today the whole file is decrypted into memory first, up to 256 MB), images referenced from Markdown by relative path
 - [x] **Per-file-type icons**: choose Minimal (Lucide), Material, Symbols or Documents (document-shaped icons, like a drive) in Settings; served locally, and only the chosen pack's tables and the icons on screen are downloaded
 - [ ] Optionally per-name folder icons
 - [x] **Multi-select** with bulk move, download and delete (checkboxes, shift-click ranges, `x`, select all, a floating action bar; one Undo for a bulk trash)
