@@ -1987,3 +1987,62 @@ async fn recovery_key_resets_a_forgotten_password() {
         StatusCode::UNAUTHORIZED
     );
 }
+
+#[tokio::test]
+async fn verified_contacts_are_opaque_to_the_server() {
+    let h = Harness::new().await;
+    let ivy = register(&h, "ivy", "ivy's password").await;
+    let me: Me = h.get("/api/me", &ivy.token).await.json();
+
+    let empty: PrivateData = h.get("/api/me/contacts", &ivy.token).await.json();
+    assert!(empty.data.is_none());
+    assert_eq!(empty.revision, 0);
+
+    let plain = br#"{"jules-marker-contact":{"public_key":"abc","verified_at":1}}"#;
+    let sealed = c::encrypt_private_data(&ivy.mk, &me.user_id, "contacts", plain);
+    let put = |data: Vec<u8>, rev: i64| PutPrivateData {
+        data: B64(data),
+        if_revision: rev,
+    };
+    let r = h
+        .call(
+            Method::PUT,
+            "/api/me/contacts",
+            Some(&ivy.token),
+            Some(put(sealed.clone(), 0)),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+    // A second device working from the old revision is told to reload.
+    let r = h
+        .call(
+            Method::PUT,
+            "/api/me/contacts",
+            Some(&ivy.token),
+            Some(put(sealed.clone(), 0)),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT);
+
+    let got: PrivateData = h.get("/api/me/contacts", &ivy.token).await.json();
+    assert_eq!(got.revision, 1);
+    let opened =
+        c::decrypt_private_data(&ivy.mk, &me.user_id, "contacts", &got.data.unwrap().0).unwrap();
+    assert_eq!(opened, plain);
+
+    // Another user's master key and id don't open it.
+    let other = register(&h, "kai", "kai's password").await;
+    let other_me: Me = h.get("/api/me", &other.token).await.json();
+    assert!(c::decrypt_private_data(&other.mk, &other_me.user_id, "contacts", &sealed).is_err());
+
+    let mut files = Vec::new();
+    all_files(&h.dir.path().join("data"), &mut files);
+    for p in &files {
+        let bytes = std::fs::read(p).unwrap();
+        assert!(
+            !contains(&bytes, b"jules-marker-contact"),
+            "contacts plaintext in {}",
+            p.display()
+        );
+    }
+}

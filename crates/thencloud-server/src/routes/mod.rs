@@ -1,5 +1,6 @@
 pub mod admin;
 pub mod auth;
+pub mod contacts;
 pub mod links;
 pub mod nodes;
 pub mod public;
@@ -43,6 +44,7 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/logout", post(auth::logout))
         .route("/auth/password", post(auth::change_password))
         .route("/me", get(auth::me))
+        .route("/me/contacts", get(contacts::get).put(contacts::put))
         .route(
             "/sessions",
             get(sessions::list).delete(sessions::revoke_others),

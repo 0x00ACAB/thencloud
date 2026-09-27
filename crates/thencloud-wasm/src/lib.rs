@@ -91,6 +91,21 @@ pub fn wrap_master_key(kek: &[u8], mk: &[u8]) -> R<Vec<u8>> {
     Ok(c::wrap_master_key(&key(kek)?, &key(mk)?))
 }
 
+#[wasm_bindgen]
+pub fn encrypt_private_data(mk: &[u8], user_id: &str, label: &str, plaintext: &[u8]) -> R<Vec<u8>> {
+    Ok(c::encrypt_private_data(
+        &key(mk)?,
+        user_id,
+        label,
+        plaintext,
+    ))
+}
+
+#[wasm_bindgen]
+pub fn decrypt_private_data(mk: &[u8], user_id: &str, label: &str, sealed: &[u8]) -> R<Vec<u8>> {
+    Ok(c::decrypt_private_data(&key(mk)?, user_id, label, sealed)?)
+}
+
 /// A recovery key as text for writing down ("ABCDE-FGHJK-...").
 #[wasm_bindgen]
 pub fn encode_recovery_key(k: &[u8]) -> R<String> {

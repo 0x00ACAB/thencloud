@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { session, changePassword, listSessions, revokeSession, revokeOtherSessions, removeRecoveryKey } from '../../lib/cloud.svelte.js';
+  import { session, changePassword, listSessions, revokeSession, revokeOtherSessions, removeRecoveryKey, listContacts, forgetContact } from '../../lib/cloud.svelte.js';
   import RecoveryKeyDialog from '../dialogs/RecoveryKeyDialog.svelte';
   import ConfirmDialog from '../dialogs/ConfirmDialog.svelte';
   import { theme, setTheme, toast, toastError, errorMessage, copyText, accent, setAccent, ACCENT_PRESETS, DEFAULT_ACCENT, contrast, accentForeground, iconPack, setIconPack } from '../../lib/ui.svelte.js';
@@ -33,6 +33,25 @@
       error = err?.code === 'invalid_credentials' ? 'Your current password is wrong.' : errorMessage(err);
     } finally {
       busy = false;
+    }
+  }
+
+  // Verified contacts.
+  let contacts = $state(null);
+  let contactsError = $state('');
+  onMount(() => {
+    listContacts()
+      .then((c) => (contacts = c))
+      .catch((e) => ((contactsError = errorMessage(e)), (contacts = [])));
+  });
+
+  async function forget(c) {
+    try {
+      await forgetContact(c.username);
+      contacts = contacts.filter((x) => x.username !== c.username);
+      toast(`Forgot ${c.username}'s key. You'll be asked to check it next time you share.`);
+    } catch (e) {
+      toastError(e);
     }
   }
 
@@ -128,6 +147,35 @@
     'Your key fingerprint',
     'When someone shares with you, they see this fingerprint. Read it to them over a call or in person so they can check it matches. That proves the server gave them your real key.',
     keyBody,
+  )}
+
+  {#snippet contactsBody()}
+    {#if contacts === null}
+      <div class="skeleton h-12 w-full" aria-hidden="true"></div>
+    {:else if contactsError}
+      <p class="flex items-center gap-2 text-[13px] text-danger"><Icon name="circle-alert" class="size-4" />{contactsError}</p>
+    {:else if !contacts.length}
+      <p class="text-[13px] text-fg-muted">None yet. When you share with someone and confirm their fingerprint, they're added here.</p>
+    {:else}
+      <ul class="divide-y divide-line rounded-md border border-line">
+        {#each contacts as c (c.username)}
+          <li class="flex items-center gap-3 px-3 py-2.5" out:slide>
+            <span class="grid size-7 shrink-0 place-items-center rounded-full bg-muted text-xs font-semibold uppercase">{c.username.slice(0, 1)}</span>
+            <div class="min-w-0 flex-1">
+              <p class="truncate text-sm font-medium">{c.username}</p>
+              <p class="fingerprint truncate text-xs text-fg-muted">{c.fingerprint}</p>
+            </div>
+            <span class="hidden text-xs text-fg-faint sm:inline">Checked <Time ms={c.verifiedAt} relative /></span>
+            <button type="button" class="btn btn-ghost h-7 px-2.5 text-[13px]" onclick={() => forget(c)}>Forget</button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  {/snippet}
+  {@render section(
+    'Verified contacts',
+    "Keys you've checked by fingerprint. If the server ever gives you a different key for one of these people, sharing with them is stopped until you check again. This list is encrypted; the server can't read or change it.",
+    contactsBody,
   )}
 
   {#snippet passwordBody()}

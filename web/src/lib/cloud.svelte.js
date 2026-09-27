@@ -107,6 +107,7 @@ function start(s, kek) {
   mk = masterKey;
   sk = secret;
   keyCache.clear();
+  contacts = null;
   session.token = s.token;
   session.me = s.me;
   session.fingerprint = tc.fingerprint(pub);
@@ -478,6 +479,79 @@ export function saveText(entry, text) {
 // ---------------------------------------------------------------------------
 // Sharing
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Verified contacts: public keys you've checked by fingerprint, pinned so a
+// later key change is caught. Stored encrypted under the master key and
+// bound to your account; the server can't read or alter them.
+// ---------------------------------------------------------------------------
+
+let contacts = null; // { data: { [username]: { public_key, verified_at } }, revision }
+const enc = new TextEncoder();
+const dec = new TextDecoder();
+
+async function loadContacts() {
+  if (contacts) return contacts;
+  const r = await api('GET', '/api/me/contacts');
+  let data = {};
+  if (r.data) {
+    try {
+      data = JSON.parse(dec.decode(tc.decrypt_private_data(mk, session.me.user_id, 'contacts', unb64(r.data))));
+    } catch {
+      // Never fall back to an empty list: that would silently drop every pin.
+      throw new Error("Your verified contacts couldn't be decrypted. They may have been tampered with.");
+    }
+  }
+  contacts = { data, revision: r.revision };
+  return contacts;
+}
+
+async function saveContacts(change) {
+  for (let attempt = 0; ; attempt++) {
+    const current = await loadContacts();
+    const next = structuredClone(current.data);
+    change(next);
+    const sealed = tc.encrypt_private_data(mk, session.me.user_id, 'contacts', enc.encode(JSON.stringify(next)));
+    try {
+      const r = await api('PUT', '/api/me/contacts', { body: { data: b64(sealed), if_revision: current.revision } });
+      contacts = { data: next, revision: r.revision };
+      return;
+    } catch (e) {
+      // Changed on another device meanwhile: reload and apply again, once.
+      if (e?.status === 409 && attempt === 0) contacts = null;
+      else throw e;
+    }
+  }
+}
+
+/**
+ * How `user` (from lookupUser) compares with what you verified:
+ * { state: 'new' | 'verified' | 'changed', verifiedAt, pinnedFingerprint }.
+ */
+export async function contactStatus(user) {
+  const c = (await loadContacts()).data[user.username];
+  if (!c) return { state: 'new' };
+  const same = c.public_key === b64(user.publicKey);
+  return {
+    state: same ? 'verified' : 'changed',
+    verifiedAt: c.verified_at,
+    pinnedFingerprint: tc.fingerprint(unb64(c.public_key)),
+  };
+}
+
+/** Remember `user`'s current key as checked. */
+export const verifyContact = (user) =>
+  saveContacts((d) => (d[user.username] = { public_key: b64(user.publicKey), verified_at: Date.now() }));
+
+export const forgetContact = (username) => saveContacts((d) => delete d[username]);
+
+/** Verified contacts, A to Z, with fingerprints. */
+export async function listContacts() {
+  const { data } = await loadContacts();
+  return Object.entries(data)
+    .map(([username, c]) => ({ username, verifiedAt: c.verified_at, fingerprint: tc.fingerprint(unb64(c.public_key)) }))
+    .sort((a, b) => a.username.localeCompare(b.username));
+}
 
 export async function lookupUser(username) {
   const u = await api('GET', `/api/users/${encodeURIComponent(username.trim())}/public-key`);
