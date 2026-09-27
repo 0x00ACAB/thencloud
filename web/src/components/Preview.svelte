@@ -20,8 +20,8 @@
   import { errorMessage } from '../lib/ui.svelte.js';
   import { fade } from '../lib/motion.js';
 
-  /** @type {{ entries: any[], start: number, fetch: (entry: any, onProgress: (p: number) => void) => Promise<{ blob: Blob }>, ondownload: (entry: any) => void, onclose: () => void, save?: ((entry: any, text: string) => Promise<any>) | null, onsaved?: (entry: any) => void, edit?: boolean }} */
-  let { entries, start, fetch, ondownload, onclose, save = null, onsaved, edit = false } = $props();
+  /** @type {{ entries: any[], start: number, fetch: (entry: any, onProgress: (p: number) => void) => Promise<{ blob: Blob }>, ondownload: (entry: any) => void, onclose: () => void, save?: ((entry: any, text: string) => Promise<any>) | null, onsaved?: (entry: any) => void, edit?: boolean, trail?: any[] | null, list?: ((folder: any) => Promise<any[]>) | null }} */
+  let { entries, start, fetch, ondownload, onclose, save = null, onsaved, edit = false, trail = null, list = null } = $props();
 
   let dlg;
   let index = $state(untrack(() => start));
@@ -37,6 +37,23 @@
 
   let seq = 0;
   let url = null;
+
+  // Images in Markdown by relative path: found by decrypted name from the
+  // folder the file is in (`trail` ends there), decrypted like any preview.
+  const MAX_IMAGE = 32 * 1024 * 1024;
+  const listed = new Map();
+  const cachedList = (folder) => {
+    if (!listed.has(folder.node.id)) listed.set(folder.node.id, list(folder));
+    return listed.get(folder.node.id);
+  };
+  async function loadImage(path) {
+    const { findRelative } = await import('../lib/relpath.js');
+    const target = await findRelative(trail, path, cachedList);
+    const k = target && previewKind(target.meta);
+    if (k?.kind !== 'image' || target.meta.size > MAX_IMAGE) return null;
+    const { blob } = await fetch(target, () => {});
+    return URL.createObjectURL(new Blob([blob], { type: k.type }));
+  }
 
   function release() {
     if (url) URL.revokeObjectURL(url);
@@ -300,7 +317,7 @@
           {:else if kind.kind === 'markdown' && editing}
             <MarkdownEditor text={view.text} onchange={(md) => (draft = md)} />
           {:else if kind.kind === 'markdown' && !showSource}
-            <MarkdownView text={view.text} />
+            <MarkdownView text={view.text} loadImage={trail && list ? loadImage : null} />
           {:else}
             <TextView text={view.text} name={kind.kind === 'markdown' ? 'source.md' : entry.meta.name} />
           {/if}

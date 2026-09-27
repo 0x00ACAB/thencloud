@@ -814,6 +814,8 @@
     start={dialog.start}
     edit={dialog.edit}
     fetch={fetchEntry}
+    trail={path}
+    list={(f) => listFolder(f.node.id, f.key)}
     save={canWrite ? saveText : null}
     onsaved={() => (load(), refreshMe().catch(() => {}))}
     ondownload={downloadEntry}

@@ -381,7 +381,14 @@
 </div>
 
 {#if preview}
-  <Preview entries={preview.entries} start={preview.start} fetch={fetchEntry} ondownload={downloadEntry} onclose={() => (preview = null)} />
+  <Preview
+    entries={preview.entries}
+    start={preview.start}
+    fetch={fetchEntry}
+    trail={here?.node.kind === 'folder' ? trail : null}
+    list={listFolder}
+    ondownload={downloadEntry}
+    onclose={() => (preview = null)} />
 {/if}
 
 <TransferTray />
