@@ -4,7 +4,7 @@
   import RecoveryKeyDialog from '../dialogs/RecoveryKeyDialog.svelte';
   import ConfirmDialog from '../dialogs/ConfirmDialog.svelte';
   import AppPasswordDialog from '../dialogs/AppPasswordDialog.svelte';
-  import { theme, setTheme, toast, toastError, errorMessage, copyText, accent, setAccent, ACCENT_PRESETS, DEFAULT_ACCENT, contrast, accentForeground, iconPack, setIconPack, folderIcons, setFolderIcons } from '../../lib/ui.svelte.js';
+  import { theme, setTheme, toast, toastError, errorMessage, copyText, accent, setAccent, ACCENT_PRESETS, DEFAULT_ACCENT, contrast, accentForeground, iconPack, setIconPack, folderIcons, setFolderIcons, tint, setTint } from '../../lib/ui.svelte.js';
   import { formatSize, formatWhen, formatDate, fullDate } from '../../lib/format.js';
   import { slide } from '../../lib/motion.js';
   import Icon from '../Icon.svelte';
@@ -445,6 +445,13 @@
         <span class="link text-sm">A link</span>
         <span class="flex items-center gap-1.5 text-sm"><Icon name="folder" class="size-4 text-accent-text" />Folder</span>
       </div>
+      <label class="flex cursor-pointer items-start gap-3 text-sm">
+        <input type="checkbox" class="mt-0.5 size-4 accent-accent" checked={tint.on} onchange={(e) => setTint(e.currentTarget.checked)} />
+        <span class="grid gap-0.5">
+          <span>Tint the whole theme</span>
+          <span class="text-xs text-fg-muted">Backgrounds, borders and grey text take on a hint of the accent's hue.</span>
+        </span>
+      </label>
       {#if lowContrast}
         <p class="flex items-center gap-2 text-[13px] text-fg-muted"><Icon name="circle-alert" class="size-4" />This colour is hard to read on one of the themes; text uses an adjusted shade.</p>
       {/if}
@@ -454,7 +461,7 @@
     <p class="mr-auto text-xs text-fg-muted">Saved on this device only.</p>
     <button type="button" class="btn btn-secondary" disabled={accent.value === DEFAULT_ACCENT} onclick={() => setAccent(DEFAULT_ACCENT)}>Reset to blue</button>
   {/snippet}
-  {@render section('Accent colour', 'Used for buttons, links, folders and highlights.', accentBody, accentFooter)}
+  {@render section('Accent colour', 'Used for buttons, links, folders and highlights, and optionally to tint everything else.', accentBody, accentFooter)}
 
   {#snippet iconsBody()}
     <div class="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="File icons">

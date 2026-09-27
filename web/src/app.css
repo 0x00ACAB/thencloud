@@ -96,13 +96,40 @@
   --fg-faint: #707070;
   --accent: var(--accent-base);
   --accent-hover: color-mix(in oklab, var(--accent-base) 85%, white);
-  --accent-soft: color-mix(in oklab, var(--accent-base) 20%, #0a0a0a);
+  --accent-soft: color-mix(in oklab, var(--accent-base) 20%, var(--bg));
   --accent-text: color-mix(in oklab, var(--accent-base) 55%, white);
   --danger: #ff6166;
   --danger-soft: #2a1113;
   --success: #3fb950;
   --ring: color-mix(in srgb, var(--accent-base) 45%, transparent);
   color-scheme: dark;
+}
+
+/* "Tint the whole theme" (Settings): the neutrals keep their lightness but
+ * take the accent's hue at a low chroma, like Material's tonal palettes. A
+ * grey accent stays grey. Browsers without relative colours keep the
+ * neutral ones. */
+@supports (color: oklch(from red l c h)) {
+  :root.tinted {
+    --bg: oklch(from var(--accent-base) 0.99 min(c * 0.05, 0.012) h);
+    --subtle: oklch(from var(--accent-base) 0.975 min(c * 0.07, 0.016) h);
+    --muted: oklch(from var(--accent-base) 0.95 min(c * 0.08, 0.018) h);
+    --line: oklch(from var(--accent-base) 0.925 min(c * 0.09, 0.02) h);
+    --line-strong: oklch(from var(--accent-base) 0.87 min(c * 0.1, 0.024) h);
+    --fg: oklch(from var(--accent-base) 0.21 min(c * 0.1, 0.024) h);
+    --fg-muted: oklch(from var(--accent-base) 0.5 min(c * 0.12, 0.028) h);
+    --fg-faint: oklch(from var(--accent-base) 0.64 min(c * 0.1, 0.024) h);
+  }
+  :root.tinted.dark {
+    --bg: oklch(from var(--accent-base) 0.16 min(c * 0.08, 0.018) h);
+    --subtle: oklch(from var(--accent-base) 0.19 min(c * 0.09, 0.02) h);
+    --muted: oklch(from var(--accent-base) 0.23 min(c * 0.1, 0.022) h);
+    --line: oklch(from var(--accent-base) 0.275 min(c * 0.1, 0.024) h);
+    --line-strong: oklch(from var(--accent-base) 0.335 min(c * 0.1, 0.026) h);
+    --fg: oklch(from var(--accent-base) 0.945 min(c * 0.05, 0.012) h);
+    --fg-muted: oklch(from var(--accent-base) 0.72 min(c * 0.08, 0.02) h);
+    --fg-faint: oklch(from var(--accent-base) 0.56 min(c * 0.08, 0.02) h);
+  }
 }
 
 @theme inline {
