@@ -169,6 +169,7 @@ export async function createFolder(parentId, parentKey, name) {
     },
   });
   keyCache.set(id, key);
+  return { id, key };
 }
 
 export async function rename(entry, name) {
@@ -296,6 +297,13 @@ export const deleteVersion = (entry, v) => api('DELETE', `/api/nodes/${entry.nod
 export function fetchEntry(entry, onProgress) {
   const { node, key } = entry;
   return fetchFile(node, key, (i) => api('GET', `/api/nodes/${node.id}/chunks/${i}`), onProgress);
+}
+
+/** Download files and folders as one zip, decrypted and zipped in the browser. */
+export async function downloadZip(entries, name, onProgress) {
+  const { zipEntries } = await import('./zip.js');
+  const blob = await zipEntries(entries, { list: (e) => listFolder(e.node.id, e.key), fetch: fetchEntry, onProgress });
+  saveBlob(blob, name);
 }
 
 export async function download(entry, onProgress) {
