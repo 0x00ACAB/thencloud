@@ -11,7 +11,7 @@ use crate::settings;
 use crate::util::*;
 
 #[derive(sqlx::FromRow)]
-struct UserRow {
+pub(crate) struct UserRow {
     id: String,
     username: String,
     auth_hash: String,
@@ -24,14 +24,14 @@ struct UserRow {
     quota_bytes: i64,
     used_bytes: i64,
     is_admin: bool,
-    disabled_at: Option<i64>,
+    pub(crate) disabled_at: Option<i64>,
     recovery_hash: Option<String>,
     enc_master_key_recovery: Option<Vec<u8>>,
     recovery_created_at: Option<i64>,
 }
 
 impl UserRow {
-    fn into_me(self, cfg: &crate::Config) -> Result<Me> {
+    pub(crate) fn into_me(self, cfg: &crate::Config) -> Result<Me> {
         let kdf_params: KdfParams = serde_json::from_str(&self.kdf_params)
             .map_err(|e| AppError::Internal(e.to_string()))?;
         Ok(Me {
@@ -67,7 +67,7 @@ async fn user_by_name(state: &AppState, username: &str) -> Result<Option<UserRow
         .await?)
 }
 
-async fn user_by_id(state: &AppState, id: &str) -> Result<UserRow> {
+pub(crate) async fn user_by_id(state: &AppState, id: &str) -> Result<UserRow> {
     let sql = format!("{USER_SELECT} WHERE id = ?");
     sqlx::query_as(&sql)
         .bind(id)
@@ -204,7 +204,7 @@ pub async fn register(
     tx.commit().await?;
     tracing::info!(%username, admin = user_count == 0, "user registered");
 
-    let token = create_session(&state, &user_id, req.device_name.as_deref()).await?;
+    let token = create_session(&state, &user_id, req.device_name.as_deref(), None).await?;
     let me = user_by_id(&state, &user_id).await?.into_me(&state.config)?;
     Ok((StatusCode::CREATED, Json(SessionResponse { token, me })))
 }
@@ -241,7 +241,7 @@ pub async fn login(
     if user.disabled_at.is_some() {
         return Err(AppError::AccountDisabled);
     }
-    let token = create_session(&state, &user.id, req.device_name.as_deref()).await?;
+    let token = create_session(&state, &user.id, req.device_name.as_deref(), None).await?;
     Ok(Json(SessionResponse {
         token,
         me: user.into_me(&state.config)?,
@@ -323,7 +323,11 @@ pub async fn options(State(state): State<AppState>) -> Result<Json<AuthOptions>>
 // ---------------------------------------------------------------------------
 
 /// Check the current password for a change to the recovery key.
-async fn verify_current(state: &AppState, user: &AuthUser, auth_key: &B64) -> Result<UserRow> {
+pub(crate) async fn verify_current(
+    state: &AppState,
+    user: &AuthUser,
+    auth_key: &B64,
+) -> Result<UserRow> {
     let key = format!("password-user:{}", user.id);
     if state.limiter.blocked(&key) {
         return Err(AppError::RateLimited);
@@ -460,7 +464,7 @@ pub async fn recovery_reset(
         .await?;
     tx.commit().await?;
     tracing::info!(username = %u.username, "password reset with a recovery key");
-    let token = create_session(&state, &u.id, req.device_name.as_deref()).await?;
+    let token = create_session(&state, &u.id, req.device_name.as_deref(), None).await?;
     Ok(Json(SessionResponse {
         token,
         me: user_by_id(&state, &u.id).await?.into_me(&state.config)?,

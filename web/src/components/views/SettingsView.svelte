@@ -1,8 +1,9 @@
 <script>
   import { onMount } from 'svelte';
-  import { session, changePassword, listSessions, revokeSession, revokeOtherSessions, removeRecoveryKey, listContacts, forgetContact, forgetThisBrowser } from '../../lib/cloud.svelte.js';
+  import { session, changePassword, listSessions, revokeSession, revokeOtherSessions, removeRecoveryKey, listAppPasswords, deleteAppPassword, listContacts, forgetContact, forgetThisBrowser } from '../../lib/cloud.svelte.js';
   import RecoveryKeyDialog from '../dialogs/RecoveryKeyDialog.svelte';
   import ConfirmDialog from '../dialogs/ConfirmDialog.svelte';
+  import AppPasswordDialog from '../dialogs/AppPasswordDialog.svelte';
   import { theme, setTheme, toast, toastError, errorMessage, copyText, accent, setAccent, ACCENT_PRESETS, DEFAULT_ACCENT, contrast, accentForeground, iconPack, setIconPack } from '../../lib/ui.svelte.js';
   import { formatSize, formatWhen, formatDate, fullDate } from '../../lib/format.js';
   import { slide } from '../../lib/motion.js';
@@ -85,6 +86,21 @@
       revoking = null;
     }
   }
+
+  // App passwords.
+  let appPasswords = $state(null);
+  let appDialog = $state(false);
+  let revokingApp = $state(null);
+
+  async function loadAppPasswords() {
+    try {
+      appPasswords = await listAppPasswords();
+    } catch (e) {
+      toastError(e);
+      appPasswords = [];
+    }
+  }
+  onMount(loadAppPasswords);
 
   const deviceIcon = (name) => (/Android|iOS/.test(name) ? 'smartphone' : 'laptop');
 
@@ -244,6 +260,7 @@
               <p class="flex items-center gap-2 text-sm">
                 <span class="truncate font-medium">{d.device_name}</span>
                 {#if d.current}<span class="badge badge-accent">This device</span>{/if}
+                {#if d.app_password}<span class="badge"><Icon name="key-round" />{d.app_password}</span>{/if}
                 {#if d.current && session.remembered}<span class="badge">Kept signed in</span>{/if}
               </p>
               <p class="truncate text-xs text-fg-muted">
@@ -284,6 +301,43 @@
     'Where you are signed in. Signing a device out ends its session, and its keys are gone from memory the next time it tries to do anything.',
     devicesBody,
     devicesFooter,
+  )}
+
+  {#snippet appBody()}
+    {#if appPasswords === null}
+      <div class="skeleton h-12 w-full" aria-hidden="true"></div>
+    {:else if !appPasswords.length}
+      <p class="text-[13px] text-fg-muted">None yet.</p>
+    {:else}
+      <ul class="divide-y divide-line rounded-md border border-line">
+        {#each appPasswords as a (a.id)}
+          <li class="flex items-center gap-3 px-3 py-2.5" out:slide>
+            <Icon name="key-round" class="size-4 shrink-0 text-fg-muted" />
+            <div class="min-w-0 flex-1">
+              <p class="flex items-center gap-2 text-sm">
+                <span class="truncate font-medium">{a.name}</span>
+                <span class="badge">{a.scope === 'read' ? 'Read only' : 'Full access'}</span>
+              </p>
+              <p class="truncate text-xs text-fg-muted">
+                Created <span title={fullDate(a.created_at * 1000)}>{formatDate(a.created_at * 1000)}</span>
+                · {#if a.last_used_at}last used <span title={fullDate(a.last_used_at * 1000)}>{formatWhen(a.last_used_at * 1000)}</span>{:else}never used{/if}
+              </p>
+            </div>
+            <button type="button" class="btn btn-secondary h-7 px-2.5 text-[13px]" onclick={() => (revokingApp = a)}>Revoke</button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  {/snippet}
+  {#snippet appFooter()}
+    <p class="mr-auto hidden text-xs text-fg-muted sm:block">Your password changing doesn't affect them.</p>
+    <button type="button" class="btn btn-secondary" onclick={() => (appDialog = true)}><Icon name="plus" />New app password</button>
+  {/snippet}
+  {@render section(
+    'App passwords',
+    'Sign in sync clients and other devices without giving them your account password. Each one can be read only, and revoking it signs that device out.',
+    appBody,
+    appFooter,
   )}
 
   {#snippet themeBody()}
@@ -386,6 +440,25 @@
   {/snippet}
   {@render section('About', null, aboutBody)}
 </div>
+
+{#if appDialog}
+  <AppPasswordDialog onclose={() => (appDialog = false)} oncreated={loadAppPasswords} />
+{/if}
+
+{#if revokingApp}
+  <ConfirmDialog
+    title="Revoke {revokingApp.name}?"
+    description="It stops working straight away, and anything signed in with it is signed out."
+    confirmLabel="Revoke"
+    danger
+    onconfirm={async () => {
+      await deleteAppPassword(revokingApp.id);
+      appPasswords = appPasswords.filter((x) => x.id !== revokingApp.id);
+      loadDevices();
+      toast('App password revoked');
+    }}
+    onclose={() => (revokingApp = null)} />
+{/if}
 
 {#if recoveryDialog === 'create'}
   <RecoveryKeyDialog onclose={() => (recoveryDialog = null)} />

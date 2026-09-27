@@ -166,6 +166,61 @@ pub struct DeviceSession {
     pub last_seen: i64,
     /// The session making this request.
     pub current: bool,
+    /// Name of the app password it signed in with, if any.
+    #[serde(default)]
+    pub app_password: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// App passwords (per-device credentials for sync clients)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AppScope {
+    /// Everything the account can do, except managing credentials.
+    Full,
+    /// Reading and downloading only.
+    Read,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateAppPasswordRequest {
+    /// Client-chosen id, bound into `enc_master_key`.
+    pub id: String,
+    pub name: String,
+    pub scope: AppScope,
+    /// Proves the account password.
+    pub current_auth_key: B64,
+    /// The auth half of the app password (see `derive_app_password_keys`).
+    pub auth_key: B64,
+    /// The master key wrapped under the app password's KEK.
+    pub enc_master_key: B64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppPassword {
+    pub id: String,
+    pub name: String,
+    pub scope: AppScope,
+    pub created_at: i64,
+    pub last_used_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppLoginRequest {
+    pub auth_key: B64,
+    #[serde(default)]
+    pub device_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppLoginResponse {
+    pub token: String,
+    pub me: Me,
+    pub app_password_id: String,
+    pub scope: AppScope,
+    pub enc_master_key: B64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

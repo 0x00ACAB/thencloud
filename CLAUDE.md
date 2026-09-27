@@ -34,6 +34,7 @@ cargo run -p thencloud-server -- --bind 127.0.0.1:8080 --data-dir ./data
 - `crates/thencloud-wasm`: thin `wasm-bindgen` wrappers. JS does networking only, never crypto.
 - `crates/thencloud-server`: axum + SQLite (sqlx, migrations in `migrations/`) and a local blob store.
   - `access.rs` is the single place authorisation is decided (owner, or a share on any ancestor). Every route goes through it, and it hides anything in the trash (a trashed node or any trashed ancestor); only `routes/trash.rs` reaches trashed nodes, checking ownership itself.
+  - `routes/app_passwords.rs`: per-device credentials. A read-only one is enforced in the `AuthUser` extractor (`auth.rs`), which refuses anything but GET/HEAD and logout.
   - `routes/admin.rs` manages accounts and counts, never content; `settings.rs` holds runtime settings (registration mode) that override the command line. Disabled users are filtered out in the `AuthUser` extractor.
   - File drops (upload-only links): `routes/public.rs` takes the uploads, `routes/drops.rs` lets the owner take them in. A dropped node's `enc_key` is sealed to the owner until then, and `access.rs` hides it like a trashed one.
   - Deleting a node only marks it trashed; `delete_subtree` in `routes/nodes.rs` is the one permanent delete (used by the trash and the janitor).

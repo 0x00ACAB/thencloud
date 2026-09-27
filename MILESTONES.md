@@ -44,7 +44,7 @@
 - [x] Admin UI and API: list users, set quotas, make or remove admins, disable (signs out everywhere) or delete users, registration open / invite-only / closed at runtime, single-use invite links (only a hash is stored; the link carries the token after `#`)
 - [x] Session and device list: see active sessions (device name, last seen; no IPs kept) and sign them out, one at a time or all others. A signed-out browser drops its keys on its next request
 - [x] "Keep me signed in on this browser" (opt-in): token and master key saved in IndexedDB under a non-extractable WebCrypto key, removed on sign-out, "Stop keeping signed in", or when the server ends the session
-- [ ] App passwords or per-device credentials for sync clients (scoped, revocable, never the account password)
+- [x] App passwords for sync clients: made in the browser and shown once, each wrapping its own copy of the master key; full or read-only; revoking one signs out its sessions; never the account password
 - [x] Server stats for admins, without revealing anything encrypted: accounts, sessions, storage, file/folder/version counts, shares and links
 
 ## Tools

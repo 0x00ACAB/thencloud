@@ -14,9 +14,10 @@ pub async fn list(
     State(state): State<AppState>,
     user: AuthUser,
 ) -> Result<Json<Vec<DeviceSession>>> {
-    let rows: Vec<(String, String, i64, i64, bool)> = sqlx::query_as(
-        "SELECT id, device_name, created_at, last_seen, token_hash = ? FROM sessions \
-         WHERE user_id = ? AND expires_at > ? ORDER BY last_seen DESC",
+    let rows: Vec<(String, String, i64, i64, bool, Option<String>)> = sqlx::query_as(
+        "SELECT s.id, s.device_name, s.created_at, s.last_seen, s.token_hash = ?, a.name FROM sessions s \
+         LEFT JOIN app_passwords a ON a.id = s.app_password_id \
+         WHERE s.user_id = ? AND s.expires_at > ? ORDER BY s.last_seen DESC",
     )
     .bind(&user.token_hash)
     .bind(&user.id)
@@ -26,12 +27,13 @@ pub async fn list(
     Ok(Json(
         rows.into_iter()
             .map(
-                |(id, device_name, created_at, last_seen, current)| DeviceSession {
+                |(id, device_name, created_at, last_seen, current, app_password)| DeviceSession {
                     id,
                     device_name,
                     created_at,
                     last_seen,
                     current,
+                    app_password,
                 },
             )
             .collect(),
