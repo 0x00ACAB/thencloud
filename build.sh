@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Build the WASM crypto module for the web client, then the server.
+# Build the web client (Rust crypto -> WASM, then Svelte + Tailwind via Vite)
+# and the server.
 #
 #   ./build.sh            # debug server build
 #   ./build.sh --release  # release server build
 #
-# Requires: a rustup toolchain with the wasm32-unknown-unknown target, and
-# wasm-pack (`cargo install wasm-pack`).
+# Requires: a rustup toolchain with the wasm32-unknown-unknown target,
+# wasm-pack (`cargo install wasm-pack`) and Node.js with npm.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -18,12 +19,21 @@ if ! rustup target list --installed 2>/dev/null | grep -q wasm32-unknown-unknown
   echo "Installing wasm32-unknown-unknown target..."
   rustup target add wasm32-unknown-unknown
 fi
-if ! command -v wasm-pack >/dev/null; then
-  echo "wasm-pack not found: install it with 'cargo install wasm-pack'" >&2
-  exit 1
-fi
+for tool in wasm-pack npm; do
+  if ! command -v "$tool" >/dev/null; then
+    echo "$tool not found (wasm-pack: 'cargo install wasm-pack'; npm: install Node.js)" >&2
+    exit 1
+  fi
+done
 
-wasm-pack build crates/thencloud-wasm --release --target web --out-dir ../../web/pkg --no-typescript --no-pack
+wasm-pack build crates/thencloud-wasm --release --target web --out-dir ../../web/src/wasm --no-typescript --no-pack
+
+(
+  cd web
+  [ -d node_modules ] || npm ci --no-audit --no-fund
+  npm run build
+)
+
 cargo build -p thencloud-server "$@"
 
 echo

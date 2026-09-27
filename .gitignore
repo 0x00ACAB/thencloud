@@ -1,5 +1,7 @@
 /target
-/web/pkg
+/web/src/wasm
+/web/dist
+/web/node_modules
 /data
 *.db
 *.db-shm

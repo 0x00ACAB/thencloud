@@ -17,11 +17,11 @@ use tower_http::trace::TraceLayer;
 use crate::AppState;
 use crate::error::AppError;
 
-/// Strict CSP: only same-origin scripts (plus WASM compilation), no styles,
-/// no third parties. Anything that could read `location.hash` must come
-/// from this server.
+/// Strict CSP: only same-origin scripts (plus WASM compilation), same-origin
+/// stylesheets (no inline styles), no third parties. Anything that could read
+/// `location.hash` must come from this server.
 const CSP: &str = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; \
-     img-src 'self' blob:; media-src 'self' blob:; style-src 'none'; object-src 'none'; base-uri 'none'; \
+     img-src 'self' blob:; media-src 'self' blob:; style-src 'self'; object-src 'none'; base-uri 'none'; \
      frame-ancestors 'none'";
 
 pub fn router(state: AppState) -> Router {

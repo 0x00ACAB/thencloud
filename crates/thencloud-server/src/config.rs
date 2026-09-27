@@ -18,8 +18,8 @@ pub struct Config {
     #[arg(long, env = "THENCLOUD_DATA_DIR", default_value = "./data")]
     pub data_dir: PathBuf,
 
-    /// Directory with the web client (index.html, share.html, pkg/).
-    #[arg(long, env = "THENCLOUD_WEB_DIR", default_value = "./web")]
+    /// Directory with the built web client (`web/dist`, see build.sh).
+    #[arg(long, env = "THENCLOUD_WEB_DIR", default_value = "./web/dist")]
     pub web_dir: PathBuf,
 
     /// Allow anyone to register. The first account can always be created

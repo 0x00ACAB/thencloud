@@ -1,0 +1,100 @@
+<script>
+  import { links, deleteLink } from '../../lib/cloud.svelte.js';
+  import { toast, toastError, copyText } from '../../lib/ui.svelte.js';
+  import { formatDate, fileIcon } from '../../lib/format.js';
+  import Icon from '../Icon.svelte';
+  import ConfirmDialog from '../dialogs/ConfirmDialog.svelte';
+
+  let { go } = $props();
+
+  let list = $state(null);
+  let deleting = $state(null);
+
+  $effect(() => {
+    links()
+      .then((l) => (list = l))
+      .catch((e) => {
+        toastError(e);
+        list = [];
+      });
+  });
+
+  function open(l) {
+    const n = l.entry?.node;
+    if (!n) return;
+    go({ name: 'files', folderId: n.kind === 'folder' ? n.id : n.parent_id });
+  }
+</script>
+
+<div>
+  <h1 class="text-xl font-semibold tracking-tight">Public links</h1>
+  <p class="mt-1 text-[13px] text-fg-muted">
+    Anyone with one of these links can open what it points to. The key is in the part after <code class="font-mono text-fg">#</code>, which never reaches the server.
+  </p>
+</div>
+
+<div class="card mt-6 overflow-hidden">
+  {#if list === null}
+    <div class="grid h-48 place-items-center text-fg-muted"><Icon name="loader-circle" class="spinner size-5" /></div>
+  {:else if !list.length}
+    <div class="grid place-items-center gap-1 px-6 py-20 text-center">
+      <div class="mb-3 grid size-11 place-items-center rounded-lg border border-line bg-subtle"><Icon name="link" class="size-5 text-fg-muted" /></div>
+      <p class="font-medium">No public links</p>
+      <p class="text-[13px] text-fg-muted">Create one from the menu on any file or folder.</p>
+    </div>
+  {:else}
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th class="hidden sm:table-cell">Protection</th>
+          <th class="hidden w-32 md:table-cell">Created</th>
+          <th class="w-24"><span class="sr-only">Actions</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each list as l (l.id)}
+          {@const folder = l.entry?.node.kind === 'folder'}
+          <tr class="group">
+            <td class="max-w-0">
+              <button type="button" class="flex max-w-full cursor-pointer items-center gap-3 text-left" onclick={() => open(l)}>
+                <Icon name={folder ? 'folder' : l.entry ? fileIcon(l.entry.meta) : 'file'} class="size-4 shrink-0 {folder ? 'text-accent-text' : 'text-fg-muted'}" />
+                <span class="truncate font-medium group-hover:underline group-hover:decoration-line-strong group-hover:underline-offset-4">{l.entry?.meta.name ?? 'Unavailable'}</span>
+              </button>
+            </td>
+            <td class="hidden sm:table-cell">
+              <span class="flex flex-wrap gap-1.5">
+                {#if l.has_password}<span class="badge"><Icon name="lock" />Password</span>{/if}
+                {#if l.expires_at}<span class="badge">Expires {formatDate(l.expires_at * 1000)}</span>{/if}
+                {#if !l.has_password && !l.expires_at}<span class="text-[13px] text-fg-faint">None</span>{/if}
+              </span>
+            </td>
+            <td class="hidden text-fg-muted md:table-cell">{formatDate(l.created_at * 1000)}</td>
+            <td class="text-right whitespace-nowrap">
+              <button type="button" class="btn btn-ghost btn-icon" aria-label="Copy link" title="Copy link" disabled={!l.url} onclick={() => copyText(l.url, 'Link copied')}>
+                <Icon name="copy" />
+              </button>
+              <button type="button" class="btn btn-ghost btn-icon" aria-label="Delete link" title="Delete link" onclick={() => (deleting = l)}>
+                <Icon name="trash-2" />
+              </button>
+            </td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  {/if}
+</div>
+
+{#if deleting}
+  <ConfirmDialog
+    title="Delete this link?"
+    description="The link stops working immediately. The {deleting.entry?.node.kind === 'folder' ? 'folder' : 'file'} itself is not affected."
+    confirmLabel="Delete link"
+    danger
+    onconfirm={async () => {
+      await deleteLink(deleting.id);
+      list = list.filter((x) => x.id !== deleting.id);
+      toast('Link deleted');
+    }}
+    onclose={() => (deleting = null)} />
+{/if}
