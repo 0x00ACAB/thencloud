@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { session, changePassword, listSessions, revokeSession, revokeOtherSessions, removeRecoveryKey, listAppPasswords, deleteAppPassword, avatar, loadMyAvatar, setAvatar, removeAvatar, listContacts, forgetContact, forgetThisBrowser, listPasskeys, removePasskey, disableTotp } from '../../lib/cloud.svelte.js';
+  import { session, changePassword, listSessions, revokeSession, revokeOtherSessions, removeRecoveryKey, listAppPasswords, deleteAppPassword, avatar, loadMyAvatar, setAvatar, removeAvatar, listContacts, forgetContact, forgetThisBrowser, listPasskeys, removePasskey, disableTotp, deleteAccount } from '../../lib/cloud.svelte.js';
   import { passkeysSupported } from '../../lib/passkeys.js';
   import TotpDialog from '../dialogs/TotpDialog.svelte';
   import PasskeyDialog from '../dialogs/PasskeyDialog.svelte';
@@ -16,6 +16,10 @@
   import FileIcon from '../FileIcon.svelte';
   import FolderIcon from '../FolderIcon.svelte';
   import { ICON_PACKS, hasFolderIcons } from '../../lib/file-icons.svelte.js';
+
+  let deleting = $state(false);
+  let deletePassword = $state('');
+  let deleteConfirm = $state('');
 
   let current = $state('');
   let next = $state('');
@@ -590,7 +594,46 @@
     </div>
   {/snippet}
   {@render section('About', null, aboutBody)}
+
+  {#snippet deleteBody()}
+    <p class="text-[13px] text-fg-muted">
+      Your files, folders, versions, links and shares are deleted from the server straight away. There is no undo, and an admin can't bring them back.
+      Files you added to folders other people shared with you belong to them and stay.
+    </p>
+  {/snippet}
+  {#snippet deleteFooter()}
+    <button type="button" class="btn btn-danger" onclick={() => ((deleting = true), (deletePassword = ''), (deleteConfirm = ''))}>
+      <Icon name="trash-2" /> Delete account
+    </button>
+  {/snippet}
+  {@render section('Delete account', null, deleteBody, deleteFooter)}
 </div>
+
+{#if deleting}
+  <ConfirmDialog
+    title="Delete your account?"
+    description="The account {session.me.username} and everything in it are deleted for good. Download anything you want to keep first."
+    confirmLabel="Delete account"
+    danger
+    disabled={!deletePassword || deleteConfirm.trim().toLowerCase() !== session.me.username}
+    onconfirm={async () => {
+      try {
+        await deleteAccount(deletePassword);
+      } catch (e) {
+        throw wrongPassword(e);
+      }
+    }}
+    onclose={() => (deleting = false)}>
+    <div class="field">
+      <label class="label" for="delete-password">Your password</label>
+      <input id="delete-password" class="input" type="password" bind:value={deletePassword} autocomplete="current-password" />
+    </div>
+    <div class="field">
+      <label class="label" for="delete-confirm">Type <span class="font-mono">{session.me.username}</span> to confirm</label>
+      <input id="delete-confirm" class="input" bind:value={deleteConfirm} autocomplete="off" autocapitalize="none" spellcheck="false" />
+    </div>
+  </ConfirmDialog>
+{/if}
 
 {#if appDialog}
   <AppPasswordDialog onclose={() => (appDialog = false)} oncreated={loadAppPasswords} />

@@ -14,12 +14,16 @@
   import TextView from './preview/TextView.svelte';
   import MarkdownView from './preview/MarkdownView.svelte';
   import PdfView from './preview/PdfView.svelte';
+  import TableView from './preview/TableView.svelte';
+  import SubtitlePicker from './SubtitlePicker.svelte';
+  import { matchSubtitles, loadSubtitles, release as releaseSubtitles } from '../lib/subtitles.js';
   import MarkdownEditor from './preview/MarkdownEditor.svelte';
   import TextEditor from './preview/TextEditor.svelte';
   import ConfirmDialog from './dialogs/ConfirmDialog.svelte';
   import { saveBlob } from '../lib/crypto.js';
   import { previewKind, readText, MAX_PREVIEW, MAX_TEXT } from '../lib/preview.js';
   import { formatSize } from '../lib/format.js';
+  import { separatorFor } from '../lib/csv.js';
   import { errorMessage, toastError } from '../lib/ui.svelte.js';
   import { fade } from '../lib/motion.js';
 
@@ -112,6 +116,28 @@
       if (my === seq) set({ status: 'error', message: errorMessage(err) });
     }
   }
+
+  // Subtitles: .srt and .vtt files in the same folder named after the video.
+  let subtitles = $state([]);
+  let videoEl = $state();
+  $effect(() => {
+    const e = entry;
+    if (previewKind(e.meta)?.kind !== 'video') return;
+    const matched = matchSubtitles(e.meta.name, entries);
+    if (!matched.length) return;
+    let live = true;
+    let got = [];
+    loadSubtitles(matched, fetch).then((t) => {
+      got = t;
+      if (live) subtitles = t;
+      else releaseSubtitles(t);
+    });
+    return () => {
+      live = false;
+      releaseSubtitles(got);
+      subtitles = [];
+    };
+  });
 
   // Load when stepping to another file; a save here updates `entry` but
   // already has the text, so it must not trigger a reload.
@@ -298,9 +324,9 @@
         {#if saving}<Icon name="loader-circle" class="spinner" />{:else}<Icon name="save" />{/if}
         Save
       </button>
-    {:else if kind?.kind === 'markdown' && view.status === 'ready'}
+    {:else if (kind?.kind === 'markdown' || kind?.table) && view.status === 'ready'}
       <div class="hidden rounded-md border border-line p-0.5 sm:flex" role="radiogroup" aria-label="Show">
-        {#each [[false, 'book-open', 'Preview'], [true, 'code', 'Source']] as [value, icon, label] (label)}
+        {#each [[false, kind.table ? 'table' : 'book-open', kind.table ? 'Table' : 'Preview'], [true, 'code', 'Source']] as [value, icon, label] (value)}
           <button
             type="button"
             role="radio"
@@ -313,6 +339,10 @@
           </button>
         {/each}
       </div>
+    {/if}
+
+    {#if kind?.kind === 'video' && view.status === 'ready'}
+      <SubtitlePicker tracks={subtitles} video={videoEl} class="hidden sm:flex" />
     {/if}
 
     {#if canEdit && !editing}
@@ -383,7 +413,9 @@
           {:else if kind.kind === 'video'}
             <div class="grid h-full place-items-center p-6">
               <!-- svelte-ignore a11y_media_has_caption -->
-              <video src={view.url} controls class="max-h-full max-w-full rounded-md bg-black"></video>
+              <video bind:this={videoEl} src={view.url} controls class="max-h-full max-w-full rounded-md bg-black">
+                {#each subtitles as t (t.url)}<track kind="subtitles" src={t.url} srclang={t.lang || undefined} label={t.label} />{/each}
+              </video>
             </div>
           {:else if kind.kind === 'audio'}
             <div class="grid h-full place-items-center p-6">
@@ -399,6 +431,8 @@
             {#key editorKey}<MarkdownEditor text={editorText} onchange={onEdit} />{/key}
           {:else if kind.kind === 'text' && editing}
             {#key editorKey}<TextEditor text={editorText} onchange={onEdit} />{/key}
+          {:else if kind.table && !showSource}
+            <TableView text={view.text} separator={separatorFor(entry.meta.name)} />
           {:else if kind.kind === 'markdown' && !showSource}
             <MarkdownView text={view.text} loadImage={trail && list ? loadImage : null} ontoggle={save ? toggleTask : null} />
           {:else}

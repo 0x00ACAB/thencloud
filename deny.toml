@@ -1,0 +1,39 @@
+# cargo-deny: known vulnerabilities, licences and where crates come from.
+# Run with `cargo deny check`; CI runs it on every push.
+
+[graph]
+all-features = true
+
+[advisories]
+# Any RustSec advisory (vulnerable, unsound or unmaintained crates) fails the
+# check. Add an id to `ignore` with a reason only after reading it.
+ignore = []
+
+[licenses]
+# Licences compatible with shipping the whole thing under the AGPL.
+allow = [
+    "AGPL-3.0-or-later",
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "ISC",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+    "0BSD",
+    "CDLA-Permissive-2.0",
+]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

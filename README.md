@@ -79,6 +79,9 @@ Every flag can also be set as an environment variable.
 | `--yt-dlp` | `THENCLOUD_YT_DLP` | `yt-dlp` (for the optional video downloader; it stays off until an admin enables it) |
 | `--ffmpeg` | `THENCLOUD_FFMPEG` | `ffmpeg` (lets the downloader merge separate video and audio, which most YouTube videos need) |
 | `--downloader-max-bytes` | `THENCLOUD_DOWNLOADER_MAX_BYTES` | `2147483648` (2 GiB per video) |
+| `--metrics-token` | `THENCLOUD_METRICS_TOKEN` | unset. When set, `GET /api/metrics` serves Prometheus metrics (the counts in the admin view) to requests with `Authorization: Bearer <token>` |
+
+`GET /api/health` answers `200 ok` while the database and data directory are available, and `503` otherwise. It needs no sign-in.
 
 **Serve thencloud over HTTPS in production** (for example, behind a reverse proxy). The crypto protects data at rest on the server, but the page and its WASM must reach the browser intact.
 

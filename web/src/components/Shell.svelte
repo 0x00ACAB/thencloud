@@ -18,6 +18,10 @@
   import VideosView from './views/VideosView.svelte';
   import { unloadVideos } from '../lib/videos.svelte.js';
   import PlayerBar from './PlayerBar.svelte';
+  import PlacesView from './views/PlacesView.svelte';
+  import FolderIcon from './FolderIcon.svelte';
+  import FileIcon from './FileIcon.svelte';
+  import { places, loadPlaces, resolvePlaces } from '../lib/places.svelte.js';
 
   const rootId = session.me.keys.root_node_id;
   loadMyAvatar().catch(() => {});
@@ -31,25 +35,10 @@
     return () => document.documentElement.classList.remove('has-bottom-bar');
   });
 
-  // In-app navigation. Uses history.pushState so the browser's back button
-  // works, but never puts anything in the URL.
-  let view = $state({ name: 'files', folderId: rootId });
-
-  function go(next) {
-    view = next;
-    history.pushState({ ...next }, '');
-    scrollTo(0, 0);
-  }
-
-  $effect(() => {
-    history.replaceState({ ...view }, '');
-    const onPop = (e) => e.state?.name && (view = e.state);
-    addEventListener('popstate', onPop);
-    return () => removeEventListener('popstate', onPop);
-  });
-
   const nav = [
     { name: 'files', label: 'My files', short: 'Files', icon: 'folder', to: () => ({ name: 'files', folderId: rootId }) },
+    { name: 'recent', label: 'Recent', icon: 'clock', to: () => ({ name: 'recent' }) },
+    { name: 'favourites', label: 'Favourites', icon: 'star', to: () => ({ name: 'favourites' }) },
     { name: 'shared-with-me', label: 'Shared with me', short: 'Shared', icon: 'inbox', to: () => ({ name: 'shared-with-me' }) },
     { name: 'shared-by-me', label: 'Shared by me', icon: 'users', to: () => ({ name: 'shared-by-me' }) },
     { name: 'links', label: 'Public links', icon: 'link', to: () => ({ name: 'links' }) },
@@ -60,6 +49,46 @@
     ...(session.me.is_admin ? [{ name: 'admin', label: 'Admin', icon: 'shield-check', to: () => ({ name: 'admin' }) }] : []),
   ];
 
+  // In-app navigation. Uses history.pushState so the browser's back button
+  // works, and keeps the section and folder after the # so a reload lands in
+  // the same place. Only opaque ids go there, never names: history may be
+  // synced to a browser vendor's servers.
+  function toHash(v) {
+    if (v.name === 'files') return v.folderId === rootId ? '#/files' : `#/files/${v.folderId}`;
+    if (v.name === 'music' && v.album) return `#/music/album/${v.album}`;
+    if (v.name === 'music' && v.playlist) return `#/music/playlist/${v.playlist}`;
+    return `#/${v.name}`;
+  }
+
+  function fromHash(hash) {
+    const [name, a, b] = hash.replace(/^#\/?/, '').split('/');
+    const id = (x) => (x && /^[\w-]+$/.test(x) ? x : null);
+    if (name === 'files') return { name, folderId: id(a) ?? rootId };
+    if (name === 'music' && a === 'album' && id(b)) return { name, album: b };
+    if (name === 'music' && a === 'playlist' && id(b)) return { name, playlist: b };
+    if (nav.some((n) => n.name === name)) return { name };
+    return null;
+  }
+
+  let view = $state(fromHash(location.hash) ?? { name: 'files', folderId: rootId });
+
+  function go(next) {
+    view = next;
+    history.pushState({ ...next }, '', toHash(next));
+    scrollTo(0, 0);
+  }
+
+  $effect(() => {
+    history.replaceState({ ...view }, '', toHash(view));
+    // A hash typed into the address bar arrives without a state.
+    const onPop = (e) => {
+      const next = e.state?.name ? e.state : fromHash(location.hash);
+      if (next) view = next;
+    };
+    addEventListener('popstate', onPop);
+    return () => removeEventListener('popstate', onPop);
+  });
+
   /** The sections on the phone tab bar; the others go under More. */
   const MOBILE_TABS = ['files', 'shared-with-me', 'trash', 'settings'];
 
@@ -67,6 +96,23 @@
   // through a share highlight "Shared with me".
   let inShare = $state(false);
   const current = $derived(view.name === 'files' && inShare ? 'shared-with-me' : view.name);
+
+  // Favourites are listed under their entry in the sidebar, names decrypted
+  // here (the list itself holds only ids).
+  const SIDEBAR_FAVOURITES = 8;
+  let starred = $state([]);
+  loadPlaces().catch(() => {});
+  $effect(() => {
+    const ids = places.favourites.slice(-SIDEBAR_FAVOURITES).reverse();
+    let live = true;
+    resolvePlaces(ids).then((list) => live && (starred = list.filter((x) => x.entry)));
+    return () => (live = false);
+  });
+
+  function openStarred(x) {
+    if (x.entry.node.kind === 'folder') go({ name: 'files', folderId: x.id });
+    else if (x.parentId) go({ name: 'files', folderId: x.parentId, open: x.id });
+  }
 
   const usedPct = $derived(Math.min(100, (session.me.used_bytes / Math.max(1, session.me.quota_bytes)) * 100));
 
@@ -126,6 +172,20 @@
           <button type="button" class="nav-item" aria-current={current === item.name ? 'page' : undefined} onclick={() => go(item.to())}>
             <Icon name={item.icon} />{item.label}
           </button>
+          {#if item.name === 'favourites' && starred.length}
+            <div class="mb-1 ml-4 grid gap-px border-l border-line pl-2">
+              {#each starred as x (x.id)}
+                <button
+                  type="button"
+                  class="flex h-7 min-w-0 cursor-pointer items-center gap-2 rounded-md px-2 text-left text-[13px] text-fg-muted hover:bg-muted hover:text-fg {view.name === 'files' && view.folderId === x.id ? 'text-fg' : ''}"
+                  title={[...x.location, x.entry.meta.name].join(' / ')}
+                  onclick={() => openStarred(x)}>
+                  {#if x.entry.node.kind === 'folder'}<FolderIcon name={x.entry.meta.name} class="size-3.5" />{:else}<FileIcon meta={x.entry.meta} class="size-3.5" />{/if}
+                  <span class="truncate">{x.entry.meta.name}</span>
+                </button>
+              {/each}
+            </div>
+          {/if}
         {/each}
       </nav>
 
@@ -146,6 +206,8 @@
       <div class="mx-auto max-w-5xl animate-enter">
         {#if view.name === 'files'}
           <FilesView folderId={view.folderId} openId={view.open} {go} bind:inShare />
+        {:else if view.name === 'recent' || view.name === 'favourites'}
+          <PlacesView mode={view.name} {go} />
         {:else if view.name === 'shared-with-me'}
           <SharedWithMe {go} />
         {:else if view.name === 'shared-by-me'}

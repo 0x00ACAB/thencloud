@@ -67,10 +67,17 @@ pub async fn create(
     if recipient_id == user.id {
         return Err(AppError::bad("you cannot share with yourself"));
     }
+    if req.expires_at.is_some_and(|e| e <= now()) {
+        return Err(AppError::bad("expires_at must be in the future"));
+    }
+    // Sharing again replaces the key, permission and expiry. A share that
+    // has expired but not been cleaned up yet starts again from now.
     sqlx::query(
-        "INSERT INTO shares (id, node_id, owner_id, recipient_id, wrapped_key, permission, created_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?) \
-         ON CONFLICT (node_id, recipient_id) DO UPDATE SET wrapped_key = excluded.wrapped_key, permission = excluded.permission",
+        "INSERT INTO shares (id, node_id, owner_id, recipient_id, wrapped_key, permission, created_at, expires_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?) \
+         ON CONFLICT (node_id, recipient_id) DO UPDATE SET wrapped_key = excluded.wrapped_key, \
+         permission = excluded.permission, expires_at = excluded.expires_at, \
+         created_at = CASE WHEN shares.expires_at <= excluded.created_at THEN excluded.created_at ELSE shares.created_at END",
     )
     .bind(new_uuid())
     .bind(&req.node_id)
@@ -79,6 +86,7 @@ pub async fn create(
     .bind(&req.wrapped_key.0)
     .bind(perm_str(req.permission))
     .bind(now())
+    .bind(req.expires_at)
     .execute(&state.db)
     .await?;
     let (id, created_at): (String, i64) =
@@ -95,6 +103,7 @@ pub async fn create(
             permission: req.permission,
             node_id: req.node_id,
             created_at,
+            expires_at: req.expires_at,
         }),
     ))
 }
@@ -109,6 +118,7 @@ struct IncomingRow {
     wrapped_key: Vec<u8>,
     node_id: String,
     created_at: i64,
+    expires_at: Option<i64>,
 }
 
 pub async fn incoming(
@@ -116,10 +126,12 @@ pub async fn incoming(
     user: AuthUser,
 ) -> Result<Json<Vec<IncomingShare>>> {
     let rows: Vec<IncomingRow> = sqlx::query_as(
-        "SELECT s.id, o.username AS owner, o.public_key AS owner_pk, o.pq_public_key AS owner_pq, s.permission, s.wrapped_key, s.node_id, s.created_at \
-         FROM shares s JOIN users o ON o.id = s.owner_id WHERE s.recipient_id = ? ORDER BY s.created_at",
+        "SELECT s.id, o.username AS owner, o.public_key AS owner_pk, o.pq_public_key AS owner_pq, s.permission, s.wrapped_key, s.node_id, s.created_at, s.expires_at \
+         FROM shares s JOIN users o ON o.id = s.owner_id WHERE s.recipient_id = ? AND (s.expires_at IS NULL OR s.expires_at > ?) \
+         ORDER BY s.created_at",
     )
     .bind(&user.id)
+    .bind(now())
     .fetch_all(&state.db)
     .await?;
     let mut out = Vec::with_capacity(rows.len());
@@ -139,6 +151,7 @@ pub async fn incoming(
             wrapped_key: B64(r.wrapped_key),
             node: node.into_api(),
             created_at: r.created_at,
+            expires_at: r.expires_at,
         });
     }
     Ok(Json(out))
@@ -154,14 +167,15 @@ pub async fn outgoing(
     user: AuthUser,
     Query(f): Query<NodeFilter>,
 ) -> Result<Json<Vec<OutgoingShare>>> {
-    let rows: Vec<(String, String, String, String, i64)> = sqlx::query_as(
-        "SELECT s.id, r.username, s.permission, s.node_id, s.created_at FROM shares s \
+    let rows: Vec<(String, String, String, String, i64, Option<i64>)> = sqlx::query_as(
+        "SELECT s.id, r.username, s.permission, s.node_id, s.created_at, s.expires_at FROM shares s \
          JOIN users r ON r.id = s.recipient_id WHERE s.owner_id = ? AND (? IS NULL OR s.node_id = ?) \
-         ORDER BY s.created_at",
+         AND (s.expires_at IS NULL OR s.expires_at > ?) ORDER BY s.created_at",
     )
     .bind(&user.id)
     .bind(&f.node_id)
     .bind(&f.node_id)
+    .bind(now())
     .fetch_all(&state.db)
     .await?;
     let mut visible = Vec::with_capacity(rows.len());
@@ -173,13 +187,16 @@ pub async fn outgoing(
     Ok(Json(
         visible
             .into_iter()
-            .map(|(id, recipient, perm, node_id, created_at)| OutgoingShare {
-                id,
-                recipient,
-                permission: parse_perm(&perm),
-                node_id,
-                created_at,
-            })
+            .map(
+                |(id, recipient, perm, node_id, created_at, expires_at)| OutgoingShare {
+                    id,
+                    recipient,
+                    permission: parse_perm(&perm),
+                    node_id,
+                    created_at,
+                    expires_at,
+                },
+            )
             .collect(),
     ))
 }
