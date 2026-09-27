@@ -55,13 +55,16 @@ function readTheme() {
   }
 }
 
-export const theme = $state({ pref: readTheme() });
-
 const media = matchMedia('(prefers-color-scheme: dark)');
+const isDark = (pref) => pref === 'dark' || (pref === 'system' && media.matches);
+
+/** `pref` is the setting; `dark` is what's showing now. */
+export const theme = $state({ pref: readTheme(), dark: false });
+theme.dark = isDark(theme.pref);
 
 function applyTheme() {
-  const dark = theme.pref === 'dark' || (theme.pref === 'system' && media.matches);
-  document.documentElement.classList.toggle('dark', dark);
+  theme.dark = isDark(theme.pref);
+  document.documentElement.classList.toggle('dark', theme.dark);
 }
 
 media.addEventListener('change', applyTheme);
@@ -142,5 +145,25 @@ export async function copyText(text, what = 'Copied to clipboard') {
     toast(what, { kind: 'success' });
   } catch {
     toast('Could not access the clipboard', { kind: 'error' });
+  }
+}
+
+// File icon pack (see lib/file-icons.svelte.js). A display preference only.
+function readIconPack() {
+  try {
+    return localStorage.getItem('iconPack') || 'minimal';
+  } catch {
+    return 'minimal';
+  }
+}
+
+export const iconPack = $state({ value: readIconPack() });
+
+export function setIconPack(id) {
+  iconPack.value = id;
+  try {
+    localStorage.setItem('iconPack', id);
+  } catch {
+    /* private mode */
   }
 }

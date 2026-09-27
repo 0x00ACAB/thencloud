@@ -1,8 +1,10 @@
 <script>
   import { session, changePassword } from '../../lib/cloud.svelte.js';
-  import { theme, setTheme, toast, errorMessage, copyText, accent, setAccent, ACCENT_PRESETS, DEFAULT_ACCENT, contrast, accentForeground } from '../../lib/ui.svelte.js';
+  import { theme, setTheme, toast, errorMessage, copyText, accent, setAccent, ACCENT_PRESETS, DEFAULT_ACCENT, contrast, accentForeground, iconPack, setIconPack } from '../../lib/ui.svelte.js';
   import { formatSize } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
+  import FileIcon from '../FileIcon.svelte';
+  import { ICON_PACKS } from '../../lib/file-icons.svelte.js';
 
   let current = $state('');
   let next = $state('');
@@ -34,6 +36,11 @@
     ['light', 'sun', 'Light'],
     ['dark', 'moon', 'Dark'],
   ];
+
+  const SAMPLES = ['main.rs', 'index.ts', 'README.md', 'package.json', 'photo.jpg', 'report.pdf', 'backup.zip', 'song.mp3'].map((name) => ({
+    name,
+    mime: '',
+  }));
 
   const isPreset = $derived(ACCENT_PRESETS.some(([hex]) => hex === accent.value));
   // Accent used as text/links needs to read on both backgrounds.
@@ -175,6 +182,30 @@
     <button type="button" class="btn btn-secondary" disabled={accent.value === DEFAULT_ACCENT} onclick={() => setAccent(DEFAULT_ACCENT)}>Reset to blue</button>
   {/snippet}
   {@render section('Accent colour', 'Used for buttons, links, folders and highlights.', accentBody, accentFooter)}
+
+  {#snippet iconsBody()}
+    <div class="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="File icons">
+      {#each ICON_PACKS as pack (pack.id)}
+        <button
+          type="button"
+          role="radio"
+          aria-checked={iconPack.value === pack.id}
+          class="grid cursor-pointer gap-3 rounded-md border p-3 text-left transition-colors {iconPack.value === pack.id
+            ? 'border-accent bg-accent-soft'
+            : 'border-line hover:bg-subtle'}"
+          onclick={() => setIconPack(pack.id)}>
+          <span class="flex items-baseline justify-between gap-2">
+            <span class="text-sm font-medium {iconPack.value === pack.id ? 'text-accent-text' : ''}">{pack.name}</span>
+            <span class="truncate text-xs text-fg-muted">{pack.credit}</span>
+          </span>
+          <span class="flex gap-2.5" aria-hidden="true">
+            {#each SAMPLES as meta (meta.name)}<FileIcon {meta} pack={pack.id} class="size-5" />{/each}
+          </span>
+        </button>
+      {/each}
+    </div>
+  {/snippet}
+  {@render section('File icons', 'Icons for files by type. Folders keep the same icon either way.', iconsBody)}
 
   {#snippet aboutBody()}
     <div class="grid gap-2 text-[13px] text-fg-muted">

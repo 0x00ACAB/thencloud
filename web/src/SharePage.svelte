@@ -6,9 +6,10 @@
   // appears in any request URL, header or body.
   import { request } from './lib/api.js';
   import { unb64, decryptMeta, decryptChildren, fetchFile, saveBlob } from './lib/crypto.js';
-  import { formatSize, formatDate, fileIcon, sortEntries } from './lib/format.js';
+  import { formatSize, formatDate, sortEntries } from './lib/format.js';
   import { errorMessage, trackTransfer } from './lib/ui.svelte.js';
   import Icon from './components/Icon.svelte';
+  import FileIcon from './components/FileIcon.svelte';
   import Toasts from './components/Toasts.svelte';
   import TransferTray from './components/TransferTray.svelte';
   import Preview from './components/Preview.svelte';
@@ -159,7 +160,7 @@
     {:else if here.node.kind === 'file'}
       <div class="card mx-auto grid max-w-md justify-items-center gap-1 p-8 text-center">
         <div class="mb-3 grid size-14 place-items-center rounded-xl border border-line bg-subtle">
-          <Icon name={fileIcon(here.meta)} class="size-6 text-fg-muted" strokeWidth={1.5} />
+          <FileIcon meta={here.meta} class="size-6" strokeWidth={1.5} />
         </div>
         <h1 class="max-w-full truncate text-base font-semibold">{here.meta.name}</h1>
         <p class="text-[13px] text-fg-muted">{formatSize(here.meta.size)}{here.meta.mtime ? `, modified ${formatDate(here.meta.mtime)}` : ''}</p>
@@ -208,7 +209,7 @@
                       type="button"
                       class="flex max-w-full cursor-pointer items-center gap-3 text-left"
                       onclick={() => (folder ? ((rows = []), (trail = [...trail, entry])) : (preview = { entries: files, start: files.indexOf(entry) }))}>
-                      <Icon name={folder ? 'folder' : fileIcon(entry.meta)} class="size-4 shrink-0 {folder ? 'text-accent-text' : 'text-fg-muted'}" />
+                      {#if folder}<Icon name="folder" class="size-4 shrink-0 text-accent-text" />{:else}<FileIcon meta={entry.meta} />{/if}
                       <span class="truncate font-medium group-hover:underline group-hover:decoration-line-strong group-hover:underline-offset-4">{entry.meta.name}</span>
                     </button>
                   </td>

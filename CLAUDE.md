@@ -42,6 +42,7 @@ cargo run -p thencloud-server -- --bind 127.0.0.1:8080 --data-dir ./data
   - `src/lib/motion.js` wraps Svelte transitions with the app's timings and `prefers-reduced-motion`; use it instead of `svelte/transition` directly. Popovers use its `portal` action.
   - Don't leave a `transform` on an element after an animation (use `animation-fill-mode: backwards`): it traps `position: fixed` descendants.
   - Fonts (Geist, OFL) and the logo live in `web/public/`.
+  - File icons: `components/FileIcon.svelte`, with the pack chosen in Settings (`iconPack` in `ui.svelte.js`). "Minimal" is Lucide; the IDE packs come from `scripts/file-icons-plugin.mjs`, which turns each pack into `virtual:file-icons/<pack>` lookup tables (imported only when chosen) and serves the SVGs from `/file-icons/<pack>/`. Seti's data is vendored in `web/vendor/seti/` to avoid its outdated npm dependencies.
   - File previews: `components/Preview.svelte` plus `components/preview/` (text, Markdown, PDF). A shared file is untrusted input rendered in the app's origin, so:
     - `lib/preview.js` picks the viewer from the name/MIME, but the decrypted bytes are always wrapped in a Blob with a type from its fixed tables, never the stored MIME type.
     - Markdown only ever reaches the DOM through `lib/markdown.js` (marked + DOMPurify). Don't `{@html}` anything else except highlight.js output, which escapes its input.

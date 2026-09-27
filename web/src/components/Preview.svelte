@@ -4,12 +4,13 @@
   // move on. ← and → step through the other files in the folder.
   import { onMount, untrack } from 'svelte';
   import Icon from './Icon.svelte';
+  import FileIcon from './FileIcon.svelte';
   import TextView from './preview/TextView.svelte';
   import MarkdownView from './preview/MarkdownView.svelte';
   import PdfView from './preview/PdfView.svelte';
   import { saveBlob } from '../lib/crypto.js';
   import { previewKind, readText, MAX_PREVIEW, MAX_TEXT } from '../lib/preview.js';
-  import { formatSize, formatWhen, fileIcon } from '../lib/format.js';
+  import { formatSize, formatWhen } from '../lib/format.js';
   import { errorMessage } from '../lib/ui.svelte.js';
   import { fade } from '../lib/motion.js';
 
@@ -106,7 +107,7 @@
 
 <dialog bind:this={dlg} class="preview" aria-label="Preview of {entry.meta.name}" onclose={() => onclose()}>
   <header class="flex h-14 shrink-0 items-center gap-3 border-b border-line px-4">
-    <Icon name={fileIcon(entry.meta)} class="size-4 shrink-0 text-fg-muted" />
+    <FileIcon meta={entry.meta} />
     <div class="min-w-0 flex-1">
       <h2 class="truncate text-sm font-medium">{entry.meta.name}</h2>
       <p class="truncate text-xs text-fg-muted">
@@ -186,7 +187,7 @@
           {:else if kind.kind === 'audio'}
             <div class="grid h-full place-items-center p-6">
               <div class="card grid w-full max-w-md justify-items-center gap-4 p-8">
-                <div class="grid size-14 place-items-center rounded-xl border border-line bg-subtle"><Icon name="file-audio" class="size-6 text-fg-muted" strokeWidth={1.5} /></div>
+                <div class="grid size-14 place-items-center rounded-xl border border-line bg-subtle"><FileIcon meta={entry.meta} class="size-6" strokeWidth={1.5} /></div>
                 <p class="max-w-full truncate font-medium">{entry.meta.name}</p>
                 <audio src={view.url} controls class="w-full"></audio>
               </div>
@@ -209,7 +210,7 @@
         <div class="absolute inset-0 grid place-items-center p-6 animate-enter">
           <div class="grid max-w-sm justify-items-center gap-1 text-center">
             <div class="mb-3 grid size-14 place-items-center rounded-xl border border-line bg-subtle">
-              <Icon name={view.status === 'error' ? 'circle-alert' : fileIcon(entry.meta)} class="size-6 {view.status === 'error' ? 'text-danger' : 'text-fg-muted'}" strokeWidth={1.5} />
+              {#if view.status === 'error'}<Icon name="circle-alert" class="size-6 text-danger" strokeWidth={1.5} />{:else}<FileIcon meta={entry.meta} class="size-6" strokeWidth={1.5} />{/if}
             </div>
             <p class="font-medium">{notice[0]}</p>
             <p class="text-[13px] text-fg-muted">{notice[1]}</p>
