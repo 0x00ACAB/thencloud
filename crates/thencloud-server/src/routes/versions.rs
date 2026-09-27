@@ -260,17 +260,22 @@ pub fn thin(versions: &[(String, i64)], t: i64) -> Vec<String> {
 /// Apply `thin` to every file's history. Returns how many versions went.
 pub async fn thin_all(state: &AppState) -> Result<usize> {
     let rows: Vec<(String, String, String, i64, i64)> = sqlx::query_as(
+        // Versions from the last hour are all kept, and a file needs at
+        // least two older ones for any to go.
         "SELECT v.id, v.node_id, n.owner_id, v.created_at, v.size FROM file_versions v \
-         JOIN nodes n ON n.id = v.node_id WHERE v.id IS NOT n.current_version_id \
+         JOIN nodes n ON n.id = v.node_id WHERE v.id IS NOT n.current_version_id AND v.created_at < ?1 \
+         AND v.node_id IN (SELECT node_id FROM file_versions WHERE created_at < ?1 \
+                           GROUP BY node_id HAVING COUNT(*) > 1) \
          ORDER BY v.node_id",
     )
+    .bind(now() - 3600)
     .fetch_all(&state.db)
     .await?;
     let t = now();
     let mut removed = 0;
     for file in rows.chunk_by(|a, b| a.1 == b.1) {
         let list: Vec<(String, i64)> = file.iter().map(|r| (r.0.clone(), r.3)).collect();
-        let drop = thin(&list, t);
+        let drop: std::collections::HashSet<String> = thin(&list, t).into_iter().collect();
         if drop.is_empty() {
             continue;
         }

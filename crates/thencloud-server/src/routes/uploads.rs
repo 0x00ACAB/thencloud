@@ -297,7 +297,12 @@ pub async fn store_chunk(
             .fetch_optional(&state.db)
             .await?;
     let delta = body.len() as i64 - old.unwrap_or(0);
-    charge_or_prune(state, &up.owner_id, delta).await?;
+    // Only the owner's own uploads may make room by deleting their old
+    // versions; a visitor to a file drop must not be able to.
+    match who {
+        Uploader::User(_) => charge_or_prune(state, &up.owner_id, delta).await?,
+        Uploader::Link(_) => charge(state, &up.owner_id, delta).await?,
+    }
 
     let recorded = async {
         state.blobs.put_chunk(&up.version_id, idx, &body).await?;
@@ -334,12 +339,31 @@ pub async fn finish(
     State(state): State<AppState>,
     user: AuthUser,
     Path(id): Path<String>,
+    body: Option<Json<FinishUploadRequest>>,
 ) -> Result<Json<Node>> {
-    publish(&state, Uploader::User(&user), &id).await
+    publish(
+        &state,
+        Uploader::User(&user),
+        &id,
+        body.map(|b| b.0).unwrap_or_default(),
+    )
+    .await
 }
 
-pub async fn publish(state: &AppState, who: Uploader<'_>, id: &str) -> Result<Json<Node>> {
-    let up = load_upload(state, id, &who).await?;
+pub async fn publish(
+    state: &AppState,
+    who: Uploader<'_>,
+    id: &str,
+    rename: FinishUploadRequest,
+) -> Result<Json<Node>> {
+    let mut up = load_upload(state, id, &who).await?;
+    // A new name for a new file, if the first one was taken meanwhile.
+    if let (Uploader::User(_), Some(_), Some(m)) = (&who, &up.parent_id, rename.enc_metadata) {
+        check_metadata(&m)?;
+        check_name_tag(&rename.name_tag)?;
+        up.enc_metadata = m.0;
+        up.name_tag = rename.name_tag.map(|t| t.0);
+    }
     let (count, total): (i64, i64) = sqlx::query_as(
         "SELECT COUNT(*), COALESCE(SUM(size), 0) FROM upload_chunks WHERE upload_id = ?",
     )
@@ -461,9 +485,30 @@ pub async fn abort(
     user: AuthUser,
     Path(id): Path<String>,
 ) -> Result<StatusCode> {
-    let up = load_upload(&state, &id, &Uploader::User(&user)).await?;
-    discard(&state, &up.id).await?;
+    cancel(&state, Uploader::User(&user), &id).await
+}
+
+/// Throw away an unfinished upload the caller started.
+pub async fn cancel(state: &AppState, who: Uploader<'_>, id: &str) -> Result<StatusCode> {
+    let up = load_upload(state, id, &who).await?;
+    discard(state, &up.id).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Discard unfinished uploads made through the given links, before the
+/// links go (the rows would otherwise vanish by cascade with their quota
+/// charge and blobs left behind).
+pub async fn discard_link_uploads(state: &AppState, link_ids: &[String]) -> Result<()> {
+    for link in link_ids {
+        let ids: Vec<String> = sqlx::query_scalar("SELECT id FROM uploads WHERE link_id = ?")
+            .bind(link)
+            .fetch_all(&state.db)
+            .await?;
+        for id in ids {
+            discard(state, &id).await?;
+        }
+    }
+    Ok(())
 }
 
 /// Remove an unfinished upload, its chunks and its quota charge.

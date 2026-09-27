@@ -1395,7 +1395,9 @@ async fn drop_file(
                 Some("application/octet-stream"),
             )
             .await;
-        assert_eq!(r.status, StatusCode::NO_CONTENT, "{r:?}");
+        if r.status != StatusCode::NO_CONTENT {
+            return (id, k, r.status);
+        }
     }
     let r = h
         .call(
@@ -1515,15 +1517,21 @@ async fn file_drop_links_are_upload_only_and_zero_knowledge() {
     let k = c::open_drop_key(&alice.kp, &d.sealed_key, &d.node.id, &parent).unwrap();
     assert!(k == dk);
     let wrapped = B64(c::wrap_node_key(&inbox_key, &k, &d.node.id));
+    // Taken in under a fresh node key, so the visitor's key stops mattering.
+    let v = d.node.version.clone().unwrap();
+    let ck = c::unwrap_content_key(&k, &v.enc_content_key, &d.node.id, &v.id).unwrap();
+    let fresh = Key::generate();
+    let m = c::decrypt_metadata(&k, &d.node.id, &d.node.enc_metadata).unwrap();
     let r = h
         .call(
             Method::POST,
             &format!("/api/drops/{dropped}/adopt"),
             Some(&bob.token),
             Some(AdoptDropRequest {
-                enc_key: wrapped.clone(),
+                enc_key: wrapped,
                 enc_metadata: None,
                 name_tag: None,
+                enc_content_key: None,
             }),
         )
         .await;
@@ -1534,13 +1542,15 @@ async fn file_drop_links_are_upload_only_and_zero_knowledge() {
             &format!("/api/drops/{dropped}/adopt"),
             Some(&alice.token),
             Some(AdoptDropRequest {
-                enc_key: wrapped,
-                enc_metadata: None,
+                enc_key: B64(c::wrap_node_key(&inbox_key, &fresh, &d.node.id)),
+                enc_metadata: Some(B64(c::encrypt_metadata(&fresh, &d.node.id, &m).unwrap())),
                 name_tag: Some(B64(c::name_tag(&inbox_key, "drop-secret-name.pdf"))),
+                enc_content_key: Some(B64(c::wrap_content_key(&fresh, &ck, &d.node.id, &v.id))),
             }),
         )
         .await;
     assert_eq!(r.status, StatusCode::OK, "{r:?}");
+    assert!(alice.key_of(&h, &dropped).await == fresh);
     let kids: Vec<Node> = h
         .get(&format!("/api/nodes/{inbox}/children"), &alice.token)
         .await
@@ -1566,6 +1576,68 @@ async fn file_drop_links_are_upload_only_and_zero_knowledge() {
         .await;
     assert_eq!(r.status, StatusCode::NO_CONTENT);
     assert_eq!(alice.me(&h).await.used_bytes, used);
+
+    // An unfinished drop upload gives its space back when the visitor
+    // aborts it, and when the link is deleted.
+    let start_drop = |token: String| {
+        let h = &h;
+        let inbox = inbox.clone();
+        let alice_pub = alice_pub.clone();
+        async move {
+            let id = c::new_id();
+            let k = Key::generate();
+            let vid = c::new_id();
+            let ck = Key::generate();
+            let chunks = c::encrypt_content(&ck, &vid, &[1u8; 3000]);
+            let req = CreateUploadRequest {
+                node_id: id.clone(),
+                parent_id: Some(inbox.clone()),
+                enc_key: Some(B64(c::seal_drop_key(&alice_pub, &k, &id, &inbox).unwrap())),
+                enc_metadata: B64(c::encrypt_metadata(&k, &id, &meta("half", 3000)).unwrap()),
+                version_id: vid.clone(),
+                enc_content_key: B64(c::wrap_content_key(&k, &ck, &id, &vid)),
+                chunk_count: chunks.len() as u32,
+                if_revision: None,
+                name_tag: None,
+            };
+            let base = format!("/api/public/{token}/uploads");
+            let up: UploadResponse = h.call(Method::POST, &base, None, Some(&req)).await.json();
+            let r = h
+                .raw(
+                    Method::PUT,
+                    &format!("{base}/{}/chunks/0", up.upload_id),
+                    None,
+                    &[],
+                    Body::from(chunks[0].clone()),
+                    Some("application/octet-stream"),
+                )
+                .await;
+            assert_eq!(r.status, StatusCode::NO_CONTENT);
+            format!("{base}/{}", up.upload_id)
+        }
+    };
+    let uri = start_drop(link.token.clone()).await;
+    assert!(alice.me(&h).await.used_bytes > used);
+    let r = h.call(Method::DELETE, &uri, None, None::<()>).await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    assert_eq!(alice.me(&h).await.used_bytes, used);
+    start_drop(link.token.clone()).await;
+    assert!(alice.me(&h).await.used_bytes > used);
+    let r = h
+        .call(
+            Method::DELETE,
+            &format!("/api/links/{}", link.id),
+            Some(&alice.token),
+            None::<()>,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    assert_eq!(alice.me(&h).await.used_bytes, used);
+    let left: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM uploads")
+        .fetch_one(&h.state.db)
+        .await
+        .unwrap();
+    assert_eq!(left, 0);
 
     // --- zero-knowledge check ----------------------------------------------
     let mut files = Vec::new();
@@ -1709,6 +1781,37 @@ async fn app_passwords_are_scoped_revocable_and_opaque() {
         )
         .await;
     assert_eq!(r.status, StatusCode::FORBIDDEN);
+
+    // An app session can't revoke other app passwords or sign out other devices.
+    let r = h
+        .call(
+            Method::DELETE,
+            &format!("/api/app-passwords/{}", created[1].1),
+            Some(&full.token),
+            None::<()>,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN);
+    let r = h
+        .call(
+            Method::DELETE,
+            "/api/sessions",
+            Some(&full.token),
+            None::<()>,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN);
+    let others: Vec<DeviceSession> = h.get("/api/sessions", &full.token).await.json();
+    let browser = others.iter().find(|s| s.app_password.is_none()).unwrap();
+    let r = h
+        .call(
+            Method::DELETE,
+            &format!("/api/sessions/{}", browser.id),
+            Some(&full.token),
+            None::<()>,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
 
     // Read-only: can list and download, not change anything.
     let (r, _) = app_login(&h, created[1].0.clone()).await;
@@ -1997,6 +2100,22 @@ async fn profile_pictures_are_encrypted_and_only_for_share_partners() {
     let mine: MyAvatar = h.get("/api/me/avatar", &alice.token).await.json();
     assert_eq!(mine.grantees, ["bob"]);
 
+    // Once they share nothing, the grant goes.
+    let s: Vec<OutgoingShare> = h.get("/api/shares/outgoing", &alice.token).await.json();
+    let r = h
+        .call(
+            Method::DELETE,
+            &format!("/api/shares/{}", s[0].id),
+            Some(&alice.token),
+            None::<()>,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    let none: Option<UserAvatar> = h.get("/api/users/alice/avatar", &bob.token).await.json();
+    assert!(none.is_none());
+    let mine: MyAvatar = h.get("/api/me/avatar", &alice.token).await.json();
+    assert!(mine.grantees.is_empty());
+
     // Opaque to the server.
     let mut files = Vec::new();
     all_files(&h.dir.path().join("data"), &mut files);
@@ -2063,6 +2182,62 @@ async fn duplicate_names_are_refused_by_name_tag() {
         "name_taken",
         "refused before any chunk is sent"
     );
+    // Finishing can rename, for a name taken while the chunks went up.
+    let (id, k) = (c::new_id(), Key::generate());
+    let vid = c::new_id();
+    let ck = Key::generate();
+    let chunks = c::encrypt_content(&ck, &vid, b"late");
+    let up: UploadResponse = h
+        .call(
+            Method::POST,
+            "/api/uploads",
+            Some(&alice.token),
+            Some(CreateUploadRequest {
+                node_id: id.clone(),
+                parent_id: Some(alice.root.clone()),
+                enc_key: Some(B64(c::wrap_node_key(&root_key, &k, &id))),
+                enc_metadata: B64(c::encrypt_metadata(&k, &id, &meta("late.txt", 4)).unwrap()),
+                version_id: vid.clone(),
+                enc_content_key: B64(c::wrap_content_key(&k, &ck, &id, &vid)),
+                chunk_count: 1,
+                if_revision: None,
+                name_tag: Some(B64(c::name_tag(&root_key, "late.txt"))),
+            }),
+        )
+        .await
+        .json();
+    alice
+        .upload(&h, &alice.root, None, "late.txt", b"first")
+        .await
+        .unwrap();
+    h.raw(
+        Method::PUT,
+        &format!("/api/uploads/{}/chunks/0", up.upload_id),
+        Some(&alice.token),
+        &[],
+        Body::from(chunks[0].clone()),
+        Some("application/octet-stream"),
+    )
+    .await;
+    let finish = format!("/api/uploads/{}/finish", up.upload_id);
+    let r = h
+        .call(Method::POST, &finish, Some(&alice.token), None::<()>)
+        .await;
+    assert_eq!(r.error(), "name_taken");
+    let r = h
+        .call(
+            Method::POST,
+            &finish,
+            Some(&alice.token),
+            Some(FinishUploadRequest {
+                enc_metadata: Some(B64(
+                    c::encrypt_metadata(&k, &id, &meta("late (2).txt", 4)).unwrap()
+                )),
+                name_tag: Some(B64(c::name_tag(&root_key, "late (2).txt"))),
+            }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{r:?}");
     // New versions aren't new names.
     alice
         .upload(&h, "", Some(&file), "a.txt", b"three")
@@ -2177,6 +2352,47 @@ async fn duplicate_names_are_refused_by_name_tag() {
     assert_eq!(r.status, StatusCode::NO_CONTENT);
     let kids: Vec<Node> = alice.children(&h, &alice.root).await.json();
     assert!(kids.iter().all(|n| n.name_tagged));
+}
+
+#[tokio::test]
+async fn drop_visitors_cannot_prune_the_owners_versions() {
+    let h = Harness::with_config(|c| c.default_quota = 4000).await;
+    let alice = register(&h, "alice", "pw").await;
+    let (inbox, _) = alice.mkdir(&h, &alice.root, "Inbox").await;
+    let f = alice
+        .upload(&h, &alice.root, None, "doc.bin", &[1u8; 1000])
+        .await
+        .unwrap();
+    let f = alice
+        .upload(&h, "", Some(&f), "doc.bin", &[2u8; 1000])
+        .await
+        .unwrap();
+    let link: Link = h
+        .call(
+            Method::POST,
+            "/api/links",
+            Some(&alice.token),
+            Some(CreateLinkRequest {
+                node_id: inbox.clone(),
+                password: None,
+                expires_at: None,
+                upload_only: true,
+            }),
+        )
+        .await
+        .json();
+    // Only fits if an old version went; a visitor may not cause that.
+    let (_, _, st) = drop_file(
+        &h,
+        &link.token,
+        &alice.kp.public,
+        &inbox,
+        "big",
+        &[3u8; 1900],
+    )
+    .await;
+    assert_eq!(st, StatusCode::INSUFFICIENT_STORAGE);
+    assert_eq!(alice.versions(&h, &f.id).await.len(), 2);
 }
 
 #[tokio::test]

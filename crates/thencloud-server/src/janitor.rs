@@ -33,6 +33,13 @@ pub async fn run_once(state: &AppState) -> Result<()> {
         .bind(t)
         .execute(&state.db)
         .await?;
+    let gone: Vec<String> = sqlx::query_scalar(
+        "SELECT id FROM public_links WHERE expires_at IS NOT NULL AND expires_at <= ?",
+    )
+    .bind(t)
+    .fetch_all(&state.db)
+    .await?;
+    uploads::discard_link_uploads(state, &gone).await?;
     let links =
         sqlx::query("DELETE FROM public_links WHERE expires_at IS NOT NULL AND expires_at <= ?")
             .bind(t)

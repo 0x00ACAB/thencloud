@@ -189,16 +189,21 @@ pub async fn update(
     }
 
     let expected = req.if_revision.unwrap_or(node.revision);
-    // A rename or move makes the old name tag wrong: take the new one, or none.
+    // A new tag replaces the old one. Without one, a rename or move makes
+    // the old tag wrong, so it's cleared; anything else keeps it.
+    let renamed_or_moved = req.enc_metadata.is_some() || new_key.is_some();
     let res = sqlx::query(
         "UPDATE nodes SET enc_metadata = COALESCE(?, enc_metadata), parent_id = COALESCE(?, parent_id), \
-         enc_key = COALESCE(?, enc_key), name_tag = ?, revision = revision + 1, updated_at = ? \
-         WHERE id = ? AND revision = ?",
+         enc_key = COALESCE(?, enc_key), \
+         name_tag = CASE WHEN ? IS NOT NULL THEN ? WHEN ? THEN NULL ELSE name_tag END, \
+         revision = revision + 1, updated_at = ? WHERE id = ? AND revision = ?",
     )
     .bind(req.enc_metadata.as_ref().map(|m| m.0.clone()))
     .bind(moving_to)
     .bind(new_key)
     .bind(req.name_tag.as_ref().map(|t| t.0.clone()))
+    .bind(req.name_tag.as_ref().map(|t| t.0.clone()))
+    .bind(renamed_or_moved)
     .bind(now())
     .bind(&id)
     .bind(expected)

@@ -110,6 +110,16 @@ pub async fn delete(
     user: AuthUser,
     Path(id): Path<String>,
 ) -> Result<StatusCode> {
+    let owned: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM public_links WHERE id = ? AND owner_id = ?)",
+    )
+    .bind(&id)
+    .bind(&user.id)
+    .fetch_one(&state.db)
+    .await?;
+    if owned {
+        crate::routes::uploads::discard_link_uploads(&state, std::slice::from_ref(&id)).await?;
+    }
     let res = sqlx::query("DELETE FROM public_links WHERE id = ? AND owner_id = ?")
         .bind(&id)
         .bind(&user.id)
