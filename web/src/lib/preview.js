@@ -11,7 +11,7 @@ const IMAGE = {
 };
 const VIDEO = { mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm', ogv: 'video/ogg', mov: 'video/quicktime' };
 const AUDIO = {
-  mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg',
+  mp3: 'audio/mpeg', m4a: 'audio/mp4', m4b: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg',
   wav: 'audio/wav', flac: 'audio/flac', weba: 'audio/webm',
 };
 const MARKDOWN = new Set(['md', 'markdown', 'mdown', 'mkd']);

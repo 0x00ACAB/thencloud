@@ -161,7 +161,7 @@ Smaller things:
 
 - [x] **Subtitles**: `.srt` and `.vtt` next to a video are decrypted and shown in the player, with a picker (`Film.en.srt` and the like; SRT is turned into WebVTT in the browser). Renaming a series' files takes its subtitles along
 - [ ] **Books**: an EPUB and comic (CBZ) reader, with reading progress kept in the encrypted app data
-- [ ] **Audiobooks and podcasts**: remember the position per file, chapters from MP4/M4B, and playback speed
+- [x] **Audiobooks and podcasts**: remember the position per file, chapters from MP4/M4B, and playback speed. Tracks over 20 minutes (and any .m4b) pick up where they were left, on any device (kept in the encrypted music data); chapters come from the Nero `chpl` box, which ffmpeg and most audiobook tools write
 - [x] **Tables**: CSV and TSV shown as a sortable table instead of plain text, with a Source toggle and editing as text
 - [ ] **Office previews**: DOCX, XLSX, ODT and PPTX rendered in the browser, loaded only when needed and sanitised like Markdown
 - [ ] **PDF tools**: merge, split, rotate and reorder pages in the browser, saved as a new encrypted file
