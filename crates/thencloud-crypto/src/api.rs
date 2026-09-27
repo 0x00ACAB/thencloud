@@ -95,6 +95,24 @@ pub struct RegisterRequest {
     pub root: NewRootFolder,
     #[serde(default)]
     pub device_name: Option<String>,
+    /// Invite token, needed when registration is invite-only.
+    #[serde(default)]
+    pub invite: Option<String>,
+}
+
+/// Who may create an account.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Registration {
+    Open,
+    Invite,
+    Closed,
+}
+
+/// What the sign-in screen needs to know before anyone is signed in.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthOptions {
+    pub registration: Registration,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -402,4 +420,81 @@ pub struct PublicLinkInfo {
 pub struct ErrorBody {
     pub error: String,
     pub message: String,
+}
+
+// ---------------------------------------------------------------------------
+// Administration
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminUser {
+    pub id: String,
+    pub username: String,
+    pub is_admin: bool,
+    pub disabled: bool,
+    pub quota_bytes: i64,
+    pub used_bytes: i64,
+    pub created_at: i64,
+    /// Most recent activity of any of their sessions.
+    pub last_seen: Option<i64>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct UpdateUserRequest {
+    #[serde(default)]
+    pub quota_bytes: Option<i64>,
+    #[serde(default)]
+    pub disabled: Option<bool>,
+    #[serde(default)]
+    pub is_admin: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminSettings {
+    pub registration: Registration,
+    /// Quota for new accounts (from the server's configuration).
+    pub default_quota: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateSettingsRequest {
+    pub registration: Registration,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Invite {
+    pub id: String,
+    pub created_by: String,
+    pub created_at: i64,
+    pub expires_at: i64,
+    pub used_by: Option<String>,
+    pub used_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateInviteRequest {
+    /// How long the invite stays valid, in days (1 to 90).
+    pub days: i64,
+}
+
+/// A new invite. `token` is shown once; the server keeps only its hash.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreatedInvite {
+    pub invite: Invite,
+    pub token: String,
+}
+
+/// Counts only; nothing about what is stored.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServerStats {
+    pub users: i64,
+    pub disabled_users: i64,
+    pub active_sessions: i64,
+    pub used_bytes: i64,
+    pub quota_bytes: i64,
+    pub files: i64,
+    pub folders: i64,
+    pub versions: i64,
+    pub shares: i64,
+    pub public_links: i64,
 }

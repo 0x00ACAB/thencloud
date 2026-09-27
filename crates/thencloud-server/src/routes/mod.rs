@@ -1,3 +1,4 @@
+pub mod admin;
 pub mod auth;
 pub mod links;
 pub mod nodes;
@@ -32,6 +33,7 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/prelogin", post(auth::prelogin))
         .route("/auth/register", post(auth::register))
         .route("/auth/login", post(auth::login))
+        .route("/auth/options", get(auth::options))
         .route("/auth/logout", post(auth::logout))
         .route("/auth/password", post(auth::change_password))
         .route("/me", get(auth::me))
@@ -40,6 +42,21 @@ pub fn router(state: AppState) -> Router {
             get(sessions::list).delete(sessions::revoke_others),
         )
         .route("/sessions/{id}", delete(sessions::revoke))
+        .route("/admin/users", get(admin::users))
+        .route(
+            "/admin/users/{id}",
+            patch(admin::update_user).delete(admin::delete_user),
+        )
+        .route(
+            "/admin/settings",
+            get(admin::get_settings).patch(admin::update_settings),
+        )
+        .route(
+            "/admin/invites",
+            get(admin::invites).post(admin::create_invite),
+        )
+        .route("/admin/invites/{id}", delete(admin::delete_invite))
+        .route("/admin/stats", get(admin::stats))
         .route("/nodes/folder", post(nodes::create_folder))
         .route(
             "/nodes/{id}",

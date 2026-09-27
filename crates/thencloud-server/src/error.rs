@@ -27,6 +27,10 @@ pub enum AppError {
     RateLimited,
     #[error("registration is disabled on this server")]
     RegistrationClosed,
+    #[error("this account has been disabled by an administrator")]
+    AccountDisabled,
+    #[error("this invite link is invalid, used or expired")]
+    InvalidInvite,
     #[error("database error")]
     Db(#[from] sqlx::Error),
     #[error("storage error")]
@@ -56,6 +60,8 @@ impl AppError {
             QuotaExceeded => (StatusCode::INSUFFICIENT_STORAGE, "quota_exceeded"),
             RateLimited => (StatusCode::TOO_MANY_REQUESTS, "rate_limited"),
             RegistrationClosed => (StatusCode::FORBIDDEN, "registration_closed"),
+            AccountDisabled => (StatusCode::FORBIDDEN, "account_disabled"),
+            InvalidInvite => (StatusCode::FORBIDDEN, "invalid_invite"),
             Db(_) | Io(_) | Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
         }
     }

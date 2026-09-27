@@ -30,7 +30,7 @@ Every flag can also be set as an environment variable.
 | `--bind` | `THENCLOUD_BIND` | `127.0.0.1:8080` |
 | `--data-dir` | `THENCLOUD_DATA_DIR` | `./data` (SQLite DB + encrypted blobs) |
 | `--web-dir` | `THENCLOUD_WEB_DIR` | `./web/dist` (the built web client) |
-| `--allow-registration` | `THENCLOUD_ALLOW_REGISTRATION` | `true` (the first user can always register) |
+| `--allow-registration` | `THENCLOUD_ALLOW_REGISTRATION` | `true` (the first user can always register, and becomes an admin). Admins can switch between open, invite-only and closed at runtime in the Admin view, which overrides this |
 | `--default-quota` | `THENCLOUD_DEFAULT_QUOTA` | 10 GiB |
 | `--session-days` | `THENCLOUD_SESSION_DAYS` | `30` |
 | `--max-versions` | `THENCLOUD_MAX_VERSIONS` | `10` (versions kept per file, including the current one) |
