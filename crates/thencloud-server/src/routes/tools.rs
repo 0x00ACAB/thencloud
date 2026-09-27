@@ -7,7 +7,9 @@ use axum::body::Body;
 use axum::extract::State;
 use axum::http::{HeaderValue, header};
 use axum::response::Response;
-use thencloud_crypto::api::{DownloaderAccess, ToolsInfo, VideoInfo, VideoKind, VideoLinkRequest};
+use thencloud_crypto::api::{
+    DownloaderAccess, ToolsInfo, VideoInfo, VideoKind, VideoLinkRequest, VideoQuality,
+};
 
 use crate::AppState;
 use crate::auth::AuthUser;
@@ -71,7 +73,14 @@ pub async fn video_download(
     let kind = req.kind.unwrap_or(VideoKind::Video);
     let stream = state
         .downloader
-        .stream(&user.id, url, kind, state.config.downloader_max_bytes, slot)
+        .stream(
+            &user.id,
+            url,
+            kind,
+            req.quality.unwrap_or(VideoQuality::P1080),
+            state.config.downloader_max_bytes,
+            slot,
+        )
         .await?;
     let mut res = Response::new(Body::from_stream(stream));
     res.headers_mut().insert(
