@@ -7,7 +7,8 @@
   import Menu from '../Menu.svelte';
   import NameDialog from '../dialogs/NameDialog.svelte';
   import VersionsDialog from '../dialogs/VersionsDialog.svelte';
-  import { fade, flip, flipParams } from '../../lib/motion.js';
+  import { fade, fly, flip, flipParams } from '../../lib/motion.js';
+  import { SvelteSet } from 'svelte/reactivity';
   import MoveDialog from '../dialogs/MoveDialog.svelte';
   import ShareDialog from '../dialogs/ShareDialog.svelte';
   import LinkDialog from '../dialogs/LinkDialog.svelte';
@@ -27,6 +28,8 @@
   let searchInput = $state();
   let tbody = $state();
   let query = $state('');
+  const selected = new SvelteSet(); // node ids
+  let anchor = null; // last row clicked, for shift-click ranges
   let versionInput;
   let versionTarget = null;
 
@@ -55,6 +58,7 @@
     loading = true;
     rows = [];
     query = '';
+    selected.clear();
     load(folderId);
   });
 
@@ -183,6 +187,72 @@
 
   const files = $derived(visible.filter((r) => r.node.kind === 'file'));
 
+  // ------------------------------------------------------------ selection
+
+  // Only rows still in the folder count (a reload may have removed some).
+  const chosen = $derived(rows.filter((r) => selected.has(r.node.id)));
+  const allVisibleSelected = $derived(visible.length > 0 && visible.every((r) => selected.has(r.node.id)));
+
+  function toggle(entry, e) {
+    const id = entry.node.id;
+    const i = visible.indexOf(entry);
+    if (e?.shiftKey && anchor !== null) {
+      const a = visible.findIndex((r) => r.node.id === anchor);
+      if (a !== -1) {
+        const on = !selected.has(id);
+        for (const r of visible.slice(Math.min(a, i), Math.max(a, i) + 1)) on ? selected.add(r.node.id) : selected.delete(r.node.id);
+        anchor = id;
+        return;
+      }
+    }
+    selected.has(id) ? selected.delete(id) : selected.add(id);
+    anchor = id;
+  }
+
+  function toggleAll() {
+    if (allVisibleSelected) for (const r of visible) selected.delete(r.node.id);
+    else for (const r of visible) selected.add(r.node.id);
+  }
+
+  async function downloadChosen() {
+    const list = chosen.filter((r) => r.node.kind === 'file');
+    if (list.length < chosen.length) toast("Folders can't be downloaded yet, so they were skipped.");
+    for (const entry of list) await downloadEntry(entry);
+  }
+
+  async function trashChosen() {
+    const list = [...chosen];
+    const done = [];
+    for (const entry of list) {
+      try {
+        await trash(entry);
+        done.push(entry);
+      } catch (e) {
+        toastError(e);
+      }
+    }
+    selected.clear();
+    const gone = new Set(done.map((d) => d.node.id));
+    rows = rows.filter((r) => !gone.has(r.node.id));
+    if (!done.length) return;
+    const what = done.length === 1 ? done[0].meta.name : plural(done.length, 'item');
+    if (!isOwner) return toast(`Deleted ${what}. ${here.node.owner} can restore them from their trash.`, { icon: 'trash-2' });
+    toast(`Moved ${what} to the trash`, {
+      icon: 'trash-2',
+      action: {
+        label: 'Undo',
+        onclick: async () => {
+          try {
+            for (const entry of done) await untrash(entry);
+          } catch (e) {
+            toastError(e);
+          }
+          await load();
+        },
+      },
+    });
+  }
+
   function activate(entry) {
     if (entry.node.kind === 'folder') open(entry.node.id);
     else preview(entry);
@@ -237,7 +307,7 @@
 
   // ---------------------------------------------------------- keyboard
 
-  const rowButtons = () => [...(tbody?.querySelectorAll('td:first-child > button') ?? [])];
+  const rowButtons = () => [...(tbody?.querySelectorAll('button.row-open') ?? [])];
 
   function focusRow(delta) {
     const list = rowButtons();
@@ -258,6 +328,11 @@
     if (dialog || document.querySelector('dialog[open]')) return;
     const t = e.target;
     const typing = t instanceof HTMLElement && (t.isContentEditable || !!t.closest('input, textarea, select'));
+    if (e.key === 'Escape' && selected.size && !typing) {
+      selected.clear();
+      e.preventDefault();
+      return;
+    }
     if (t === searchInput) {
       if (e.key === 'Escape') {
         query = '';
@@ -275,12 +350,14 @@
     else if (key === 'Backspace' && path.length > 1) open(path[path.length - 2].node.id);
     else if (key === 'n' && canWrite && here) dialog = { type: 'mkdir' };
     else if (key === 'u' && canWrite && here) fileInput.click();
+    else if (key === 'Delete' && canWrite && selected.size) trashChosen();
     else if (key === 'Delete' && canWrite && focusedEntry()) {
       const entry = focusedEntry();
       const list = rowButtons();
       const i = list.indexOf(document.activeElement);
       moveToTrash(entry).then(() => rowButtons()[Math.min(i, rowButtons().length - 1)]?.focus());
-    } else if (key === '?') dialog = { type: 'shortcuts' };
+    } else if (key === 'x' && focusedEntry()) toggle(focusedEntry());
+    else if (key === '?') dialog = { type: 'shortcuts' };
     else return;
     e.preventDefault();
   }
@@ -383,6 +460,15 @@
     <table class="table animate-enter">
       <thead>
         <tr>
+          <th class="w-10 !pr-0">
+            <input
+              type="checkbox"
+              class="size-4 cursor-pointer align-middle accent-accent"
+              aria-label="Select all"
+              checked={allVisibleSelected}
+              indeterminate={!allVisibleSelected && visible.some((r) => selected.has(r.node.id))}
+              onchange={toggleAll} />
+          </th>
           {#snippet sortHeader(key, cls = '')}
             <th class={cls} aria-sort={sort.key === key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
               <button type="button" class="inline-flex cursor-pointer items-center gap-1 hover:text-fg {sort.key === key ? 'text-fg' : ''}" onclick={() => sortBy(key)}>
@@ -400,16 +486,28 @@
       <tbody bind:this={tbody}>
         {#if !visible.length}
           <tr>
-            <td colspan="4" class="h-24 text-center text-[13px] text-fg-muted">
+            <td colspan="5" class="h-24 text-center text-[13px] text-fg-muted">
               Nothing in this folder matches "{query.trim()}". <button type="button" class="link" onclick={() => (query = '')}>Clear search</button>
             </td>
           </tr>
         {/if}
         {#each visible as entry (entry.node.id)}
           {@const folder = entry.node.kind === 'folder'}
-          <tr class="group" in:fade out:fade={{ duration: 120 }} animate:flip={flipParams()}>
+          {@const isSelected = selected.has(entry.node.id)}
+          <tr class="group {isSelected ? 'bg-accent-soft/60 hover:bg-accent-soft/60' : ''}" aria-selected={isSelected} in:fade out:fade={{ duration: 120 }} animate:flip={flipParams()}>
+            <td class="w-10 !pr-0">
+              <input
+                type="checkbox"
+                class="size-4 cursor-pointer align-middle accent-accent transition-opacity focus-visible:opacity-100 {selected.size ? '' : 'opacity-0 group-hover:opacity-100'}"
+                aria-label="Select {entry.meta.name}"
+                checked={isSelected}
+                onclick={(e) => {
+                  e.preventDefault();
+                  toggle(entry, e);
+                }} />
+            </td>
             <td class="max-w-0">
-              <button type="button" class="flex max-w-full cursor-pointer items-center gap-3 text-left" onclick={() => activate(entry)}>
+              <button type="button" class="row-open flex max-w-full cursor-pointer items-center gap-3 text-left" onclick={() => activate(entry)}>
                 {#if folder}<Icon name="folder" class="size-4 shrink-0 text-accent-text" />{:else}<FileIcon meta={entry.meta} />{/if}
                 <span class="truncate font-medium group-hover:underline group-hover:underline-offset-4 group-hover:decoration-line-strong">{entry.meta.name}</span>
               </button>
@@ -439,6 +537,29 @@
     <button type="button" class="hidden cursor-pointer items-center gap-1.5 hover:text-fg-muted sm:flex" onclick={() => (dialog = { type: 'shortcuts' })}>
       <Icon name="keyboard" class="size-3.5" /> Press <kbd class="kbd">?</kbd> for shortcuts
     </button>
+  </div>
+{/if}
+
+{#if selected.size && chosen.length}
+  <div class="fixed inset-x-0 bottom-6 z-40 flex justify-center px-4" transition:fly={{ y: 12 }}>
+    <div class="flex items-center gap-1 rounded-lg border border-line bg-bg p-1.5 pl-3 shadow-lg shadow-black/5 dark:shadow-black/40" role="toolbar" aria-label="Selection">
+      <span class="mr-2 text-sm font-medium tabular-nums">{chosen.length} selected</span>
+      <button type="button" class="btn btn-ghost" onclick={downloadChosen} disabled={!chosen.some((r) => r.node.kind === 'file')}>
+        <Icon name="download" /><span class="hidden sm:inline">Download</span>
+      </button>
+      {#if canWrite}
+        <button type="button" class="btn btn-ghost" onclick={() => (dialog = { type: 'move', entries: [...chosen] })}>
+          <Icon name="move" /><span class="hidden sm:inline">Move</span>
+        </button>
+        <button type="button" class="btn btn-ghost text-danger hover:text-danger" onclick={trashChosen}>
+          <Icon name="trash-2" /><span class="hidden sm:inline">Move to trash</span>
+        </button>
+      {/if}
+      <span class="mx-1 h-5 w-px bg-line" aria-hidden="true"></span>
+      <button type="button" class="btn btn-ghost btn-icon" aria-label="Clear selection" title="Clear selection (Esc)" onclick={() => selected.clear()}>
+        <Icon name="x" />
+      </button>
+    </div>
   </div>
 {/if}
 
@@ -473,11 +594,12 @@
     onclose={close} />
 {:else if dialog?.type === 'move'}
   <MoveDialog
-    entry={dialog.entry}
+    entries={dialog.entries ?? [dialog.entry]}
     root={path[0]}
     currentFolderId={folderId}
-    onmoved={(dest) => {
-      toast(`Moved to ${dest}`, { kind: 'success' });
+    onmoved={(dest, count) => {
+      toast(count > 1 ? `Moved ${count} items to ${dest}` : `Moved to ${dest}`, { kind: 'success' });
+      selected.clear();
       load();
     }}
     onclose={close} />

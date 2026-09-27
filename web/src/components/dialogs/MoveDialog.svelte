@@ -1,13 +1,17 @@
 <script>
-  // Folder picker for moving an item within the same tree (your own files,
-  // or one shared folder). Moving re-wraps the item's key for the new parent.
+  // Folder picker for moving items within the same tree (your own files,
+  // or one shared folder). Moving re-wraps each item's key for the new parent.
   import { untrack } from 'svelte';
   import Modal from '../Modal.svelte';
   import Icon from '../Icon.svelte';
   import { listFolder, move } from '../../lib/cloud.svelte.js';
   import { errorMessage } from '../../lib/ui.svelte.js';
 
-  let { entry, root, currentFolderId, onmoved, onclose } = $props();
+  /** `onmoved(destinationName, movedCount)` */
+  let { entries, root, currentFolderId, onmoved, onclose } = $props();
+
+  const moving = $derived(new Set(entries.map((e) => e.node.id)));
+  const title = $derived(entries.length === 1 ? `Move ${entries[0].meta.name}` : `Move ${entries.length} items`);
 
   // Breadcrumb of folders being browsed: [{ id, key, name }].
   let trail = $state(untrack(() => [{ id: root.node.id, key: root.key, name: root.meta.name }]));
@@ -34,19 +38,24 @@
   async function submit() {
     busy = true;
     error = '';
-    try {
-      await move(entry, here.id, here.key);
-      onmoved(here.name);
-      onclose();
-    } catch (e) {
-      error = errorMessage(e);
-    } finally {
-      busy = false;
+    let done = 0;
+    const failed = [];
+    for (const entry of entries) {
+      try {
+        await move(entry, here.id, here.key);
+        done++;
+      } catch (e) {
+        failed.push(`${entry.meta.name}: ${errorMessage(e)}`);
+      }
     }
+    busy = false;
+    if (done) onmoved(here.name, done);
+    if (!failed.length) return onclose();
+    error = done ? `Moved ${done} of ${entries.length}. ${failed.join(' ')}` : failed.join(' ');
   }
 </script>
 
-<Modal title="Move {entry.meta.name}" description="Choose a destination folder." {onclose} onsubmit={submit}>
+<Modal {title} description="Choose a destination folder." {onclose} onsubmit={submit}>
   <div class="overflow-hidden rounded-md border border-line">
     <div class="flex h-9 items-center gap-1 overflow-x-auto border-b border-line bg-subtle px-2 text-[13px]">
       {#each trail as crumb, i (crumb.id)}
@@ -64,7 +73,7 @@
         <li class="grid h-full place-items-center text-[13px] text-fg-muted">No folders in here</li>
       {:else}
         {#each folders as f (f.node.id)}
-          {@const self = f.node.id === entry.node.id}
+          {@const self = moving.has(f.node.id)}
           <li>
             <button
               type="button"
