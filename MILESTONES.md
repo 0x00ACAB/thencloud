@@ -46,6 +46,17 @@
 - [ ] App passwords or per-device credentials for sync clients (scoped, revocable, never the account password)
 - [x] Server stats for admins, without revealing anything encrypted: accounts, sessions, storage, file/folder/version counts, shares and links
 
+## Tools
+
+- [ ] **Convert to / Download as** (file menu): convert in the browser, then download or save the result as a new encrypted file. The server never sees the file
+  - Images (PNG, JPEG, WebP, AVIF, BMP) with the browser's own encoders, with a quality setting
+  - Video and audio (MP4, WebM, AVI, MKV, MOV, MP3, WAV, FLAC, OGG, GIF from video) with ffmpeg compiled to WASM: about 30 MB, self-hosted, loaded only on first use, single-threaded, with progress and cancel
+- [ ] **Video downloader (yt-dlp)**, the one deliberate exception to "no plaintext on the server", so it's explicit and opt-in:
+  - **Off by default**; an admin turns it on in the Admin view, and yt-dlp must be installed on the server. Admins only by default, optionally everyone
+  - **Streamed, never stored**: the server runs yt-dlp and pipes the video straight to the browser, which encrypts it and uploads it like any other file (or just downloads it). Nothing is written to the server's disk
+  - The UI says plainly that the server sees the link and the video while downloading it, and doesn't keep either
+  - Limits: one download at a time per user, a size cap, and public addresses only (no fetching from the server's own network)
+
 ## UI
 
 Bigger pieces:
