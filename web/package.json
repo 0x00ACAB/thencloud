@@ -11,9 +11,9 @@
     "check": "svelte-check --threshold warning"
   },
   "devDependencies": {
-    "@iconify-json/vscode-icons": "^1.2.82",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@tailwindcss/vite": "^4.3.3",
+    "file-icon-vectors": "^1.0.0",
     "geist": "^1.7.2",
     "lucide-static": "^1.48.0",
     "material-icon-theme": "^5.38.1",
@@ -22,7 +22,7 @@
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",
     "vite": "^8.3.1",
-    "vscode-icons-js": "^11.6.1"
+    "vscode-symbols": "^0.0.20"
   },
   "dependencies": {
     "@ffmpeg/core": "^0.12.10",
