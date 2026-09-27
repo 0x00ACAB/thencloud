@@ -54,6 +54,8 @@ web/                      browser client: Svelte 5 + Vite + Tailwind CSS
 password ──Argon2id──► root ──HKDF──┬─► auth_key  → server (stored only as Argon2id(auth_key))
                                     └─► kek       (never leaves the client)
 kek        ──wraps──► master key
+recovery key (optional, 256-bit) ──HKDF──┬─► recovery auth → server (stored only as Argon2id)
+                                         └─► recovery kek ──wraps──► master key
 master key ──wraps──► X25519 private key, root folder key
 folder key ──wraps──► child node keys
 node key   ──seals──► metadata {name, mime, size, mtime}
@@ -73,6 +75,8 @@ Every ciphertext carries associated data that binds it to its context:
 As a result, a malicious server cannot swap files, move ciphertexts between nodes, reorder or truncate chunks, or serve an old version's chunks under a new one. Decryption fails if it tries.
 
 **Sharing with a user:** the owner fetches the recipient's public key, checks its fingerprint (shown in both users' UIs), and seals the folder or file key to it. The recipient opens the sealed key with their private key and can then unwrap the whole subtree.
+
+**Recovery key (optional):** made in the browser and shown once as 11 groups of 5 characters (Crockford base32 with a checksum, so typos are caught). The server stores the master key wrapped under its KEK and a hash of its auth part, so it can check the key but never use it. With the key and a username, "Forgot your password?" unwraps the master key locally and sets a new password; every session is signed out. Setting, replacing or removing the key needs the current password.
 
 **Public links** look like `https://host/s/<token>#<key>`. Browsers never send the part after `#` in any HTTP request, so the server only ever sees `<token>`. The share page reads the key from `location.hash` and decrypts locally. Other defences:
 - `Referrer-Policy: no-referrer` and a strict same-origin CSP keep the URL from leaking to third parties.
@@ -99,7 +103,7 @@ As a result, a malicious server cannot swap files, move ciphertexts between node
 - **Public keys are trust-on-first-use.** Compare fingerprints out of band, or a malicious server could substitute its own key when you share.
 - **Revoking a share** stops the server from serving the data, but it does not re-key. A former recipient who kept the key could decrypt ciphertext they get from elsewhere.
 - **Anyone who has a full public link** (including the `#` part, for example from chat history) can decrypt what it points to.
-- **There is no password recovery.** A forgotten password means the data is lost.
+- **There is no password reset by the server.** A forgotten password means the data is lost, unless you created a recovery key. Anyone with your recovery key and username can take over the account, so keep it as private as the password.
 - **Previews render files other people shared with you** inside the app, where your keys live. Decrypted bytes are always re-typed to a fixed, known-safe type (never the stored MIME type), Markdown goes through DOMPurify with scripts removed and images never loaded (in the preview and the editor, so a relative image path can't make the browser request a plaintext name from the server), and PDFs are drawn to canvas by pdf.js without running any PDF JavaScript. The CSP is the second line of defence.
 
 ## Development

@@ -34,6 +34,12 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/register", post(auth::register))
         .route("/auth/login", post(auth::login))
         .route("/auth/options", get(auth::options))
+        .route(
+            "/auth/recovery",
+            post(auth::set_recovery).delete(auth::remove_recovery),
+        )
+        .route("/auth/recovery/unlock", post(auth::recovery_unlock))
+        .route("/auth/recovery/reset", post(auth::recovery_reset))
         .route("/auth/logout", post(auth::logout))
         .route("/auth/password", post(auth::change_password))
         .route("/me", get(auth::me))

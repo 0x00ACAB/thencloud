@@ -55,6 +55,8 @@ pub enum Error {
     Metadata(String),
     #[error("random number generator failed")]
     Rng,
+    #[error("that recovery key isn't valid; check it for typos")]
+    RecoveryKey,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -252,6 +254,100 @@ pub fn wrap_master_key(kek: &Key, mk: &Key) -> Vec<u8> {
 
 pub fn unwrap_master_key(kek: &Key, wrapped: &[u8]) -> Result<Key> {
     open_key(kek, wrapped, &aad("master-key", &[]))
+}
+
+// ---------------------------------------------------------------------------
+// Recovery keys
+//
+// An optional second way to unwrap the master key, for when the password is
+// forgotten. The key is 32 random bytes, so unlike a password it needs no
+// slow KDF: HKDF splits it into an auth key (the server stores only a hash)
+// and a KEK that wraps the master key. It's shown to the user as Crockford
+// base32 in groups of five, with a 2-byte checksum to catch typos.
+// ---------------------------------------------------------------------------
+
+const CROCKFORD: &[u8; 32] = b"0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+
+fn recovery_checksum(k: &Key) -> [u8; 2] {
+    let h = Sha256::digest([b"thencloud/v1/recovery-check\0".as_slice(), k.as_bytes()].concat());
+    [h[0], h[1]]
+}
+
+/// "ABCDE-FGHJK-...": the key and its checksum, for writing down.
+pub fn encode_recovery_key(k: &Key) -> String {
+    let mut bytes = k.as_bytes().to_vec();
+    bytes.extend_from_slice(&recovery_checksum(k));
+    let (mut out, mut acc, mut bits) = (String::new(), 0u32, 0u32);
+    for &b in &bytes {
+        acc = (acc << 8) | b as u32;
+        bits += 8;
+        while bits >= 5 {
+            bits -= 5;
+            out.push(CROCKFORD[((acc >> bits) & 31) as usize] as char);
+        }
+    }
+    if bits > 0 {
+        out.push(CROCKFORD[((acc << (5 - bits)) & 31) as usize] as char);
+    }
+    bytes.zeroize();
+    out.as_bytes()
+        .chunks(5)
+        .map(|c| std::str::from_utf8(c).unwrap())
+        .collect::<Vec<_>>()
+        .join("-")
+}
+
+/// Parse a typed recovery key. Case, spaces and dashes don't matter, and
+/// the look-alikes O/0 and I/L/1 are read the same way.
+pub fn decode_recovery_key(s: &str) -> Result<Key> {
+    let (mut bytes, mut acc, mut bits) = (Vec::with_capacity(35), 0u32, 0u32);
+    for ch in s.chars().filter(|c| !c.is_whitespace() && *c != '-') {
+        let c = match ch.to_ascii_uppercase() {
+            'O' => '0',
+            'I' | 'L' => '1',
+            c => c,
+        };
+        let v = CROCKFORD
+            .iter()
+            .position(|&x| x as char == c)
+            .ok_or(Error::RecoveryKey)?;
+        acc = (acc << 5) | v as u32;
+        bits += 5;
+        if bits >= 8 {
+            bits -= 8;
+            bytes.push((acc >> bits) as u8);
+        }
+    }
+    if bytes.len() != KEY_LEN + 2 {
+        return Err(Error::RecoveryKey);
+    }
+    let k = Key::from_slice(&bytes[..KEY_LEN])?;
+    let ok = recovery_checksum(&k) == bytes[KEY_LEN..];
+    bytes.zeroize();
+    if ok { Ok(k) } else { Err(Error::RecoveryKey) }
+}
+
+/// Split a recovery key into an auth key for the server and a KEK.
+pub fn derive_recovery_keys(k: &Key) -> AccountKeys {
+    let hk = Hkdf::<Sha256>::new(Some(b"thencloud/v1/recovery"), k.as_bytes());
+    let mut auth = [0u8; KEY_LEN];
+    let mut kek = [0u8; KEY_LEN];
+    hk.expand(b"thencloud/v1/recovery-auth", &mut auth)
+        .expect("valid length");
+    hk.expand(b"thencloud/v1/recovery-kek", &mut kek)
+        .expect("valid length");
+    AccountKeys {
+        auth_key: Key(auth),
+        kek: Key(kek),
+    }
+}
+
+pub fn wrap_master_key_recovery(kek: &Key, mk: &Key) -> Vec<u8> {
+    seal(kek, mk.as_bytes(), &aad("master-key-recovery", &[]))
+}
+
+pub fn unwrap_master_key_recovery(kek: &Key, wrapped: &[u8]) -> Result<Key> {
+    open_key(kek, wrapped, &aad("master-key-recovery", &[]))
 }
 
 // ---------------------------------------------------------------------------
@@ -607,5 +703,47 @@ mod tests {
         assert_eq!(id.len(), 36);
         assert_eq!(&id[14..15], "4");
         assert_ne!(id, new_id());
+    }
+
+    #[test]
+    fn recovery_key_round_trip_and_typos() {
+        let k = Key::generate();
+        let text = encode_recovery_key(&k);
+        assert_eq!(text.len(), 55 + 10, "11 groups of 5 with dashes: {text}");
+        assert!(decode_recovery_key(&text).unwrap() == k);
+        // Case, spacing and look-alike letters don't matter.
+        let sloppy = text
+            .replace('-', " ")
+            .to_lowercase()
+            .replace('0', "o")
+            .replace('1', "l");
+        assert!(decode_recovery_key(&sloppy).unwrap() == k);
+        // A single wrong character is caught by the checksum.
+        let mut chars: Vec<char> = text.chars().collect();
+        chars[3] = if chars[3] == 'A' { 'B' } else { 'A' };
+        let typo: String = chars.into_iter().collect();
+        assert!(matches!(
+            decode_recovery_key(&typo),
+            Err(Error::RecoveryKey)
+        ));
+        assert!(matches!(
+            decode_recovery_key("not a key"),
+            Err(Error::RecoveryKey)
+        ));
+        assert!(matches!(
+            decode_recovery_key(&text[..50]),
+            Err(Error::RecoveryKey)
+        ));
+
+        // The derived keys unwrap the master key, and differ from each other.
+        let rk = derive_recovery_keys(&k);
+        assert!(rk.auth_key != rk.kek);
+        let mk = Key::generate();
+        let wrapped = wrap_master_key_recovery(&rk.kek, &mk);
+        assert!(unwrap_master_key_recovery(&rk.kek, &wrapped).unwrap() == mk);
+        // Not interchangeable with the password wrap.
+        assert!(unwrap_master_key(&rk.kek, &wrapped).is_err());
+        let other = derive_recovery_keys(&Key::generate());
+        assert!(unwrap_master_key_recovery(&other.kek, &wrapped).is_err());
     }
 }

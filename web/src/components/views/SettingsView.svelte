@@ -1,6 +1,8 @@
 <script>
   import { onMount } from 'svelte';
-  import { session, changePassword, listSessions, revokeSession, revokeOtherSessions } from '../../lib/cloud.svelte.js';
+  import { session, changePassword, listSessions, revokeSession, revokeOtherSessions, removeRecoveryKey } from '../../lib/cloud.svelte.js';
+  import RecoveryKeyDialog from '../dialogs/RecoveryKeyDialog.svelte';
+  import ConfirmDialog from '../dialogs/ConfirmDialog.svelte';
   import { theme, setTheme, toast, toastError, errorMessage, copyText, accent, setAccent, ACCENT_PRESETS, DEFAULT_ACCENT, contrast, accentForeground, iconPack, setIconPack } from '../../lib/ui.svelte.js';
   import { formatSize, formatWhen, formatDate, fullDate } from '../../lib/format.js';
   import { slide } from '../../lib/motion.js';
@@ -32,6 +34,9 @@
       busy = false;
     }
   }
+
+  let recoveryDialog = $state(null); // 'create' | 'remove'
+  let removePassword = $state('');
 
   // Signed-in devices.
   let devices = $state(null);
@@ -149,6 +154,32 @@
     </button>
   {/snippet}
   {@render section('Password', 'Changing it signs out your other devices. There is still no way to reset it if you forget it.', passwordBody, passwordFooter)}
+
+  {#snippet recoveryBody()}
+    {#if session.me.recovery_created_at}
+      <p class="flex items-center gap-2 text-sm"><Icon name="shield-check" class="size-4 text-success" />Set up on {formatDate(session.me.recovery_created_at * 1000)}</p>
+    {:else}
+      <p class="flex items-start gap-2 text-sm text-fg-muted">
+        <Icon name="circle-alert" class="mt-0.5 size-4 shrink-0" />
+        Not set up. If you forget your password, your files can't be recovered by anyone.
+      </p>
+    {/if}
+  {/snippet}
+  {#snippet recoveryFooter()}
+    <p class="mr-auto hidden text-xs text-fg-muted sm:block">Made in this browser; the server never sees it.</p>
+    {#if session.me.recovery_created_at}
+      <button type="button" class="btn btn-ghost" onclick={() => ((removePassword = ''), (recoveryDialog = 'remove'))}>Remove</button>
+    {/if}
+    <button type="button" class="btn btn-secondary" onclick={() => (recoveryDialog = 'create')}>
+      <Icon name="key-round" />{session.me.recovery_created_at ? 'Replace key' : 'Create recovery key'}
+    </button>
+  {/snippet}
+  {@render section(
+    'Recovery key',
+    'A printable key that lets you set a new password if you forget yours, without losing your files. Keep it somewhere safe, away from this device.',
+    recoveryBody,
+    recoveryFooter,
+  )}
 
   {#snippet devicesBody()}
     {#if devices === null}
@@ -295,3 +326,28 @@
   {/snippet}
   {@render section('About', null, aboutBody)}
 </div>
+
+{#if recoveryDialog === 'create'}
+  <RecoveryKeyDialog onclose={() => (recoveryDialog = null)} />
+{:else if recoveryDialog === 'remove'}
+  <ConfirmDialog
+    title="Remove your recovery key?"
+    description="The key stops working straight away. If you then forget your password, your files can't be recovered."
+    confirmLabel="Remove key"
+    danger
+    disabled={!removePassword}
+    onconfirm={async () => {
+      try {
+        await removeRecoveryKey(removePassword);
+      } catch (e) {
+        throw e?.code === 'invalid_credentials' ? new Error('That password is wrong.') : e;
+      }
+      toast('Recovery key removed');
+    }}
+    onclose={() => (recoveryDialog = null)}>
+    <div class="field">
+      <label class="label" for="rm-password">Your password</label>
+      <input id="rm-password" class="input" type="password" bind:value={removePassword} autocomplete="current-password" />
+    </div>
+  </ConfirmDialog>
+{/if}

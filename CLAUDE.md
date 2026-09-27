@@ -84,7 +84,7 @@ The web client follows this direction; keep it that way when changing it.
 
 **Security UX must survive the redesign.** Keep:
 - Fingerprint display and the fingerprint confirmation before sharing.
-- The "no password recovery" warning at registration.
+- The "no password reset" warning at registration (it may point to the optional recovery key, which only the user holds).
 - The explanation that the link key is after `#`.
 - Keys held only in memory: no `localStorage` for keys or tokens.
 

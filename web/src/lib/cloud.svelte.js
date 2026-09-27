@@ -138,6 +138,78 @@ export const revokeOtherSessions = () => api('DELETE', '/api/sessions');
 /** What the sign-in screen may offer (registration open, invite-only or closed). */
 export const authOptions = () => request('GET', '/api/auth/options');
 
+// ---------------------------------------------------------------------------
+// Recovery key: an optional second way to unwrap the master key. The key is
+// made and shown here and never sent; the server gets a hash of its auth
+// part and the master key wrapped under its KEK.
+// ---------------------------------------------------------------------------
+
+/** The auth key for `password`, to prove it to the server. */
+async function authKeyFor(password) {
+  const pre = await request('POST', '/api/auth/prelogin', { body: { username: session.me.username } });
+  const ak = await deriveAccountKeys(password, unb64(pre.kdf_salt), pre.kdf_params);
+  return b64(ak.authKey);
+}
+
+/** Create (or replace) the recovery key. Returns it as text, to show once. */
+export async function createRecoveryKey(password) {
+  const current = await authKeyFor(password);
+  const rk = tc.random_key();
+  const d = tc.derive_recovery_keys(rk);
+  try {
+    session.me = await api('POST', '/api/auth/recovery', {
+      body: {
+        current_auth_key: current,
+        recovery_auth_key: b64(d.auth_key),
+        enc_master_key_recovery: b64(tc.wrap_master_key_recovery(d.kek, mk)),
+      },
+    });
+    return tc.encode_recovery_key(rk);
+  } finally {
+    d.free();
+    rk.fill(0);
+  }
+}
+
+export async function removeRecoveryKey(password) {
+  session.me = await api('DELETE', '/api/auth/recovery', { body: { current_auth_key: await authKeyFor(password) } });
+}
+
+/** Set a new password with a recovery key, then sign in. */
+export async function recoverAccount(username, recoveryKey, newPassword) {
+  let rk;
+  try {
+    rk = tc.decode_recovery_key(recoveryKey);
+  } catch {
+    throw Object.assign(new Error("That recovery key isn't valid. Check it for typos."), { code: 'bad_recovery_key' });
+  }
+  const d = tc.derive_recovery_keys(rk);
+  rk.fill(0);
+  try {
+    const recoveryAuth = b64(d.auth_key);
+    const r = await request('POST', '/api/auth/recovery/unlock', { body: { username, recovery_auth_key: recoveryAuth } });
+    const master = tc.unwrap_master_key_recovery(d.kek, unb64(r.enc_master_key_recovery));
+    const salt = tc.random_salt();
+    const params = JSON.parse(tc.default_kdf_params());
+    const nk = await deriveAccountKeys(newPassword, salt, params);
+    const s = await request('POST', '/api/auth/recovery/reset', {
+      body: {
+        username,
+        recovery_auth_key: recoveryAuth,
+        new_auth_key: b64(nk.authKey),
+        new_kdf_salt: b64(salt),
+        new_kdf_params: params,
+        new_enc_master_key: b64(tc.wrap_master_key(nk.kek, master)),
+        device_name: deviceName(),
+      },
+    });
+    master.fill(0);
+    start(s, nk.kek);
+  } finally {
+    d.free();
+  }
+}
+
 export async function changePassword(current, next) {
   const pre = await request('POST', '/api/auth/prelogin', { body: { username: session.me.username } });
   const cur = await deriveAccountKeys(current, unb64(pre.kdf_salt), pre.kdf_params);
