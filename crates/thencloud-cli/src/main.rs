@@ -1,6 +1,7 @@
 //! `thencloud`: list, download, upload and sync files from the command line.
 //! Files are encrypted and decrypted here; sign in with an app password
 //! from Settings > App passwords (a read-only one is enough to download).
+//! On Linux, `thencloud mount` shows a folder as a drive.
 
 use std::fs;
 use std::io::{self, BufRead, Write};
@@ -9,10 +10,16 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
+#[cfg(target_os = "linux")]
+use thencloud_cli::mount::{self, MountOptions};
 use thencloud_cli::{Client, Error, Result, parse_app_password, safe_name};
 
 #[derive(Parser)]
-#[command(name = "thencloud", version, about = "End-to-end encrypted thencloud client")]
+#[command(
+    name = "thencloud",
+    version,
+    about = "End-to-end encrypted thencloud client"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -30,7 +37,10 @@ enum Command {
         path: String,
     },
     /// Download a file.
-    Get { remote: String, local: Option<PathBuf> },
+    Get {
+        remote: String,
+        local: Option<PathBuf>,
+    },
     /// Upload a file into a folder (a new version if the name exists).
     Put {
         local: PathBuf,
@@ -43,6 +53,20 @@ enum Command {
     Pull { remote: String, local: PathBuf },
     /// Upload new and changed files from a local directory into a folder.
     Push { local: PathBuf, remote: String },
+    /// Mount a folder ("" is My files) as a drive with FUSE. Runs until
+    /// unmounted with `fusermount3 -u <mountpoint>` or Ctrl+C.
+    #[cfg(target_os = "linux")]
+    Mount {
+        mountpoint: PathBuf,
+        #[arg(default_value = "")]
+        remote: String,
+        /// Refuse all changes (always the case with a read-only app password).
+        #[arg(long)]
+        read_only: bool,
+        /// Let other users on this machine in (needs user_allow_other in /etc/fuse.conf).
+        #[arg(long)]
+        allow_other: bool,
+    },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -61,7 +85,8 @@ fn config_path() -> Result<PathBuf> {
 
 fn load_config() -> Result<Config> {
     let path = config_path()?;
-    let text = fs::read_to_string(&path).map_err(|_| Error::Usage("not signed in; run `thencloud login <server>` first".into()))?;
+    let text = fs::read_to_string(&path)
+        .map_err(|_| Error::Usage("not signed in; run `thencloud login <server>` first".into()))?;
     serde_json::from_str(&text).map_err(|e| Error::Usage(format!("{}: {e}", path.display())))
 }
 
@@ -122,8 +147,42 @@ fn run(cmd: Command) -> Result<()> {
     }
     if let Command::Logout = cmd {
         let _ = fs::remove_file(config_path()?);
-        println!("Forgot the app password. Revoke it in Settings > App passwords if nothing else uses it.");
+        println!(
+            "Forgot the app password. Revoke it in Settings > App passwords if nothing else uses it."
+        );
         return Ok(());
+    }
+
+    #[cfg(target_os = "linux")]
+    if let Command::Mount {
+        mountpoint,
+        remote,
+        read_only,
+        allow_other,
+    } = cmd
+    {
+        let client = connect()?;
+        let root = client.resolve(&remote)?;
+        if !root.is_folder() {
+            let _ = client.logout();
+            return Err(Error::Usage(format!("{remote} is a file")));
+        }
+        eprintln!(
+            "Mounting {} at {}. Stop with Ctrl+C or `fusermount3 -u {}`.",
+            if remote.trim_matches('/').is_empty() {
+                "My files"
+            } else {
+                &remote
+            },
+            mountpoint.display(),
+            mountpoint.display()
+        );
+        let opts = MountOptions {
+            read_only,
+            allow_other,
+            temp_dir: std::env::temp_dir(),
+        };
+        return Ok(mount::mount(client, root, &mountpoint, opts)?);
     }
 
     let client = connect()?;
@@ -145,7 +204,9 @@ fn run(cmd: Command) -> Result<()> {
             Command::Get { remote, local } => {
                 let file = client.resolve(&remote)?;
                 if file.is_folder() {
-                    return Err(Error::Usage(format!("{remote} is a folder; use `pull` for folders")));
+                    return Err(Error::Usage(format!(
+                        "{remote} is a folder; use `pull` for folders"
+                    )));
                 }
                 let out = local.unwrap_or_else(|| PathBuf::from(safe_name(&file.meta.name)));
                 let mut f = fs::File::create(&out)?;
@@ -158,12 +219,24 @@ fn run(cmd: Command) -> Result<()> {
                     .file_name()
                     .and_then(|n| n.to_str())
                     .ok_or_else(|| Error::Usage("give a file to upload".into()))?;
-                let existing = client.list(&parent)?.into_iter().find(|e| e.meta.name.eq_ignore_ascii_case(name));
+                let existing = client
+                    .list(&parent)?
+                    .into_iter()
+                    .find(|e| e.meta.name.eq_ignore_ascii_case(name));
                 if existing.as_ref().is_some_and(|e| e.is_folder()) {
-                    return Err(Error::Usage(format!("there's a folder called {name} there")));
+                    return Err(Error::Usage(format!(
+                        "there's a folder called {name} there"
+                    )));
                 }
                 client.upload(&local, &parent, name, existing.as_ref())?;
-                println!("{}{name}", if existing.is_some() { "new version of " } else { "" });
+                println!(
+                    "{}{name}",
+                    if existing.is_some() {
+                        "new version of "
+                    } else {
+                        ""
+                    }
+                );
             }
             Command::Mkdir { path } => {
                 let (dir, name) = split(&path);
@@ -176,12 +249,17 @@ fn run(cmd: Command) -> Result<()> {
             }
             Command::Push { local, remote } => {
                 if !Path::new(&local).is_dir() {
-                    return Err(Error::Usage(format!("{} is not a directory", local.display())));
+                    return Err(Error::Usage(format!(
+                        "{} is not a directory",
+                        local.display()
+                    )));
                 }
                 let folder = client.resolve(&remote)?;
                 let s = client.push(&local, &folder, &mut |p| println!("up {p}"))?;
                 println!("{} uploaded, {} unchanged", s.transferred, s.unchanged);
             }
+            #[cfg(target_os = "linux")]
+            Command::Mount { .. } => unreachable!(),
             Command::Login { .. } | Command::Logout => unreachable!(),
         }
         Ok(())
