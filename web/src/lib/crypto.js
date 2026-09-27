@@ -71,6 +71,33 @@ export async function fetchFile(node, nodeKey, getChunk, onProgress) {
   return { blob, meta };
 }
 
+/**
+ * A file to read one plaintext piece at a time (for streaming):
+ * { meta, size, count, chunkSize, read(index) -> Uint8Array }. Each piece is
+ * checked against the size in the metadata, so a stream can't come out
+ * longer or shorter than announced.
+ */
+export function openFile(node, nodeKey, getChunk) {
+  const meta = decryptMeta(nodeKey, node);
+  const v = node.version;
+  const ck = tc.unwrap_content_key(nodeKey, unb64(v.enc_content_key), node.id, v.id);
+  const chunkSize = tc.chunk_size();
+  const size = meta.size;
+  return {
+    meta,
+    size,
+    count: v.chunk_count,
+    chunkSize,
+    async read(i) {
+      const last = i === v.chunk_count - 1;
+      const plain = tc.decrypt_chunk(ck, v.id, i, last, await getChunk(i));
+      const expected = last ? size - i * chunkSize : chunkSize;
+      if (plain.length !== expected) throw new Error('Decrypted size does not match the file metadata.');
+      return plain;
+    },
+  };
+}
+
 export function saveBlob(blob, name) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');

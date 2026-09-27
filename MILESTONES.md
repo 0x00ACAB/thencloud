@@ -75,12 +75,12 @@ Bigger pieces:
 - [x] Editor: task lists (tick them in the editor or the rendered view), a table toolbar, plain-text and code files (a monospace editor), and drafts: unsaved edits are kept on the server as you type, encrypted under your master key, and offered back when you edit the file again
 - [x] PDF previews: selectable text (pdf.js's text layer) and links (web and mail links open on click; links within the document jump to the page)
 - [x] Images in Markdown previews by relative path (`![](img/photo.png)`): found by decrypted name from the file's folder and shown from a blob: URL; nothing is requested by path, and web images still aren't loaded
-- [ ] Previews: streamed video (today the whole file is decrypted into memory first, up to 256 MB)
+- [x] Streamed video and audio previews: decrypted piece by piece as they play (and seek), through the stream service worker, with no size limit
 - [x] **Per-file-type icons**: choose Minimal (Lucide), Material, Symbols or Documents (document-shaped icons, like a drive) in Settings; served locally, and only the chosen pack's tables and the icons on screen are downloaded
 - [x] Optionally per-name folder icons ("Folder icons by name" in Settings, for Material and Symbols: src, images, docs...)
 - [x] **Multi-select** with bulk move, download and delete (checkboxes, shift-click ranges, `x`, select all, a floating action bar; one Undo for a bulk trash)
 - [x] **Folder uploads** (drag a whole folder in, or Upload > Folder) and **zip downloads** of folders, selections and public folder links, zipped in the browser
-- [ ] Streamed zips for very large folders (today a zip is built in memory, up to 4 GB)
+- [x] Streamed zips for very large folders: written piece by piece straight to disk, with ZIP64 so there is no 4 GB limit
 - [x] **Search and sort** within a folder (search is client-side over decrypted names; sort by name, size or date)
 - [x] **Keyboard shortcuts** (`/` search, `j`/`k` or arrows through rows, Backspace up a folder, `n` new folder, `u` upload, Delete to trash) plus a `?` cheat sheet
 - [x] Search across all folders ("Everywhere" next to the search box): names are decrypted in the browser, from an in-memory index built as you browse and filled in by walking the tree when you search; results show where each one is and open in place
@@ -103,7 +103,7 @@ Smaller things:
 - [x] **Verified contacts**: keys checked by fingerprint are pinned in an encrypted contact list; a changed key blocks sharing until it's checked again
 - [ ] **Key transparency**: a signed or auditable key directory, so even a first share doesn't depend on comparing fingerprints
 - [x] **Upload-only "file drop" links**: the link carries the owner's public key after `#`; visitors encrypt each file and seal its key to the owner (bound to the file and folder ids), and see nothing in the folder. Dropped files stay hidden until the owner's client wraps their keys under the folder key
-- [ ] **Streaming downloads** through a service worker, so large files aren't buffered in memory
+- [x] **Streaming downloads** through a service worker, so large files aren't buffered in memory. The page decrypts; the worker only relays pieces and never sees a key
 - [ ] **Native CLI and desktop sync client** reusing `thencloud-crypto`
 - [ ] **Encrypted name index**: HMAC of name under the folder key, so the server can reject duplicate names without learning them
 - [ ] **Metadata padding**: pad sizes and chunk counts to hide exact file sizes
