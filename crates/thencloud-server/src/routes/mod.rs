@@ -1,4 +1,5 @@
 pub mod admin;
+pub mod app_passwords;
 pub mod auth;
 pub mod contacts;
 pub mod drops;
@@ -46,6 +47,12 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/recovery/unlock", post(auth::recovery_unlock))
         .route("/auth/recovery/reset", post(auth::recovery_reset))
         .route("/auth/logout", post(auth::logout))
+        .route("/auth/app-login", post(app_passwords::login))
+        .route(
+            "/app-passwords",
+            get(app_passwords::list).post(app_passwords::create),
+        )
+        .route("/app-passwords/{id}", delete(app_passwords::delete))
         .route("/auth/password", post(auth::change_password))
         .route("/me", get(auth::me))
         .route("/me/contacts", get(contacts::get).put(contacts::put))

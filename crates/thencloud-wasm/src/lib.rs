@@ -329,3 +329,21 @@ pub fn open_drop_key(secret: &[u8], sealed: &[u8], node_id: &str, folder_id: &st
             .to_vec(),
     )
 }
+
+#[wasm_bindgen]
+pub fn derive_app_password_keys(k: &[u8]) -> R<AccountKeys> {
+    let r = c::derive_app_password_keys(&key(k)?);
+    Ok(AccountKeys {
+        auth_key: r.auth_key.as_bytes().to_vec(),
+        kek: r.kek.as_bytes().to_vec(),
+    })
+}
+
+#[wasm_bindgen]
+pub fn wrap_master_key_app(kek: &[u8], mk: &[u8], app_password_id: &str) -> R<Vec<u8>> {
+    Ok(c::wrap_master_key_app(
+        &key(kek)?,
+        &key(mk)?,
+        app_password_id,
+    ))
+}

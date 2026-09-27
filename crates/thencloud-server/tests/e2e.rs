@@ -1578,6 +1578,191 @@ async fn file_drop_links_are_upload_only_and_zero_knowledge() {
     }
 }
 
+async fn current_auth(h: &Harness, password: &str) -> Key {
+    let pre: PreloginResponse = h
+        .call(
+            Method::POST,
+            "/api/auth/prelogin",
+            None,
+            Some(json!({"username": "alice"})),
+        )
+        .await
+        .json();
+    c::derive_account_keys(password, &pre.kdf_salt, pre.kdf_params)
+        .unwrap()
+        .auth_key
+}
+
+/// Sign in the way a sync client would, with only the app password text.
+async fn app_login(h: &Harness, text: String) -> (Resp, Key) {
+    let secret = c::decode_recovery_key(&text).unwrap();
+    let keys = c::derive_app_password_keys(&secret);
+    let r = h
+        .call(
+            Method::POST,
+            "/api/auth/app-login",
+            None,
+            Some(AppLoginRequest {
+                auth_key: B64(keys.auth_key.as_bytes().to_vec()),
+                device_name: Some("sync client".into()),
+            }),
+        )
+        .await;
+    (r, keys.kek)
+}
+
+#[tokio::test]
+async fn app_passwords_are_scoped_revocable_and_opaque() {
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "correct horse").await;
+    let file = alice
+        .upload(&h, &alice.root, None, "notes.txt", b"sync me")
+        .await
+        .unwrap();
+
+    // Made in the browser: 32 random bytes, split into auth key and KEK.
+    let make = |scope: AppScope, name: &str, password: &str| {
+        let secret = Key::generate();
+        let text = c::encode_recovery_key(&secret);
+        let keys = c::derive_app_password_keys(&secret);
+        let id = c::new_id();
+        let pre = c::derive_account_keys(password, &[0u8; 16], FAST_KDF).unwrap();
+        (
+            text,
+            id.clone(),
+            CreateAppPasswordRequest {
+                id: id.clone(),
+                name: name.into(),
+                scope,
+                current_auth_key: B64(pre.auth_key.as_bytes().to_vec()),
+                auth_key: B64(keys.auth_key.as_bytes().to_vec()),
+                enc_master_key: B64(c::wrap_master_key_app(&keys.kek, &alice.mk, &id)),
+            },
+        )
+    };
+    // The account password is required.
+    let (_, _, mut req) = make(AppScope::Full, "laptop sync", "x");
+    req.current_auth_key = B64(current_auth(&h, "wrong").await.as_bytes().to_vec());
+    let r = h
+        .call(
+            Method::POST,
+            "/api/app-passwords",
+            Some(&alice.token),
+            Some(&req),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::UNAUTHORIZED);
+
+    let mut created = Vec::new();
+    for (scope, name) in [
+        (AppScope::Full, "laptop sync"),
+        (AppScope::Read, "backup box"),
+    ] {
+        let (text, id, mut req) = make(scope, name, "x");
+        req.current_auth_key = B64(current_auth(&h, "correct horse").await.as_bytes().to_vec());
+        let r = h
+            .call(
+                Method::POST,
+                "/api/app-passwords",
+                Some(&alice.token),
+                Some(&req),
+            )
+            .await;
+        assert_eq!(r.status, StatusCode::CREATED, "{r:?}");
+        created.push((text, id));
+    }
+    let listed: Vec<AppPassword> = h.get("/api/app-passwords", &alice.token).await.json();
+    assert_eq!(listed.len(), 2);
+    assert!(listed.iter().all(|a| a.last_used_at.is_none()));
+
+    // A client signs in with the app password alone and unwraps the master key.
+    let (r, kek) = app_login(&h, created[0].0.clone()).await;
+    assert_eq!(r.status, StatusCode::OK, "{r:?}");
+    let full: AppLoginResponse = r.json();
+    assert_eq!(full.scope, AppScope::Full);
+    let mk = c::unwrap_master_key_app(&kek, &full.enc_master_key, &full.app_password_id).unwrap();
+    assert!(mk == alice.mk);
+    assert!(c::unwrap_master_key_app(&kek, &full.enc_master_key, &created[1].1).is_err());
+    let r = h.get(&format!("/api/nodes/{}", file.id), &full.token).await;
+    assert_eq!(r.status, StatusCode::OK);
+    // App sessions can't make more app passwords.
+    let (_, _, mut req) = make(AppScope::Full, "sneaky", "x");
+    req.current_auth_key = B64(current_auth(&h, "correct horse").await.as_bytes().to_vec());
+    let r = h
+        .call(
+            Method::POST,
+            "/api/app-passwords",
+            Some(&full.token),
+            Some(&req),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN);
+
+    // Read-only: can list and download, not change anything.
+    let (r, _) = app_login(&h, created[1].0.clone()).await;
+    let ro: AppLoginResponse = r.json();
+    assert_eq!(ro.scope, AppScope::Read);
+    let r = h
+        .get(&format!("/api/nodes/{}/chunks/0", file.id), &ro.token)
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+    let r = h
+        .call(
+            Method::DELETE,
+            &format!("/api/nodes/{}", file.id),
+            Some(&ro.token),
+            None::<()>,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN);
+    let sessions: Vec<DeviceSession> = h.get("/api/sessions", &alice.token).await.json();
+    assert!(
+        sessions
+            .iter()
+            .any(|s| s.app_password.as_deref() == Some("backup box"))
+    );
+
+    // A wrong app password is refused.
+    let (r, _) = app_login(&h, c::encode_recovery_key(&Key::generate())).await;
+    assert_eq!(r.status, StatusCode::UNAUTHORIZED);
+
+    // Revoking signs its sessions out; the other one keeps working.
+    let r = h
+        .call(
+            Method::DELETE,
+            &format!("/api/app-passwords/{}", created[0].1),
+            Some(&alice.token),
+            None::<()>,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    assert_eq!(
+        h.get("/api/me", &full.token).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(h.get("/api/me", &ro.token).await.status, StatusCode::OK);
+    let (r, _) = app_login(&h, created[0].0.clone()).await;
+    assert_eq!(r.status, StatusCode::UNAUTHORIZED);
+
+    // Nothing that opens the master key is stored.
+    let mut files = Vec::new();
+    all_files(&h.dir.path().join("data"), &mut files);
+    let secret = c::decode_recovery_key(&created[1].0).unwrap();
+    let keys = c::derive_app_password_keys(&secret);
+    for p in &files {
+        let bytes = std::fs::read(p).unwrap();
+        for n in [
+            secret.as_bytes().as_slice(),
+            keys.kek.as_bytes(),
+            keys.auth_key.as_bytes(),
+            created[1].0.as_bytes(),
+            alice.mk.as_bytes(),
+        ] {
+            assert!(!contains(&bytes, n), "secret found in {}", p.display());
+        }
+    }
+}
+
 #[tokio::test]
 async fn janitor_thins_old_versions_by_age() {
     let h = Harness::new().await;

@@ -282,6 +282,39 @@ export async function recoverAccount(username, recoveryKey, newPassword, remembe
   }
 }
 
+// ---------------------------------------------------------------------------
+// App passwords: for sync clients and other devices. Each is 32 random bytes
+// made here, wrapping its own copy of the master key; the server keeps a hash
+// of its auth half. Shown once, in the same format as the recovery key.
+// ---------------------------------------------------------------------------
+
+export const listAppPasswords = () => api('GET', '/api/app-passwords');
+export const deleteAppPassword = (id) => api('DELETE', `/api/app-passwords/${encodeURIComponent(id)}`);
+
+/** Returns the new app password as text, to show once. */
+export async function createAppPassword(password, name, scope) {
+  const current = await authKeyFor(password);
+  const secret = tc.random_key();
+  const d = tc.derive_app_password_keys(secret);
+  const id = tc.new_id();
+  try {
+    await api('POST', '/api/app-passwords', {
+      body: {
+        id,
+        name,
+        scope,
+        current_auth_key: current,
+        auth_key: b64(d.auth_key),
+        enc_master_key: b64(tc.wrap_master_key_app(d.kek, mk, id)),
+      },
+    });
+    return tc.encode_recovery_key(secret);
+  } finally {
+    d.free();
+    secret.fill(0);
+  }
+}
+
 export async function changePassword(current, next) {
   const pre = await request('POST', '/api/auth/prelogin', { body: { username: session.me.username } });
   const cur = await deriveAccountKeys(current, unb64(pre.kdf_salt), pre.kdf_params);

@@ -351,6 +351,39 @@ pub fn unwrap_master_key_recovery(kek: &Key, wrapped: &[u8]) -> Result<Key> {
 }
 
 // ---------------------------------------------------------------------------
+// App passwords: per-device credentials for sync clients, made like recovery
+// keys (32 random bytes, shown in the same format) but each wrapping its own
+// copy of the master key, bound to the app password's id, so any one can be
+// revoked without touching the others or the account password.
+// ---------------------------------------------------------------------------
+
+pub fn derive_app_password_keys(k: &Key) -> AccountKeys {
+    let hk = Hkdf::<Sha256>::new(Some(b"thencloud/v1/app-password"), k.as_bytes());
+    let mut auth = [0u8; KEY_LEN];
+    let mut kek = [0u8; KEY_LEN];
+    hk.expand(b"thencloud/v1/app-password-auth", &mut auth)
+        .expect("valid length");
+    hk.expand(b"thencloud/v1/app-password-kek", &mut kek)
+        .expect("valid length");
+    AccountKeys {
+        auth_key: Key(auth),
+        kek: Key(kek),
+    }
+}
+
+pub fn wrap_master_key_app(kek: &Key, mk: &Key, app_password_id: &str) -> Vec<u8> {
+    seal(
+        kek,
+        mk.as_bytes(),
+        &aad("master-key-app", &[app_password_id]),
+    )
+}
+
+pub fn unwrap_master_key_app(kek: &Key, wrapped: &[u8], app_password_id: &str) -> Result<Key> {
+    open_key(kek, wrapped, &aad("master-key-app", &[app_password_id]))
+}
+
+// ---------------------------------------------------------------------------
 // Private account data (e.g. verified contacts): sealed under the master key
 // and bound to the user and a label, so the server can store it but not read
 // it, change it, or swap it with another user's or another kind of data.
