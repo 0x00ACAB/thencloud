@@ -202,7 +202,7 @@
       Change password
     </button>
   {/snippet}
-  {@render section('Password', 'Changing it signs out your other devices. There is still no way to reset it if you forget it.', passwordBody, passwordFooter)}
+  {@render section('Password', 'Changing it signs out your other devices. If you forget it, only your recovery key can get you back in.', passwordBody, passwordFooter)}
 
   {#snippet recoveryBody()}
     {#if session.me.recovery_created_at}

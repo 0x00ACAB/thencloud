@@ -1120,6 +1120,38 @@ async fn security_headers_are_set() {
             .unwrap()
             .contains("default-src 'self'")
     );
+    assert_eq!(r.headers.get("cache-control").unwrap(), "no-store");
+
+    // Pages are always revalidated; hashed assets are cached for good, but
+    // only when they exist.
+    let web = h.dir.path().join("web");
+    std::fs::create_dir_all(web.join("assets")).unwrap();
+    std::fs::write(web.join("index.html"), "<!doctype html>").unwrap();
+    std::fs::write(web.join("assets/app-abc123.css"), "body{}").unwrap();
+    let get = |uri: &'static str| {
+        let h = &h;
+        async move {
+            h.raw(Method::GET, uri, None, &[], Body::empty(), None)
+                .await
+        }
+    };
+    let page = get("/").await;
+    assert_eq!(page.status, StatusCode::OK);
+    assert_eq!(page.headers.get("cache-control").unwrap(), "no-cache");
+    let asset = get("/assets/app-abc123.css").await;
+    assert_eq!(asset.status, StatusCode::OK);
+    assert!(
+        asset
+            .headers
+            .get("cache-control")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("immutable")
+    );
+    let missing = get("/assets/app-gone.css").await;
+    assert_eq!(missing.status, StatusCode::NOT_FOUND);
+    assert_eq!(missing.headers.get("cache-control").unwrap(), "no-cache");
 }
 
 /// Download a specific (possibly old) version of a file.
