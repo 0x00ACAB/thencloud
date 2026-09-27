@@ -76,6 +76,11 @@ pub async fn restore(
     Json(req): Json<RestoreTrashRequest>,
 ) -> Result<Json<Node>> {
     let node = trashed_node(&state, &user, &id).await?;
+    if let Some(m) = &req.enc_metadata {
+        check_metadata(m)?;
+    }
+    check_name_tag(&req.name_tag)?;
+    let moved = req.parent_id.is_some();
     let (parent, enc_key) = match (req.parent_id, req.enc_key) {
         (Some(p), Some(k)) => {
             check_id(&p, "parent_id")?;
@@ -108,16 +113,23 @@ pub async fn restore(
             ));
         }
     };
+    // A new parent or name needs a new name tag; in place, the old one holds.
+    let retag = moved || req.enc_metadata.is_some() || req.name_tag.is_some();
     sqlx::query(
         "UPDATE nodes SET trashed_at = NULL, trashed_by = NULL, parent_id = ?, \
-         enc_key = COALESCE(?, enc_key), revision = revision + 1, updated_at = ? WHERE id = ?",
+         enc_key = COALESCE(?, enc_key), enc_metadata = COALESCE(?, enc_metadata), \
+         name_tag = CASE WHEN ? THEN ? ELSE name_tag END, revision = revision + 1, updated_at = ? WHERE id = ?",
     )
     .bind(&parent)
     .bind(enc_key)
+    .bind(req.enc_metadata.as_ref().map(|m| m.0.clone()))
+    .bind(retag)
+    .bind(req.name_tag.as_ref().map(|t| t.0.clone()))
     .bind(now())
     .bind(&id)
     .execute(&state.db)
-    .await?;
+    .await
+    .map_err(crate::error::name_conflict)?;
     Ok(Json(
         get_node(&state.db, &id)
             .await?

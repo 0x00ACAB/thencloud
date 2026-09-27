@@ -267,6 +267,7 @@ impl Client {
             parent_id: parent.into(),
             enc_key: B64(c::wrap_node_key(&pk, &k, &id)),
             enc_metadata: B64(c::encrypt_metadata(&k, &id, &meta(name, 0)).unwrap()),
+            name_tag: Some(B64(c::name_tag(&pk, name))),
         };
         let r = h
             .call(
@@ -295,14 +296,14 @@ impl Client {
         name: &str,
         data: &[u8],
     ) -> Result<Node, Resp> {
-        let (node_id, node_key, enc_key) = match existing {
-            Some(n) => (n.id.clone(), self.key_of(h, &n.id).await, None),
+        let (node_id, node_key, enc_key, name_tag) = match existing {
+            Some(n) => (n.id.clone(), self.key_of(h, &n.id).await, None, None),
             None => {
                 let pk = self.key_of(h, parent).await;
                 let id = c::new_id();
                 let k = Key::generate();
                 let ek = B64(c::wrap_node_key(&pk, &k, &id));
-                (id, k, Some(ek))
+                (id, k, Some(ek), Some(B64(c::name_tag(&pk, name))))
             }
         };
         let version_id = c::new_id();
@@ -322,6 +323,7 @@ impl Client {
             enc_content_key: B64(c::wrap_content_key(&node_key, &ck, &node_id, &version_id)),
             chunk_count: chunks.len() as u32,
             if_revision: existing.map(|n| n.revision),
+            name_tag,
         };
         let r = h
             .call(Method::POST, "/api/uploads", Some(&self.token), Some(&req))
@@ -527,6 +529,7 @@ async fn full_lifecycle_is_zero_knowledge() {
                 parent_id: Some(other.clone()),
                 enc_key: Some(B64(c::wrap_node_key(&other_key, &file_key, &file.id))),
                 if_revision: Some(file.revision),
+                name_tag: Some(B64(c::name_tag(&other_key, "renamed-plan.txt"))),
             }),
         )
         .await;
@@ -1373,6 +1376,7 @@ async fn drop_file(
         enc_content_key: B64(c::wrap_content_key(&k, &ck, &id, &version_id)),
         chunk_count: chunks.len() as u32,
         if_revision: None,
+        name_tag: None,
     };
     let base = format!("/api/public/{token}/uploads");
     let r = h.call(Method::POST, &base, None, Some(&req)).await;
@@ -1518,6 +1522,8 @@ async fn file_drop_links_are_upload_only_and_zero_knowledge() {
             Some(&bob.token),
             Some(AdoptDropRequest {
                 enc_key: wrapped.clone(),
+                enc_metadata: None,
+                name_tag: None,
             }),
         )
         .await;
@@ -1527,7 +1533,11 @@ async fn file_drop_links_are_upload_only_and_zero_knowledge() {
             Method::POST,
             &format!("/api/drops/{dropped}/adopt"),
             Some(&alice.token),
-            Some(AdoptDropRequest { enc_key: wrapped }),
+            Some(AdoptDropRequest {
+                enc_key: wrapped,
+                enc_metadata: None,
+                name_tag: Some(B64(c::name_tag(&inbox_key, "drop-secret-name.pdf"))),
+            }),
         )
         .await;
     assert_eq!(r.status, StatusCode::OK, "{r:?}");
@@ -2014,6 +2024,162 @@ async fn profile_pictures_are_encrypted_and_only_for_share_partners() {
 }
 
 #[tokio::test]
+async fn duplicate_names_are_refused_by_name_tag() {
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "pw").await;
+    let root_key = alice.key_of(&h, &alice.root).await;
+    let (docs, _) = alice.mkdir(&h, &alice.root, "Docs").await;
+
+    // Same name (in any case) in the same folder: refused.
+    let id = c::new_id();
+    let k = Key::generate();
+    let folder = |name: &str| CreateFolderRequest {
+        id: id.clone(),
+        parent_id: alice.root.clone(),
+        enc_key: B64(c::wrap_node_key(&root_key, &k, &id)),
+        enc_metadata: B64(c::encrypt_metadata(&k, &id, &meta(name, 0)).unwrap()),
+        name_tag: Some(B64(c::name_tag(&root_key, name))),
+    };
+    let r = h
+        .call(
+            Method::POST,
+            "/api/nodes/folder",
+            Some(&alice.token),
+            Some(folder("docs")),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT);
+    assert_eq!(r.error(), "name_taken");
+    let file = alice
+        .upload(&h, &alice.root, None, "a.txt", b"one")
+        .await
+        .unwrap();
+    let err = alice
+        .upload(&h, &alice.root, None, "A.TXT", b"two")
+        .await
+        .unwrap_err();
+    assert_eq!(
+        err.error(),
+        "name_taken",
+        "refused before any chunk is sent"
+    );
+    // New versions aren't new names.
+    alice
+        .upload(&h, "", Some(&file), "a.txt", b"three")
+        .await
+        .unwrap();
+
+    // Renaming onto a taken name is refused.
+    let fk = alice.key_of(&h, &file.id).await;
+    let file: Node = h
+        .get(&format!("/api/nodes/{}", file.id), &alice.token)
+        .await
+        .json();
+    let rename = |name: &str| UpdateNodeRequest {
+        enc_metadata: Some(B64(
+            c::encrypt_metadata(&fk, &file.id, &meta(name, 5)).unwrap()
+        )),
+        name_tag: Some(B64(c::name_tag(&root_key, name))),
+        if_revision: Some(file.revision),
+        ..Default::default()
+    };
+    let uri = format!("/api/nodes/{}", file.id);
+    let r = h
+        .call(
+            Method::PATCH,
+            &uri,
+            Some(&alice.token),
+            Some(rename("Docs")),
+        )
+        .await;
+    assert_eq!(r.error(), "name_taken");
+    let r = h
+        .call(
+            Method::PATCH,
+            &uri,
+            Some(&alice.token),
+            Some(rename("b.txt")),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+
+    // A trashed item frees its name; restoring it then needs a new one.
+    assert_eq!(alice.delete(&h, &docs).await, StatusCode::NO_CONTENT);
+    let r = h
+        .call(
+            Method::POST,
+            "/api/nodes/folder",
+            Some(&alice.token),
+            Some(folder("Docs")),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED);
+    let restore = format!("/api/trash/{docs}/restore");
+    let r = h
+        .call(
+            Method::POST,
+            &restore,
+            Some(&alice.token),
+            Some(RestoreTrashRequest::default()),
+        )
+        .await;
+    assert_eq!(r.error(), "name_taken");
+    let dk = alice.trash(&h).await[0].path.last().unwrap().clone();
+    let docs_key = c::unwrap_node_key(&root_key, &dk.enc_key, &docs).unwrap();
+    let r = h
+        .call(
+            Method::POST,
+            &restore,
+            Some(&alice.token),
+            Some(RestoreTrashRequest {
+                enc_metadata: Some(B64(c::encrypt_metadata(
+                    &docs_key,
+                    &docs,
+                    &meta("Docs (2)", 0),
+                )
+                .unwrap())),
+                name_tag: Some(B64(c::name_tag(&root_key, "Docs (2)"))),
+                ..Default::default()
+            }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{r:?}");
+
+    // Older, untagged items can be tagged later; a clash is skipped.
+    let old = c::new_id();
+    let ok = Key::generate();
+    sqlx::query(
+        "INSERT INTO nodes (id, owner_id, created_by, parent_id, kind, enc_key, enc_metadata, created_at, updated_at) \
+         SELECT ?, owner_id, owner_id, id, 'folder', ?, ?, 0, 0 FROM nodes WHERE id = ?",
+    )
+    .bind(&old)
+    .bind(c::wrap_node_key(&root_key, &ok, &old))
+    .bind(c::encrypt_metadata(&ok, &old, &meta("Old", 0)).unwrap())
+    .bind(&alice.root)
+    .execute(&h.state.db)
+    .await
+    .unwrap();
+    let kids: Vec<Node> = alice.children(&h, &alice.root).await.json();
+    assert!(!kids.iter().find(|n| n.id == old).unwrap().name_tagged);
+    let r = h
+        .call(
+            Method::POST,
+            &format!("/api/nodes/{}/name-tags", alice.root),
+            Some(&alice.token),
+            Some(NameTags {
+                tags: vec![NameTagEntry {
+                    id: old.clone(),
+                    name_tag: B64(c::name_tag(&root_key, "Old")),
+                }],
+            }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    let kids: Vec<Node> = alice.children(&h, &alice.root).await.json();
+    assert!(kids.iter().all(|n| n.name_tagged));
+}
+
+#[tokio::test]
 async fn janitor_thins_old_versions_by_age() {
     let h = Harness::new().await;
     let a = register(&h, "alice", "pw").await;
@@ -2227,6 +2393,7 @@ async fn trash_hides_restores_and_purges() {
                 enc_metadata: B64(
                     c::encrypt_metadata(&Key::generate(), &id, &meta("x", 0)).unwrap()
                 ),
+                name_tag: None,
             }),
         )
         .await;
@@ -2266,6 +2433,7 @@ async fn trash_hides_restores_and_purges() {
             Some(RestoreTrashRequest {
                 parent_id: Some(alice.root.clone()),
                 enc_key: Some(B64(c::wrap_node_key(&root_key, &file_key, &file.id))),
+                ..Default::default()
             }),
         )
         .await;

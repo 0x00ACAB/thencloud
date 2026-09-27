@@ -387,3 +387,9 @@ pub fn open_avatar_key(secret: &[u8], sealed: &[u8], owner: &str, grantee: &str)
             .to_vec(),
     )
 }
+
+/// The folder-scoped tag the server uses to refuse duplicate names.
+#[wasm_bindgen]
+pub fn name_tag(folder_key: &[u8], name: &str) -> R<Vec<u8>> {
+    Ok(c::name_tag(&key(folder_key)?, name))
+}

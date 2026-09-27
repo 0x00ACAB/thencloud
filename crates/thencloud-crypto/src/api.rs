@@ -260,6 +260,9 @@ pub struct Node {
     pub created_at: i64,
     pub updated_at: i64,
     pub version: Option<VersionInfo>,
+    /// Whether the node has a name tag (older ones may not).
+    #[serde(default)]
+    pub name_tagged: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -268,6 +271,9 @@ pub struct CreateFolderRequest {
     pub parent_id: String,
     pub enc_key: B64,
     pub enc_metadata: B64,
+    /// `name_tag(parent key, name)`: lets the server refuse a duplicate name.
+    #[serde(default)]
+    pub name_tag: Option<B64>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -284,6 +290,22 @@ pub struct UpdateNodeRequest {
     /// Optimistic concurrency: fail with 409 if the node changed.
     #[serde(default)]
     pub if_revision: Option<i64>,
+    /// The name tag for the new name or parent. Renaming or moving without
+    /// one leaves the node untagged.
+    #[serde(default)]
+    pub name_tag: Option<B64>,
+}
+
+/// Name tags for existing children that don't have one yet.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NameTags {
+    pub tags: Vec<NameTagEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NameTagEntry {
+    pub id: String,
+    pub name_tag: B64,
 }
 
 /// The chain of nodes from the top-most node the caller can access down to
@@ -352,6 +374,11 @@ pub struct RestoreTrashRequest {
     pub parent_id: Option<String>,
     #[serde(default)]
     pub enc_key: Option<B64>,
+    /// A new name (when the old one is taken) and its tag.
+    #[serde(default)]
+    pub enc_metadata: Option<B64>,
+    #[serde(default)]
+    pub name_tag: Option<B64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -376,6 +403,9 @@ pub struct CreateUploadRequest {
     /// For new versions: fail with 409 if the node changed meanwhile.
     #[serde(default)]
     pub if_revision: Option<i64>,
+    /// For a new file: its name tag (see `name_tag`).
+    #[serde(default)]
+    pub name_tag: Option<B64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -503,6 +533,11 @@ pub struct DroppedFile {
 pub struct AdoptDropRequest {
     /// The node key wrapped under the folder's key.
     pub enc_key: B64,
+    /// A new name, if the dropped one is taken, and the name tag.
+    #[serde(default)]
+    pub enc_metadata: Option<B64>,
+    #[serde(default)]
+    pub name_tag: Option<B64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
