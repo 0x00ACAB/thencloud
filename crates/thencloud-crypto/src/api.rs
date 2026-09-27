@@ -533,7 +533,22 @@ pub struct DroppedFile {
 pub struct AdoptDropRequest {
     /// The node key wrapped under the folder's key.
     pub enc_key: B64,
-    /// A new name, if the dropped one is taken, and the name tag.
+    /// The metadata under the new key (with a new name, if the dropped one
+    /// is taken), and the name tag.
+    #[serde(default)]
+    pub enc_metadata: Option<B64>,
+    #[serde(default)]
+    pub name_tag: Option<B64>,
+    /// The file's content key re-wrapped under the new node key, so the
+    /// key the visitor chose stops mattering. Requires `enc_metadata`.
+    #[serde(default)]
+    pub enc_content_key: Option<B64>,
+}
+
+/// Optional body for finishing an upload of a new file: a new name (and
+/// its tag) if the one it started with was taken meanwhile.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct FinishUploadRequest {
     #[serde(default)]
     pub enc_metadata: Option<B64>,
     #[serde(default)]

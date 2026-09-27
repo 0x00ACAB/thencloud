@@ -206,6 +206,16 @@ pub async fn upload_finish(
     headers: HeaderMap,
 ) -> Result<StatusCode> {
     let link = drop_link(&state, &token, &headers).await?;
-    let _ = uploads::publish(&state, Uploader::Link(&link), &id).await?;
+    let _ = uploads::publish(&state, Uploader::Link(&link), &id, Default::default()).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// A visitor gives up on an upload: its space is freed straight away.
+pub async fn upload_abort(
+    State(state): State<AppState>,
+    Path((token, id)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Result<StatusCode> {
+    let link = drop_link(&state, &token, &headers).await?;
+    uploads::cancel(&state, Uploader::Link(&link), &id).await
 }

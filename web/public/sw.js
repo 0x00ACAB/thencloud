@@ -40,6 +40,10 @@ function ask(port, msg) {
   });
 }
 
+// The server's headers don't reach responses made here, so set the
+// important ones: never sniff the type, and nothing may run or load.
+const SAFE = { 'X-Content-Type-Options': 'nosniff', 'Content-Security-Policy': "default-src 'none'; sandbox" };
+
 function disposition(info) {
   if (!info.download) return {};
   const ascii = info.name.replace(/[^\x20-\x7e]|["\\]/g, '_');
@@ -91,6 +95,7 @@ function fileResponse({ info, port }, request) {
     'Content-Length': String(size ? end - start + 1 : 0),
     'Accept-Ranges': 'bytes',
     'Cache-Control': 'no-store',
+    ...SAFE,
     ...disposition(info),
   };
   if (status === 206) headers['Content-Range'] = `bytes ${start}-${end}/${size}`;
@@ -115,7 +120,7 @@ function sequentialResponse({ info, port }) {
       port.close();
     },
   });
-  return new Response(body, { headers: { 'Content-Type': info.type, 'Cache-Control': 'no-store', ...disposition(info) } });
+  return new Response(body, { headers: { 'Content-Type': info.type, 'Cache-Control': 'no-store', ...SAFE, ...disposition(info) } });
 }
 
 async function respond(id, request) {

@@ -176,6 +176,7 @@
     const padded = tc.padded_size(file.size);
     const chunkCount = tc.chunk_count(padded);
     const meta = { name: file.name, mime: file.type || null, size: file.size, mtime: file.lastModified || Date.now() };
+    let upId = null;
     try {
       const up = await request('POST', `${base}/uploads`, {
         ...opts(),
@@ -189,6 +190,7 @@
           chunk_count: chunkCount,
         },
       });
+      upId = up.upload_id;
       for (let i = 0; i < chunkCount; i++) {
         const enc = await encryptPiece(file, i, padded, contentKey, versionId, chunkCount);
         await request('PUT', `${base}/uploads/${up.upload_id}/chunks/${i}`, { ...opts(), raw: enc });
@@ -197,6 +199,8 @@
       await request('POST', `${base}/uploads/${up.upload_id}/finish`, opts());
       row.status = 'done';
     } catch (e) {
+      // Free the space it took straight away.
+      if (upId) request('DELETE', `${base}/uploads/${upId}`, opts()).catch(() => {});
       row.status = 'error';
       row.error = e?.status === 507 ? "There's no room left in this folder." : errorMessage(e);
     }

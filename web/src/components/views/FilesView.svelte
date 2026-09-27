@@ -1,5 +1,5 @@
 <script>
-  import { session, resolvePath, listFolder, createFolder, rename, trash, untrash, download, downloadZip, fetchEntry, upload, saveText, refreshMe, toolsInfo, loadDraft, storeDraft, dropDraft, searchTree, openEntry } from '../../lib/cloud.svelte.js';
+  import { session, resolvePath, listFolder, createFolder, rename, trash, untrash, download, downloadZip, fetchEntry, upload, saveText, refreshMe, toolsInfo, loadDraft, storeDraft, dropDraft, searchTree, openEntry, strayDrops } from '../../lib/cloud.svelte.js';
   import { toast, toastError, trackTransfer, errorMessage, sort, sortBy } from '../../lib/ui.svelte.js';
   import { formatSize, formatWhen, fullDate, plural, sortEntries, nameError } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
@@ -17,6 +17,7 @@
   import ShortcutsDialog from '../dialogs/ShortcutsDialog.svelte';
   import ConvertDialog from '../dialogs/ConvertDialog.svelte';
   import BatchConvertDialog from '../dialogs/BatchConvertDialog.svelte';
+  import StrayDropsDialog from '../dialogs/StrayDropsDialog.svelte';
   import VideoDownloadDialog from '../dialogs/VideoDownloadDialog.svelte';
   import { onMount, untrack } from 'svelte';
   import { sourceKind } from '../../lib/convert.js';
@@ -691,6 +692,16 @@
   </div>
 </div>
 
+{#if strayDrops.list.length && isOwner}
+  <div class="mt-4 flex flex-wrap items-center gap-3 rounded-md border border-line bg-subtle px-4 py-2.5 text-[13px]" role="status">
+    <Icon name="inbox" class="size-4 shrink-0 text-fg-muted" />
+    <p class="min-w-0 flex-1">
+      {strayDrops.list.length === 1 ? '1 file was' : `${strayDrops.list.length} files were`} dropped through a link that no longer exists.
+    </p>
+    <button type="button" class="btn btn-secondary h-7 px-2.5 text-[13px]" onclick={() => (dialog = { type: 'stray-drops' })}>Review</button>
+  </div>
+{/if}
+
 <div class="card relative mt-6 overflow-hidden">
   {#if loading}
     <div aria-busy="true" aria-label="Loading">
@@ -945,6 +956,8 @@
     fetch={fetchEntry}
     save={canWrite ? saveNewFile : null}
     onclose={close} />
+{:else if dialog?.type === 'stray-drops'}
+  <StrayDropsDialog onclose={close} onchanged={() => load()} />
 {:else if dialog?.type === 'convert-many'}
   <BatchConvertDialog entries={dialog.entries} fetch={fetchEntry} save={canWrite ? saveNewFile : null} onclose={close} />
 {:else if dialog?.type === 'video'}

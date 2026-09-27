@@ -455,46 +455,86 @@ export async function searchTree(top, query, { onResult, signal } = {}) {
 let dropsChecked = 0;
 let adopting = null;
 
+/** Files dropped through a link that no longer exists, or whose key doesn't open, for the owner to review. */
+export const strayDrops = $state({ list: [] }); // [{ drop, folder, meta | null }]
+
+/**
+ * Take a dropped file in: open its sealed key, give it a fresh node key
+ * (re-wrapping its content key, so the visitor's key stops mattering) and
+ * wrap that under the folder key. A taken name becomes "name (2)".
+ */
+async function adoptDrop(d, folderKey) {
+  const id = d.node.id;
+  const v = d.node.version;
+  const visitorKey = tc.open_drop_key(sk, unb64(d.sealed_key), id, d.node.parent_id);
+  const meta = decryptMeta(visitorKey, d.node);
+  const ck = tc.unwrap_content_key(visitorKey, unb64(v.enc_content_key), id, v.id);
+  const key = tc.random_key();
+  const base = {
+    enc_key: b64(tc.wrap_node_key(folderKey, key, id)),
+    enc_content_key: b64(tc.wrap_content_key(key, ck, id, v.id)),
+  };
+  const named = (name) => ({ ...base, enc_metadata: encryptMeta(key, id, { ...meta, name }), name_tag: tagFor(folderKey, name) });
+  try {
+    await api('POST', `/api/drops/${id}/adopt`, { body: named(meta.name) });
+  } catch (e) {
+    if (e?.code !== 'name_taken') throw e;
+    await api('POST', `/api/drops/${id}/adopt`, { body: named(freeName(meta.name, await namesIn(d.node.parent_id, folderKey))) });
+  }
+  keyCache.set(id, key);
+}
+
 export function adoptDrops() {
   if (adopting) return adopting;
   if (Date.now() - dropsChecked < 5000) return Promise.resolve(0);
   adopting = (async () => {
     let n = 0;
+    const stray = [];
     try {
       const drops = await api('GET', '/api/drops');
-      // Only into folders we made a file drop link for.
+      // Taken in automatically only into folders with a drop link now;
+      // anything else waits for the owner to look at it.
       const open = drops.length ? new Set((await api('GET', '/api/links')).filter((l) => l.upload_only).map((l) => l.node_id)) : null;
       for (const d of drops) {
-        if (!open.has(d.node.parent_id)) continue;
+        let folder = null;
         try {
-          const folderKey = await keyOf(d.node.parent_id);
-          const key = tc.open_drop_key(sk, unb64(d.sealed_key), d.node.id, d.node.parent_id);
-          const enc_key = b64(tc.wrap_node_key(folderKey, key, d.node.id));
-          const meta = decryptMeta(key, d.node);
-          try {
-            await api('POST', `/api/drops/${d.node.id}/adopt`, { body: { enc_key, name_tag: tagFor(folderKey, meta.name) } });
-          } catch (e) {
-            if (e?.code !== 'name_taken') throw e;
-            // Someone dropped a file with a name that's already here: keep both.
-            const name = freeName(meta.name, await namesIn(d.node.parent_id, folderKey));
-            await api('POST', `/api/drops/${d.node.id}/adopt`, {
-              body: { enc_key, enc_metadata: encryptMeta(key, d.node.id, { ...meta, name }), name_tag: tagFor(folderKey, name) },
-            });
+          folder = { key: await keyOf(d.node.parent_id), id: d.node.parent_id };
+          if (open.has(d.node.parent_id)) {
+            await adoptDrop(d, folder.key);
+            n++;
+            continue;
           }
-          keyCache.set(d.node.id, key);
-          n++;
         } catch {
-          /* left waiting; a file whose key doesn't open never shows up */
+          /* listed for review below */
         }
+        let meta = null;
+        try {
+          meta = decryptMeta(tc.open_drop_key(sk, unb64(d.sealed_key), d.node.id, d.node.parent_id), d.node);
+        } catch {
+          /* its key doesn't open: it can only be deleted */
+        }
+        stray.push({ drop: d, folder, meta });
       }
     } catch {
       /* the listing still works without it */
     }
+    strayDrops.list = stray;
     dropsChecked = Date.now();
     adopting = null;
     return n;
   })();
   return adopting;
+}
+
+/** Take in a stray drop the owner chose to keep. */
+export async function keepStrayDrop(item) {
+  await adoptDrop(item.drop, item.folder.key);
+  strayDrops.list = strayDrops.list.filter((x) => x !== item);
+}
+
+export async function deleteStrayDrop(item) {
+  await api('DELETE', `/api/drops/${item.drop.node.id}`);
+  strayDrops.list = strayDrops.list.filter((x) => x !== item);
 }
 
 export async function createFolder(parentId, parentKey, name) {
@@ -726,7 +766,16 @@ export async function upload(file, { parentId, parentKey, existing }, onProgress
       await api('PUT', `/api/uploads/${up.upload_id}/chunks/${i}`, { raw: enc });
       onProgress?.((i + 1) / chunkCount);
     }
-    node = await api('POST', `/api/uploads/${up.upload_id}/finish`);
+    try {
+      node = await api('POST', `/api/uploads/${up.upload_id}/finish`);
+    } catch (e) {
+      // The name was taken while the chunks went up: keep both.
+      if (existing || e?.code !== 'name_taken') throw e;
+      meta.name = freeName(meta.name, await namesIn(parentId, parentKey));
+      node = await api('POST', `/api/uploads/${up.upload_id}/finish`, {
+        body: { enc_metadata: encryptMeta(nodeKey, nodeId, meta), name_tag: tagFor(parentKey, meta.name) },
+      });
+    }
   } catch (e) {
     api('DELETE', `/api/uploads/${up.upload_id}`).catch(() => {});
     throw e;
@@ -959,23 +1008,27 @@ export async function loadMyAvatar() {
   return avatarState;
 }
 
-/** Give `username` our avatar key, if we have a picture and haven't yet. */
+/**
+ * Give `username` our avatar key, if we have a picture and haven't yet.
+ * Only to a verified contact whose key still matches: the same rule as
+ * sharing, so a key the server swapped in never gets it.
+ */
 async function grantAvatar(username, publicKey) {
   const a = await loadMyAvatar();
   if (!a.key || a.grantees.has(username) || username === session.me.username) return;
+  const pinned = (await loadContacts()).data[username];
+  if (!pinned || pinned.public_key !== b64(publicKey)) return;
   a.grantees.add(username);
   await api('PUT', `/api/avatar-grants/${encodeURIComponent(username)}`, {
     body: { sealed_key: b64(tc.seal_avatar_key(publicKey, a.key, session.me.username, username)) },
   });
 }
 
-/** Everyone we share with, either way round, with their public keys. */
+/** Everyone we share with, either way round. */
 async function sharePartners() {
-  const partners = new Map();
-  for (const s of await api('GET', '/api/shares/incoming')) partners.set(s.owner, unb64(s.owner_public_key));
-  for (const s of await api('GET', '/api/shares/outgoing')) {
-    if (!partners.has(s.recipient)) partners.set(s.recipient, null);
-  }
+  const partners = new Set();
+  for (const s of await api('GET', '/api/shares/incoming')) partners.add(s.owner);
+  for (const s of await api('GET', '/api/shares/outgoing')) partners.add(s.recipient);
   return partners;
 }
 
@@ -990,8 +1043,9 @@ export async function setAvatar(file) {
   if (blob.type !== 'image/webp') blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.85 });
   const bytes = new Uint8Array(await blob.arrayBuffer());
   const a = await loadMyAvatar();
-  // Keep the key, so everyone already given it sees the new picture.
-  const key = a.key ?? tc.random_key();
+  // A new key for each picture, given to the people we share with now, so
+  // someone we've stopped sharing with never gets a later one.
+  const key = tc.random_key();
   const me = session.me;
   await api('PUT', '/api/me/avatar', {
     body: {
@@ -1000,11 +1054,12 @@ export async function setAvatar(file) {
     },
   });
   a.key = key;
+  a.grantees = new Set();
   if (avatar.url) URL.revokeObjectURL(avatar.url);
   avatar.url = avatarBlobUrl(bytes);
-  for (const [username, pk] of await sharePartners()) {
-    const publicKey = pk ?? (await lookupUser(username).catch(() => null))?.publicKey;
-    if (publicKey) await grantAvatar(username, publicKey).catch(() => {});
+  const pinned = (await loadContacts()).data;
+  for (const username of await sharePartners()) {
+    if (pinned[username]) await grantAvatar(username, unb64(pinned[username].public_key)).catch(() => {});
   }
 }
 

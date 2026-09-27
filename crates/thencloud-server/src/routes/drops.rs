@@ -63,6 +63,27 @@ pub async fn adopt(
     }
     check_name_tag(&req.name_tag)?;
     dropped_node(&state, &user, &id).await?;
+    let mut tx = state.db.begin().await?;
+    // A fresh node key: its content key is re-wrapped under it, so later
+    // versions aren't readable with the key the visitor chose.
+    if let Some(ck) = &req.enc_content_key {
+        check_len(ck, WRAPPED_KEY_LEN, "enc_content_key")?;
+        let meta = req
+            .enc_metadata
+            .as_ref()
+            .ok_or_else(|| AppError::bad("enc_content_key needs enc_metadata"))?;
+        let r = sqlx::query(
+            "UPDATE file_versions SET enc_content_key = ?, enc_metadata = ? WHERE node_id = ?",
+        )
+        .bind(&ck.0)
+        .bind(&meta.0)
+        .bind(&id)
+        .execute(&mut *tx)
+        .await?;
+        if r.rows_affected() != 1 {
+            return Err(AppError::bad("a dropped file has exactly one version"));
+        }
+    }
     sqlx::query(
         "UPDATE nodes SET enc_key = ?, enc_metadata = COALESCE(?, enc_metadata), name_tag = ?, dropped = 0, \
          revision = revision + 1 WHERE id = ? AND dropped = 1",
@@ -71,9 +92,10 @@ pub async fn adopt(
     .bind(req.enc_metadata.as_ref().map(|m| m.0.clone()))
     .bind(req.name_tag.as_ref().map(|t| t.0.clone()))
     .bind(&id)
-    .execute(&state.db)
+    .execute(&mut *tx)
     .await
     .map_err(crate::error::name_conflict)?;
+    tx.commit().await?;
     Ok(Json(
         crate::db::get_node(&state.db, &id)
             .await?

@@ -117,6 +117,10 @@ pub async fn delete(
     user: AuthUser,
     Path(id): Path<String>,
 ) -> Result<StatusCode> {
+    // A device signed in with an app password may only revoke that one.
+    if user.app_password_id.as_ref().is_some_and(|own| *own != id) {
+        return Err(AppError::Forbidden);
+    }
     let r = sqlx::query("DELETE FROM app_passwords WHERE id = ? AND user_id = ?")
         .bind(&id)
         .bind(&user.id)

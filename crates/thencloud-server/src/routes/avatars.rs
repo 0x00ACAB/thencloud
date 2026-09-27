@@ -126,10 +126,14 @@ pub async fn get_user(
     let row: Option<(Vec<u8>, Vec<u8>, i64)> = sqlx::query_as(
         "SELECT u.enc_avatar, g.sealed_key, u.avatar_updated_at FROM users u \
          JOIN avatar_grants g ON g.owner_id = u.id AND g.grantee_id = ? \
-         WHERE u.username = ? AND u.enc_avatar IS NOT NULL",
+         WHERE u.username = ? AND u.enc_avatar IS NOT NULL \
+         AND EXISTS(SELECT 1 FROM shares s WHERE (s.owner_id = u.id AND s.recipient_id = ?) \
+                    OR (s.owner_id = ? AND s.recipient_id = u.id))",
     )
     .bind(&user.id)
     .bind(username.trim().to_lowercase())
+    .bind(&user.id)
+    .bind(&user.id)
     .fetch_optional(&state.db)
     .await?;
     Ok(Json(row.map(|(data, sealed_key, updated_at)| UserAvatar {
@@ -137,4 +141,18 @@ pub async fn get_user(
         sealed_key: B64(sealed_key),
         updated_at,
     })))
+}
+
+/// Take back avatar keys between two users who no longer share anything.
+pub async fn drop_unrelated_grants(state: &AppState, a: &str, b: &str) -> Result<()> {
+    sqlx::query(
+        "DELETE FROM avatar_grants WHERE ((owner_id = ?1 AND grantee_id = ?2) OR (owner_id = ?2 AND grantee_id = ?1)) \
+         AND NOT EXISTS(SELECT 1 FROM shares WHERE (owner_id = ?1 AND recipient_id = ?2) \
+                        OR (owner_id = ?2 AND recipient_id = ?1))",
+    )
+    .bind(a)
+    .bind(b)
+    .execute(&state.db)
+    .await?;
+    Ok(())
 }

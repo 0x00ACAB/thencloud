@@ -46,11 +46,21 @@ pub async fn revoke(
     user: AuthUser,
     Path(id): Path<String>,
 ) -> Result<StatusCode> {
-    let r = sqlx::query("DELETE FROM sessions WHERE id = ? AND user_id = ?")
-        .bind(&id)
-        .bind(&user.id)
-        .execute(&state.db)
-        .await?;
+    // A device signed in with an app password may only sign itself out.
+    let own = if user.app_password_id.is_some() {
+        Some(&user.token_hash)
+    } else {
+        None
+    };
+    let r = sqlx::query(
+        "DELETE FROM sessions WHERE id = ? AND user_id = ? AND (? IS NULL OR token_hash = ?)",
+    )
+    .bind(&id)
+    .bind(&user.id)
+    .bind(own)
+    .bind(own)
+    .execute(&state.db)
+    .await?;
     if r.rows_affected() == 0 {
         return Err(AppError::NotFound);
     }
@@ -59,6 +69,9 @@ pub async fn revoke(
 
 /// Sign out every session except this one.
 pub async fn revoke_others(State(state): State<AppState>, user: AuthUser) -> Result<StatusCode> {
+    if user.app_password_id.is_some() {
+        return Err(AppError::Forbidden);
+    }
     sqlx::query("DELETE FROM sessions WHERE user_id = ? AND token_hash != ?")
         .bind(&user.id)
         .bind(&user.token_hash)

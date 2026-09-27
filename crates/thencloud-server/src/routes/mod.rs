@@ -143,6 +143,7 @@ pub fn router(state: AppState) -> Router {
             get(public::chunk),
         )
         .route("/public/{token}/uploads", post(public::upload_create))
+        .route("/public/{token}/uploads/{id}", delete(public::upload_abort))
         .route(
             "/public/{token}/uploads/{id}/chunks/{idx}",
             put(public::upload_chunk).layer(DefaultBodyLimit::max(MAX_ENCRYPTED_CHUNK + 1024)),
