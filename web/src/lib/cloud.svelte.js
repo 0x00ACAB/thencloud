@@ -368,7 +368,46 @@ export async function listFolder(id, key) {
   const nodes = await api('GET', `/api/nodes/${id}/children`);
   const rows = decryptChildren(key, nodes);
   for (const r of rows) keyCache.set(r.node.id, r.key);
+  index.set(id, { at: Date.now(), rows });
   return sortEntries(rows);
+}
+
+// Search across folders: names are only readable here, so the index is
+// built in memory from folder listings, as you browse and when you search.
+const index = new Map(); // folder id -> { at, rows }
+const INDEX_TTL = 2 * 60 * 1000;
+
+/**
+ * Find entries under `top` (a folder entry) whose name contains `query`.
+ * Calls `onResult({ ...entry, location: [folder names], parentId })` as
+ * matches turn up; stops early when `signal` aborts.
+ */
+export async function searchTree(top, query, { onResult, signal } = {}) {
+  const q = query.trim().toLowerCase();
+  const queue = [{ entry: top, location: [top.meta.name] }];
+  const worker = async () => {
+    while (queue.length && !signal?.aborted) {
+      const { entry, location } = queue.shift();
+      const cached = index.get(entry.node.id);
+      let rows;
+      try {
+        rows = cached && Date.now() - cached.at < INDEX_TTL ? cached.rows : await listFolder(entry.node.id, entry.key);
+      } catch {
+        continue; // unreadable or gone: skip it
+      }
+      if (signal?.aborted) return;
+      for (const r of rows) {
+        if (r.meta.name.toLowerCase().includes(q)) onResult?.({ ...r, location, parentId: entry.node.id });
+        if (r.node.kind === 'folder') queue.push({ entry: r, location: [...location, r.meta.name] });
+      }
+    }
+  };
+  // A few folders at a time; each worker picks up folders the others find.
+  let active = [];
+  do {
+    active = [worker(), worker(), worker(), worker()];
+    await Promise.all(active);
+  } while (queue.length && !signal?.aborted);
 }
 
 // Files dropped through upload-only links arrive with their key sealed to
