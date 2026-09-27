@@ -1149,6 +1149,24 @@ async fn security_headers_are_set() {
             .unwrap()
             .contains("immutable")
     );
+    // Precompressed copies are used when the browser accepts gzip.
+    std::fs::write(
+        web.join("assets/app-abc123.css.gz"),
+        b"\x1f\x8bnot-really-gzip",
+    )
+    .unwrap();
+    let gz = h
+        .raw(
+            Method::GET,
+            "/assets/app-abc123.css",
+            None,
+            &[("accept-encoding", "gzip")],
+            Body::empty(),
+            None,
+        )
+        .await;
+    assert_eq!(gz.headers.get("content-encoding").unwrap(), "gzip");
+    assert_eq!(&gz.body[..2], b"\x1f\x8b");
     let missing = get("/assets/app-gone.css").await;
     assert_eq!(missing.status, StatusCode::NOT_FOUND);
     assert_eq!(missing.headers.get("cache-control").unwrap(), "no-cache");

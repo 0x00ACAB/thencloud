@@ -114,8 +114,13 @@ pub fn router(state: AppState) -> Router {
     let web = state.config.web_dir.clone();
     Router::new()
         .nest("/api", api)
-        .route_service("/s/{token}", ServeFile::new(web.join("share.html")))
-        .fallback_service(ServeDir::new(web))
+        // The web build writes .gz copies of static files; send those when
+        // the browser accepts gzip.
+        .route_service(
+            "/s/{token}",
+            ServeFile::new(web.join("share.html")).precompressed_gzip(),
+        )
+        .fallback_service(ServeDir::new(web).precompressed_gzip())
         .layer(SetResponseHeaderLayer::if_not_present(
             header::CONTENT_SECURITY_POLICY,
             HeaderValue::from_static(CSP),

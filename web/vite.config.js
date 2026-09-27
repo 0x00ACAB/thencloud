@@ -1,7 +1,8 @@
 import { defineConfig } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import tailwindcss from '@tailwindcss/vite';
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync, statSync } from 'node:fs';
+import { gzipSync } from 'node:zlib';
 import { join } from 'node:path';
 import fileIcons from './scripts/file-icons-plugin.mjs';
 
@@ -24,6 +25,21 @@ export default defineConfig({
     tailwindcss(),
     svelte(),
     fileIcons(),
+    {
+      // Write foo.js.gz next to every compressible file; the server sends
+      // those to browsers that accept gzip (ffmpeg's 32 MB core becomes 10).
+      name: 'thencloud-precompress',
+      apply: 'build',
+      closeBundle() {
+        const walk = (dir) =>
+          readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]));
+        for (const f of walk('dist')) {
+          if (!/\.(js|mjs|css|html|wasm|svg|json|bcmap|ttf|pfb|icc)$/.test(f) || statSync(f).size < 1024) continue;
+          const gz = gzipSync(readFileSync(f), { level: 9 });
+          if (gz.length < statSync(f).size * 0.9) writeFileSync(`${f}.gz`, gz);
+        }
+      },
+    },
     {
       name: 'thencloud-pdfjs-assets',
       configureServer(server) {
@@ -59,6 +75,9 @@ export default defineConfig({
     },
   },
   worker: { format: 'es' },
+  // ffmpeg.wasm starts its own worker with new URL(..., import.meta.url);
+  // pre-bundling would move the file away from that URL in dev.
+  optimizeDeps: { exclude: ['@ffmpeg/ffmpeg'] },
   server: {
     // THENCLOUD_API points the dev server at a server on another address.
     proxy: { '/api': process.env.THENCLOUD_API ?? 'http://127.0.0.1:8080' },
