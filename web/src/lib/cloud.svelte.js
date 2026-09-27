@@ -33,7 +33,10 @@ const keyCache = new Map(); // node id -> node key
  */
 async function api(method, path, opts = {}) {
   try {
-    return await request(method, path, { ...opts, token: session.token });
+    const out = await request(method, path, { ...opts, token: session.token });
+    // Any change may move, add or remove something the search index holds.
+    if (method !== 'GET') index.clear();
+    return out;
   } catch (e) {
     // `invalid_credentials` (a wrong current password) is also a 401, but
     // the session is fine; only `unauthorized` means it's gone.
@@ -583,7 +586,7 @@ function backfillTags(folderId, folderKey, rows) {
 
 // Search across folders: names are only readable here, so the index is
 // built in memory from folder listings, as you browse and when you search.
-const index = new Map(); // folder id -> { at, rows }
+const index = new Map(); // folder id -> { at, rows }; emptied by every change (see api)
 const INDEX_TTL = 2 * 60 * 1000;
 
 /**

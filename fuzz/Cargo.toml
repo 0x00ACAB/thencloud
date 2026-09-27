@@ -1,0 +1,63 @@
+[package]
+name = "thencloud-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "AGPL-3.0-or-later"
+
+[package.metadata]
+cargo-fuzz = true
+
+# Not part of the main workspace: it needs nightly and libFuzzer.
+[workspace]
+members = ["."]
+
+[dependencies]
+libfuzzer-sys = "0.4"
+thencloud-crypto = { path = "../crates/thencloud-crypto" }
+thencloud-server = { path = "../crates/thencloud-server" }
+serde = "1"
+serde_json = "1"
+ciborium = "0.2"
+
+[[bin]]
+name = "crypto-decode"
+path = "fuzz_targets/crypto_decode.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "webauthn-register"
+path = "fuzz_targets/webauthn_register.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "webauthn-assert"
+path = "fuzz_targets/webauthn_assert.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "api-json"
+path = "fuzz_targets/api_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "server-input"
+path = "fuzz_targets/server_input.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sealed-box"
+path = "fuzz_targets/sealed_box.rs"
+test = false
+doc = false
+bench = false
