@@ -167,3 +167,31 @@ export function setIconPack(id) {
     /* private mode */
   }
 }
+
+// Sort order of folder listings, remembered per device.
+function readSort() {
+  try {
+    const v = JSON.parse(localStorage.getItem('sort') || 'null');
+    if (['name', 'size', 'modified'].includes(v?.key) && ['asc', 'desc'].includes(v?.dir)) return v;
+  } catch {
+    /* fall through */
+  }
+  return { key: 'name', dir: 'asc' };
+}
+
+export const sort = $state(readSort());
+
+/** Sort by `key`; picking the current key again flips the direction. */
+export function sortBy(key) {
+  if (sort.key === key) sort.dir = sort.dir === 'asc' ? 'desc' : 'asc';
+  else {
+    sort.key = key;
+    // Newest and largest first is what people usually want.
+    sort.dir = key === 'name' ? 'asc' : 'desc';
+  }
+  try {
+    localStorage.setItem('sort', JSON.stringify(sort));
+  } catch {
+    /* private mode */
+  }
+}

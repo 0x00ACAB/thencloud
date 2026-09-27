@@ -1,7 +1,7 @@
 <script>
   import { session, resolvePath, listFolder, createFolder, rename, trash, untrash, download, fetchEntry, upload, saveText, refreshMe } from '../../lib/cloud.svelte.js';
-  import { toast, toastError, trackTransfer, errorMessage } from '../../lib/ui.svelte.js';
-  import { formatSize, formatWhen, fullDate, plural } from '../../lib/format.js';
+  import { toast, toastError, trackTransfer, errorMessage, sort, sortBy } from '../../lib/ui.svelte.js';
+  import { formatSize, formatWhen, fullDate, plural, sortEntries } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
   import FileIcon from '../FileIcon.svelte';
   import Menu from '../Menu.svelte';
@@ -12,6 +12,7 @@
   import ShareDialog from '../dialogs/ShareDialog.svelte';
   import LinkDialog from '../dialogs/LinkDialog.svelte';
   import Preview from '../Preview.svelte';
+  import ShortcutsDialog from '../dialogs/ShortcutsDialog.svelte';
 
   let { folderId, go, inShare = $bindable(false) } = $props();
 
@@ -23,6 +24,9 @@
   let dialog = $state(null); // { type, entry }
   let dragging = $state(false);
   let fileInput;
+  let searchInput = $state();
+  let tbody = $state();
+  let query = $state('');
   let versionInput;
   let versionTarget = null;
 
@@ -50,7 +54,18 @@
   $effect(() => {
     loading = true;
     rows = [];
+    query = '';
     load(folderId);
+  });
+
+  // What the table shows: the folder filtered by the search box (names are
+  // decrypted here, so this never involves the server), in the chosen order.
+  const visible = $derived.by(() => {
+    const q = query.trim().toLowerCase();
+    return sortEntries(
+      rows.filter((r) => !q || r.meta.name.toLowerCase().includes(q)),
+      sort,
+    );
   });
 
   const open = (id) => go({ name: 'files', folderId: id });
@@ -166,7 +181,7 @@
     }
   }
 
-  const files = $derived(rows.filter((r) => r.node.kind === 'file'));
+  const files = $derived(visible.filter((r) => r.node.kind === 'file'));
 
   function activate(entry) {
     if (entry.node.kind === 'folder') open(entry.node.id);
@@ -220,11 +235,63 @@
     ];
   }
 
+  // ---------------------------------------------------------- keyboard
+
+  const rowButtons = () => [...(tbody?.querySelectorAll('td:first-child > button') ?? [])];
+
+  function focusRow(delta) {
+    const list = rowButtons();
+    if (!list.length) return;
+    const i = list.indexOf(document.activeElement);
+    const next = i === -1 ? (delta > 0 ? 0 : list.length - 1) : Math.max(0, Math.min(list.length - 1, i + delta));
+    list[next].focus();
+    list[next].scrollIntoView({ block: 'nearest' });
+  }
+
+  function focusedEntry() {
+    const i = rowButtons().indexOf(document.activeElement);
+    return i === -1 ? null : visible[i];
+  }
+
+  function onkeydown(e) {
+    if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (dialog || document.querySelector('dialog[open]')) return;
+    const t = e.target;
+    const typing = t instanceof HTMLElement && (t.isContentEditable || !!t.closest('input, textarea, select'));
+    if (t === searchInput) {
+      if (e.key === 'Escape') {
+        query = '';
+        searchInput.blur();
+      } else if (e.key === 'ArrowDown') focusRow(1);
+      else return;
+      e.preventDefault();
+      return;
+    }
+    if (typing) return;
+    const key = e.key;
+    if (key === '/') searchInput?.focus();
+    else if (key === 'j' || key === 'ArrowDown') focusRow(1);
+    else if (key === 'k' || key === 'ArrowUp') focusRow(-1);
+    else if (key === 'Backspace' && path.length > 1) open(path[path.length - 2].node.id);
+    else if (key === 'n' && canWrite && here) dialog = { type: 'mkdir' };
+    else if (key === 'u' && canWrite && here) fileInput.click();
+    else if (key === 'Delete' && canWrite && focusedEntry()) {
+      const entry = focusedEntry();
+      const list = rowButtons();
+      const i = list.indexOf(document.activeElement);
+      moveToTrash(entry).then(() => rowButtons()[Math.min(i, rowButtons().length - 1)]?.focus());
+    } else if (key === '?') dialog = { type: 'shortcuts' };
+    else return;
+    e.preventDefault();
+  }
+
+  const sortLabel = { name: 'Name', size: 'Size', modified: 'Modified' };
+
   const close = () => (dialog = null);
   const reload = () => load();
 </script>
 
-<svelte:window ondragenter={onDragEnter} ondragover={onDragOver} ondragleave={onDragLeave} ondrop={onDrop} />
+<svelte:window {onkeydown} ondragenter={onDragEnter} ondragover={onDragOver} ondragleave={onDragLeave} ondrop={onDrop} />
 
 <input bind:this={fileInput} type="file" multiple hidden onchange={onPick} />
 <input bind:this={versionInput} type="file" hidden onchange={onPickVersion} />
@@ -252,8 +319,23 @@
       </p>
     {/if}
   </div>
-  {#if canWrite}
-    <div class="flex gap-2">
+  <div class="flex flex-wrap gap-2">
+    {#if rows.length}
+      <label class="relative block">
+        <span class="sr-only">Search this folder</span>
+        <Icon name="search" class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-fg-faint" />
+        <input
+          bind:this={searchInput}
+          bind:value={query}
+          type="search"
+          class="input h-8 w-44 pr-8 pl-8 sm:w-56"
+          placeholder="Search"
+          autocomplete="off"
+          spellcheck="false" />
+        {#if !query}<kbd class="kbd pointer-events-none absolute top-1/2 right-2 -translate-y-1/2">/</kbd>{/if}
+      </label>
+    {/if}
+    {#if canWrite}
       <button type="button" class="btn btn-secondary" disabled={!here} onclick={() => (dialog = { type: 'note' })}>
         <Icon name="file-plus" /> New note
       </button>
@@ -263,8 +345,8 @@
       <button type="button" class="btn btn-primary" disabled={!here} onclick={() => fileInput.click()}>
         <Icon name="upload" /> Upload
       </button>
-    </div>
-  {/if}
+    {/if}
+  </div>
 </div>
 
 <div class="card relative mt-6 overflow-hidden">
@@ -301,14 +383,29 @@
     <table class="table animate-enter">
       <thead>
         <tr>
-          <th>Name</th>
-          <th class="hidden w-28 text-right sm:table-cell">Size</th>
-          <th class="hidden w-40 md:table-cell">Modified</th>
+          {#snippet sortHeader(key, cls = '')}
+            <th class={cls} aria-sort={sort.key === key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+              <button type="button" class="inline-flex cursor-pointer items-center gap-1 hover:text-fg {sort.key === key ? 'text-fg' : ''}" onclick={() => sortBy(key)}>
+                {sortLabel[key]}
+                {#if sort.key === key}<Icon name={sort.dir === 'asc' ? 'arrow-up' : 'arrow-down'} class="size-3" />{/if}
+              </button>
+            </th>
+          {/snippet}
+          {@render sortHeader('name')}
+          {@render sortHeader('size', 'hidden w-28 text-right sm:table-cell')}
+          {@render sortHeader('modified', 'hidden w-40 md:table-cell')}
           <th class="w-12"><span class="sr-only">Actions</span></th>
         </tr>
       </thead>
-      <tbody>
-        {#each rows as entry (entry.node.id)}
+      <tbody bind:this={tbody}>
+        {#if !visible.length}
+          <tr>
+            <td colspan="4" class="h-24 text-center text-[13px] text-fg-muted">
+              Nothing in this folder matches "{query.trim()}". <button type="button" class="link" onclick={() => (query = '')}>Clear search</button>
+            </td>
+          </tr>
+        {/if}
+        {#each visible as entry (entry.node.id)}
           {@const folder = entry.node.kind === 'folder'}
           <tr class="group" in:fade out:fade={{ duration: 120 }} animate:flip={flipParams()}>
             <td class="max-w-0">
@@ -334,9 +431,15 @@
 </div>
 
 {#if rows.length}
-  <p class="mt-3 px-1 text-xs text-fg-faint">
-    {plural(rows.filter((r) => r.node.kind === 'folder').length, 'folder')}, {plural(files.length, 'file')}
-  </p>
+  <div class="mt-3 flex items-center justify-between gap-4 px-1 text-xs text-fg-faint">
+    <p>
+      {#if query.trim()}{visible.length} of {rows.length} shown ·{/if}
+      {plural(rows.filter((r) => r.node.kind === 'folder').length, 'folder')}, {plural(rows.filter((r) => r.node.kind === 'file').length, 'file')}
+    </p>
+    <button type="button" class="hidden cursor-pointer items-center gap-1.5 hover:text-fg-muted sm:flex" onclick={() => (dialog = { type: 'shortcuts' })}>
+      <Icon name="keyboard" class="size-3.5" /> Press <kbd class="kbd">?</kbd> for shortcuts
+    </button>
+  </div>
 {/if}
 
 {#if dialog?.type === 'mkdir'}
@@ -348,6 +451,8 @@
       await load();
     }}
     onclose={close} />
+{:else if dialog?.type === 'shortcuts'}
+  <ShortcutsDialog onclose={close} />
 {:else if dialog?.type === 'note'}
   <NameDialog
     title="New note"
