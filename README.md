@@ -178,10 +178,6 @@ CI runs `cargo fmt`, `cargo clippy`, the tests, `svelte-check` and a full web bu
 
 Found a way for the server to learn something it shouldn't? Please report it privately; see [SECURITY.md](SECURITY.md).
 
-## AI assistance
-
-Parts of thencloud are written with the help of AI (commits say so in a `Co-Authored-By` trailer). The code is public so anyone can check what it does.
-
 ## License
 
 AGPL-3.0-or-later. See [LICENSE](LICENSE).

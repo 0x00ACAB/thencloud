@@ -33,10 +33,6 @@ The web UI follows a deliberate style (neutral palette, restrained accent, no CD
 
 [MILESTONES.md](MILESTONES.md) is the roadmap. A workflow turns each section into a GitHub milestone and each open item into an issue labelled `roadmap`; ticking an item closes its issue. Comment on an issue before starting something big.
 
-## AI assistance
-
-Parts of thencloud are written with AI help, and commits say so in a `Co-Authored-By` trailer. That's fine for contributions too, as long as you've read and understood what you submit.
-
 ## License
 
 By contributing you agree that your work is licensed under AGPL-3.0-or-later.
