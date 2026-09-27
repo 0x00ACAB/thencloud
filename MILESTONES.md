@@ -84,8 +84,9 @@ Bigger pieces:
 - [x] **Search and sort** within a folder (search is client-side over decrypted names; sort by name, size or date)
 - [x] **Keyboard shortcuts** (`/` search, `j`/`k` or arrows through rows, Backspace up a folder, `n` new folder, `u` upload, Delete to trash) plus a `?` cheat sheet
 - [x] Search across all folders ("Everywhere" next to the search box): names are decrypted in the browser, from an in-memory index built as you browse and filled in by walking the tree when you search; results show where each one is and open in place
-
+- [ ] Music player (ability to select a folder as the music root) with a spotify-eqsue UI (we'd possibly have no cover art)
 - [x] **Profile pictures**: shown in the top bar, share dialogs, shared-with lists and verified contacts. Encrypted in the browser under a per-user avatar key that is sealed to each person you share with, either way round; the server can't see them
+- [ ] Material UI-type user accent on the entire theme, derived from their picked accent colour.
 
 Smaller things:
 - [x] Inline rename on the row instead of a dialog (menu or F2; Enter or clicking away saves, Esc cancels)
@@ -94,7 +95,9 @@ Smaller things:
 - [x] Better empty states with the sticker logo (an empty My files and Shared with me)
 - [x] Full timestamps on hover everywhere dates are shown
 - [x] Skeleton rows instead of a spinner while a folder loads
-- [ ] Mobile pass: bottom action bar, larger touch targets
+- [x] Mobile pass: a bottom tab bar, an add button, long-press to select, larger touch targets
+- [ ] Minify at build +
+- [ ] Optimize assets at build
 
 ## Later
 

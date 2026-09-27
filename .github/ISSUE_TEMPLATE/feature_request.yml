@@ -1,0 +1,23 @@
+name: Feature request
+description: Suggest something new or better.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: Check [MILESTONES.md](https://github.com/0x00ACAB/thencloud/blob/main/MILESTONES.md) and the open issues first; it may already be planned.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you'd like to do
+      description: The problem or use case, not only the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How it could work
+  - type: textarea
+    id: server
+    attributes:
+      label: What would the server see?
+      description: thencloud's server must never see keys, passwords, names or contents. If the feature needs any new information on the server, say what.
