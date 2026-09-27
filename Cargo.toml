@@ -16,7 +16,7 @@ base64 = "0.22"
 thiserror = "2"
 sha2 = "0.10"
 hmac = "0.12"
-getrandom = "0.3"
+getrandom = "0.4"
 
 # Argon2 is painfully slow unoptimised; keep dev builds (and tests) usable.
 [profile.dev.package."*"]
