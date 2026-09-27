@@ -23,8 +23,8 @@
   import { errorMessage, toastError } from '../lib/ui.svelte.js';
   import { fade } from '../lib/motion.js';
 
-  /** @type {{ entries: any[], start: number, fetch: (entry: any, onProgress: (p: number) => void) => Promise<{ blob: Blob }>, ondownload: (entry: any) => void, onclose: () => void, save?: ((entry: any, text: string) => Promise<any>) | null, onsaved?: (entry: any) => void, edit?: boolean, trail?: any[] | null, list?: ((folder: any) => Promise<any[]>) | null, drafts?: any }} */
-  let { entries, start, fetch, ondownload, onclose, save = null, onsaved, edit = false, trail = null, list = null, drafts = null } = $props();
+  /** @type {{ entries: any[], start: number, fetch: (entry: any, onProgress: (p: number) => void) => Promise<{ blob: Blob }>, ondownload: (entry: any) => void, onclose: () => void, save?: ((entry: any, text: string) => Promise<any>) | null, onsaved?: (entry: any) => void, edit?: boolean, trail?: any[] | null, list?: ((folder: any) => Promise<any[]>) | null, drafts?: any, open?: ((entry: any) => any) | null }} */
+  let { entries, start, fetch, ondownload, onclose, save = null, onsaved, edit = false, trail = null, list = null, drafts = null, open = null } = $props();
 
   let dlg;
   let index = $state(untrack(() => start));
@@ -40,6 +40,7 @@
 
   let seq = 0;
   let url = null;
+  let served = null; // a stream from lib/stream.js, for video and audio
 
   // Images in Markdown by relative path: found by decrypted name from the
   // folder the file is in (`trail` ends there), decrypted like any preview.
@@ -61,6 +62,8 @@
   function release() {
     if (url) URL.revokeObjectURL(url);
     url = null;
+    served?.close();
+    served = null;
   }
 
   async function load(e) {
@@ -71,6 +74,21 @@
     zoomed = false;
     const k = previewKind(e.meta);
     if (!k) return set({ status: 'unsupported' });
+    // Video and audio play as they're decrypted, through the stream worker,
+    // so their size doesn't matter.
+    if ((k.kind === 'video' || k.kind === 'audio') && open) {
+      const { streamsAvailable, serveFile } = await import('../lib/stream.js');
+      if (await streamsAvailable()) {
+        if (my !== seq) return;
+        try {
+          const file = open(e);
+          served = serveFile({ size: file.size, chunkSize: file.chunkSize, type: k.type, read: (i) => file.read(i) });
+          return set({ status: 'ready', url: served.url });
+        } catch (err) {
+          return set({ status: 'error', message: errorMessage(err) });
+        }
+      }
+    }
     if (e.meta.size > MAX_PREVIEW || ((k.kind === 'text' || k.kind === 'markdown') && e.meta.size > MAX_TEXT)) {
       return set({ status: 'large' });
     }

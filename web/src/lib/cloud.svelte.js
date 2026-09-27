@@ -7,10 +7,11 @@
 import { request } from './api.js';
 import {
   tc, b64, unb64, decryptMeta, encryptMeta, unwrapChild, decryptChildren,
-  deriveAccountKeys, fetchFile, saveBlob,
+  deriveAccountKeys, fetchFile, openFile, saveBlob,
 } from './crypto.js';
 import { sortEntries } from './format.js';
 import { rememberSession, rememberedSession, forgetSession } from './remember.js';
+import { streamsAvailable, streamDownload } from './stream.js';
 
 export const session = $state({
   token: null,
@@ -588,14 +589,23 @@ export function fetchEntry(entry, onProgress) {
   return fetchFile(node, key, (i) => api('GET', `/api/nodes/${node.id}/chunks/${i}`), onProgress);
 }
 
-/** Download files and folders as one zip, decrypted and zipped in the browser. */
-export async function downloadZip(entries, name, onProgress) {
-  const { zipEntries } = await import('./zip.js');
-  const blob = await zipEntries(entries, { list: (e) => listFolder(e.node.id, e.key), fetch: fetchEntry, onProgress });
-  saveBlob(blob, name);
+/** A file's decrypted pieces, one at a time (see openFile in crypto.js). */
+export function openEntry(entry) {
+  const { node, key } = entry;
+  return openFile(node, key, (i) => api('GET', `/api/nodes/${node.id}/chunks/${i}`));
 }
 
+/** Download files and folders as one zip, decrypted and zipped in the browser (and streamed to disk where possible). */
+export async function downloadZip(entries, name, onProgress) {
+  const { saveZip } = await import('./zip.js');
+  await saveZip(entries, name, { list: (e) => listFolder(e.node.id, e.key), open: openEntry, onProgress });
+}
+
+/** Files larger than this are streamed to disk instead of decrypted into memory first. */
+const STREAM_FROM = 16 * 1024 * 1024;
+
 export async function download(entry, onProgress) {
+  if (entry.meta.size > STREAM_FROM && (await streamsAvailable())) return streamDownload(openEntry(entry), onProgress);
   const { blob, meta } = await fetchEntry(entry, onProgress);
   saveBlob(blob, meta.name);
 }

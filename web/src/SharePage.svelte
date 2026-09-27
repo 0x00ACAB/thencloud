@@ -7,7 +7,8 @@
   // link) the fragment holds the owner's public key instead, and files are
   // sealed to it here before upload.
   import { request } from './lib/api.js';
-  import { tc, b64, unb64, encryptMeta, decryptMeta, decryptChildren, fetchFile, saveBlob } from './lib/crypto.js';
+  import { tc, b64, unb64, encryptMeta, decryptMeta, decryptChildren, fetchFile, openFile, saveBlob } from './lib/crypto.js';
+  import { streamsAvailable, streamDownload } from './lib/stream.js';
   import { formatSize, sortEntries } from './lib/format.js';
   import { errorMessage, trackTransfer } from './lib/ui.svelte.js';
   import Icon from './components/Icon.svelte';
@@ -115,8 +116,9 @@
       .finally(() => (listing = false));
   });
 
-  const fetchEntry = (entry, onProgress) =>
-    fetchFile(entry.node, entry.key, (i) => request('GET', `${base}/nodes/${entry.node.id}/chunks/${i}`, opts()), onProgress);
+  const getChunk = (entry) => (i) => request('GET', `${base}/nodes/${entry.node.id}/chunks/${i}`, opts());
+  const fetchEntry = (entry, onProgress) => fetchFile(entry.node, entry.key, getChunk(entry), onProgress);
+  const openEntry = (entry) => openFile(entry.node, entry.key, getChunk(entry));
 
   let preview = $state(null); // { entries, start }
   const files = $derived(rows.filter((r) => r.node.kind === 'file'));
@@ -128,8 +130,8 @@
     const name = `${here.meta.name}.zip`;
     const t = trackTransfer('download', name, null);
     try {
-      const { zipEntries } = await import('./lib/zip.js');
-      saveBlob(await zipEntries(rows, { list: listFolder, fetch: fetchEntry, onProgress: (p) => (t.progress = p) }), name);
+      const { saveZip } = await import('./lib/zip.js');
+      await saveZip(rows, name, { list: listFolder, open: openEntry, onProgress: (p) => (t.progress = p) });
       t.status = 'done';
     } catch (e) {
       t.status = 'error';
@@ -140,8 +142,12 @@
   async function downloadEntry(entry) {
     const t = trackTransfer('download', entry.meta.name, entry.meta.size);
     try {
-      const { blob, meta } = await fetchEntry(entry, (p) => (t.progress = p));
-      saveBlob(blob, meta.name);
+      if (entry.meta.size > 16 * 1024 * 1024 && (await streamsAvailable())) {
+        await streamDownload(openEntry(entry), (p) => (t.progress = p));
+      } else {
+        const { blob, meta } = await fetchEntry(entry, (p) => (t.progress = p));
+        saveBlob(blob, meta.name);
+      }
       t.status = 'done';
     } catch (e) {
       t.status = 'error';
@@ -386,6 +392,7 @@
     entries={preview.entries}
     start={preview.start}
     fetch={fetchEntry}
+    open={openEntry}
     trail={here?.node.kind === 'folder' ? trail : null}
     list={listFolder}
     ondownload={downloadEntry}
