@@ -1,0 +1,265 @@
+use axum::Json;
+use axum::extract::State;
+use axum::http::StatusCode;
+use thencloud_crypto::api::*;
+use thencloud_crypto::{KEY_LEN, KdfParams, SALT_LEN};
+
+use crate::AppState;
+use crate::auth::{AuthUser, ClientIp, create_session};
+use crate::error::{AppError, Result, is_unique_violation};
+use crate::util::*;
+
+#[derive(sqlx::FromRow)]
+struct UserRow {
+    id: String,
+    username: String,
+    auth_hash: String,
+    kdf_salt: Vec<u8>,
+    kdf_params: String,
+    enc_master_key: Vec<u8>,
+    public_key: Vec<u8>,
+    enc_private_key: Vec<u8>,
+    root_node_id: String,
+    quota_bytes: i64,
+    used_bytes: i64,
+    is_admin: bool,
+}
+
+impl UserRow {
+    fn into_me(self) -> Result<Me> {
+        let kdf_params: KdfParams = serde_json::from_str(&self.kdf_params)
+            .map_err(|e| AppError::Internal(e.to_string()))?;
+        Ok(Me {
+            user_id: self.id,
+            username: self.username,
+            is_admin: self.is_admin,
+            quota_bytes: self.quota_bytes,
+            used_bytes: self.used_bytes,
+            keys: KeyBundle {
+                kdf_salt: B64(self.kdf_salt),
+                kdf_params,
+                enc_master_key: B64(self.enc_master_key),
+                public_key: B64(self.public_key),
+                enc_private_key: B64(self.enc_private_key),
+                root_node_id: self.root_node_id,
+            },
+        })
+    }
+}
+
+const USER_SELECT: &str = "SELECT id, username, auth_hash, kdf_salt, kdf_params, enc_master_key, public_key, \
+     enc_private_key, root_node_id, quota_bytes, used_bytes, is_admin FROM users";
+
+async fn user_by_name(state: &AppState, username: &str) -> Result<Option<UserRow>> {
+    let sql = format!("{USER_SELECT} WHERE username = ?");
+    Ok(sqlx::query_as(&sql)
+        .bind(username)
+        .fetch_optional(&state.db)
+        .await?)
+}
+
+async fn user_by_id(state: &AppState, id: &str) -> Result<UserRow> {
+    let sql = format!("{USER_SELECT} WHERE id = ?");
+    sqlx::query_as(&sql)
+        .bind(id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or(AppError::Unauthorized)
+}
+
+fn check_kdf(salt: &[u8], params: &KdfParams) -> Result<()> {
+    if !(SALT_LEN..=64).contains(&salt.len()) {
+        return Err(AppError::bad("kdf_salt must be 16-64 bytes"));
+    }
+    if !params.is_acceptable() {
+        return Err(AppError::bad("kdf_params are outside the accepted range"));
+    }
+    Ok(())
+}
+
+/// Returns the KDF salt and parameters for a user. Unknown users get a
+/// stable fake salt so this endpoint can't be used to enumerate accounts.
+pub async fn prelogin(
+    State(state): State<AppState>,
+    Json(req): Json<PreloginRequest>,
+) -> Result<Json<PreloginResponse>> {
+    let username = req.username.trim().to_lowercase();
+    if let Some(u) = user_by_name(&state, &username).await? {
+        let kdf_params =
+            serde_json::from_str(&u.kdf_params).map_err(|e| AppError::Internal(e.to_string()))?;
+        return Ok(Json(PreloginResponse {
+            kdf_salt: B64(u.kdf_salt),
+            kdf_params,
+        }));
+    }
+    let fake = hmac(&state.secret[..], format!("prelogin:{username}").as_bytes());
+    Ok(Json(PreloginResponse {
+        kdf_salt: B64(fake[..SALT_LEN].to_vec()),
+        kdf_params: KdfParams::default(),
+    }))
+}
+
+pub async fn register(
+    State(state): State<AppState>,
+    Json(req): Json<RegisterRequest>,
+) -> Result<(StatusCode, Json<SessionResponse>)> {
+    let username = normalize_username(&req.username)?;
+    let user_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+        .fetch_one(&state.db)
+        .await?;
+    if user_count > 0 && !state.config.allow_registration {
+        return Err(AppError::RegistrationClosed);
+    }
+    check_len(&req.auth_key, KEY_LEN, "auth_key")?;
+    check_kdf(&req.kdf_salt, &req.kdf_params)?;
+    check_len(&req.enc_master_key, WRAPPED_KEY_LEN, "enc_master_key")?;
+    check_len(&req.public_key, 32, "public_key")?;
+    check_len(&req.enc_private_key, WRAPPED_KEY_LEN, "enc_private_key")?;
+    check_id(&req.root.id, "root.id")?;
+    check_len(&req.root.enc_key, WRAPPED_KEY_LEN, "root.enc_key")?;
+    check_metadata(&req.root.enc_metadata)?;
+
+    let auth_hash = hash_secret(req.auth_key.0.clone()).await?;
+    let user_id = new_uuid();
+    let t = now();
+
+    let mut tx = state.db.begin().await?;
+    let res = sqlx::query(
+        "INSERT INTO users (id, username, auth_hash, kdf_salt, kdf_params, enc_master_key, public_key, \
+         enc_private_key, root_node_id, quota_bytes, is_admin, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+    )
+    .bind(&user_id)
+    .bind(&username)
+    .bind(&auth_hash)
+    .bind(&req.kdf_salt.0)
+    .bind(serde_json::to_string(&req.kdf_params).unwrap())
+    .bind(&req.enc_master_key.0)
+    .bind(&req.public_key.0)
+    .bind(&req.enc_private_key.0)
+    .bind(&req.root.id)
+    .bind(state.config.default_quota)
+    .bind(user_count == 0)
+    .bind(t)
+    .execute(&mut *tx)
+    .await;
+    match res {
+        Err(e) if is_unique_violation(&e) => {
+            return Err(AppError::Conflict("username is taken".into()));
+        }
+        r => r?,
+    };
+    let res = sqlx::query(
+        "INSERT INTO nodes (id, owner_id, created_by, parent_id, kind, enc_key, enc_metadata, created_at, updated_at) \
+         VALUES (?, ?, ?, NULL, 'folder', ?, ?, ?, ?)",
+    )
+    .bind(&req.root.id)
+    .bind(&user_id)
+    .bind(&user_id)
+    .bind(&req.root.enc_key.0)
+    .bind(&req.root.enc_metadata.0)
+    .bind(t)
+    .bind(t)
+    .execute(&mut *tx)
+    .await;
+    match res {
+        Err(e) if is_unique_violation(&e) => {
+            return Err(AppError::Conflict("root id already exists".into()));
+        }
+        r => r?,
+    };
+    tx.commit().await?;
+    tracing::info!(%username, admin = user_count == 0, "user registered");
+
+    let token = create_session(&state, &user_id, req.device_name.as_deref()).await?;
+    let me = user_by_id(&state, &user_id).await?.into_me()?;
+    Ok((StatusCode::CREATED, Json(SessionResponse { token, me })))
+}
+
+pub async fn login(
+    State(state): State<AppState>,
+    ip: ClientIp,
+    Json(req): Json<LoginRequest>,
+) -> Result<Json<SessionResponse>> {
+    let username = req.username.trim().to_lowercase();
+    let (ukey, ikey) = (
+        format!("login-user:{username}"),
+        format!("login-ip:{}", ip.key()),
+    );
+    if state.limiter.blocked(&ukey) || state.limiter.blocked(&ikey) {
+        return Err(AppError::RateLimited);
+    }
+    let user = user_by_name(&state, &username).await?;
+    let hash = user
+        .as_ref()
+        .map(|u| u.auth_hash.clone())
+        .unwrap_or_else(|| (*state.dummy_hash).clone());
+    let ok = verify_secret(req.auth_key.0.clone(), hash).await?;
+    let user = match user {
+        Some(u) if ok => u,
+        _ => {
+            state.limiter.fail(&ukey);
+            state.limiter.fail(&ikey);
+            return Err(AppError::InvalidCredentials);
+        }
+    };
+    state.limiter.clear(&ukey);
+    let token = create_session(&state, &user.id, req.device_name.as_deref()).await?;
+    Ok(Json(SessionResponse {
+        token,
+        me: user.into_me()?,
+    }))
+}
+
+pub async fn logout(State(state): State<AppState>, user: AuthUser) -> Result<StatusCode> {
+    sqlx::query("DELETE FROM sessions WHERE token_hash = ?")
+        .bind(&user.token_hash)
+        .execute(&state.db)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub async fn me(State(state): State<AppState>, user: AuthUser) -> Result<Json<Me>> {
+    Ok(Json(user_by_id(&state, &user.id).await?.into_me()?))
+}
+
+/// Re-wraps the master key under a new password. File keys are unaffected.
+/// All other sessions are signed out.
+pub async fn change_password(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(req): Json<ChangePasswordRequest>,
+) -> Result<StatusCode> {
+    let key = format!("password-user:{}", user.id);
+    if state.limiter.blocked(&key) {
+        return Err(AppError::RateLimited);
+    }
+    check_len(&req.new_auth_key, KEY_LEN, "new_auth_key")?;
+    check_kdf(&req.new_kdf_salt, &req.new_kdf_params)?;
+    check_len(
+        &req.new_enc_master_key,
+        WRAPPED_KEY_LEN,
+        "new_enc_master_key",
+    )?;
+    let row = user_by_id(&state, &user.id).await?;
+    if !verify_secret(req.current_auth_key.0.clone(), row.auth_hash).await? {
+        state.limiter.fail(&key);
+        return Err(AppError::InvalidCredentials);
+    }
+    let new_hash = hash_secret(req.new_auth_key.0.clone()).await?;
+    let mut tx = state.db.begin().await?;
+    sqlx::query("UPDATE users SET auth_hash = ?, kdf_salt = ?, kdf_params = ?, enc_master_key = ? WHERE id = ?")
+        .bind(new_hash)
+        .bind(&req.new_kdf_salt.0)
+        .bind(serde_json::to_string(&req.new_kdf_params).unwrap())
+        .bind(&req.new_enc_master_key.0)
+        .bind(&user.id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM sessions WHERE user_id = ? AND token_hash != ?")
+        .bind(&user.id)
+        .bind(&user.token_hash)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(StatusCode::NO_CONTENT)
+}
