@@ -7,7 +7,7 @@
   // link) the fragment holds the owner's public key instead, and files are
   // sealed to it here before upload.
   import { request } from './lib/api.js';
-  import { tc, b64, unb64, encryptMeta, decryptMeta, decryptChildren, fetchFile, openFile, saveBlob } from './lib/crypto.js';
+  import { tc, b64, unb64, encryptMeta, decryptMeta, decryptChildren, fetchFile, openFile, encryptPiece, saveBlob } from './lib/crypto.js';
   import { streamsAvailable, streamDownload } from './lib/stream.js';
   import { formatSize, sortEntries } from './lib/format.js';
   import { errorMessage, trackTransfer } from './lib/ui.svelte.js';
@@ -173,8 +173,8 @@
     const nodeKey = tc.random_key();
     const versionId = tc.new_id();
     const contentKey = tc.random_key();
-    const chunkCount = tc.chunk_count(file.size);
-    const chunkSize = tc.chunk_size();
+    const padded = tc.padded_size(file.size);
+    const chunkCount = tc.chunk_count(padded);
     const meta = { name: file.name, mime: file.type || null, size: file.size, mtime: file.lastModified || Date.now() };
     try {
       const up = await request('POST', `${base}/uploads`, {
@@ -190,8 +190,7 @@
         },
       });
       for (let i = 0; i < chunkCount; i++) {
-        const plain = new Uint8Array(await file.slice(i * chunkSize, (i + 1) * chunkSize).arrayBuffer());
-        const enc = tc.encrypt_chunk(contentKey, versionId, i, i === chunkCount - 1, plain);
+        const enc = await encryptPiece(file, i, padded, contentKey, versionId, chunkCount);
         await request('PUT', `${base}/uploads/${up.upload_id}/chunks/${i}`, { ...opts(), raw: enc });
         row.progress = (i + 1) / chunkCount;
       }
