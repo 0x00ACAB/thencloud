@@ -60,7 +60,7 @@
   - **Streamed, never stored**: the server runs yt-dlp and pipes the video straight to the browser, which encrypts it and uploads it like any other file (or just downloads it). Nothing is written to the server's disk
   - The UI says plainly that the server sees the link and the video while downloading it, and doesn't keep either
   - Limits: one download at a time per user, a size cap, and public addresses only (no fetching from the server's own network)
-  - With ffmpeg installed, separate video and audio (most YouTube videos) are merged and remuxed as they stream into a fragmented MP4, up to 1080p, H.264 + AAC preferred; without it, only single-file formats work
+  - With ffmpeg installed, separate video and audio (most YouTube videos) are fetched at full speed by two yt-dlp processes into FIFOs and copied by ffmpeg into a fragmented MP4 as they stream, up to 1080p, H.264 + AAC preferred; without it, only single-file formats work
   - [ ] A quality choice (720p/1080p/best), and playlists
 
 ## UI
