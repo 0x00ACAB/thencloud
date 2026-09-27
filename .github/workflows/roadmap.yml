@@ -1,0 +1,33 @@
+name: Roadmap
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - MILESTONES.md
+      - .github/scripts/roadmap.js
+      - .github/workflows/roadmap.yml
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Only log what would change
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: roadmap
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const sync = require('./.github/scripts/roadmap.js');
+            await sync({ github, context, core, dryRun: ${{ inputs.dry-run == true }} });

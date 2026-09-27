@@ -166,7 +166,7 @@ async fn try_register(
     username: &str,
     password: &str,
     invite: Option<&str>,
-) -> Result<Client, Resp> {
+) -> Result<Client, Box<Resp>> {
     let salt = c::random_bytes(c::SALT_LEN);
     let ak = c::derive_account_keys(password, &salt, FAST_KDF).unwrap();
     let mk = Key::generate();
@@ -193,7 +193,7 @@ async fn try_register(
         .call(Method::POST, "/api/auth/register", None, Some(&req))
         .await;
     if r.status != StatusCode::CREATED {
-        return Err(r);
+        return Err(Box::new(r));
     }
     let s: SessionResponse = r.json();
     Ok(Client {
@@ -205,7 +205,7 @@ async fn try_register(
     })
 }
 
-async fn login(h: &Harness, username: &str, password: &str) -> Result<Client, Resp> {
+async fn login(h: &Harness, username: &str, password: &str) -> Result<Client, Box<Resp>> {
     let pre: PreloginResponse = h
         .call(
             Method::POST,
@@ -225,7 +225,7 @@ async fn login(h: &Harness, username: &str, password: &str) -> Result<Client, Re
         .call(Method::POST, "/api/auth/login", None, Some(&req))
         .await;
     if r.status != StatusCode::OK {
-        return Err(r);
+        return Err(Box::new(r));
     }
     let s: SessionResponse = r.json();
     let mk = c::unwrap_master_key(&ak.kek, &s.me.keys.enc_master_key).unwrap();
@@ -294,7 +294,7 @@ impl Client {
         existing: Option<&Node>,
         name: &str,
         data: &[u8],
-    ) -> Result<Node, Resp> {
+    ) -> Result<Node, Box<Resp>> {
         let (node_id, node_key, enc_key) = match existing {
             Some(n) => (n.id.clone(), self.key_of(h, &n.id).await, None),
             None => {
@@ -327,7 +327,7 @@ impl Client {
             .call(Method::POST, "/api/uploads", Some(&self.token), Some(&req))
             .await;
         if r.status != StatusCode::CREATED {
-            return Err(r);
+            return Err(Box::new(r));
         }
         let up: UploadResponse = r.json();
         // Upload out of order to exercise index handling.
@@ -343,7 +343,7 @@ impl Client {
                 )
                 .await;
             if r.status != StatusCode::NO_CONTENT {
-                return Err(r);
+                return Err(Box::new(r));
             }
         }
         let r = h
@@ -355,7 +355,7 @@ impl Client {
             )
             .await;
         if r.status != StatusCode::OK {
-            return Err(r);
+            return Err(Box::new(r));
         }
         Ok(r.json())
     }
