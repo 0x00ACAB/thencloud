@@ -1,7 +1,7 @@
 //! Settings an admin can change while the server runs, stored in the
 //! `settings` table. Anything not set there falls back to the command line.
 
-use thencloud_crypto::api::Registration;
+use thencloud_crypto::api::{DownloaderAccess, Registration};
 
 use crate::AppState;
 use crate::error::Result;
@@ -42,4 +42,22 @@ pub async fn set_registration(state: &AppState, mode: Registration) -> Result<()
         Registration::Closed => "closed",
     };
     set(state, "registration", v).await
+}
+
+/// Who may use the video downloader. Off unless an admin turned it on.
+pub async fn downloader(state: &AppState) -> Result<DownloaderAccess> {
+    Ok(match get(state, "downloader").await?.as_deref() {
+        Some("admins") => DownloaderAccess::Admins,
+        Some("everyone") => DownloaderAccess::Everyone,
+        _ => DownloaderAccess::Off,
+    })
+}
+
+pub async fn set_downloader(state: &AppState, access: DownloaderAccess) -> Result<()> {
+    let v = match access {
+        DownloaderAccess::Off => "off",
+        DownloaderAccess::Admins => "admins",
+        DownloaderAccess::Everyone => "everyone",
+    };
+    set(state, "downloader", v).await
 }

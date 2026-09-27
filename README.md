@@ -36,6 +36,9 @@ Every flag can also be set as an environment variable.
 | `--max-versions` | `THENCLOUD_MAX_VERSIONS` | `10` (versions kept per file, including the current one) |
 | `--trash-days` | `THENCLOUD_TRASH_DAYS` | `30` (days before trashed items are purged) |
 | `--upload-ttl-hours` | `THENCLOUD_UPLOAD_TTL_HOURS` | `24` |
+| `--yt-dlp` | `THENCLOUD_YT_DLP` | `yt-dlp` (for the optional video downloader; it stays off until an admin enables it) |
+| `--ffmpeg` | `THENCLOUD_FFMPEG` | `ffmpeg` (lets the downloader merge separate video and audio, which most YouTube videos need) |
+| `--downloader-max-bytes` | `THENCLOUD_DOWNLOADER_MAX_BYTES` | `2147483648` (2 GiB per video) |
 
 **Serve thencloud over HTTPS in production** (for example, behind a reverse proxy). The crypto protects data at rest on the server, but the page and its WASM must reach the browser intact.
 
@@ -103,6 +106,7 @@ As a result, a malicious server cannot swap files, move ciphertexts between node
 - **Public keys are trust-on-first-use.** Compare fingerprints out of band the first time you share with someone, or a malicious server could substitute its own key. After that the key is pinned in your verified contacts (encrypted under your master key and bound to your account), and a different key for that person blocks sharing until you check again.
 - **Revoking a share** stops the server from serving the data, but it does not re-key. A former recipient who kept the key could decrypt ciphertext they get from elsewhere.
 - **Anyone who has a full public link** (including the `#` part, for example from chat history) can decrypt what it points to.
+- **The video downloader is the one feature where the server sees content.** It's off unless an admin turns it on. When used, the server runs yt-dlp (and ffmpeg to remux) for the link you give it and streams the video to your browser, which encrypts and uploads it like any file. So the server sees the link and the video while it passes through. Nothing is written to its disk or logged, only yt-dlp's site extractors run, and links to private or local addresses are refused.
 - **"Keep me signed in on this browser" is a trade-off you opt into.** Normally keys live only in memory and a reload asks for your password. With the box ticked, the session token and master key are saved in the browser's IndexedDB, encrypted with a key the browser won't let any script export. That protects them at rest about as well as your browser profile and disk encryption do; anyone who can use that computer account can open your files. They're deleted when you sign out, choose "Stop keeping signed in", or the session ends on the server.
 - **There is no password reset by the server.** A forgotten password means the data is lost, unless you created a recovery key. Anyone with your recovery key and username can take over the account, so keep it as private as the password.
 - **Previews render files other people shared with you** inside the app, where your keys live. Decrypted bytes are always re-typed to a fixed, known-safe type (never the stored MIME type), Markdown goes through DOMPurify with scripts removed and images never loaded (in the preview and the editor, so a relative image path can't make the browser request a plaintext name from the server), and PDFs are drawn to canvas by pdf.js without running any PDF JavaScript. The CSP is the second line of defence.

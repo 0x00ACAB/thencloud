@@ -8,6 +8,7 @@ pub mod auth;
 pub mod blob;
 pub mod config;
 pub mod db;
+pub mod downloader;
 pub mod error;
 pub mod janitor;
 pub mod limiter;
@@ -33,6 +34,8 @@ pub struct AppState {
     /// Hash verified against when a user doesn't exist, so login timing
     /// doesn't reveal which usernames are registered.
     pub dummy_hash: Arc<String>,
+    /// The optional video downloader (see downloader.rs).
+    pub downloader: Arc<downloader::Downloader>,
 }
 
 impl AppState {
@@ -42,6 +45,12 @@ impl AppState {
         let secret = db::server_secret(&db).await?;
         let blobs = blob::BlobStore::new(config.data_dir.join("blobs"));
         let dummy_hash = util::hash_secret(b"thencloud-dummy".to_vec()).await?;
+        let downloader = downloader::Downloader::new(
+            config.yt_dlp.clone(),
+            config.ffmpeg.clone(),
+            &config.data_dir,
+        )
+        .await;
         Ok(AppState {
             db,
             blobs,
@@ -49,6 +58,7 @@ impl AppState {
             secret: Arc::new(secret),
             limiter: Arc::new(limiter::Limiter::new(10, 15 * 60)),
             dummy_hash: Arc::new(dummy_hash),
+            downloader: Arc::new(downloader),
         })
     }
 }

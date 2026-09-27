@@ -2096,3 +2096,306 @@ async fn verified_contacts_are_opaque_to_the_server() {
         );
     }
 }
+
+/// A stand-in for yt-dlp: checks it was called with the safety flags,
+/// answers lookups with fixed JSON, streams fake bytes for downloads, and
+/// litters its working directory so we can check the server cleans up.
+const FAKE_YT_DLP: &str = r#"#!/bin/sh
+case " $* " in *" --version "*) echo 2099.01.01; exit 0;; esac
+for f in --ignore-config --no-cache-dir --no-playlist --no-part "--use-extractors default,-generic"; do
+  case " $* " in *" $f "*) ;; *) echo "ERROR: missing $f" >&2; exit 9;; esac
+done
+echo leftover > scratch-file.tmp
+url=""; for a in "$@"; do url="$a"; done
+case "$url" in *fail*) echo "ERROR: [youtube] abc: Video unavailable" >&2; exit 1;; esac
+case " $* " in *" --dump-single-json "*)
+  echo '{"title":"A test clip","extractor_key":"Youtube","uploader":"Someone","duration":12.5,"formats":[{"ext":"webm","vcodec":"vp9","acodec":"opus","height":480},{"ext":"mp4","vcodec":"avc1","acodec":"mp4a","height":360,"filesize":3000},{"ext":"m4a","vcodec":"none","acodec":"mp4a","filesize":900}]}'
+  exit 0;;
+esac
+case "$url" in *big*) head -c 5000 /dev/zero; exit 0;; esac
+case "$url" in *slow*) printf 'FAKE'; sleep 3; printf 'VIDEO'; exit 0;; esac
+i=0; while [ $i -lt 100 ]; do printf 'FAKE-VIDEO-BYTES'; i=$((i+1)); done
+"#;
+
+#[tokio::test]
+async fn video_downloader_is_opt_in_streamed_and_cleaned_up() {
+    use std::os::unix::fs::PermissionsExt;
+    let bin = tempfile::tempdir().unwrap();
+    let script = bin.path().join("yt-dlp");
+    std::fs::write(&script, FAKE_YT_DLP).unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let h = Harness::with_config(|c| {
+        c.yt_dlp = script.clone();
+        c.ffmpeg = bin.path().join("no-ffmpeg"); // single-file formats only
+        c.downloader_max_bytes = 4000;
+        c.downloader_public_only = false; // the fake links don't resolve
+    })
+    .await;
+    let admin = register(&h, "root", "admin password").await;
+    let user = register(&h, "mia", "mia's password").await;
+    let post = |uri: &'static str, token: String, body: serde_json::Value| {
+        let h = &h;
+        async move { h.call(Method::POST, uri, Some(&token), Some(body)).await }
+    };
+    let link = |u: &str| json!({"url": u});
+
+    // Off by default, for everyone.
+    let tools: ToolsInfo = h.get("/api/tools", &admin.token).await.json();
+    assert!(!tools.video_downloader);
+    let r = post(
+        "/api/tools/video/info",
+        admin.token.clone(),
+        link("https://videos.test/watch?v=1"),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN);
+    let s: AdminSettings = h.get("/api/admin/settings", &admin.token).await.json();
+    assert_eq!(s.downloader, DownloaderAccess::Off);
+    assert_eq!(s.yt_dlp_version.as_deref(), Some("2099.01.01"));
+
+    // Admins only.
+    h.call(
+        Method::PATCH,
+        "/api/admin/settings",
+        Some(&admin.token),
+        Some(json!({"downloader": "admins"})),
+    )
+    .await;
+    assert!(
+        h.get("/api/tools", &admin.token)
+            .await
+            .json::<ToolsInfo>()
+            .video_downloader
+    );
+    assert!(
+        !h.get("/api/tools", &user.token)
+            .await
+            .json::<ToolsInfo>()
+            .video_downloader
+    );
+    let r = post(
+        "/api/tools/video/info",
+        user.token.clone(),
+        link("https://videos.test/watch?v=1"),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN);
+
+    // Lookup.
+    let info: VideoInfo = post(
+        "/api/tools/video/info",
+        admin.token.clone(),
+        link("https://videos.test/watch?v=1"),
+    )
+    .await
+    .json();
+    assert_eq!(info.title, "A test clip");
+    assert_eq!(info.site, "Youtube");
+    let v = info.video.unwrap();
+    assert_eq!(
+        (v.ext.as_str(), v.size, v.height),
+        ("mp4", Some(3000), Some(360))
+    );
+    assert_eq!(info.audio.unwrap().ext, "m4a");
+    let r = post(
+        "/api/tools/video/info",
+        admin.token.clone(),
+        link("https://videos.test/fail"),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    assert!(String::from_utf8_lossy(&r.body).contains("Video unavailable"));
+    for bad in [
+        "ftp://videos.test/x",
+        "https://user:pw@videos.test/x",
+        "https://videos.test/a b",
+        "videos.test/x",
+    ] {
+        let r = post("/api/tools/video/info", admin.token.clone(), link(bad)).await;
+        assert_eq!(r.status, StatusCode::BAD_REQUEST, "{bad}");
+    }
+
+    // Download: streamed through, nothing left behind.
+    h.call(
+        Method::PATCH,
+        "/api/admin/settings",
+        Some(&admin.token),
+        Some(json!({"downloader": "everyone"})),
+    )
+    .await;
+    let r = post(
+        "/api/tools/video/download",
+        user.token.clone(),
+        json!({"url": "https://videos.test/watch?v=1", "kind": "video"}),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK);
+    assert_eq!(r.body, b"FAKE-VIDEO-BYTES".repeat(100));
+    assert_eq!(r.headers.get("cache-control").unwrap(), "no-store");
+
+    // Over the size cap: the response is cut off with an error, not ended
+    // cleanly, so a partial file can't pass for a whole one.
+    let send = |url: &str, token: &str| {
+        Request::builder()
+            .method(Method::POST)
+            .uri("/api/tools/video/download")
+            .header("authorization", format!("Bearer {token}"))
+            .header("content-type", "application/json")
+            .body(Body::from(json!({"url": url}).to_string()))
+            .unwrap()
+    };
+    let res = h
+        .app
+        .clone()
+        .oneshot(send("https://videos.test/big", &user.token))
+        .await
+        .unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert!(
+        res.into_body().collect().await.is_err(),
+        "oversized download must fail"
+    );
+
+    // One at a time per user: while a download is open, another is refused.
+    let first = h
+        .app
+        .clone()
+        .oneshot(send("https://videos.test/slow", &user.token))
+        .await
+        .unwrap();
+    assert_eq!(first.status(), StatusCode::OK);
+    let second = h
+        .app
+        .clone()
+        .oneshot(send("https://videos.test/watch?v=2", &user.token))
+        .await
+        .unwrap();
+    assert_eq!(second.status(), StatusCode::TOO_MANY_REQUESTS);
+    // Someone else isn't affected.
+    let other = h
+        .app
+        .clone()
+        .oneshot(send("https://videos.test/watch?v=3", &admin.token))
+        .await
+        .unwrap();
+    assert_eq!(other.status(), StatusCode::OK);
+    drop(other);
+    // Dropping the response (the browser leaving) frees the slot.
+    drop(first);
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    let again = h
+        .app
+        .clone()
+        .oneshot(send("https://videos.test/watch?v=4", &user.token))
+        .await
+        .unwrap();
+    assert_eq!(again.status(), StatusCode::OK);
+    assert_eq!(
+        again.into_body().collect().await.unwrap().to_bytes().len(),
+        1600
+    );
+
+    // Scratch directories are gone.
+    let mut files = Vec::new();
+    all_files(&h.dir.path().join("data/downloads"), &mut files);
+    assert!(files.is_empty(), "left behind: {files:?}");
+}
+
+#[tokio::test]
+async fn video_downloader_refuses_private_addresses() {
+    use std::os::unix::fs::PermissionsExt;
+    let bin = tempfile::tempdir().unwrap();
+    let script = bin.path().join("yt-dlp");
+    std::fs::write(&script, FAKE_YT_DLP).unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let h = Harness::with_config(|c| c.yt_dlp = script.clone()).await;
+    let admin = register(&h, "root", "admin password").await;
+    h.call(
+        Method::PATCH,
+        "/api/admin/settings",
+        Some(&admin.token),
+        Some(json!({"downloader": "admins"})),
+    )
+    .await;
+    for url in [
+        "http://127.0.0.1/video",
+        "http://localhost:8080/x",
+        "https://[::1]/x",
+        "http://169.254.169.254/latest/meta-data",
+    ] {
+        let r = h
+            .call(
+                Method::POST,
+                "/api/tools/video/info",
+                Some(&admin.token),
+                Some(json!({"url": url})),
+            )
+            .await;
+        assert_eq!(r.status, StatusCode::BAD_REQUEST, "{url}");
+    }
+}
+
+/// With ffmpeg, video goes yt-dlp -> ffmpeg -> browser. A pass-through
+/// ffmpeg checks the pipeline itself: both processes, their exit statuses,
+/// and that the remux arguments are what we expect.
+#[tokio::test]
+async fn video_downloader_pipes_video_through_ffmpeg() {
+    use std::os::unix::fs::PermissionsExt;
+    let bin = tempfile::tempdir().unwrap();
+    let exe = |name: &str, body: &str| {
+        let p = bin.path().join(name);
+        std::fs::write(&p, body).unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        p
+    };
+    let yt = exe("yt-dlp", FAKE_YT_DLP);
+    let ff = exe(
+        "ffmpeg",
+        r#"#!/bin/sh
+case " $* " in *" -version "*) echo ffmpeg fake; exit 0;; esac
+case " $* " in *" -c copy "*" -f mp4 "*"pipe:1"*) ;; *) exit 7;; esac
+printf 'REMUXED:'; cat
+"#,
+    );
+    let h = Harness::with_config(|c| {
+        c.yt_dlp = yt.clone();
+        c.ffmpeg = ff.clone();
+        c.downloader_public_only = false;
+    })
+    .await;
+    let admin = register(&h, "root", "admin password").await;
+    h.call(
+        Method::PATCH,
+        "/api/admin/settings",
+        Some(&admin.token),
+        Some(json!({"downloader": "admins"})),
+    )
+    .await;
+    let s: AdminSettings = h.get("/api/admin/settings", &admin.token).await.json();
+    assert!(s.downloader_can_merge);
+    let r = h
+        .call(
+            Method::POST,
+            "/api/tools/video/download",
+            Some(&admin.token),
+            Some(json!({"url": "https://videos.test/watch?v=1", "kind": "video"})),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+    let mut want = b"REMUXED:".to_vec();
+    want.extend(b"FAKE-VIDEO-BYTES".repeat(100));
+    assert_eq!(r.body, want);
+    // Audio skips the remux.
+    let r = h
+        .call(
+            Method::POST,
+            "/api/tools/video/download",
+            Some(&admin.token),
+            Some(json!({"url": "https://videos.test/watch?v=1", "kind": "audio"})),
+        )
+        .await;
+    assert_eq!(r.body, b"FAKE-VIDEO-BYTES".repeat(100));
+    let mut files = Vec::new();
+    all_files(&h.dir.path().join("data/downloads"), &mut files);
+    assert!(files.is_empty(), "left behind: {files:?}");
+}

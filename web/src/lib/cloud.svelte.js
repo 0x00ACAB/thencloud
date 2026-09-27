@@ -717,3 +717,68 @@ export const adminStats = () => api('GET', '/api/admin/stats');
 
 /** Invite links carry the token in the fragment, which is never sent to the server. */
 export const inviteUrl = (token) => `${location.origin}/#invite=${encodeURIComponent(token)}`;
+
+// ---------------------------------------------------------------------------
+// Tools that need the server: the video downloader (off unless an admin
+// enables it). The server fetches the video and streams it here; it's then
+// encrypted and uploaded like any other file, or just saved.
+// ---------------------------------------------------------------------------
+
+let tools = null;
+/** { video_downloader, downloader_max_bytes, downloader_can_merge }, fetched once per session. */
+export async function toolsInfo() {
+  return (tools ??= await api('GET', '/api/tools').catch(() => ({ video_downloader: false })));
+}
+/** Forget the cached answer (after an admin changes the setting). */
+export const resetToolsInfo = () => (tools = null);
+
+export const videoInfo = (url) => api('POST', '/api/tools/video/info', { body: { url } });
+
+/**
+ * Download a video (kind 'video') or its audio ('audio') through the server.
+ * Resolves to a Blob. `onProgress(bytes)`; stop with `signal`. A download
+ * the server cut short (too large, failed) rejects instead of returning a
+ * partial file.
+ */
+export async function downloadVideo(url, kind, { onProgress, signal } = {}) {
+  let res;
+  try {
+    res = await fetch('/api/tools/video/download', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${session.token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, kind }),
+      cache: 'no-store',
+      referrerPolicy: 'no-referrer',
+      signal,
+    });
+  } catch (e) {
+    if (e?.name === 'AbortError') throw e;
+    throw new Error('Could not reach the server. Check your connection.');
+  }
+  if (!res.ok) {
+    let body = null;
+    try {
+      body = await res.json();
+    } catch {
+      /* not json */
+    }
+    throw Object.assign(new Error(body?.message || `Download failed (HTTP ${res.status})`), { status: res.status, code: body?.error });
+  }
+  const parts = [];
+  let received = 0;
+  const reader = res.body.getReader();
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      parts.push(value);
+      received += value.length;
+      onProgress?.(received);
+    }
+  } catch (e) {
+    if (e?.name === 'AbortError') throw e;
+    throw new Error("The download didn't finish. The video may be too large for this server, or the site stopped sending it.");
+  }
+  if (!received) throw new Error('The site sent nothing back.');
+  return new Blob(parts);
+}

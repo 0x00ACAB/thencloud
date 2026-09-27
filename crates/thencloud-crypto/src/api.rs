@@ -452,16 +452,38 @@ pub struct UpdateUserRequest {
     pub is_admin: Option<bool>,
 }
 
+/// Who may use the video downloader, the one tool where the server sees
+/// what it handles (see MILESTONES.md). Off by default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum DownloaderAccess {
+    #[default]
+    Off,
+    Admins,
+    Everyone,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdminSettings {
     pub registration: Registration,
     /// Quota for new accounts (from the server's configuration).
     pub default_quota: i64,
+    pub downloader: DownloaderAccess,
+    /// yt-dlp's version, or None if it isn't installed on the server.
+    pub yt_dlp_version: Option<String>,
+    /// Whether ffmpeg is installed, so video and audio can be merged
+    /// (needed for most YouTube videos).
+    pub downloader_can_merge: bool,
+    /// Largest download passed through, in bytes.
+    pub downloader_max_bytes: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UpdateSettingsRequest {
-    pub registration: Registration,
+    #[serde(default)]
+    pub registration: Option<Registration>,
+    #[serde(default)]
+    pub downloader: Option<DownloaderAccess>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -561,4 +583,54 @@ pub struct PutPrivateData {
     pub data: B64,
     /// The revision this change is based on; 409 if it moved on.
     pub if_revision: i64,
+}
+
+// ---------------------------------------------------------------------------
+// Tools
+// ---------------------------------------------------------------------------
+
+/// Which tools this user can use.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolsInfo {
+    pub video_downloader: bool,
+    pub downloader_max_bytes: u64,
+    /// Whether separate video and audio can be merged (up to 1080p), or only
+    /// formats offered as one file work.
+    pub downloader_can_merge: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VideoKind {
+    Video,
+    Audio,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoLinkRequest {
+    pub url: String,
+    #[serde(default)]
+    pub kind: Option<VideoKind>,
+}
+
+/// What a link points at, and what the downloader would fetch for it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoInfo {
+    pub title: String,
+    pub site: String,
+    pub uploader: Option<String>,
+    /// Seconds.
+    pub duration: Option<f64>,
+    /// File extension and approximate size of the video (with sound) and
+    /// audio-only downloads, when the site offers them as one file.
+    pub video: Option<VideoOption>,
+    pub audio: Option<VideoOption>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VideoOption {
+    pub ext: String,
+    pub size: Option<u64>,
+    /// Video height in pixels, for video.
+    pub height: Option<u32>,
 }

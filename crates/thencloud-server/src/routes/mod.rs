@@ -6,6 +6,7 @@ pub mod nodes;
 pub mod public;
 pub mod sessions;
 pub mod shares;
+pub mod tools;
 pub mod trash;
 pub mod uploads;
 pub mod versions;
@@ -67,6 +68,9 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/admin/invites/{id}", delete(admin::delete_invite))
         .route("/admin/stats", get(admin::stats))
+        .route("/tools", get(tools::info))
+        .route("/tools/video/info", post(tools::video_info))
+        .route("/tools/video/download", post(tools::video_download))
         .route("/nodes/folder", post(nodes::create_folder))
         .route(
             "/nodes/{id}",

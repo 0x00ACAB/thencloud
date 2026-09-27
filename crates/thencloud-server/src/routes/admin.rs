@@ -165,6 +165,10 @@ pub async fn get_settings(
     Ok(Json(AdminSettings {
         registration: settings::registration(&state).await?,
         default_quota: state.config.default_quota,
+        downloader: settings::downloader(&state).await?,
+        yt_dlp_version: state.downloader.version.clone(),
+        downloader_can_merge: state.downloader.can_merge,
+        downloader_max_bytes: state.config.downloader_max_bytes,
     }))
 }
 
@@ -174,7 +178,12 @@ pub async fn update_settings(
     Json(req): Json<UpdateSettingsRequest>,
 ) -> Result<Json<AdminSettings>> {
     require_admin(&user)?;
-    settings::set_registration(&state, req.registration).await?;
+    if let Some(r) = req.registration {
+        settings::set_registration(&state, r).await?;
+    }
+    if let Some(d) = req.downloader {
+        settings::set_downloader(&state, d).await?;
+    }
     get_settings(State(state), user).await
 }
 
