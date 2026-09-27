@@ -13,6 +13,7 @@
         [['Enter'], 'Open or preview'],
         [['x'], 'Select or unselect'],
         [['Esc'], 'Clear the selection'],
+        [['F2'], 'Rename'],
         [['Backspace'], 'Up to the parent folder'],
         [['n'], 'New folder'],
         [['u'], 'Upload files'],

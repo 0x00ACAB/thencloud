@@ -7,6 +7,7 @@
   // write): each save uploads the text as a new encrypted version.
   import { onMount, untrack } from 'svelte';
   import Icon from './Icon.svelte';
+  import Time from './Time.svelte';
   import FileIcon from './FileIcon.svelte';
   import TextView from './preview/TextView.svelte';
   import MarkdownView from './preview/MarkdownView.svelte';
@@ -15,7 +16,7 @@
   import ConfirmDialog from './dialogs/ConfirmDialog.svelte';
   import { saveBlob } from '../lib/crypto.js';
   import { previewKind, readText, MAX_PREVIEW, MAX_TEXT } from '../lib/preview.js';
-  import { formatSize, formatWhen } from '../lib/format.js';
+  import { formatSize } from '../lib/format.js';
   import { errorMessage } from '../lib/ui.svelte.js';
   import { fade } from '../lib/motion.js';
 
@@ -198,7 +199,7 @@
     <div class="min-w-0 flex-1">
       <h2 class="truncate text-sm font-medium">{entry.meta.name}</h2>
       <p class="truncate text-xs text-fg-muted">
-        {formatSize(entry.meta.size)}{entry.node.updated_at ? ` · ${formatWhen(entry.node.updated_at * 1000)}` : ''}
+        {formatSize(entry.meta.size)}{#if entry.node.updated_at}{' · '}<Time ms={entry.node.updated_at * 1000} relative />{/if}
       </p>
     </div>
 

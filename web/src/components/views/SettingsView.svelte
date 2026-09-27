@@ -7,6 +7,7 @@
   import { formatSize, formatWhen, formatDate, fullDate } from '../../lib/format.js';
   import { slide } from '../../lib/motion.js';
   import Icon from '../Icon.svelte';
+  import Time from '../Time.svelte';
   import FileIcon from '../FileIcon.svelte';
   import { ICON_PACKS } from '../../lib/file-icons.svelte.js';
 
@@ -157,7 +158,7 @@
 
   {#snippet recoveryBody()}
     {#if session.me.recovery_created_at}
-      <p class="flex items-center gap-2 text-sm"><Icon name="shield-check" class="size-4 text-success" />Set up on {formatDate(session.me.recovery_created_at * 1000)}</p>
+      <p class="flex items-center gap-2 text-sm"><Icon name="shield-check" class="size-4 text-success" />Set up on&nbsp;<Time ms={session.me.recovery_created_at * 1000} /></p>
     {:else}
       <p class="flex items-start gap-2 text-sm text-fg-muted">
         <Icon name="circle-alert" class="mt-0.5 size-4 shrink-0" />

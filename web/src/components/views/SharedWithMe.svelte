@@ -1,8 +1,9 @@
 <script>
   import { incomingShares, deleteShare, download } from '../../lib/cloud.svelte.js';
   import { toast, toastError, trackTransfer, errorMessage } from '../../lib/ui.svelte.js';
-  import { formatSize, formatDate } from '../../lib/format.js';
+  import { formatSize } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
+  import Time from '../Time.svelte';
   import FileIcon from '../FileIcon.svelte';
   import Menu from '../Menu.svelte';
   import ConfirmDialog from '../dialogs/ConfirmDialog.svelte';
@@ -48,9 +49,11 @@
     <div class="grid h-48 place-items-center text-fg-muted"><Icon name="loader-circle" class="spinner size-5" /></div>
   {:else if !shares.length}
     <div class="grid place-items-center gap-1 px-6 py-20 text-center">
-      <div class="mb-3 grid size-11 place-items-center rounded-lg border border-line bg-subtle"><Icon name="inbox" class="size-5 text-fg-muted" /></div>
+      <img src="/img/logo.webp" alt="" width="715" height="349" class="mb-4 h-auto w-32 opacity-90 select-none" draggable="false" />
       <p class="font-medium">Nothing shared with you yet</p>
-      <p class="text-[13px] text-fg-muted">When someone shares a file or folder with you, it shows up here.</p>
+      <p class="max-w-sm text-[13px] text-fg-muted">
+        When someone shares a file or folder with you, it shows up here. Tell them your username, and read them your key fingerprint from Settings so they can check it.
+      </p>
     </div>
   {:else}
     <table class="table">
@@ -85,7 +88,7 @@
             <td class="hidden sm:table-cell">
               <span class="badge {s.permission === 'write' ? 'badge-accent' : ''}">{s.permission === 'write' ? 'Can edit' : 'View only'}</span>
             </td>
-            <td class="hidden text-fg-muted lg:table-cell">{formatDate(s.created_at * 1000)}</td>
+            <td class="hidden text-fg-muted lg:table-cell"><Time ms={s.created_at * 1000} /></td>
             <td class="text-right">
               <Menu
                 label="Actions"

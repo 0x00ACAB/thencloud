@@ -1,9 +1,9 @@
 <script>
   import Modal from '../Modal.svelte';
   import Icon from '../Icon.svelte';
+  import Time from '../Time.svelte';
   import { createLink, links, deleteLink } from '../../lib/cloud.svelte.js';
   import { copyText, errorMessage, toastError } from '../../lib/ui.svelte.js';
-  import { formatDate } from '../../lib/format.js';
 
   let { entry, onclose } = $props();
 
@@ -79,9 +79,9 @@
             <div class="min-w-0 flex-1">
               <p class="truncate font-mono text-[13px] {created?.id === l.id ? 'text-accent-text' : ''}">{l.url}</p>
               <p class="mt-0.5 flex flex-wrap gap-x-3 text-xs text-fg-muted">
-                <span>Created {formatDate(l.created_at * 1000)}</span>
+                <span><Time ms={l.created_at * 1000} prefix="Created " /></span>
                 {#if l.has_password}<span class="inline-flex items-center gap-1"><Icon name="lock" class="size-3" />Password</span>{/if}
-                <span>{l.expires_at ? `Expires ${formatDate(l.expires_at * 1000)}` : 'No expiry'}</span>
+                <span>{#if l.expires_at}<Time ms={l.expires_at * 1000} prefix="Expires " />{:else}No expiry{/if}</span>
               </p>
             </div>
             <button type="button" class="btn btn-ghost btn-icon" aria-label="Copy link" title="Copy link" onclick={() => copyText(l.url, 'Link copied')}>

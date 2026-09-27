@@ -20,6 +20,7 @@
   import { formatSize, formatWhen, formatDate, fullDate, plural } from '../../lib/format.js';
   import { slide } from '../../lib/motion.js';
   import Icon from '../Icon.svelte';
+  import Time from '../Time.svelte';
   import Menu from '../Menu.svelte';
   import Modal from '../Modal.svelte';
   import ConfirmDialog from '../dialogs/ConfirmDialog.svelte';
@@ -222,7 +223,7 @@
               <Icon name="link" class="size-4 shrink-0 text-fg-muted" />
               <span class="min-w-0 flex-1 truncate">
                 <span class={inv.used_at ? 'text-fg' : 'text-fg-muted'}>{inviteState(inv)}</span>
-                <span class="text-xs text-fg-faint"> · created by {inv.created_by} {formatWhen(inv.created_at * 1000)}</span>
+                <span class="text-xs text-fg-faint"> · created by {inv.created_by} <Time ms={inv.created_at * 1000} relative /></span>
               </span>
               {#if !inv.used_at}
                 <button type="button" class="btn btn-ghost btn-icon" aria-label="Delete invite" title="Delete invite" onclick={() => removeInvite(inv)}><Icon name="trash-2" /></button>

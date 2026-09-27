@@ -1,7 +1,7 @@
 <script>
   import { session, resolvePath, listFolder, createFolder, rename, trash, untrash, download, downloadZip, fetchEntry, upload, saveText, refreshMe } from '../../lib/cloud.svelte.js';
   import { toast, toastError, trackTransfer, errorMessage, sort, sortBy } from '../../lib/ui.svelte.js';
-  import { formatSize, formatWhen, fullDate, plural, sortEntries } from '../../lib/format.js';
+  import { formatSize, formatWhen, fullDate, plural, sortEntries, nameError } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
   import FileIcon from '../FileIcon.svelte';
   import Menu from '../Menu.svelte';
@@ -353,6 +353,46 @@
     });
   }
 
+  // ---------------------------------------------------------- inline rename
+
+  let renaming = $state(null); // node id being renamed in place
+  let renameValue = $state('');
+  let renameBusy = false;
+
+  function startRename(entry) {
+    renaming = entry.node.id;
+    renameValue = entry.meta.name;
+  }
+
+  /** Svelte action: focus the field and select `name` without its extension. */
+  function selectName(input, name) {
+    // After bind:value has filled the field in.
+    queueMicrotask(() => {
+      input.focus();
+      const dot = name.lastIndexOf('.');
+      input.setSelectionRange(0, dot > 0 ? dot : name.length);
+    });
+  }
+
+  async function finishRename(entry, save = true) {
+    if (renaming !== entry.node.id || renameBusy) return;
+    const name = renameValue.trim();
+    if (!save || name === entry.meta.name) return (renaming = null);
+    const err = nameError(name);
+    if (err) return toast(err);
+    renameBusy = true;
+    try {
+      await rename(entry, name);
+      renaming = null;
+      await load();
+      rowButtons().find((b) => b.textContent.trim() === name)?.focus();
+    } catch (e) {
+      toastError(e);
+    } finally {
+      renameBusy = false;
+    }
+  }
+
   function activate(entry) {
     if (entry.node.kind === 'folder') open(entry.node.id);
     else preview(entry);
@@ -395,7 +435,7 @@
       ...(canWrite
         ? [
             'sep',
-            { label: 'Rename', icon: 'pencil', onclick: () => (dialog = { type: 'rename', entry }) },
+            { label: 'Rename', icon: 'pencil', onclick: () => startRename(entry) },
             { label: 'Move', icon: 'move', onclick: () => (dialog = { type: 'move', entry }) },
             ...(!folder
               ? [{ label: 'Upload new version', icon: 'file-up', onclick: () => ((versionTarget = entry), versionInput.click()) }]
@@ -459,6 +499,7 @@
       const i = list.indexOf(document.activeElement);
       moveToTrash(entry).then(() => rowButtons()[Math.min(i, rowButtons().length - 1)]?.focus());
     } else if (key === 'x' && focusedEntry()) toggle(focusedEntry());
+    else if (key === 'F2' && canWrite && focusedEntry()) startRename(focusedEntry());
     else if (key === '?') dialog = { type: 'shortcuts' };
     else return;
     e.preventDefault();
@@ -557,13 +598,22 @@
     </div>
   {:else if !rows.length}
     <div class="grid place-items-center gap-1 px-6 py-20 text-center animate-enter">
-      <div class="mb-3 grid size-11 place-items-center rounded-lg border border-line bg-subtle">
-        <Icon name={canWrite ? 'upload' : 'folder-open'} class="size-5 text-fg-muted" />
-      </div>
-      <p class="font-medium">This folder is empty</p>
-      <p class="text-[13px] text-fg-muted">
-        {canWrite ? 'Drop files anywhere on this page, or use Upload. They are encrypted before they leave your device.' : 'Nothing has been added here yet.'}
-      </p>
+      {#if path.length === 1 && !share}
+        <!-- A brand moment: the very first, empty "My files". -->
+        <img src="/img/logo.webp" alt="" width="715" height="349" class="mb-4 h-auto w-40 select-none" draggable="false" />
+        <p class="font-medium">Nothing here yet</p>
+        <p class="max-w-sm text-[13px] text-fg-muted">
+          Drop files or whole folders anywhere on this page, or use Upload. Everything is encrypted before it leaves your device.
+        </p>
+      {:else}
+        <div class="mb-3 grid size-11 place-items-center rounded-lg border border-line bg-subtle">
+          <Icon name={canWrite ? 'upload' : 'folder-open'} class="size-5 text-fg-muted" />
+        </div>
+        <p class="font-medium">This folder is empty</p>
+        <p class="text-[13px] text-fg-muted">
+          {canWrite ? 'Drop files anywhere on this page, or use Upload. They are encrypted before they leave your device.' : 'Nothing has been added here yet.'}
+        </p>
+      {/if}
     </div>
   {:else}
     <table class="table animate-enter">
@@ -616,10 +666,29 @@
                 }} />
             </td>
             <td class="max-w-0">
-              <button type="button" class="row-open flex max-w-full cursor-pointer items-center gap-3 text-left" onclick={() => activate(entry)}>
-                {#if folder}<Icon name="folder" class="size-4 shrink-0 text-accent-text" />{:else}<FileIcon meta={entry.meta} />{/if}
-                <span class="truncate font-medium group-hover:underline group-hover:underline-offset-4 group-hover:decoration-line-strong">{entry.meta.name}</span>
-              </button>
+              {#if renaming === entry.node.id}
+                <form
+                  class="flex items-center gap-3"
+                  onsubmit={(e) => {
+                    e.preventDefault();
+                    finishRename(entry);
+                  }}>
+                  {#if folder}<Icon name="folder" class="size-4 shrink-0 text-accent-text" />{:else}<FileIcon meta={entry.meta} />{/if}
+                  <input
+                    use:selectName={entry.meta.name}
+                    class="input h-7 max-w-md px-2 font-medium"
+                    aria-label="New name for {entry.meta.name}"
+                    bind:value={renameValue}
+                    spellcheck="false"
+                    onkeydown={(e) => e.key === 'Escape' && (e.preventDefault(), e.stopPropagation(), finishRename(entry, false))}
+                    onblur={() => finishRename(entry)} />
+                </form>
+              {:else}
+                <button type="button" class="row-open flex max-w-full cursor-pointer items-center gap-3 text-left" onclick={() => activate(entry)}>
+                  {#if folder}<Icon name="folder" class="size-4 shrink-0 text-accent-text" />{:else}<FileIcon meta={entry.meta} />{/if}
+                  <span class="truncate font-medium group-hover:underline group-hover:underline-offset-4 group-hover:decoration-line-strong">{entry.meta.name}</span>
+                </button>
+              {/if}
             </td>
             <td class="hidden text-right text-fg-muted tabular-nums sm:table-cell">{folder ? '' : formatSize(entry.meta.size)}</td>
             <td class="hidden text-fg-muted md:table-cell" title={fullDate(entry.node.updated_at * 1000)}>{formatWhen(entry.node.updated_at * 1000)}</td>
@@ -691,16 +760,6 @@
     create
     onsave={newNote}
     onclose={() => dialog?.type === 'note' && close()} />
-{:else if dialog?.type === 'rename'}
-  <NameDialog
-    title="Rename"
-    initial={dialog.entry.meta.name}
-    confirmLabel="Rename"
-    onsave={async (name) => {
-      await rename(dialog.entry, name);
-      await load();
-    }}
-    onclose={close} />
 {:else if dialog?.type === 'move'}
   <MoveDialog
     entries={dialog.entries ?? [dialog.entry]}
