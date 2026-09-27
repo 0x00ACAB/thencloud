@@ -1,5 +1,5 @@
 <script>
-  import { session, resolvePath, listFolder, createFolder, rename, trash, untrash, download, upload, refreshMe } from '../../lib/cloud.svelte.js';
+  import { session, resolvePath, listFolder, createFolder, rename, trash, untrash, download, fetchEntry, upload, refreshMe } from '../../lib/cloud.svelte.js';
   import { toast, toastError, trackTransfer, errorMessage } from '../../lib/ui.svelte.js';
   import { formatSize, formatWhen, fullDate, fileIcon, plural } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
@@ -10,6 +10,7 @@
   import MoveDialog from '../dialogs/MoveDialog.svelte';
   import ShareDialog from '../dialogs/ShareDialog.svelte';
   import LinkDialog from '../dialogs/LinkDialog.svelte';
+  import Preview from '../Preview.svelte';
 
   let { folderId, go, inShare = $bindable(false) } = $props();
 
@@ -164,17 +165,23 @@
     }
   }
 
+  const files = $derived(rows.filter((r) => r.node.kind === 'file'));
+
   function activate(entry) {
     if (entry.node.kind === 'folder') open(entry.node.id);
-    else downloadEntry(entry);
+    else preview(entry);
   }
+
+  // The list is fixed when the preview opens, so a reload behind it doesn't shift ← and →.
+  const preview = (entry) => (dialog = { type: 'preview', entries: files, start: files.indexOf(entry) });
 
   function menuFor(entry) {
     const folder = entry.node.kind === 'folder';
     return [
       folder
         ? { label: 'Open', icon: 'folder-open', onclick: () => open(entry.node.id) }
-        : { label: 'Download', icon: 'download', onclick: () => downloadEntry(entry) },
+        : { label: 'Preview', icon: 'eye', onclick: () => preview(entry) },
+      ...(!folder ? [{ label: 'Download', icon: 'download', onclick: () => downloadEntry(entry) }] : []),
       ...(isOwner
         ? [
             { label: 'Share', icon: 'share-2', onclick: () => (dialog = { type: 'share', entry }) },
@@ -308,7 +315,7 @@
 
 {#if rows.length}
   <p class="mt-3 px-1 text-xs text-fg-faint">
-    {plural(rows.filter((r) => r.node.kind === 'folder').length, 'folder')}, {plural(rows.filter((r) => r.node.kind === 'file').length, 'file')}
+    {plural(rows.filter((r) => r.node.kind === 'folder').length, 'folder')}, {plural(files.length, 'file')}
   </p>
 {/if}
 
@@ -343,6 +350,8 @@
     onclose={close} />
 {:else if dialog?.type === 'versions'}
   <VersionsDialog entry={dialog.entry} {canWrite} onchanged={() => (load(), refreshMe().catch(() => {}))} onclose={close} />
+{:else if dialog?.type === 'preview'}
+  <Preview entries={dialog.entries} start={dialog.start} fetch={fetchEntry} ondownload={downloadEntry} onclose={close} />
 {:else if dialog?.type === 'share'}
   <ShareDialog entry={dialog.entry} onclose={close} />
 {:else if dialog?.type === 'link'}

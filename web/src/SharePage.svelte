@@ -11,6 +11,8 @@
   import Icon from './components/Icon.svelte';
   import Toasts from './components/Toasts.svelte';
   import TransferTray from './components/TransferTray.svelte';
+  import Preview from './components/Preview.svelte';
+  import { previewKind } from './lib/preview.js';
 
   const token = decodeURIComponent(location.pathname.split('/').filter(Boolean)[1] || '');
   const base = `/api/public/${encodeURIComponent(token)}`;
@@ -102,15 +104,16 @@
       .finally(() => (listing = false));
   });
 
+  const fetchEntry = (entry, onProgress) =>
+    fetchFile(entry.node, entry.key, (i) => request('GET', `${base}/nodes/${entry.node.id}/chunks/${i}`, opts()), onProgress);
+
+  let preview = $state(null); // { entries, start }
+  const files = $derived(rows.filter((r) => r.node.kind === 'file'));
+
   async function downloadEntry(entry) {
     const t = trackTransfer('download', entry.meta.name, entry.meta.size);
     try {
-      const { blob, meta } = await fetchFile(
-        entry.node,
-        entry.key,
-        (i) => request('GET', `${base}/nodes/${entry.node.id}/chunks/${i}`, opts()),
-        (p) => (t.progress = p),
-      );
+      const { blob, meta } = await fetchEntry(entry, (p) => (t.progress = p));
       saveBlob(blob, meta.name);
       t.status = 'done';
     } catch (e) {
@@ -160,9 +163,16 @@
         </div>
         <h1 class="max-w-full truncate text-base font-semibold">{here.meta.name}</h1>
         <p class="text-[13px] text-fg-muted">{formatSize(here.meta.size)}{here.meta.mtime ? `, modified ${formatDate(here.meta.mtime)}` : ''}</p>
-        <button type="button" class="btn btn-accent btn-lg mt-5 w-full" onclick={() => downloadEntry(here)}>
-          <Icon name="download" /> Download
-        </button>
+        <div class="mt-5 grid w-full gap-2">
+          <button type="button" class="btn btn-accent btn-lg w-full" onclick={() => downloadEntry(here)}>
+            <Icon name="download" /> Download
+          </button>
+          {#if previewKind(here.meta)}
+            <button type="button" class="btn btn-secondary btn-lg w-full" onclick={() => (preview = { entries: [here], start: 0 })}>
+              <Icon name="eye" /> Preview
+            </button>
+          {/if}
+        </div>
       </div>
     {:else}
       <nav class="flex flex-wrap items-center gap-1 text-sm" aria-label="Folder path">
@@ -197,7 +207,7 @@
                     <button
                       type="button"
                       class="flex max-w-full cursor-pointer items-center gap-3 text-left"
-                      onclick={() => (folder ? ((rows = []), (trail = [...trail, entry])) : downloadEntry(entry))}>
+                      onclick={() => (folder ? ((rows = []), (trail = [...trail, entry])) : (preview = { entries: files, start: files.indexOf(entry) }))}>
                       <Icon name={folder ? 'folder' : fileIcon(entry.meta)} class="size-4 shrink-0 {folder ? 'text-accent-text' : 'text-fg-muted'}" />
                       <span class="truncate font-medium group-hover:underline group-hover:decoration-line-strong group-hover:underline-offset-4">{entry.meta.name}</span>
                     </button>
@@ -229,6 +239,10 @@
     </div>
   </footer>
 </div>
+
+{#if preview}
+  <Preview entries={preview.entries} start={preview.start} fetch={fetchEntry} ondownload={downloadEntry} onclose={() => (preview = null)} />
+{/if}
 
 <TransferTray />
 <Toasts />

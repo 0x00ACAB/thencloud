@@ -19,7 +19,7 @@ thencloud is an open-source, end-to-end encrypted alternative to Nextcloud. Read
 
 ```sh
 ./build.sh                  # WASM (web/src/wasm) + web client (web/dist) + server; puts ~/.cargo/bin first because the Gentoo rustc lacks the wasm target
-cd web && npm run dev       # Vite dev server with hot reload; proxies /api to a server on 127.0.0.1:8080
+cd web && npm run dev       # Vite dev server with hot reload; proxies /api to a server on 127.0.0.1:8080 (override with THENCLOUD_API=http://host:port)
 cd web && npm run check     # svelte-check; keep at zero warnings
 cargo test --workspace      # crypto unit tests + in-process end-to-end server tests
 cargo clippy --workspace --all-targets   # keep at zero warnings
@@ -42,6 +42,11 @@ cargo run -p thencloud-server -- --bind 127.0.0.1:8080 --data-dir ./data
   - `src/lib/motion.js` wraps Svelte transitions with the app's timings and `prefers-reduced-motion`; use it instead of `svelte/transition` directly. Popovers use its `portal` action.
   - Don't leave a `transform` on an element after an animation (use `animation-fill-mode: backwards`): it traps `position: fixed` descendants.
   - Fonts (Geist, OFL) and the logo live in `web/public/`.
+  - File previews: `components/Preview.svelte` plus `components/preview/` (text, Markdown, PDF). A shared file is untrusted input rendered in the app's origin, so:
+    - `lib/preview.js` picks the viewer from the name/MIME, but the decrypted bytes are always wrapped in a Blob with a type from its fixed tables, never the stored MIME type.
+    - Markdown only ever reaches the DOM through `lib/markdown.js` (marked + DOMPurify). Don't `{@html}` anything else except highlight.js output, which escapes its input.
+    - Heavy viewers (`highlight.js`, `markdown.js`, `pdf.js`) are loaded with `import()` so the file list doesn't pay for them. `lib/languages.js` holds the extension map so it can be used without loading highlight.js.
+    - pdf.js's fonts, CMaps and decoders are copied to `/pdfjs/` by a plugin in `vite.config.js`.
 - `assets/`: branding. The logo mark is `thencloud-logo-mark.png`; `branding.txt` has the name, the katakana ゼンクラウド and the accent colour `#3B47F9`.
 
 ## Web UI direction
