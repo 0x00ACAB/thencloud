@@ -138,6 +138,49 @@ Smaller things:
 - [ ] **Translations**: move UI strings into message files and pick the language from the browser
 - [ ] **Accessibility pass**: screen reader labels, focus handling in dialogs and menus, and colour contrast checked in both themes and with the tint on
 
+## Milestone 8: Hardening
+
+- [ ] **Format spec**: a written description of every ciphertext format, key derivation and wire type, with test vectors that the Rust tests, the WASM build and any other client check against
+- [ ] **Format versions**: a version byte on every ciphertext and a tested path for moving old data to a new format
+- [ ] **Fuzzing**: `cargo-fuzz` targets for the crypto decoders and the server's request parsing, and fuzz tests for the untrusted parsers in the browser (`tags.js`, `videotags.js`, the zip and PDF link handling)
+- [ ] **Browser tests**: Playwright in CI for sign-up, upload, share, public links and previews, including a check that no request carries a name, key or plaintext
+- [ ] **Dependency checks**: `cargo-deny` (advisories and licences) and `npm audit` in CI
+- [ ] **Master key rotation**: after a suspected leak, re-wrap every key under a new master key and keypair, and re-seal shares
+- [ ] **Independent security audit** of the crypto crate, the web client and the server, with the report published
+
+## Milestone 9: Less metadata
+
+- [ ] **Coarse timestamps**: the server records created and changed times rounded to the hour (the exact times stay in the encrypted metadata)
+- [ ] **Hide file vs folder**: store the node type in the encrypted metadata, so the server sees only nodes that have children or content
+- [ ] **Onion service**: document and test running thencloud as a Tor onion service, so the server doesn't learn clients' IP addresses
+- [ ] **Uniform upload sizes**: small files uploaded in batches padded to fixed sizes, so upload timing and count give away less
+
+## Milestone 10: More ways to open files
+
+- [ ] **Subtitles**: `.srt` and `.vtt` next to a video are decrypted and shown in the player, with a picker
+- [ ] **Books**: an EPUB and comic (CBZ) reader, with reading progress kept in the encrypted app data
+- [ ] **Audiobooks and podcasts**: remember the position per file, chapters from MP4/M4B, and playback speed
+- [ ] **Tables**: CSV and TSV shown as a sortable table instead of plain text
+- [ ] **Office previews**: DOCX, XLSX, ODT and PPTX rendered in the browser, loaded only when needed and sanitised like Markdown
+- [ ] **PDF tools**: merge, split, rotate and reorder pages in the browser, saved as a new encrypted file
+- [ ] **Notes view**: a folder of Markdown files as a notebook, with a list, search and pinned notes
+
+## Milestone 11: People and organisations
+
+- [ ] **Share with someone who hasn't signed up yet**: an invite link carrying a one-time key; once they register and their fingerprint is checked, the share is re-sealed to their real key
+- [ ] **Team spaces**: folders owned by a group rather than a person, with their own quota, so work doesn't disappear when someone leaves
+- [ ] **Single sign-on (OIDC)** as a gate on login for organisations; the encryption password or passkey stays separate, since the identity provider must never hold keys
+- [ ] **Federation**: share with `user@other-server`, with public keys fetched and pinned like local ones (and checked against key transparency once that exists)
+- [ ] **Per-user limits** on bandwidth and upload rate, set by admins
+
+## Milestone 12: Sync and scale
+
+- [ ] **Change feed**: `GET /api/changes?since=<cursor>` returns what changed in your trees and shares, so sync clients and the mount don't have to walk the whole tree
+- [ ] **Live updates**: open views refresh when something changes in a shared folder (Server-Sent Events carrying only node ids)
+- [ ] **Large folders**: paginated listings on the server and a virtualised file table, so a folder with 100,000 items stays fast
+- [ ] **PostgreSQL** as an alternative to SQLite for bigger installs
+- [ ] **Several server instances** behind a load balancer, sharing PostgreSQL and the S3 blob store
+
 ## Later
 
 - [x] **Recovery key**: an optional printable key that also wraps the master key; "Forgot your password?" uses it to set a new one without losing data
