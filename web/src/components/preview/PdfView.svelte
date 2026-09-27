@@ -1,0 +1,115 @@
+<script>
+  // PDF pages drawn with pdf.js, fitted to the window width (up to a
+  // readable maximum) and rendered only as they scroll into view.
+  import { onMount } from 'svelte';
+  import Icon from '../Icon.svelte';
+
+  let { blob } = $props();
+
+  let scroller;
+  let pages = $state([]); // [{ n, ratio }] height / width of each page
+  let width = $state(0);
+  let error = $state('');
+  let zoom = $state(1);
+
+  const fit = $derived(Math.min(width - 48, 900));
+  const pageWidth = $derived(Math.max(200, Math.round(fit * zoom)));
+
+  let doc;
+  let loading; // pdf.js loading task; destroying it frees the document and worker
+  const drawn = new Map(); // page number -> { task } of its latest render
+
+  onMount(() => {
+    let live = true;
+    const ro = new ResizeObserver(([e]) => (width = e.contentRect.width));
+    ro.observe(scroller);
+    (async () => {
+      try {
+        const { openPdf } = await import('../../lib/pdf.js');
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        if (!live) return;
+        loading = openPdf(bytes);
+        doc = await loading.promise;
+        if (!live) return;
+        const list = [];
+        for (let n = 1; n <= doc.numPages; n++) {
+          const vp = (await doc.getPage(n)).getViewport({ scale: 1 });
+          list.push({ n, ratio: vp.height / vp.width });
+        }
+        if (live) pages = list;
+      } catch (e) {
+        if (live) error = e?.name === 'PasswordException' ? "This PDF is password protected, which the preview doesn't support yet." : "This PDF couldn't be read. It may be damaged.";
+      }
+    })();
+    return () => {
+      live = false;
+      ro.disconnect();
+      loading?.destroy();
+    };
+  });
+
+  // Svelte action: draw a page when it comes near the viewport, and redraw
+  // it at the new size after a resize or zoom.
+  function page(canvas, params) {
+    let { n, w: target } = params;
+    const io = new IntersectionObserver(([e]) => e.isIntersecting && draw(), { root: scroller, rootMargin: '600px 0px' });
+    io.observe(canvas);
+    // pdf.js refuses two renders on one canvas at once, so draws for a page
+    // run one after another; a newer size cancels the render in flight.
+    let queue = Promise.resolve();
+    let wanted = 0;
+    function draw() {
+      if (!doc || wanted === target) return;
+      const w = (wanted = target);
+      drawn.get(n)?.task.cancel();
+      queue = queue.then(async () => {
+        if (!doc || w !== wanted) return;
+        const { drawPage } = await import('../../lib/pdf.js');
+        const task = drawPage(await doc.getPage(n), canvas, w);
+        drawn.set(n, { task });
+        await task.promise;
+      }).catch(() => {}); // cancelled, or the document was closed
+    }
+    return {
+      update: (next) => {
+        target = next.w;
+        const r = canvas.getBoundingClientRect();
+        if (r.bottom > -600 && r.top < innerHeight + 600) draw();
+      },
+      destroy: () => {
+        io.disconnect();
+        wanted = -1;
+        drawn.get(n)?.task.cancel();
+        drawn.delete(n);
+      },
+    };
+  }
+</script>
+
+<div bind:this={scroller} class="h-full overflow-auto bg-subtle">
+  {#if error}
+    <p class="grid h-full place-items-center p-6 text-[13px] text-fg-muted">{error}</p>
+  {:else if !pages.length}
+    <div class="grid h-full place-items-center text-fg-muted"><Icon name="loader-circle" class="spinner size-5" /></div>
+  {:else}
+    <div class="grid justify-items-center gap-4 px-6 pt-6 pb-2">
+      {#each pages as p (p.n)}
+        <canvas
+          use:page={{ n: p.n, w: pageWidth }}
+          class="rounded-sm bg-muted shadow-sm ring-1 ring-line"
+          style:width="{pageWidth}px"
+          style:height="{Math.round(pageWidth * p.ratio)}px"
+          aria-label="Page {p.n} of {pages.length}"></canvas>
+      {/each}
+    </div>
+    <div class="sticky bottom-4 flex justify-center">
+      <div class="flex items-center gap-1 rounded-lg border border-line bg-bg p-1 shadow-sm">
+        <button type="button" class="btn btn-ghost btn-icon h-7" aria-label="Zoom out" disabled={zoom <= 0.5} onclick={() => (zoom = Math.max(0.5, zoom - 0.25))}><Icon name="zoom-out" /></button>
+        <button type="button" class="h-7 min-w-12 cursor-pointer rounded px-1 text-xs text-fg-muted tabular-nums hover:text-fg" title="Fit to width" onclick={() => (zoom = 1)}>{Math.round(zoom * 100)}%</button>
+        <button type="button" class="btn btn-ghost btn-icon h-7" aria-label="Zoom in" disabled={zoom >= 3} onclick={() => (zoom = Math.min(3, zoom + 0.25))}><Icon name="zoom-in" /></button>
+        <span class="mx-1 h-4 w-px bg-line" aria-hidden="true"></span>
+        <span class="px-1 text-xs text-fg-muted">{pages.length} {pages.length === 1 ? 'page' : 'pages'}</span>
+      </div>
+    </div>
+  {/if}
+</div>

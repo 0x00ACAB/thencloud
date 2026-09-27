@@ -279,3 +279,210 @@
     @apply h-full rounded-full bg-accent transition-[width] duration-200;
   }
 }
+
+/* ------------------------------------------------------------------ previews */
+
+@layer components {
+  .preview {
+    @apply m-0 flex h-dvh max-h-none w-full max-w-none flex-col border-0 bg-bg p-0 text-fg backdrop:bg-bg;
+    transition: opacity 160ms ease-out;
+  }
+  :root:has(.preview[open]) {
+    overflow: hidden;
+  }
+  .preview:not([open]) {
+    display: none;
+  }
+  @starting-style {
+    .preview[open] {
+      opacity: 0;
+    }
+  }
+
+  .checkerboard {
+    background-color: var(--bg);
+    background-image:
+      linear-gradient(45deg, var(--muted) 25%, transparent 25%, transparent 75%, var(--muted) 75%),
+      linear-gradient(45deg, var(--muted) 25%, transparent 25%, transparent 75%, var(--muted) 75%);
+    background-size: 16px 16px;
+    background-position:
+      0 0,
+      8px 8px;
+  }
+}
+
+/* Syntax colours for highlight.js output, in the app's palette: quiet
+ * greys for comments and punctuation, a few muted hues for the rest. */
+:root {
+  --code-comment: #6e7781;
+  --code-keyword: #cf222e;
+  --code-string: #0a3069;
+  --code-number: #0550ae;
+  --code-title: #8250df;
+  --code-type: #953800;
+  --code-attr: #116329;
+  --code-meta: #57606a;
+  --code-add-bg: #dafbe1;
+  --code-del-bg: #ffebe9;
+}
+.dark {
+  --code-comment: #7d8590;
+  --code-keyword: #ff7b72;
+  --code-string: #a5d6ff;
+  --code-number: #79c0ff;
+  --code-title: #d2a8ff;
+  --code-type: #ffa657;
+  --code-attr: #7ee787;
+  --code-meta: #8b949e;
+  --code-add-bg: #12261e;
+  --code-del-bg: #25171c;
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: var(--code-comment);
+}
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-doctag,
+.hljs-template-tag {
+  color: var(--code-keyword);
+}
+.hljs-string,
+.hljs-regexp,
+.hljs-template-variable,
+.hljs-link,
+.hljs-selector-attr,
+.hljs-selector-pseudo {
+  color: var(--code-string);
+}
+.hljs-number,
+.hljs-variable.language_,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-code {
+  color: var(--code-number);
+}
+.hljs-title,
+.hljs-title.function_,
+.hljs-section {
+  color: var(--code-title);
+}
+.hljs-section {
+  font-weight: 600;
+}
+.hljs-type,
+.hljs-built_in,
+.hljs-title.class_,
+.hljs-class .hljs-title {
+  color: var(--code-type);
+}
+.hljs-attr,
+.hljs-attribute,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class,
+.hljs-property {
+  color: var(--code-attr);
+}
+.hljs-meta,
+.hljs-punctuation,
+.hljs-tag,
+.hljs-subst {
+  color: var(--code-meta);
+}
+.hljs-addition {
+  color: var(--code-attr);
+  background: var(--code-add-bg);
+}
+.hljs-deletion {
+  color: var(--code-keyword);
+  background: var(--code-del-bg);
+}
+.hljs-emphasis {
+  font-style: italic;
+}
+.hljs-strong {
+  font-weight: 600;
+}
+
+/* Rendered Markdown. */
+@layer components {
+  .prose {
+    @apply text-[15px] leading-7 text-fg;
+  }
+  .prose > * + * {
+    @apply mt-4;
+  }
+  .prose :is(h1, h2, h3, h4, h5, h6) {
+    @apply mt-8 font-semibold tracking-tight text-fg first:mt-0;
+  }
+  .prose h1 {
+    @apply border-b border-line pb-2 text-2xl;
+  }
+  .prose h2 {
+    @apply border-b border-line pb-1.5 text-xl;
+  }
+  .prose h3 {
+    @apply text-lg;
+  }
+  .prose h4 {
+    @apply text-base;
+  }
+  .prose :is(h5, h6) {
+    @apply text-sm text-fg-muted;
+  }
+  .prose a {
+    @apply font-medium text-accent-text underline underline-offset-4;
+  }
+  .prose a:not([href]) {
+    @apply text-fg no-underline;
+  }
+  .prose :is(ul, ol) {
+    @apply pl-6;
+  }
+  .prose ul {
+    @apply list-disc;
+  }
+  .prose ol {
+    @apply list-decimal;
+  }
+  .prose li + li,
+  .prose li > :is(ul, ol) {
+    @apply mt-1;
+  }
+  .prose li::marker {
+    @apply text-fg-faint;
+  }
+  .prose li:has(> input[type="checkbox"]) {
+    @apply -ml-6 list-none;
+  }
+  .prose input[type="checkbox"] {
+    @apply mr-2 align-[-1px] accent-accent;
+  }
+  .prose blockquote {
+    @apply border-l-2 border-line-strong pl-4 text-fg-muted;
+  }
+  .prose hr {
+    @apply my-8 border-line;
+  }
+  .prose :not(pre) > code {
+    @apply rounded border border-line bg-subtle px-1 py-0.5 font-mono text-[0.85em];
+  }
+  .prose pre {
+    @apply overflow-x-auto rounded-md border border-line bg-subtle px-4 py-3 font-mono text-[13px] leading-5;
+  }
+  .prose table {
+    @apply block w-max max-w-full overflow-x-auto border-collapse text-sm;
+  }
+  .prose :is(th, td) {
+    @apply border border-line px-3 py-1.5 text-left;
+  }
+  .prose th {
+    @apply bg-subtle font-semibold;
+  }
+  .prose .md-image {
+    @apply inline-flex items-center gap-1 rounded border border-dashed border-line-strong px-2 py-0.5 text-[13px] text-fg-muted;
+  }
+}

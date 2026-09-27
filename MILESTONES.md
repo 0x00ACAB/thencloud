@@ -51,9 +51,11 @@
 Bigger pieces:
 - [x] **Motion**: subtle, fast animations for dialogs, menus, toasts, row insert/remove, view changes and transfers. Respects `prefers-reduced-motion`
 - [x] **Custom accent colour**: presets or any colour in Settings; shades derived per theme, black or white text picked for contrast
-- [ ] **File previews**: images, video, audio, PDF and text, decrypted in the browser
-- [ ] **Syntax highlighting** in text and code previews
-- [ ] **Markdown**: rendered preview for `.md` files, then a WYSIWYG editor that saves back as a new encrypted version
+- [x] **File previews**: images, video, audio, PDF (pdf.js) and text, decrypted in the browser; ← and → step through the folder. Also on public links
+- [x] **Syntax highlighting** in text and code previews
+- [x] **Markdown preview**: rendered and sanitised, with a Source toggle
+- [ ] **Markdown editor**: WYSIWYG, saving back as a new encrypted version
+- [ ] Previews: streamed video (today the whole file is decrypted into memory first, up to 256 MB), images referenced from Markdown by relative path, PDF text selection and links
 - [ ] **Per-file-type icons** from an IDE-style icon pack (Rust, JS, Markdown, archives and so on), served locally like the Lucide set
 - [ ] **Multi-select** with bulk move, download and delete
 - [ ] **Folder uploads** (drag a whole folder in) and zip download of folders
@@ -76,9 +78,10 @@ Smaller things:
 - [ ] **Key rotation on revocation**: re-key a folder subtree when a share is revoked, so former recipients can't decrypt future content
 - [ ] **Contact verification / key transparency**: signed key directory or verified-contact store, so a malicious server can't substitute public keys when a user doesn't compare fingerprints
 - [ ] **Upload-only "file drop" links**
-- [ ] **S3-compatible blob store** behind the existing `BlobStore` interface
 - [ ] **Streaming downloads** through a service worker, so large files aren't buffered in memory
 - [ ] **Native CLI and desktop sync client** reusing `thencloud-crypto`
 - [ ] **Encrypted name index**: HMAC of name under the folder key, so the server can reject duplicate names without learning them
 - [ ] **Metadata padding**: pad sizes and chunk counts to hide exact file sizes
 - [ ] **Calendar and contacts**, end-to-end encrypted
+- [ ] **Linux mount**: Mount the disk (or a subdirectory) as a linux drive
+- [ ] **S3-compatible blob store** behind the existing `BlobStore` interface

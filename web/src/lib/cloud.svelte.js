@@ -292,9 +292,14 @@ export async function restoreVersion(entry, v) {
 
 export const deleteVersion = (entry, v) => api('DELETE', `/api/nodes/${entry.node.id}/versions/${v.id}`);
 
-export async function download(entry, onProgress) {
+/** Download and decrypt a file's current version into memory. */
+export function fetchEntry(entry, onProgress) {
   const { node, key } = entry;
-  const { blob, meta } = await fetchFile(node, key, (i) => api('GET', `/api/nodes/${node.id}/chunks/${i}`), onProgress);
+  return fetchFile(node, key, (i) => api('GET', `/api/nodes/${node.id}/chunks/${i}`), onProgress);
+}
+
+export async function download(entry, onProgress) {
+  const { blob, meta } = await fetchEntry(entry, onProgress);
   saveBlob(blob, meta.name);
 }
 

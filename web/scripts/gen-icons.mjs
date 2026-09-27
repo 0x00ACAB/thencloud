@@ -9,7 +9,7 @@ const ICONS = [
   'trash-2', 'ellipsis', 'chevron-right', 'log-out', 'settings', 'users', 'user', 'lock', 'key-round',
   'shield-check', 'copy', 'check', 'x', 'sun', 'moon', 'monitor', 'hard-drive', 'inbox', 'globe',
   'refresh-cw', 'circle-alert', 'loader-circle', 'arrow-left', 'house', 'plus', 'file-up', 'eye', 'eye-off',
-  'user-round-plus', 'door-open',
+  'user-round-plus', 'door-open', 'chevron-left', 'zoom-in', 'zoom-out', 'code', 'book-open', 'wrap-text',
 ];
 
 const out = {};
