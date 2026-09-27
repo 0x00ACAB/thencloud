@@ -564,6 +564,12 @@
   .editor li[data-item-type="task"] > * {
     @apply m-0 min-w-0 flex-1;
   }
+  .editor li[data-item-type="task"]::before {
+    @apply cursor-pointer;
+  }
+  .editor :is(th, td) {
+    @apply min-w-16;
+  }
 }
 
 @layer components {

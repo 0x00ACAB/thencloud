@@ -12,6 +12,7 @@ const ICONS = [
   'user-round-plus', 'door-open', 'chevron-left', 'zoom-in', 'zoom-out', 'code', 'book-open', 'wrap-text',
   'undo-2', 'redo-2', 'heading-1', 'heading-2', 'heading-3', 'bold', 'italic', 'strikethrough', 'list', 'list-ordered',
   'list-todo', 'text-quote', 'square-code', 'minus', 'file-plus', 'save', 'search', 'arrow-up', 'arrow-down', 'keyboard', 'folder-up', 'chevron-down', 'laptop', 'smartphone', 'file-cog', 'lock-open',
+  'list-checks', 'table', 'between-horizontal-end', 'between-vertical-end', 'grid-2x2-x', 'columns-2',
 ];
 
 const out = {};

@@ -2,8 +2,9 @@
   // Rendered Markdown. The renderer (marked + DOMPurify) and highlight.js
   // for fenced code are loaded on demand; see lib/markdown.js for what is
   // stripped and why. `loadImage(path)`, when given, turns a relative image
-  // path into a blob: URL of a decrypted file (or null).
-  let { text, loadImage = null } = $props();
+  // path into a blob: URL of a decrypted file (or null). `ontoggle(index,
+  // checked)`, when given, makes task list checkboxes clickable.
+  let { text, loadImage = null, ontoggle = null } = $props();
 
   let article = $state();
   let failed = $state(false);
@@ -19,6 +20,12 @@
         el.replaceChildren(md.renderMarkdown(text));
         hl.highlightBlocks(el);
         if (loadImage) showImages(el, urls, () => live);
+        if (ontoggle) {
+          el.querySelectorAll('li > input[type="checkbox"]').forEach((box, i) => {
+            box.disabled = false;
+            box.onchange = () => ontoggle(i, box.checked);
+          });
+        }
       })
       .catch(() => live && (failed = true));
     return () => {

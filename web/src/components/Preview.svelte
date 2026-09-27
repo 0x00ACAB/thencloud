@@ -17,7 +17,7 @@
   import { saveBlob } from '../lib/crypto.js';
   import { previewKind, readText, MAX_PREVIEW, MAX_TEXT } from '../lib/preview.js';
   import { formatSize } from '../lib/format.js';
-  import { errorMessage } from '../lib/ui.svelte.js';
+  import { errorMessage, toastError } from '../lib/ui.svelte.js';
   import { fade } from '../lib/motion.js';
 
   /** @type {{ entries: any[], start: number, fetch: (entry: any, onProgress: (p: number) => void) => Promise<{ blob: Blob }>, ondownload: (entry: any) => void, onclose: () => void, save?: ((entry: any, text: string) => Promise<any>) | null, onsaved?: (entry: any) => void, edit?: boolean, trail?: any[] | null, list?: ((folder: any) => Promise<any[]>) | null }} */
@@ -134,9 +134,21 @@
 
   async function saveDraft() {
     if (!dirty || saving) return;
+    await saveText(draft);
+  }
+
+  // Ticking a task in the rendered view saves the file straight away.
+  async function toggleTask(i, checked) {
+    const { setTask } = await import('../lib/tasks.js');
+    const text = setTask(view.text, i, checked);
+    if (text === null || saving) return;
+    await saveText(text);
+    if (saveError) toastError(new Error(saveError));
+  }
+
+  async function saveText(text) {
     saving = true;
     saveError = '';
-    const text = draft;
     try {
       const next = await save(entry, text);
       updated[next.node.id] = { ...entry, ...next };
@@ -317,7 +329,7 @@
           {:else if kind.kind === 'markdown' && editing}
             <MarkdownEditor text={view.text} onchange={(md) => (draft = md)} />
           {:else if kind.kind === 'markdown' && !showSource}
-            <MarkdownView text={view.text} loadImage={trail && list ? loadImage : null} />
+            <MarkdownView text={view.text} loadImage={trail && list ? loadImage : null} ontoggle={save ? toggleTask : null} />
           {:else}
             <TextView text={view.text} name={kind.kind === 'markdown' ? 'source.md' : entry.meta.name} />
           {/if}

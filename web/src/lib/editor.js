@@ -27,11 +27,13 @@ import {
   toggleLinkCommand,
   turnIntoTextCommand,
 } from '@milkdown/kit/preset/commonmark';
-import { gfm, toggleStrikethroughCommand } from '@milkdown/kit/preset/gfm';
+import { gfm, toggleStrikethroughCommand, insertTableCommand, addRowAfterCommand, addColAfterCommand } from '@milkdown/kit/preset/gfm';
+import { deleteRow, deleteColumn, deleteTable, isInTable } from '@milkdown/kit/prose/tables';
+import { Plugin } from '@milkdown/kit/prose/state';
 import { history, undoCommand, redoCommand } from '@milkdown/kit/plugin/history';
 import { listener, listenerCtx } from '@milkdown/kit/plugin/listener';
 import { clipboard } from '@milkdown/kit/plugin/clipboard';
-import { callCommand, getMarkdown } from '@milkdown/kit/utils';
+import { callCommand, getMarkdown, $prose } from '@milkdown/kit/utils';
 
 const safeImage = imageSchema.extendSchema((prev) => (ctx) => {
   const base = prev(ctx);
@@ -50,6 +52,40 @@ const safeImage = imageSchema.extendSchema((prev) => (ctx) => {
   };
 });
 
+/** The list item around the cursor (or at `pos`): { node, pos }, or null. */
+function listItemAt($pos) {
+  for (let d = $pos.depth; d > 0; d--) {
+    const node = $pos.node(d);
+    if (node.type.name === 'list_item') return { node, pos: $pos.before(d) };
+  }
+  return null;
+}
+
+function setChecked(view, item, checked) {
+  view.dispatch(view.state.tr.setNodeMarkup(item.pos, null, { ...item.node.attrs, checked }));
+}
+
+// Clicking a task item's box (drawn by CSS before the item, so the click
+// lands on the <li> itself rather than its text) ticks it.
+const taskClicks = $prose(
+  () =>
+    new Plugin({
+      props: {
+        handleDOMEvents: {
+          mousedown(view, event) {
+            const li = event.target;
+            if (!(li instanceof HTMLElement) || !li.matches('li[data-item-type="task"]')) return false;
+            const item = listItemAt(view.state.doc.resolve(view.posAtDOM(li, 0)));
+            if (!item) return false;
+            event.preventDefault();
+            setChecked(view, item, !item.node.attrs.checked);
+            return true;
+          },
+        },
+      },
+    }),
+);
+
 const COMMANDS = {
   undo: undoCommand,
   redo: redoCommand,
@@ -65,7 +101,13 @@ const COMMANDS = {
   codeBlock: createCodeBlockCommand,
   rule: insertHrCommand,
   link: toggleLinkCommand,
+  table: insertTableCommand,
+  addRow: addRowAfterCommand,
+  addCol: addColAfterCommand,
 };
+
+// Table edits that act on the cell with the cursor.
+const TABLE_EDITS = { deleteRow, deleteCol: deleteColumn, deleteTable };
 
 const MARKS = { bold: 'strong', italic: 'emphasis', strike: 'strike_through', code: 'inlineCode', link: 'link' };
 
@@ -90,6 +132,7 @@ export async function createEditor(root, text, { onChange, onSelection }) {
     .use(history)
     .use(listener)
     .use(clipboard)
+    .use(taskClicks)
     .create();
 
   const view = () => editor.ctx.get(editorViewCtx);
@@ -97,7 +140,17 @@ export async function createEditor(root, text, { onChange, onSelection }) {
   return {
     /** Run a toolbar command, e.g. run('heading', 2). */
     run(name, payload) {
-      editor.action(callCommand(COMMANDS[name].key, payload));
+      const v = view();
+      if (TABLE_EDITS[name]) {
+        TABLE_EDITS[name](v.state, v.dispatch);
+      } else if (name === 'task') {
+        // Make the item a task, or a plain item again.
+        if (!listItemAt(v.state.selection.$from)) editor.action(callCommand(wrapInBulletListCommand.key));
+        const item = listItemAt(view().state.selection.$from);
+        if (item) setChecked(view(), item, item.node.attrs.checked == null ? false : null);
+      } else {
+        editor.action(callCommand(COMMANDS[name].key, payload));
+      }
       view().focus();
     },
     markdown: () => editor.action(getMarkdown()),
@@ -119,7 +172,14 @@ export async function createEditor(root, text, { onChange, onSelection }) {
           break;
         }
       }
-      return { ...marks, heading: block.type.name === 'heading' ? block.attrs.level : 0, codeBlock: block.type.name === 'code_block', list };
+      const task = listItemAt($from)?.node.attrs.checked != null;
+      return {
+        ...marks,
+        heading: block.type.name === 'heading' ? block.attrs.level : 0,
+        codeBlock: block.type.name === 'code_block',
+        list: task ? 'task' : list,
+        table: isInTable(state),
+      };
     },
     focus: () => view().focus(),
     destroy: () => editor.destroy(),
