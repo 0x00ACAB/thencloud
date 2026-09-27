@@ -347,3 +347,37 @@ pub fn wrap_master_key_app(kek: &[u8], mk: &[u8], app_password_id: &str) -> R<Ve
         app_password_id,
     ))
 }
+
+#[wasm_bindgen]
+pub fn encrypt_avatar(key_bytes: &[u8], owner: &str, image: &[u8]) -> R<Vec<u8>> {
+    Ok(c::encrypt_avatar(&key(key_bytes)?, owner, image))
+}
+
+#[wasm_bindgen]
+pub fn decrypt_avatar(key_bytes: &[u8], owner: &str, sealed: &[u8]) -> R<Vec<u8>> {
+    Ok(c::decrypt_avatar(&key(key_bytes)?, owner, sealed)?)
+}
+
+#[wasm_bindgen]
+pub fn seal_avatar_key(
+    grantee_public: &[u8],
+    key_bytes: &[u8],
+    owner: &str,
+    grantee: &str,
+) -> R<Vec<u8>> {
+    Ok(c::seal_avatar_key(
+        grantee_public,
+        &key(key_bytes)?,
+        owner,
+        grantee,
+    )?)
+}
+
+#[wasm_bindgen]
+pub fn open_avatar_key(secret: &[u8], sealed: &[u8], owner: &str, grantee: &str) -> R<Vec<u8>> {
+    Ok(
+        c::open_avatar_key(&keypair(secret)?, sealed, owner, grantee)?
+            .as_bytes()
+            .to_vec(),
+    )
+}

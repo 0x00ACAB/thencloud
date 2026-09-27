@@ -1,5 +1,5 @@
 <script>
-  import { session, logout } from '../lib/cloud.svelte.js';
+  import { session, logout, avatar, loadMyAvatar } from '../lib/cloud.svelte.js';
   import { theme, setTheme } from '../lib/ui.svelte.js';
   import { formatSize } from '../lib/format.js';
   import Icon from './Icon.svelte';
@@ -15,6 +15,7 @@
   import AdminView from './views/AdminView.svelte';
 
   const rootId = session.me.keys.root_node_id;
+  loadMyAvatar().catch(() => {});
 
   // In-app navigation. Uses history.pushState so the browser's back button
   // works, but never puts anything in the URL.
@@ -92,7 +93,7 @@
             'sep',
             { label: 'Sign out', icon: 'log-out', onclick: logout },
           ]}>
-          {#snippet trigger()}{session.me.username.slice(0, 1)}{/snippet}
+          {#snippet trigger()}{#if avatar.url}<img src={avatar.url} alt="" class="size-8 rounded-full object-cover" />{:else}{session.me.username.slice(0, 1)}{/if}{/snippet}
         </Menu>
       </div>
     </div>

@@ -37,6 +37,7 @@ cargo run -p thencloud-server -- --bind 127.0.0.1:8080 --data-dir ./data
   - `routes/app_passwords.rs`: per-device credentials. A read-only one is enforced in the `AuthUser` extractor (`auth.rs`), which refuses anything but GET/HEAD and logout.
   - `routes/admin.rs` manages accounts and counts, never content; `settings.rs` holds runtime settings (registration mode) that override the command line. Disabled users are filtered out in the `AuthUser` extractor.
   - File drops (upload-only links): `routes/public.rs` takes the uploads, `routes/drops.rs` lets the owner take them in. A dropped node's `enc_key` is sealed to the owner until then, and `access.rs` hides it like a trashed one.
+  - `routes/avatars.rs`: encrypted profile pictures; grants (the avatar key sealed to someone) only between people with a share either way. The client grants automatically on sharing and when it lists incoming shares (`grantAvatar` in `cloud.svelte.js`).
   - Deleting a node only marks it trashed; `delete_subtree` in `routes/nodes.rs` is the one permanent delete (used by the trash and the janitor).
 - `web/`: the browser client, Svelte 5 + Vite + Tailwind CSS v4. The server serves the build output in `web/dist`.
   - `src/lib/`: `cloud.svelte.js` holds the session and every server operation (the only place keys are handled), `crypto.js` wraps the WASM module, `kdf.worker.js` runs Argon2 off the main thread, `ui.svelte.js` holds toasts, transfers and the theme.

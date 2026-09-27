@@ -84,6 +84,8 @@ As a result, a malicious server cannot swap files, move ciphertexts between node
 
 **App passwords** are for sync clients and other devices. Each is 32 random bytes made in the browser and shown once, in the same format as the recovery key. HKDF splits it into an auth key (the server keeps its SHA-256, which is enough for a random 256-bit secret) and a KEK that wraps its own copy of the master key, bound to the app password's id. A client signs in with `POST /api/auth/app-login` and the auth key alone, then unwraps the master key locally. App passwords can be read only, need the account password to create, survive password changes, and revoking one signs out every session it started.
 
+**Profile pictures** are encrypted in the browser under a random avatar key. Your own copy of that key is encrypted under your master key, and it is sealed to each person you share with, or who shares with you, so only they can see the picture. Removing the picture also deletes every sealed copy.
+
 **Public links** look like `https://host/s/<token>#<key>`. Browsers never send the part after `#` in any HTTP request, so the server only ever sees `<token>`. The share page reads the key from `location.hash` and decrypts locally. Other defences:
 - `Referrer-Policy: no-referrer` and a strict same-origin CSP keep the URL from leaking to third parties.
 - The optional link password is a separate server-side gate. It is not derived from the key.

@@ -1,6 +1,7 @@
 pub mod admin;
 pub mod app_passwords;
 pub mod auth;
+pub mod avatars;
 pub mod contacts;
 pub mod drafts;
 pub mod drops;
@@ -57,6 +58,14 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/password", post(auth::change_password))
         .route("/me", get(auth::me))
         .route("/me/contacts", get(contacts::get).put(contacts::put))
+        .route(
+            "/me/avatar",
+            get(avatars::get_mine)
+                .put(avatars::set)
+                .delete(avatars::remove),
+        )
+        .route("/users/{username}/avatar", get(avatars::get_user))
+        .route("/avatar-grants/{username}", put(avatars::grant))
         .route(
             "/sessions",
             get(sessions::list).delete(sessions::revoke_others),

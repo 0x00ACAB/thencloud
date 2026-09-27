@@ -780,10 +780,13 @@ export async function share(entry, user, permission) {
       permission,
     },
   });
+  grantAvatar(user.username, user.publicKey).catch(() => {});
 }
 
 export async function incomingShares() {
   const shares = await api('GET', '/api/shares/incoming');
+  // People who share with us see our picture too.
+  for (const s of shares) grantAvatar(s.owner, unb64(s.owner_public_key)).catch(() => {});
   return shares.map((s) => {
     try {
       const key = tc.open_share_key(sk, unb64(s.wrapped_key), s.node.id);
@@ -847,6 +850,111 @@ export async function links(nodeId) {
 }
 
 export const deleteLink = (id) => api('DELETE', `/api/links/${id}`);
+
+// ---------------------------------------------------------------------------
+// Profile pictures: encrypted under our avatar key, which is sealed to each
+// person we share with (either way round). The server can't see them.
+// ---------------------------------------------------------------------------
+
+export const avatar = $state({ url: null }); // our own picture, as a blob: URL
+let avatarState = null; // { key, grantees: Set }
+const avatarUrls = new Map(); // username -> Promise<url | null>
+
+const imageType = (b) =>
+  b[0] === 0x89 ? 'image/png' : b[0] === 0x52 && b[8] === 0x57 ? 'image/webp' : 'image/jpeg';
+
+function avatarBlobUrl(bytes) {
+  return URL.createObjectURL(new Blob([bytes], { type: imageType(bytes) }));
+}
+
+/** Load our own picture (once per session). */
+export async function loadMyAvatar() {
+  if (avatarState) return avatarState;
+  const r = await api('GET', '/api/me/avatar');
+  const me = session.me;
+  let key = null;
+  if (r.data && r.enc_key) {
+    key = tc.decrypt_private_data(mk, me.user_id, 'avatar-key', unb64(r.enc_key));
+    avatar.url = avatarBlobUrl(tc.decrypt_avatar(key, me.username, unb64(r.data)));
+  }
+  avatarState = { key, grantees: new Set(r.grantees) };
+  return avatarState;
+}
+
+/** Give `username` our avatar key, if we have a picture and haven't yet. */
+async function grantAvatar(username, publicKey) {
+  const a = await loadMyAvatar();
+  if (!a.key || a.grantees.has(username) || username === session.me.username) return;
+  a.grantees.add(username);
+  await api('PUT', `/api/avatar-grants/${encodeURIComponent(username)}`, {
+    body: { sealed_key: b64(tc.seal_avatar_key(publicKey, a.key, session.me.username, username)) },
+  });
+}
+
+/** Everyone we share with, either way round, with their public keys. */
+async function sharePartners() {
+  const partners = new Map();
+  for (const s of await api('GET', '/api/shares/incoming')) partners.set(s.owner, unb64(s.owner_public_key));
+  for (const s of await api('GET', '/api/shares/outgoing')) {
+    if (!partners.has(s.recipient)) partners.set(s.recipient, null);
+  }
+  return partners;
+}
+
+/** Set our picture from an image file: cropped square, 256 px, encrypted here. */
+export async function setAvatar(file) {
+  const bitmap = await createImageBitmap(file);
+  const side = Math.min(bitmap.width, bitmap.height);
+  const canvas = new OffscreenCanvas(256, 256);
+  canvas.getContext('2d').drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, 256, 256);
+  bitmap.close();
+  let blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.85 });
+  if (blob.type !== 'image/webp') blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.85 });
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const a = await loadMyAvatar();
+  // Keep the key, so everyone already given it sees the new picture.
+  const key = a.key ?? tc.random_key();
+  const me = session.me;
+  await api('PUT', '/api/me/avatar', {
+    body: {
+      data: b64(tc.encrypt_avatar(key, me.username, bytes)),
+      enc_key: b64(tc.encrypt_private_data(mk, me.user_id, 'avatar-key', key)),
+    },
+  });
+  a.key = key;
+  if (avatar.url) URL.revokeObjectURL(avatar.url);
+  avatar.url = avatarBlobUrl(bytes);
+  for (const [username, pk] of await sharePartners()) {
+    const publicKey = pk ?? (await lookupUser(username).catch(() => null))?.publicKey;
+    if (publicKey) await grantAvatar(username, publicKey).catch(() => {});
+  }
+}
+
+/** Remove our picture and take back the key from everyone. */
+export async function removeAvatar() {
+  await api('DELETE', '/api/me/avatar');
+  if (avatar.url) URL.revokeObjectURL(avatar.url);
+  avatar.url = null;
+  avatarState = { key: null, grantees: new Set() };
+}
+
+/** Someone's picture as a blob: URL, or null if they haven't given us one. */
+export function avatarUrl(username) {
+  if (username === session.me?.username) return loadMyAvatar().then(() => avatar.url);
+  if (!avatarUrls.has(username)) {
+    avatarUrls.set(
+      username,
+      api('GET', `/api/users/${encodeURIComponent(username)}/avatar`)
+        .then((r) => {
+          if (!r) return null;
+          const key = tc.open_avatar_key(sk, unb64(r.sealed_key), username, session.me.username);
+          return avatarBlobUrl(tc.decrypt_avatar(key, username, unb64(r.data)));
+        })
+        .catch(() => null),
+    );
+  }
+  return avatarUrls.get(username);
+}
 
 // ---------------------------------------------------------------------------
 // Administration (admins only; accounts and counts, never content)

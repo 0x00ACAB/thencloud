@@ -683,6 +683,40 @@ pub struct Draft {
 }
 
 // ---------------------------------------------------------------------------
+// Profile pictures (encrypted; see `encrypt_avatar`)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetAvatar {
+    /// The picture, encrypted under the avatar key.
+    pub data: B64,
+    /// The avatar key, encrypted under the master key.
+    pub enc_key: B64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct MyAvatar {
+    pub data: Option<B64>,
+    pub enc_key: Option<B64>,
+    /// Who has been given the avatar key.
+    pub grantees: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AvatarGrant {
+    /// The avatar key sealed to the grantee (see `seal_avatar_key`).
+    pub sealed_key: B64,
+}
+
+/// Someone else's picture, for a user they gave their avatar key to.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserAvatar {
+    pub data: B64,
+    pub sealed_key: B64,
+    pub updated_at: i64,
+}
+
+// ---------------------------------------------------------------------------
 // Tools
 // ---------------------------------------------------------------------------
 
