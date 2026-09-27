@@ -47,6 +47,25 @@ pub struct Config {
     /// How long an unfinished upload is kept, in hours.
     #[arg(long, env = "THENCLOUD_UPLOAD_TTL_HOURS", default_value_t = 24)]
     pub upload_ttl_hours: i64,
+
+    /// The yt-dlp program for the optional video downloader. The downloader
+    /// stays off until an admin turns it on in the Admin view.
+    #[arg(long, env = "THENCLOUD_YT_DLP", default_value = "yt-dlp")]
+    pub yt_dlp: PathBuf,
+
+    /// ffmpeg, used by the video downloader to merge separate video and
+    /// audio streams (most YouTube videos). Optional.
+    #[arg(long, env = "THENCLOUD_FFMPEG", default_value = "ffmpeg")]
+    pub ffmpeg: PathBuf,
+
+    /// Largest video the downloader passes through, in bytes.
+    #[arg(long, env = "THENCLOUD_DOWNLOADER_MAX_BYTES", default_value_t = 2 * 1024 * 1024 * 1024)]
+    pub downloader_max_bytes: u64,
+
+    /// Refuse downloader links that point at private or local addresses.
+    /// Always on outside tests.
+    #[arg(skip = true)]
+    pub downloader_public_only: bool,
 }
 
 impl Config {
@@ -63,6 +82,10 @@ impl Config {
             max_versions: 10,
             trash_days: 30,
             upload_ttl_hours: 24,
+            yt_dlp: "yt-dlp".into(),
+            ffmpeg: "ffmpeg".into(),
+            downloader_max_bytes: 2 * 1024 * 1024 * 1024,
+            downloader_public_only: true,
         }
     }
 }

@@ -14,6 +14,7 @@
     adminDeleteInvite,
     adminStats,
     inviteUrl,
+    resetToolsInfo,
     refreshMe,
   } from '../../lib/cloud.svelte.js';
   import { toast, toastError, copyText } from '../../lib/ui.svelte.js';
@@ -53,6 +54,22 @@
     if (settings.registration === registration) return;
     try {
       settings = await adminUpdateSettings({ registration });
+    } catch (e) {
+      toastError(e);
+    }
+  }
+
+  const downloaderModes = [
+    ['off', 'Off', 'Nobody can use it.'],
+    ['admins', 'Admins only', 'Only admins see "From a video link".'],
+    ['everyone', 'Everyone', 'Every account can use it.'],
+  ];
+
+  async function setDownloader(downloader) {
+    if (settings.downloader === downloader) return;
+    try {
+      settings = await adminUpdateSettings({ downloader });
+      resetToolsInfo();
     } catch (e) {
       toastError(e);
     }
@@ -232,6 +249,50 @@
           {/each}
         </ul>
       {/if}
+    </div>
+  </section>
+
+  <section class="card mt-6 overflow-hidden">
+    <div class="grid gap-4 p-6">
+      <div class="grid gap-1">
+        <h2 class="text-base font-semibold tracking-tight">Video downloader</h2>
+        <p class="text-[13px] text-fg-muted">
+          Lets people save videos from YouTube and other sites into their files, using yt-dlp on this server. It's the one feature where the server
+          sees what's being handled: the link and the video pass through it on their way to the browser, which then encrypts them. Nothing is stored.
+        </p>
+      </div>
+      {#if settings.yt_dlp_version}
+        <p class="flex items-center gap-2 text-[13px] text-fg-muted">
+          <Icon name="check" class="size-4 text-success" />yt-dlp {settings.yt_dlp_version} found · up to {formatSize(settings.downloader_max_bytes)} per video
+        </p>
+        {#if !settings.downloader_can_merge}
+          <p class="flex items-start gap-2 text-[13px] text-fg-muted">
+            <Icon name="circle-alert" class="mt-0.5 size-4 shrink-0" />
+            <span>ffmpeg isn't installed, so only videos a site offers as one file can be saved. YouTube rarely does any more; install ffmpeg for video up to 1080p.</span>
+          </p>
+        {/if}
+      {:else}
+        <p class="flex items-start gap-2 rounded-md border border-line bg-subtle p-3 text-[13px] text-fg-muted">
+          <Icon name="circle-alert" class="mt-0.5 size-4 shrink-0" />
+          <span>yt-dlp isn't installed on this server, or isn't on its PATH. Install it (or point <code class="font-mono text-xs">--yt-dlp</code> at it) and restart the server to use this.</span>
+        </p>
+      {/if}
+      <div class="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Video downloader">
+        {#each downloaderModes as [value, label, text] (value)}
+          <button
+            type="button"
+            role="radio"
+            aria-checked={settings.downloader === value}
+            disabled={!settings.yt_dlp_version && value !== 'off'}
+            class="grid cursor-pointer gap-1 rounded-md border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 {settings.downloader === value
+              ? 'border-accent bg-accent-soft'
+              : 'border-line hover:bg-subtle disabled:hover:bg-transparent'}"
+            onclick={() => setDownloader(value)}>
+            <span class="text-sm font-medium {settings.downloader === value ? 'text-accent-text' : ''}">{label}</span>
+            <span class="text-xs text-fg-muted">{text}</span>
+          </button>
+        {/each}
+      </div>
     </div>
   </section>
 

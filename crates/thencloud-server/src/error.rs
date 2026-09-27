@@ -31,6 +31,10 @@ pub enum AppError {
     AccountDisabled,
     #[error("this invite link is invalid, used or expired")]
     InvalidInvite,
+    #[error("{0}")]
+    Busy(String),
+    #[error("{0}")]
+    Unavailable(String),
     #[error("database error")]
     Db(#[from] sqlx::Error),
     #[error("storage error")]
@@ -62,6 +66,8 @@ impl AppError {
             RegistrationClosed => (StatusCode::FORBIDDEN, "registration_closed"),
             AccountDisabled => (StatusCode::FORBIDDEN, "account_disabled"),
             InvalidInvite => (StatusCode::FORBIDDEN, "invalid_invite"),
+            Busy(_) => (StatusCode::TOO_MANY_REQUESTS, "busy"),
+            Unavailable(_) => (StatusCode::SERVICE_UNAVAILABLE, "unavailable"),
             Db(_) | Io(_) | Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
         }
     }

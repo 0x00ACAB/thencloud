@@ -1,5 +1,5 @@
 <script>
-  import { session, resolvePath, listFolder, createFolder, rename, trash, untrash, download, downloadZip, fetchEntry, upload, saveText, refreshMe } from '../../lib/cloud.svelte.js';
+  import { session, resolvePath, listFolder, createFolder, rename, trash, untrash, download, downloadZip, fetchEntry, upload, saveText, refreshMe, toolsInfo } from '../../lib/cloud.svelte.js';
   import { toast, toastError, trackTransfer, errorMessage, sort, sortBy } from '../../lib/ui.svelte.js';
   import { formatSize, formatWhen, fullDate, plural, sortEntries, nameError } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
@@ -15,6 +15,8 @@
   import Preview from '../Preview.svelte';
   import ShortcutsDialog from '../dialogs/ShortcutsDialog.svelte';
   import ConvertDialog from '../dialogs/ConvertDialog.svelte';
+  import VideoDownloadDialog from '../dialogs/VideoDownloadDialog.svelte';
+  import { onMount } from 'svelte';
   import { sourceKind } from '../../lib/convert.js';
 
   let { folderId, go, inShare = $bindable(false) } = $props();
@@ -403,8 +405,12 @@
   // The list is fixed when the preview opens, so a reload behind it doesn't shift ← and →.
   const preview = (entry, edit = false) => (dialog = { type: 'preview', entries: files, start: files.indexOf(entry), edit });
 
-  /** Upload a converted copy next to the original, under a name that's free. */
-  async function saveConverted(file, onProgress) {
+  // Server-side tools this user may use (the video downloader is opt-in).
+  let tools = $state({ video_downloader: false });
+  onMount(() => toolsInfo().then((t) => (tools = t)));
+
+  /** Upload a new file (converted, or downloaded) here, under a name that's free. */
+  async function saveNewFile(file, onProgress) {
     const taken = new Set(rows.map((r) => r.meta.name.toLowerCase()));
     let name = file.name;
     const dot = name.lastIndexOf('.');
@@ -585,6 +591,7 @@
         items={[
           { label: 'Files', icon: 'file-up', onclick: () => fileInput.click() },
           { label: 'Folder', icon: 'folder-up', onclick: () => folderInput.click() },
+          ...(tools.video_downloader ? ['sep', { label: 'From a video link', icon: 'link', onclick: () => (dialog = { type: 'video' }) }] : []),
         ]}>
         {#snippet trigger()}<Icon name="upload" /> Upload<Icon name="chevron-down" class="-mr-1 size-3.5 opacity-70" />{/snippet}
       </Menu>
@@ -770,7 +777,13 @@
   <ConvertDialog
     entry={dialog.entry}
     fetch={fetchEntry}
-    save={canWrite ? saveConverted : null}
+    save={canWrite ? saveNewFile : null}
+    onclose={close} />
+{:else if dialog?.type === 'video'}
+  <VideoDownloadDialog
+    save={canWrite ? saveNewFile : null}
+    maxBytes={tools.downloader_max_bytes}
+    canMerge={tools.downloader_can_merge}
     onclose={close} />
 {:else if dialog?.type === 'shortcuts'}
   <ShortcutsDialog onclose={close} />

@@ -14,6 +14,7 @@ thencloud is an open-source, end-to-end encrypted alternative to Nextcloud. Read
 - Public links are `/s/<token>#<key>`. The key lives only in the URL fragment and must never be put into a path, query string, header, request body or log.
 - New ciphertext formats must bind their context (node id, version id, etc.) as AEAD associated data, like the existing ones in `thencloud-crypto/src/lib.rs`.
 - Any new server feature must be added to the zero-knowledge scan in `crates/thencloud-server/tests/e2e.rs`, which checks the DB and blob store for plaintext.
+- The one deliberate exception is the video downloader (`src/downloader.rs`, `routes/tools.rs`): opt-in by an admin (off by default), and the UI says the server sees the link and the video. It must stay stream-only: pipes, no files written (a scratch dir that is deleted), no caches, nothing logged, site extractors only, private addresses refused. Its tests use a fake yt-dlp and ffmpeg.
 
 ## Commands
 
