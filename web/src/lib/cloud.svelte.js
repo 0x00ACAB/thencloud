@@ -418,12 +418,11 @@ const index = new Map(); // folder id -> { at, rows }
 const INDEX_TTL = 2 * 60 * 1000;
 
 /**
- * Find entries under `top` (a folder entry) whose name contains `query`.
- * Calls `onResult({ ...entry, location: [folder names], parentId })` as
- * matches turn up; stops early when `signal` aborts.
+ * Visit everything under `top` (a folder entry), a few folders at a time:
+ * `onEntry({ ...entry, location: [folder names], parentId })` for each item.
+ * Unreadable folders are skipped; stops early when `signal` aborts.
  */
-export async function searchTree(top, query, { onResult, signal } = {}) {
-  const q = query.trim().toLowerCase();
+export async function walkTree(top, { onEntry, signal } = {}) {
   const queue = [{ entry: top, location: [top.meta.name] }];
   const worker = async () => {
     while (queue.length && !signal?.aborted) {
@@ -437,17 +436,21 @@ export async function searchTree(top, query, { onResult, signal } = {}) {
       }
       if (signal?.aborted) return;
       for (const r of rows) {
-        if (r.meta.name.toLowerCase().includes(q)) onResult?.({ ...r, location, parentId: entry.node.id });
+        onEntry?.({ ...r, location, parentId: entry.node.id });
         if (r.node.kind === 'folder') queue.push({ entry: r, location: [...location, r.meta.name] });
       }
     }
   };
-  // A few folders at a time; each worker picks up folders the others find.
-  let active = [];
+  // Each worker picks up folders the others find.
   do {
-    active = [worker(), worker(), worker(), worker()];
-    await Promise.all(active);
+    await Promise.all([worker(), worker(), worker(), worker()]);
   } while (queue.length && !signal?.aborted);
+}
+
+/** Entries under `top` whose name contains `query`, as walkTree finds them. */
+export function searchTree(top, query, { onResult, signal } = {}) {
+  const q = query.trim().toLowerCase();
+  return walkTree(top, { signal, onEntry: (r) => r.meta.name.toLowerCase().includes(q) && onResult?.(r) });
 }
 
 // Files dropped through upload-only links arrive with their key sealed to

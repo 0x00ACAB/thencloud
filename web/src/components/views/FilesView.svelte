@@ -21,6 +21,8 @@
   import VideoDownloadDialog from '../dialogs/VideoDownloadDialog.svelte';
   import { onMount, untrack } from 'svelte';
   import { sourceKind } from '../../lib/convert.js';
+  import { previewKind } from '../../lib/preview.js';
+  import { play, enqueue, makeTrack } from '../../lib/music.svelte.js';
 
   let { folderId, openId = null, go, inShare = $bindable(false) } = $props();
 
@@ -516,12 +518,33 @@
     if (entry) preview(entry, true);
   }
 
+  // Audio files play in the music player, with the rest of the folder's
+  // audio queued after them.
+  const isAudio = (e) => previewKind(e.meta)?.kind === 'audio';
+  const asTrack = (e) => {
+    const parentId = e.parentId ?? here.node.id;
+    return makeTrack({ ...e, parentId }, { albumId: parentId, album: e.location?.at(-1) ?? here.meta.name });
+  };
+
+  function playFrom(entry) {
+    const list = files.filter(isAudio);
+    const i = list.indexOf(entry);
+    if (i < 0) play([asTrack(entry)]);
+    else play(list.map(asTrack), i, { shuffle: false });
+  }
+
   function menuFor(entry) {
     const folder = entry.node.kind === 'folder';
     return [
       folder
         ? { label: 'Open', icon: 'folder-open', onclick: () => open(entry.node.id) }
         : { label: 'Preview', icon: 'eye', onclick: () => preview(entry) },
+      ...(isAudio(entry)
+        ? [
+            { label: 'Play', icon: 'play', onclick: () => playFrom(entry) },
+            { label: 'Add to queue', icon: 'list-end', onclick: () => (enqueue([asTrack(entry)]), toast(`Added ${entry.meta.name} to the queue`)) },
+          ]
+        : []),
       folder
         ? { label: 'Download as zip', icon: 'download', onclick: () => zipEntries([entry], `${entry.meta.name}.zip`) }
         : { label: 'Download', icon: 'download', onclick: () => downloadEntry(entry) },
@@ -895,7 +918,7 @@
 {/if}
 
 {#if selected.size && chosen.length}
-  <div class="fixed inset-x-0 bottom-[calc(var(--bottom-bar)+1rem)] z-40 flex justify-center px-4 md:bottom-6" transition:fly={{ y: 12 }}>
+  <div class="fixed inset-x-0 bottom-[calc(var(--bottom-bar)+1rem)] z-40 flex justify-center px-4 md:bottom-[calc(var(--bottom-bar)+1.5rem)]" transition:fly={{ y: 12 }}>
     <div class="flex items-center gap-1 rounded-lg border border-line bg-bg p-1.5 pl-3 shadow-lg shadow-black/5 dark:shadow-black/40" role="toolbar" aria-label="Selection">
       <span class="mr-2 text-sm font-medium tabular-nums">{chosen.length} selected</span>
       <button type="button" class="btn btn-ghost" onclick={downloadChosen} disabled={!chosen.some((r) => r.node.kind === 'file')}>

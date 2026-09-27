@@ -6,7 +6,7 @@
   const icons = { success: 'check', error: 'circle-alert', info: 'check' };
 </script>
 
-<div class="pointer-events-none fixed inset-x-0 bottom-[calc(var(--bottom-bar)+5rem)] z-[60] md:bottom-4 flex flex-col items-center gap-2 px-4" aria-live="polite">
+<div class="pointer-events-none fixed inset-x-0 bottom-[calc(var(--bottom-bar)+5rem)] z-[60] md:bottom-[calc(var(--bottom-bar)+1rem)] flex flex-col items-center gap-2 px-4" aria-live="polite">
   {#each toasts as t (t.id)}
     <div
       in:fly={{ y: 12 }}
