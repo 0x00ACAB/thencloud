@@ -5,7 +5,8 @@
   import Icon from '../Icon.svelte';
   import { errorMessage } from '../../lib/ui.svelte.js';
 
-  let { title, label = 'Name', initial = '', confirmLabel = 'Save', onsave, onclose } = $props();
+  // `initial` is a suggestion when `create` is set; otherwise keeping it unchanged just closes.
+  let { title, label = 'Name', initial = '', confirmLabel = 'Save', create = false, onsave, onclose } = $props();
 
   let name = $state(untrack(() => initial));
   let busy = $state(false);
@@ -30,7 +31,7 @@
     const n = name.trim();
     error = validate(n);
     if (error) return;
-    if (n === initial) return onclose();
+    if (n === initial && !create) return onclose();
     busy = true;
     try {
       await onsave(n);

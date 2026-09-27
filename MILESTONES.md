@@ -54,7 +54,8 @@ Bigger pieces:
 - [x] **File previews**: images, video, audio, PDF (pdf.js) and text, decrypted in the browser; ← and → step through the folder. Also on public links
 - [x] **Syntax highlighting** in text and code previews
 - [x] **Markdown preview**: rendered and sanitised, with a Source toggle
-- [ ] **Markdown editor**: WYSIWYG, saving back as a new encrypted version
+- [x] **Markdown editor**: WYSIWYG (Milkdown), toolbar and shortcuts, Ctrl+S, saves each change as a new encrypted version with conflict detection; "New note" creates a file and opens it in the editor
+- [ ] Editor: clickable task-list checkboxes, tables toolbar, autosave drafts, and editing plain-text/code files
 - [ ] Previews: streamed video (today the whole file is decrypted into memory first, up to 256 MB), images referenced from Markdown by relative path, PDF text selection and links
 - [x] **Per-file-type icons**: choose Minimal (Lucide), Seti, Material or vscode-icons in Settings; served locally, and only the chosen pack's tables and the icons on screen are downloaded
 - [ ] More icon packs (Catppuccin: its icons are on npm but its file-name mapping isn't), and optionally per-name folder icons

@@ -2,20 +2,25 @@
   // Full-window file preview. Files are decrypted in the browser, exactly
   // like a download, and shown from a blob: URL that is revoked when you
   // move on. ← and → step through the other files in the folder.
+  //
+  // Markdown files can be edited when `save` is given (the viewer can
+  // write): each save uploads the text as a new encrypted version.
   import { onMount, untrack } from 'svelte';
   import Icon from './Icon.svelte';
   import FileIcon from './FileIcon.svelte';
   import TextView from './preview/TextView.svelte';
   import MarkdownView from './preview/MarkdownView.svelte';
   import PdfView from './preview/PdfView.svelte';
+  import MarkdownEditor from './preview/MarkdownEditor.svelte';
+  import ConfirmDialog from './dialogs/ConfirmDialog.svelte';
   import { saveBlob } from '../lib/crypto.js';
   import { previewKind, readText, MAX_PREVIEW, MAX_TEXT } from '../lib/preview.js';
   import { formatSize, formatWhen } from '../lib/format.js';
   import { errorMessage } from '../lib/ui.svelte.js';
   import { fade } from '../lib/motion.js';
 
-  /** @type {{ entries: any[], start: number, fetch: (entry: any, onProgress: (p: number) => void) => Promise<{ blob: Blob }>, ondownload: (entry: any) => void, onclose: () => void }} */
-  let { entries, start, fetch, ondownload, onclose } = $props();
+  /** @type {{ entries: any[], start: number, fetch: (entry: any, onProgress: (p: number) => void) => Promise<{ blob: Blob }>, ondownload: (entry: any) => void, onclose: () => void, save?: ((entry: any, text: string) => Promise<any>) | null, onsaved?: (entry: any) => void, edit?: boolean }} */
+  let { entries, start, fetch, ondownload, onclose, save = null, onsaved, edit = false } = $props();
 
   let dlg;
   let index = $state(untrack(() => start));
@@ -23,7 +28,8 @@
   let showSource = $state(false);
   let zoomed = $state(false);
 
-  const entry = $derived(entries[index]);
+  let updated = $state({}); // node id -> entry after a save here
+  const entry = $derived(updated[entries[index].node.id] ?? entries[index]);
   const kind = $derived(previewKind(entry.meta));
   // Until load() catches up with a step to another file, show it as loading.
   const view = $derived(loaded.id === entry.node.id ? loaded : { status: 'loading', progress: 0 });
@@ -68,9 +74,84 @@
     }
   }
 
+  // Load when stepping to another file; a save here updates `entry` but
+  // already has the text, so it must not trigger a reload.
   $effect(() => {
-    load(entry);
+    index;
+    untrack(() => load(entry));
   });
+
+  // ------------------------------------------------------------ editing
+
+  let editing = $state(false);
+  let draft = $state(null); // current Markdown while editing
+  let saving = $state(false);
+  let saveError = $state('');
+  let confirm = $state(null); // { title, description, label, then } before discarding changes
+  const canEdit = $derived(!!save && kind?.kind === 'markdown' && view.status === 'ready');
+  const dirty = $derived(editing && draft !== null && draft !== view.text);
+
+  // `edit` opens straight into the editor (for a new note).
+  $effect(() => {
+    if (edit && canEdit && untrack(() => !editing && index === start)) startEditing();
+  });
+
+  function startEditing() {
+    draft = null;
+    saveError = '';
+    editing = true;
+  }
+
+  function stopEditing() {
+    editing = false;
+    draft = null;
+    saveError = '';
+  }
+
+  /** Run `then` now, or after confirming if there are unsaved changes. */
+  function guard(then) {
+    if (!dirty) return then();
+    confirm = { then };
+  }
+
+  async function saveDraft() {
+    if (!dirty || saving) return;
+    saving = true;
+    saveError = '';
+    const text = draft;
+    try {
+      const next = await save(entry, text);
+      updated[next.node.id] = { ...entry, ...next };
+      loaded = { id: next.node.id, status: 'ready', text, blob: new Blob([text], { type: 'text/plain' }) };
+      onsaved?.(updated[next.node.id]);
+      if (draft === text) draft = null;
+    } catch (e) {
+      saveError =
+        e?.code === 'conflict'
+          ? 'Someone else changed this file since you opened it. Copy your changes, then reopen the file.'
+          : e?.code === 'quota_exceeded'
+            ? 'Not enough storage left to save.'
+            : errorMessage(e);
+    } finally {
+      saving = false;
+    }
+  }
+
+  function requestClose() {
+    guard(() => dlg.close());
+  }
+
+  function oncancel(e) {
+    // Esc: keep unsaved edits unless confirmed.
+    if (dirty) {
+      e.preventDefault();
+      requestClose();
+    }
+  }
+
+  function onbeforeunload(e) {
+    if (dirty) e.preventDefault();
+  }
 
   onMount(() => {
     dlg.showModal();
@@ -83,8 +164,14 @@
   }
 
   function onkeydown(e) {
-    if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
-    if (e.target instanceof HTMLElement && e.target.closest('input, textarea, video, audio')) return;
+    if (confirm) return;
+    if (editing && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+      e.preventDefault();
+      saveDraft();
+      return;
+    }
+    if (editing || e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (e.target instanceof HTMLElement && e.target.closest('input, textarea, video, audio, [contenteditable]')) return;
     if (e.key === 'ArrowLeft') step(-1);
     else if (e.key === 'ArrowRight') step(1);
     else return;
@@ -103,9 +190,9 @@
   }
 </script>
 
-<svelte:window {onkeydown} />
+<svelte:window {onkeydown} {onbeforeunload} />
 
-<dialog bind:this={dlg} class="preview" aria-label="Preview of {entry.meta.name}" onclose={() => onclose()}>
+<dialog bind:this={dlg} class="preview" aria-label="Preview of {entry.meta.name}" onclose={() => onclose()} {oncancel}>
   <header class="flex h-14 shrink-0 items-center gap-3 border-b border-line px-4">
     <FileIcon meta={entry.meta} />
     <div class="min-w-0 flex-1">
@@ -115,7 +202,16 @@
       </p>
     </div>
 
-    {#if kind?.kind === 'markdown' && view.status === 'ready'}
+    {#if editing}
+      <p class="hidden truncate text-xs sm:block {saveError ? 'text-danger' : 'text-fg-muted'}" role="status" title={saveError}>
+        {saveError || (saving ? 'Encrypting and saving' : dirty ? 'Unsaved changes' : 'All changes saved')}
+      </p>
+      <button type="button" class="btn btn-secondary" onclick={() => guard(stopEditing)}>Done</button>
+      <button type="button" class="btn btn-primary" disabled={!dirty || saving} title="Save (Ctrl+S)" onclick={saveDraft}>
+        {#if saving}<Icon name="loader-circle" class="spinner" />{:else}<Icon name="save" />{/if}
+        Save
+      </button>
+    {:else if kind?.kind === 'markdown' && view.status === 'ready'}
       <div class="hidden rounded-md border border-line p-0.5 sm:flex" role="radiogroup" aria-label="Show">
         {#each [[false, 'book-open', 'Preview'], [true, 'code', 'Source']] as [value, icon, label] (label)}
           <button
@@ -132,7 +228,11 @@
       </div>
     {/if}
 
-    {#if entries.length > 1}
+    {#if canEdit && !editing}
+      <button type="button" class="btn btn-secondary" onclick={startEditing}><Icon name="pencil" /><span class="hidden sm:inline">Edit</span></button>
+    {/if}
+
+    {#if entries.length > 1 && !editing}
       <div class="flex items-center gap-1">
         <button type="button" class="btn btn-ghost btn-icon" aria-label="Previous file" title="Previous (←)" disabled={index === 0} onclick={() => step(-1)}>
           <Icon name="chevron-left" />
@@ -145,10 +245,12 @@
       <span class="h-5 w-px bg-line" aria-hidden="true"></span>
     {/if}
 
-    <button type="button" class="btn btn-secondary" onclick={download}>
-      <Icon name="download" /><span class="hidden sm:inline">Download</span>
-    </button>
-    <button type="button" class="btn btn-ghost btn-icon" aria-label="Close preview" title="Close (Esc)" onclick={() => dlg.close()}>
+    {#if !editing}
+      <button type="button" class="btn btn-secondary" onclick={download}>
+        <Icon name="download" /><span class="hidden sm:inline">Download</span>
+      </button>
+    {/if}
+    <button type="button" class="btn btn-ghost btn-icon" aria-label="Close preview" title="Close (Esc)" onclick={requestClose}>
       <Icon name="x" />
     </button>
   </header>
@@ -194,6 +296,8 @@
             </div>
           {:else if kind.kind === 'pdf'}
             <PdfView blob={view.blob} />
+          {:else if kind.kind === 'markdown' && editing}
+            <MarkdownEditor text={view.text} onchange={(md) => (draft = md)} />
           {:else if kind.kind === 'markdown' && !showSource}
             <MarkdownView text={view.text} />
           {:else}
@@ -220,4 +324,17 @@
       {/if}
     {/key}
   </div>
+  {#if confirm}
+    <ConfirmDialog
+      title="Discard your changes?"
+      description="Your edits to {entry.meta.name} haven't been saved."
+      confirmLabel="Discard"
+      danger
+      onconfirm={() => {
+        const then = confirm.then;
+        stopEditing();
+        then();
+      }}
+      onclose={() => (confirm = null)} />
+  {/if}
 </dialog>

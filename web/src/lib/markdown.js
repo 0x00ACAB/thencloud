@@ -2,9 +2,12 @@
 //
 // A shared .md file is untrusted input rendered inside the app's own origin,
 // where the keys live, so the HTML marked produces always goes through
-// DOMPurify. Images aren't loaded: a remote one would tell its host that
-// the file was opened (the CSP blocks them anyway), and there's no way yet
-// to point at a sibling file in the encrypted tree.
+// DOMPurify. Images aren't loaded: a relative path would be requested from
+// our own server and leak a plaintext file name, a remote one would tell its
+// host that the file was opened, and there's no way yet to point at a
+// sibling file in the encrypted tree. Their `src` is dropped inside
+// DOMPurify's inert document, before anything reaches the live page, where
+// an <img> starts loading as soon as it exists.
 
 import { Marked } from 'marked';
 import DOMPurify from 'dompurify';
@@ -22,6 +25,7 @@ purify.addHook('afterSanitizeAttributes', (node) => {
       node.removeAttribute('href');
     }
   }
+  if (node.tagName === 'IMG') node.removeAttribute('src');
   if (node.tagName === 'INPUT') {
     // Task list checkboxes; nothing else survives as an input.
     if (node.getAttribute('type') !== 'checkbox') node.remove();
@@ -35,7 +39,7 @@ export function renderMarkdown(text) {
   const frag = purify.sanitize(html, {
     RETURN_DOM_FRAGMENT: true,
     FORBID_TAGS: ['style', 'form', 'button', 'textarea', 'select', 'iframe', 'video', 'audio', 'source', 'picture'],
-    FORBID_ATTR: ['style', 'srcset'],
+    FORBID_ATTR: ['style', 'srcset', 'background', 'poster'],
   });
   for (const img of frag.querySelectorAll('img')) {
     const span = document.createElement('span');

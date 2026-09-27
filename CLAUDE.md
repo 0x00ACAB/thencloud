@@ -48,6 +48,8 @@ cargo run -p thencloud-server -- --bind 127.0.0.1:8080 --data-dir ./data
     - Markdown only ever reaches the DOM through `lib/markdown.js` (marked + DOMPurify). Don't `{@html}` anything else except highlight.js output, which escapes its input.
     - Heavy viewers (`highlight.js`, `markdown.js`, `pdf.js`) are loaded with `import()` so the file list doesn't pay for them. `lib/languages.js` holds the extension map so it can be used without loading highlight.js.
     - pdf.js's fonts, CMaps and decoders are copied to `/pdfjs/` by a plugin in `vite.config.js`.
+    - Never let a file's content make the browser fetch a URL. A relative image path would be requested from our own server (the CSP allows `'self'`), and that request leaks a plaintext name. So Markdown images are never loaded, neither in the preview (`lib/markdown.js` drops `src` inside DOMPurify's inert document) nor in the editor (`lib/editor.js` renders the image node as a placeholder).
+  - Markdown editing: `components/preview/MarkdownEditor.svelte` over `lib/editor.js` (Milkdown, loaded on demand). `Preview` gets a `save` prop only when the viewer can write; `saveText` in `cloud.svelte.js` uploads the text as a new version with `if_revision`, so a concurrent change fails with 409 `conflict` instead of being overwritten.
 - `assets/`: branding. The logo mark is `thencloud-logo-mark.png`; `branding.txt` has the name, the katakana ゼンクラウド and the accent colour `#3B47F9`.
 
 ## Web UI direction

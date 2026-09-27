@@ -486,3 +486,45 @@
     @apply inline-flex items-center gap-1 rounded border border-dashed border-line-strong px-2 py-0.5 text-[13px] text-fg-muted;
   }
 }
+
+/* Markdown editor (ProseMirror via Milkdown), on top of .prose. */
+@layer components {
+  .editor .ProseMirror {
+    @apply min-h-[50vh] outline-none;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-variant-ligatures: none;
+  }
+  .editor .ProseMirror > * + * {
+    @apply mt-4;
+  }
+  .editor .ProseMirror > p:only-child:has(> br:only-child)::before,
+  .editor .ProseMirror > p:only-child:empty::before {
+    @apply pointer-events-none float-left h-0 text-fg-faint;
+    content: "Start writing";
+  }
+  .editor .ProseMirror-selectednode {
+    @apply outline-2 outline-offset-2 outline-accent;
+  }
+  .editor .ProseMirror-gapcursor {
+    @apply hidden;
+  }
+  /* Raw HTML from the file, kept as source text. */
+  .editor span[data-type="html"] {
+    @apply rounded bg-subtle px-1 font-mono text-[0.85em] text-fg-muted;
+  }
+  .editor li[data-item-type="task"] {
+    @apply -ml-6 flex list-none items-baseline gap-2;
+  }
+  .editor li[data-item-type="task"]::before {
+    @apply inline-grid size-3.5 shrink-0 translate-y-0.5 place-items-center rounded-sm border border-line-strong text-[10px] leading-none text-accent-fg;
+    content: "";
+  }
+  .editor li[data-item-type="task"][data-checked="true"]::before {
+    @apply border-accent bg-accent;
+    content: "\2713";
+  }
+  .editor li[data-item-type="task"] > * {
+    @apply m-0 min-w-0 flex-1;
+  }
+}
