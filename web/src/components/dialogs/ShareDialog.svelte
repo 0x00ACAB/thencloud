@@ -8,6 +8,7 @@
   import { onMount } from 'svelte';
   import Modal from '../Modal.svelte';
   import Icon from '../Icon.svelte';
+  import PhotoLocationNotice from '../PhotoLocationNotice.svelte';
   import Avatar from '../Avatar.svelte';
   import { lookupUser, share, outgoingShares, setSharePermission, deleteShare, session, contactStatus, verifyContact } from '../../lib/cloud.svelte.js';
   import Time from '../Time.svelte';
@@ -20,6 +21,13 @@
   let verified = $state(false);
   let status = $state(null); // { state: 'new' | 'verified' | 'changed', verifiedAt, pinnedFingerprint }
   let permission = $state('read');
+  let ends = $state('never');
+  const endings = [
+    ['never', 'Never'],
+    ['1', 'In 1 day'],
+    ['7', 'In 7 days'],
+    ['30', 'In 30 days'],
+  ];
   let busy = $state(false);
   let error = $state('');
   let people = $state(null);
@@ -55,7 +63,8 @@
       } else {
         // Remember a key once it's been checked (or re-checked after a change).
         if (status.state !== 'verified') await verifyContact(user);
-        await share(entry, user, permission);
+        const expiresAt = ends === 'never' ? null : Math.floor(Date.now() / 1000) + Number(ends) * 86400;
+        await share(entry, user, permission, expiresAt);
         toast(`Shared with ${user.username}`, { kind: 'success' });
         user = null;
         status = null;
@@ -140,15 +149,25 @@
           The fingerprints match
         </label>
       {/if}
-      <div class="field">
-        <label class="label" for="share-perm">Access</label>
-        <select id="share-perm" class="input" bind:value={permission}>
-          <option value="read">Can view and download</option>
-          <option value="write">Can edit{isFolder ? ', upload and delete inside' : ''}</option>
-        </select>
+      <div class="grid gap-3 sm:grid-cols-[1fr_auto]">
+        <div class="field">
+          <label class="label" for="share-perm">Access</label>
+          <select id="share-perm" class="input" bind:value={permission}>
+            <option value="read">Can view and download</option>
+            <option value="write">Can edit{isFolder ? ', upload and delete inside' : ''}</option>
+          </select>
+        </div>
+        <div class="field">
+          <label class="label" for="share-ends">Access ends</label>
+          <select id="share-ends" class="input" bind:value={ends}>
+            {#each endings as [value, label] (value)}<option {value}>{label}</option>{/each}
+          </select>
+        </div>
       </div>
     </div>
   {/if}
+
+  <PhotoLocationNotice {entry} />
 
   {#if error}<p class="text-[13px] text-danger">{error}</p>{/if}
 
@@ -163,7 +182,10 @@
         {#each people as p (p.id)}
           <li class="flex items-center gap-3 px-3 py-2">
             <Avatar username={p.recipient} class="size-7 text-xs" />
-            <span class="min-w-0 flex-1 truncate text-sm">{p.recipient}</span>
+            <span class="grid min-w-0 flex-1">
+              <span class="truncate text-sm">{p.recipient}</span>
+              {#if p.expires_at}<span class="text-xs text-fg-muted"><Time ms={p.expires_at * 1000} prefix="Until " /></span>{/if}
+            </span>
             <select
               class="input h-8 w-auto text-[13px]"
               aria-label="Access for {p.recipient}"

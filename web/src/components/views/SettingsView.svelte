@@ -1,13 +1,13 @@
 <script>
   import { onMount } from 'svelte';
-  import { session, changePassword, listSessions, revokeSession, revokeOtherSessions, removeRecoveryKey, listAppPasswords, deleteAppPassword, avatar, loadMyAvatar, setAvatar, removeAvatar, listContacts, forgetContact, forgetThisBrowser, listPasskeys, removePasskey, disableTotp } from '../../lib/cloud.svelte.js';
+  import { session, changePassword, listSessions, revokeSession, revokeOtherSessions, removeRecoveryKey, listAppPasswords, deleteAppPassword, avatar, loadMyAvatar, setAvatar, removeAvatar, listContacts, forgetContact, forgetThisBrowser, listPasskeys, removePasskey, disableTotp, deleteAccount, verifyTree, resolvePath } from '../../lib/cloud.svelte.js';
   import { passkeysSupported } from '../../lib/passkeys.js';
   import TotpDialog from '../dialogs/TotpDialog.svelte';
   import PasskeyDialog from '../dialogs/PasskeyDialog.svelte';
   import RecoveryKeyDialog from '../dialogs/RecoveryKeyDialog.svelte';
   import ConfirmDialog from '../dialogs/ConfirmDialog.svelte';
   import AppPasswordDialog from '../dialogs/AppPasswordDialog.svelte';
-  import { theme, setTheme, toast, toastError, errorMessage, copyText, accent, setAccent, ACCENT_PRESETS, DEFAULT_ACCENT, contrast, accentForeground, iconPack, setIconPack, folderIcons, setFolderIcons, tint, setTint } from '../../lib/ui.svelte.js';
+  import { theme, setTheme, toast, toastError, errorMessage, copyText, accent, setAccent, ACCENT_PRESETS, DEFAULT_ACCENT, contrast, accentForeground, iconPack, setIconPack, folderIcons, setFolderIcons, tint, setTint, photoDetails, setPhotoDetails } from '../../lib/ui.svelte.js';
   import { formatSize, formatWhen, formatDate, fullDate } from '../../lib/format.js';
   import { slide } from '../../lib/motion.js';
   import Icon from '../Icon.svelte';
@@ -16,6 +16,33 @@
   import FileIcon from '../FileIcon.svelte';
   import FolderIcon from '../FolderIcon.svelte';
   import { ICON_PACKS, hasFolderIcons } from '../../lib/file-icons.svelte.js';
+
+  // Checking that everything decrypts.
+  let checkRun = $state(null); // { files, folders, bytes, problems, done, stopped }
+  let checkCtl = null;
+  onMount(() => () => checkCtl?.abort());
+
+  async function checkFiles() {
+    checkCtl?.abort();
+    const ctl = (checkCtl = new AbortController());
+    const run = (checkRun = { files: 0, folders: 0, bytes: 0, problems: [], done: false, stopped: false });
+    try {
+      const { items } = await resolvePath(session.me.keys.root_node_id);
+      await verifyTree(items[0], {
+        signal: ctl.signal,
+        onProgress: (p) => Object.assign(run, p),
+        onProblem: (p) => run.problems.push(p),
+      });
+    } catch (e) {
+      run.problems.push({ location: [], name: null, id: '', error: errorMessage(e) });
+    }
+    run.done = true;
+    run.stopped = ctl.signal.aborted;
+  }
+
+  let deleting = $state(false);
+  let deletePassword = $state('');
+  let deleteConfirm = $state('');
 
   let current = $state('');
   let next = $state('');
@@ -577,6 +604,80 @@
   {/snippet}
   {@render section('File icons', 'Icons for files by type, and optionally for folders by name.', iconsBody)}
 
+  {#snippet photosBody()}
+    <div class="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Location and camera details in photos">
+      {#each [['ask', 'Ask me', 'When a photo records where it was taken.'], ['remove', 'Always remove', 'From every photo, before it is encrypted.'], ['keep', 'Keep them', 'Upload photos exactly as they are.']] as [value, label, text] (value)}
+        <button
+          type="button"
+          role="radio"
+          aria-checked={photoDetails.value === value}
+          class="grid cursor-pointer gap-1 rounded-md border p-3 text-left transition-colors {photoDetails.value === value ? 'border-accent bg-accent-soft' : 'border-line hover:bg-subtle'}"
+          onclick={() => setPhotoDetails(value)}>
+          <span class="text-sm font-medium {photoDetails.value === value ? 'text-accent-text' : ''}">{label}</span>
+          <span class="text-xs text-fg-muted">{text}</span>
+        </button>
+      {/each}
+    </div>
+  {/snippet}
+  {@render section('Location in photos', 'JPEG, PNG and WebP photos often record where they were taken and on what camera. This is checked on this device when you upload; the orientation is always kept.', photosBody)}
+
+
+  {#snippet checkBody()}
+    <p class="text-[13px] text-fg-muted">
+      Downloads everything in My files and decrypts it here, to make sure nothing is damaged or missing. Nothing is saved. With a lot of data this takes a while.
+    </p>
+    {#if checkRun}
+      {@const pct = Math.min(100, (checkRun.bytes / Math.max(1, session.me.used_bytes)) * 100)}
+      <div class="grid gap-2">
+        {#if !checkRun.done}
+          <div class="progress"><div style:width="{pct}%"></div></div>
+        {/if}
+        <p class="text-[13px] {checkRun.done && !checkRun.problems.length && !checkRun.stopped ? 'text-success' : 'text-fg-muted'}" role="status">
+          {#if !checkRun.done}
+            Checked {checkRun.files} {checkRun.files === 1 ? 'file' : 'files'} in {checkRun.folders + 1} {checkRun.folders ? 'folders' : 'folder'}, {formatSize(checkRun.bytes)}
+          {:else if checkRun.stopped}
+            Stopped after {checkRun.files} {checkRun.files === 1 ? 'file' : 'files'}.
+          {:else if !checkRun.problems.length}
+            All {checkRun.files} {checkRun.files === 1 ? 'file' : 'files'} and {checkRun.folders} {checkRun.folders === 1 ? 'folder' : 'folders'} decrypt correctly.
+          {:else}
+            {checkRun.problems.length} {checkRun.problems.length === 1 ? "item can't" : "items can't"} be read. The other {checkRun.files} {checkRun.files === 1 ? 'file is' : 'files are'} fine.
+          {/if}
+        </p>
+        {#if checkRun.problems.length}
+          <ul class="divide-y divide-line rounded-md border border-danger/40 text-[13px]">
+            {#each checkRun.problems as p, i (i)}
+              <li class="grid gap-0.5 px-3 py-2">
+                <span class="truncate font-medium">{[...p.location, p.name ?? 'An item that can\'t be named'].join(' / ')}</span>
+                <span class="text-fg-muted">{p.error}</span>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </div>
+    {/if}
+  {/snippet}
+  {#snippet checkFooter()}
+    {#if checkRun && !checkRun.done}
+      <button type="button" class="btn btn-secondary" onclick={() => checkCtl?.abort()}>Stop</button>
+    {:else}
+      <button type="button" class="btn btn-secondary" onclick={checkFiles}><Icon name="shield-check" /> Check files</button>
+    {/if}
+  {/snippet}
+  {@render section('Check your files', null, checkBody, checkFooter)}
+
+  {#snippet deleteBody()}
+    <p class="text-[13px] text-fg-muted">
+      Your files, folders, versions, links and shares are deleted from the server straight away. There is no undo, and an admin can't bring them back.
+      Files you added to folders other people shared with you belong to them and stay.
+    </p>
+  {/snippet}
+  {#snippet deleteFooter()}
+    <button type="button" class="btn btn-danger" onclick={() => ((deleting = true), (deletePassword = ''), (deleteConfirm = ''))}>
+      <Icon name="trash-2" /> Delete account
+    </button>
+  {/snippet}
+  {@render section('Delete account', null, deleteBody, deleteFooter)}
+
   {#snippet aboutBody()}
     <div class="grid gap-2 text-[13px] text-fg-muted">
       <p>
@@ -591,6 +692,32 @@
   {/snippet}
   {@render section('About', null, aboutBody)}
 </div>
+
+{#if deleting}
+  <ConfirmDialog
+    title="Delete your account?"
+    description="The account {session.me.username} and everything in it are deleted for good. Download anything you want to keep first."
+    confirmLabel="Delete account"
+    danger
+    disabled={!deletePassword || deleteConfirm.trim().toLowerCase() !== session.me.username}
+    onconfirm={async () => {
+      try {
+        await deleteAccount(deletePassword);
+      } catch (e) {
+        throw wrongPassword(e);
+      }
+    }}
+    onclose={() => (deleting = false)}>
+    <div class="field">
+      <label class="label" for="delete-password">Your password</label>
+      <input id="delete-password" class="input" type="password" bind:value={deletePassword} autocomplete="current-password" />
+    </div>
+    <div class="field">
+      <label class="label" for="delete-confirm">Type <span class="font-mono">{session.me.username}</span> to confirm</label>
+      <input id="delete-confirm" class="input" bind:value={deleteConfirm} autocomplete="off" autocapitalize="none" spellcheck="false" />
+    </div>
+  </ConfirmDialog>
+{/if}
 
 {#if appDialog}
   <AppPasswordDialog onclose={() => (appDialog = false)} oncreated={loadAppPasswords} />

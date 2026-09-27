@@ -1,0 +1,7 @@
+target
+data
+web/node_modules
+web/dist
+web/src/wasm
+thencloud-web-*
+.git

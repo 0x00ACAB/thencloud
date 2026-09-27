@@ -4,6 +4,7 @@ description = "Command-line client for thencloud: encrypts and decrypts locally,
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish.workspace = true
 
 [[bin]]
 name = "thencloud"

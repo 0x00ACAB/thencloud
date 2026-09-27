@@ -30,11 +30,12 @@ struct LinkRow {
     password_hash: Option<String>,
     expires_at: Option<i64>,
     upload_only: bool,
+    max_opens: Option<i64>,
 }
 
 async fn find(state: &AppState, token: &str) -> Result<LinkRow> {
     sqlx::query_as(
-        "SELECT id, node_id, owner_id, password_hash, expires_at, upload_only FROM public_links \
+        "SELECT id, node_id, owner_id, password_hash, expires_at, upload_only, max_opens FROM public_links \
          WHERE token = ? AND (expires_at IS NULL OR expires_at > ?)",
     )
     .bind(token)
@@ -44,31 +45,63 @@ async fn find(state: &AppState, token: &str) -> Result<LinkRow> {
     .ok_or(AppError::NotFound)
 }
 
-fn session_msg(token: &str, exp: i64) -> Vec<u8> {
-    format!("link-session:{token}:{exp}").into_bytes()
+/// What an `X-Link-Token` vouches for: the password was given (from
+/// [`unlock`]), or a visit to a link with limited opens was counted (from
+/// [`info`], after any password check, so it also stands for the password).
+#[derive(Clone, Copy, PartialEq)]
+enum Pass {
+    Password,
+    Visit,
 }
 
-/// Resolve a link and, if it is password protected, check the
-/// `X-Link-Token` issued by [`unlock`].
+fn pass_msg(pass: Pass, token: &str, exp: i64) -> Vec<u8> {
+    let kind = match pass {
+        Pass::Password => "link-session",
+        Pass::Visit => "link-visit",
+    };
+    format!("{kind}:{token}:{exp}").into_bytes()
+}
+
+fn issue(state: &AppState, pass: Pass, token: &str, expires_at: Option<i64>) -> (String, i64) {
+    let mut exp = now() + LINK_SESSION_SECS;
+    if let Some(e) = expires_at {
+        exp = exp.min(e);
+    }
+    let tag = hmac(&state.secret[..], &pass_msg(pass, token, exp));
+    (format!("{exp}.{}", thencloud_crypto::b64_encode(&tag)), exp)
+}
+
+/// Which pass the request's `X-Link-Token` carries, if any valid one.
+fn pass_of(state: &AppState, token: &str, headers: &HeaderMap) -> Option<Pass> {
+    let (exp, tag) = headers
+        .get("x-link-token")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split_once('.'))
+        .and_then(|(exp, tag)| {
+            Some((
+                exp.parse::<i64>().ok()?,
+                thencloud_crypto::b64_decode(tag).ok()?,
+            ))
+        })?;
+    if exp <= now() {
+        return None;
+    }
+    [Pass::Visit, Pass::Password]
+        .into_iter()
+        .find(|&p| hmac_verify(&state.secret[..], &pass_msg(p, token, exp), &tag))
+}
+
+/// Resolve a link and check its `X-Link-Token`: for a password, the one
+/// issued by [`unlock`] (or a visit's); for a link with limited opens, a
+/// visit's from [`info`], which is where opens are counted.
 async fn resolve(state: &AppState, token: &str, headers: &HeaderMap) -> Result<LinkRow> {
     let link = find(state, token).await?;
-    if link.password_hash.is_some() {
-        let ok = headers
-            .get("x-link-token")
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.split_once('.'))
-            .and_then(|(exp, tag)| {
-                Some((
-                    exp.parse::<i64>().ok()?,
-                    thencloud_crypto::b64_decode(tag).ok()?,
-                ))
-            })
-            .is_some_and(|(exp, tag)| {
-                exp > now() && hmac_verify(&state.secret[..], &session_msg(token, exp), &tag)
-            });
-        if !ok {
-            return Err(AppError::PasswordRequired);
-        }
+    let pass = pass_of(state, token, headers);
+    if link.password_hash.is_some() && pass.is_none() {
+        return Err(AppError::PasswordRequired);
+    }
+    if link.max_opens.is_some() && pass != Some(Pass::Visit) {
+        return Err(AppError::NotFound);
     }
     Ok(link)
 }
@@ -93,13 +126,33 @@ pub async fn info(
     Path(token): Path<String>,
     headers: HeaderMap,
 ) -> Result<Json<PublicLinkInfo>> {
-    let link = resolve(&state, &token, &headers).await?;
+    let link = find(&state, &token).await?;
+    let pass = pass_of(&state, &token, &headers);
+    if link.password_hash.is_some() && pass.is_none() {
+        return Err(AppError::PasswordRequired);
+    }
     if access::is_trashed(&state.db, &link.node_id).await? {
         return Err(AppError::NotFound);
     }
     let node = get_node(&state.db, &link.node_id)
         .await?
         .ok_or(AppError::NotFound)?;
+    // Count this visit, unless it's one already counted asking again. Once
+    // they're used up the link is gone for new visitors, but visits already
+    // under way can finish.
+    let mut link_token = None;
+    if link.max_opens.is_some() && pass != Some(Pass::Visit) {
+        let counted = sqlx::query(
+            "UPDATE public_links SET opens = opens + 1 WHERE id = ? AND opens < max_opens",
+        )
+        .bind(&link.id)
+        .execute(&state.db)
+        .await?;
+        if counted.rows_affected() == 0 {
+            return Err(AppError::NotFound);
+        }
+        link_token = Some(issue(&state, Pass::Visit, &token, link.expires_at).0);
+    }
     let owner_pq_public_key = if link.upload_only {
         sqlx::query_scalar("SELECT pq_public_key FROM users WHERE id = ?")
             .bind(&link.owner_id)
@@ -115,6 +168,7 @@ pub async fn info(
         owner: link.upload_only.then(|| node.owner.clone()),
         folder_id: link.upload_only.then(|| node.id.clone()),
         node: (!link.upload_only).then(|| node.into_api()),
+        link_token,
     }))
 }
 
@@ -137,14 +191,10 @@ pub async fn unlock(
         return Err(AppError::InvalidCredentials);
     }
     state.limiter.clear(&key);
-    let mut exp = now() + LINK_SESSION_SECS;
-    if let Some(e) = link.expires_at {
-        exp = exp.min(e);
-    }
-    let tag = hmac(&state.secret[..], &session_msg(&token, exp));
+    let (link_token, expires_at) = issue(&state, Pass::Password, &token, link.expires_at);
     Ok(Json(UnlockLinkResponse {
-        link_token: format!("{exp}.{}", thencloud_crypto::b64_encode(&tag)),
-        expires_at: exp,
+        link_token,
+        expires_at,
     }))
 }
 

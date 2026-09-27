@@ -1,8 +1,9 @@
 name: Release
 
 # Builds the web client reproducibly on two different runner images and
-# fails unless both come out byte for byte the same. On a tag, the manifest
-# and the build go into a draft release; a maintainer rebuilds it locally,
+# fails unless both come out byte for byte the same, and builds the server
+# and CLI binaries. On a tag, the manifest, the web build and the binaries
+# go into a draft release; a maintainer rebuilds the web client locally,
 # signs the manifest with minisign and publishes.
 
 on:
@@ -36,9 +37,37 @@ jobs:
           name: web-${{ matrix.os }}
           path: thencloud-web-*
 
+  binaries:
+    name: Binaries (${{ matrix.target }})
+    strategy:
+      matrix:
+        include:
+          # The oldest supported Ubuntu, so the binaries run on older glibc.
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-22.04-arm, target: aarch64-unknown-linux-gnu }
+          - { os: macos-15, target: aarch64-apple-darwin }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release --locked -p thencloud-server -p thencloud-cli
+      - name: Package
+        env:
+          VERSION: ${{ github.ref_type == 'tag' && github.ref_name || github.sha }}
+          TARGET: ${{ matrix.target }}
+        run: |
+          dir="thencloud-$VERSION-$TARGET"
+          mkdir "$dir"
+          cp target/release/thencloud-server target/release/thencloud LICENSE README.md "$dir"
+          tar czf "$dir.tar.gz" "$dir"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bin-${{ matrix.target }}
+          path: thencloud-*.tar.gz
+
   publish:
     name: Compare and draft the release
-    needs: web
+    needs: [web, binaries]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -55,5 +84,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" --draft --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" \
-            --notes "Check a server runs this web client: thencloud verify-web https://your.server --manifest thencloud-web-$GITHUB_REF_NAME.json" \
-            web-ubuntu-24.04/thencloud-web-*
+            --notes "The server needs the web client next to it: unpack thencloud-web-$GITHUB_REF_NAME.tar.gz and pass --web-dir dist. Check a server runs this web client: thencloud verify-web https://your.server --manifest thencloud-web-$GITHUB_REF_NAME.json" \
+            web-ubuntu-24.04/thencloud-web-* bin-*/thencloud-*.tar.gz

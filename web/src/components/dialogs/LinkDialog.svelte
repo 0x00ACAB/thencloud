@@ -1,6 +1,7 @@
 <script>
   import Modal from '../Modal.svelte';
   import Icon from '../Icon.svelte';
+  import PhotoLocationNotice from '../PhotoLocationNotice.svelte';
   import Time from '../Time.svelte';
   import { createLink, links, deleteLink } from '../../lib/cloud.svelte.js';
   import { copyText, errorMessage, toastError } from '../../lib/ui.svelte.js';
@@ -10,6 +11,7 @@
   let existing = $state(null);
   let password = $state('');
   let expiry = $state('never');
+  let opens = $state('any');
   let busy = $state(false);
   let error = $state('');
   let created = $state(null);
@@ -26,6 +28,15 @@
     ['1', 'In 1 day'],
     ['7', 'In 7 days'],
     ['30', 'In 30 days'],
+  ];
+
+  // An open is one visit to the link page; that visit can then browse and
+  // download everything.
+  const openLimits = [
+    ['any', 'No limit'],
+    ['1', 'After the first open'],
+    ['5', 'After 5 opens'],
+    ['25', 'After 25 opens'],
   ];
 
   async function load() {
@@ -46,7 +57,9 @@
     error = '';
     try {
       const expiresAt = expiry === 'never' ? null : Math.floor(Date.now() / 1000) + Number(expiry) * 86400;
-      created = await createLink(entry, { password, expiresAt, uploadOnly: folder && kind === 'drop' });
+      const drop = folder && kind === 'drop';
+      const maxOpens = drop || opens === 'any' ? null : Number(opens);
+      created = await createLink(entry, { password, expiresAt, uploadOnly: drop, maxOpens });
       password = '';
       await load();
       copyText(created.url, 'Link created and copied');
@@ -84,6 +97,8 @@
     {/if}
   </div>
 
+  <PhotoLocationNotice {entry} />
+
   {#if existing?.length}
     <div class="space-y-2">
       <h3 class="text-[13px] font-medium">Active links</h3>
@@ -97,6 +112,7 @@
                 {#if l.upload_only}<span class="inline-flex items-center gap-1"><Icon name="inbox" class="size-3" />File drop</span>{/if}
                 {#if l.has_password}<span class="inline-flex items-center gap-1"><Icon name="lock" class="size-3" />Password</span>{/if}
                 <span>{#if l.expires_at}<Time ms={l.expires_at * 1000} prefix="Expires " />{:else}No expiry{/if}</span>
+                {#if l.max_opens}<span>{l.opens} of {l.max_opens} {l.max_opens === 1 ? 'open' : 'opens'} used</span>{/if}
               </p>
             </div>
             <button type="button" class="btn btn-ghost btn-icon" aria-label="Copy link" title="Copy link" onclick={() => copyText(l.url, 'Link copied')}>
@@ -138,6 +154,15 @@
         {#each expiries as [value, label] (value)}<option {value}>{label}</option>{/each}
       </select>
     </div>
+    {#if kind !== 'drop'}
+      <div class="field sm:col-span-2">
+        <label class="label" for="link-opens">Stops working</label>
+        <select id="link-opens" class="input" bind:value={opens}>
+          {#each openLimits as [value, label] (value)}<option {value}>{label}</option>{/each}
+        </select>
+        <p class="text-xs text-fg-muted">Each visit to the link counts once, however many files are downloaded during it.</p>
+      </div>
+    {/if}
   </div>
   {#if error}<p class="text-[13px] text-danger">{error}</p>{/if}
 

@@ -104,39 +104,39 @@ Smaller things:
 ## Milestone 5: Trust and accounts
 
 - [x] **Verifiable web client**: the web client builds reproducibly (`scripts/release-web.sh`: pinned Rust toolchain, lockfiles, paths mapped out of the WASM), each release gets a manifest of every file's SHA-256 for maintainers to sign with minisign, and `thencloud verify-web` fetches every file in every encoding the server offers (plus `/`, a share link and the CSP) and compares. A release workflow builds on two runner images and fails unless they match byte for byte
-  - [ ] A small browser extension that checks what the browser itself was sent
+  - [(postponed)] A small browser extension that checks what the browser itself was sent
 - [x] **Passkeys**: WebAuthn as a second step after the password, and with the PRF extension a way to sign in without it: the browser wraps a copy of the master key under a key from the passkey's PRF output, and the server hands that copy out only after checking the passkey. Settings shows which passkeys can sign in on their own
 - [x] **Two-factor codes (TOTP)** as a server-side gate on login, for people without passkeys. Set up with a QR code; only the TOTP secret is stored, never a key, and each code works once. App passwords and the recovery key skip the second step
 - [x] **Post-quantum sealing**: every account has an ML-KEM-768 key next to its X25519 one (older accounts get one on their next sign-in), and keys sealed to other users (shares, profile picture keys, file drops) use both, so recorded shares can't be opened later by a quantum computer. Fingerprints and verified contacts cover both keys
-  - [ ] Re-seal existing shares made before the recipient had an ML-KEM key
 - [ ] **Link passwords in the key**: optionally derive part of a public link's key from its password, so the server can't skip the password check
-- [ ] **One-time and counted links**: a download limit on public links, and "expires after first open"
-- [ ] **Delete my account** from Settings, with the password and a typed confirmation
+- [x] **One-time and counted links**: a download limit on public links, and "expires after first open". An open is one visit to the link page, counted by the server, which hands that visit a signed token for the rest of it (browsing, downloads, streaming); once they're used up the link is gone for new visitors, while visits under way can finish
+- [x] **Delete my account** from Settings, with the password and a typed confirmation. Not from an app password, and the only admin can't leave others without one
 - [ ] **Account export**: everything decrypted into a zip in the browser (streamed), plus an encrypted backup the CLI can restore to another server
 
 ## Milestone 6: Everyday files
 
 - [ ] **Encrypted thumbnails**: made in the browser on upload (images, video frames, PDF first pages), encrypted under the file's key and stored as a small side blob; a grid view that uses them
 - [ ] **Photos**: a timeline of a chosen folder by date taken (EXIF read in the browser, like music tags), with albums and a lightbox
-- [ ] **Strip location on share**: offer to remove GPS and camera details from photos before they're uploaded or shared
-- [ ] **Favourites and Recent**: kept as node ids in the encrypted app data, shown in the sidebar
+- [x] **Strip location on share**: offer to remove GPS and camera details from photos before they're uploaded or shared. JPEG, PNG and WebP; the orientation is kept. Uploads ask (or always remove, or keep: Settings), and sharing a photo that has a location offers to remove it, deleting the older versions too
+- [x] **Favourites and Recent**: kept as node ids in the encrypted app data, shown in the sidebar. Star from a file's menu; files count as recent when previewed or downloaded
 - [ ] **Full-text search**: an encrypted index of text, Markdown and PDF contents built in the browser and saved as app data, so search can look inside files without the server learning the words
 - [ ] **Groups**: share with a group whose key is sealed to each member; adding someone doesn't mean re-sharing everything
-- [ ] **Expiry on user shares**, like links have
+- [x] **Expiry on user shares**, like links have: an expired share gives no access, and the janitor deletes it (and takes back profile picture keys that depended on it)
 - [ ] **Comments on files**, encrypted under the node key so everyone with access (and only them) can read them
+- [ ] **Files reports**, report a file, an unencrypted copy gets sent to the admin (with an acknowledgement in the reporting process), the admin then may remove the file or mark it as safe
 - [ ] **Activity in shared folders**: who added, changed or deleted what, with names decrypted in the browser. The server already sees these events; it doesn't learn the names
-- [ ] Drag rows onto a folder (or the breadcrumb) to move them
-- [ ] Paste to upload (Ctrl+V a screenshot or copied files)
+- [x] Drag rows onto a folder (or the breadcrumb) to move them
+- [x] Paste to upload (Ctrl+V a screenshot or copied files)
 
 ## Milestone 7: Clients and self-hosting
 
 - [ ] **Installable app (PWA)**: a manifest and icons, and on Android a share target, so "Share to thencloud" encrypts and uploads from any app
 - [ ] **Local WebDAV bridge** in the CLI (`thencloud serve`): serves your files decrypted on 127.0.0.1 only, so macOS Finder, Windows Explorer and iOS Files apps can use them while the server still sees only ciphertext
 - [ ] **Import from Nextcloud**: the CLI reads a Nextcloud account over WebDAV, encrypts locally and uploads, keeping folders and dates
-- [ ] **Container image and release binaries**: a Dockerfile, a compose example with a reverse proxy, and binaries built in CI for each release
-- [ ] **Backup and restore**: a server command that takes a consistent snapshot of SQLite and the blob store, and a documented restore
-- [ ] **Health and metrics**: a health check and Prometheus metrics with the same counts the admin view shows, nothing more
-- [ ] **Integrity check**: the server checks every blob it expects exists with the right size; the client can verify that everything decrypts and flags what doesn't
+- [x] **Container image and release binaries**: a Dockerfile, a compose example with a reverse proxy, and binaries built in CI for each release. The image builds the web client like a release, so `verify-web` passes; `--trust-proxy` keeps rate limits per client behind the proxy
+- [x] **Backup and restore**: a server command that takes a consistent snapshot of SQLite and the blob store, and a documented restore (`thencloud-server backup DIR`, safe while running)
+- [x] **Health and metrics**: a health check and Prometheus metrics with the same counts the admin view shows, nothing more (`/api/health`; `/api/metrics` only with `--metrics-token`)
+- [x] **Integrity check**: the server checks every blob it expects exists with the right size; the client can verify that everything decrypts and flags what doesn't (`thencloud-server check`, and Settings > Check your files)
 - [ ] **Translations**: move UI strings into message files and pick the language from the browser
 - [ ] **Accessibility pass**: screen reader labels, focus handling in dialogs and menus, and colour contrast checked in both themes and with the tint on
 
@@ -146,7 +146,7 @@ Smaller things:
 - [ ] **Format versions**: a version byte on every ciphertext and a tested path for moving old data to a new format
 - [ ] **Fuzzing**: `cargo-fuzz` targets for the crypto decoders and the server's request parsing, and fuzz tests for the untrusted parsers in the browser (`tags.js`, `videotags.js`, the zip and PDF link handling)
 - [ ] **Browser tests**: Playwright in CI for sign-up, upload, share, public links and previews, including a check that no request carries a name, key or plaintext
-- [ ] **Dependency checks**: `cargo-deny` (advisories and licences) and `npm audit` in CI
+- [x] **Dependency checks**: `cargo-deny` (advisories and licences) and `npm audit` in CI, on every push and weekly
 - [ ] **Master key rotation**: after a suspected leak, re-wrap every key under a new master key and keypair, and re-seal shares
 - [ ] **Independent security audit** of the crypto crate, the web client and the server, with the report published
 
@@ -159,10 +159,10 @@ Smaller things:
 
 ## Milestone 10: More ways to open files
 
-- [ ] **Subtitles**: `.srt` and `.vtt` next to a video are decrypted and shown in the player, with a picker
+- [x] **Subtitles**: `.srt` and `.vtt` next to a video are decrypted and shown in the player, with a picker (`Film.en.srt` and the like; SRT is turned into WebVTT in the browser). Renaming a series' files takes its subtitles along
 - [ ] **Books**: an EPUB and comic (CBZ) reader, with reading progress kept in the encrypted app data
 - [ ] **Audiobooks and podcasts**: remember the position per file, chapters from MP4/M4B, and playback speed
-- [ ] **Tables**: CSV and TSV shown as a sortable table instead of plain text
+- [x] **Tables**: CSV and TSV shown as a sortable table instead of plain text, with a Source toggle and editing as text
 - [ ] **Office previews**: DOCX, XLSX, ODT and PPTX rendered in the browser, loaded only when needed and sanitised like Markdown
 - [ ] **PDF tools**: merge, split, rotate and reorder pages in the browser, saved as a new encrypted file
 - [ ] **Notes view**: a folder of Markdown files as a notebook, with a list, search and pinned notes
@@ -198,7 +198,7 @@ Smaller things:
 - [ ] **Calendar and contacts**, end-to-end encrypted
 - [x] **Linux mount**: `thencloud mount` shows My files (or a folder) as a drive through FUSE, for Dolphin, Nautilus and the shell. Reads are fetched and decrypted a chunk at a time; writes are uploaded as a new version on close; deletes go to the trash; an editor's save-and-rename becomes a new version of the original; conflicting edits are kept as a copy
 - [ ] **S3-compatible blob store** behind the existing `BlobStore` interface
-- [ ] Store the current path after the `#` so that it can persist through reloads
+- [x] Store the current path after the `#` so that it can persist through reloads
 - [ ] **Collaborative editing**: live Markdown editing with others in a shared folder, with every update encrypted under the file's key and the server only relaying them
 - [ ] **Mount on macOS and Windows** (FUSE-T, WinFsp), reusing the Linux mount's code
 - [ ] **Mobile apps** reusing `thencloud-crypto`, with camera upload

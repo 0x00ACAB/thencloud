@@ -285,6 +285,10 @@
   .table tbody tr {
     @apply transition-colors hover:bg-subtle;
   }
+  /* A folder row that dragged rows would move into. */
+  .table tbody tr.drop-target {
+    @apply bg-accent-soft outline-1 -outline-offset-1 outline-accent hover:bg-accent-soft;
+  }
 
   .menu {
     @apply fixed z-50 min-w-48 rounded-lg border border-line bg-bg p-1 shadow-lg shadow-black/5 dark:shadow-black/40;

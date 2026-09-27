@@ -2,6 +2,7 @@
 //!
 //! A user has `Owner` access to every node in their own tree, and the best
 //! permission of any share on the node or one of its ancestors otherwise.
+//! Expired shares count for nothing (the janitor deletes them later).
 //!
 //! Nodes in the trash (or below a trashed folder) are invisible to all of
 //! this: only the trash routes, which check ownership themselves, can reach
@@ -57,10 +58,12 @@ pub async fn access(db: &SqlitePool, user_id: &str, node_id: &str) -> Result<Opt
     }
     let perms: Vec<String> = sqlx::query_scalar(concat!(
         ancestors_cte!(),
-        "SELECT s.permission FROM shares s JOIN anc ON s.node_id = anc.id WHERE s.recipient_id = ?"
+        "SELECT s.permission FROM shares s JOIN anc ON s.node_id = anc.id WHERE s.recipient_id = ? \
+         AND (s.expires_at IS NULL OR s.expires_at > ?)"
     ))
     .bind(node_id)
     .bind(user_id)
+    .bind(crate::util::now())
     .fetch_all(db)
     .await?;
     Ok(perms
@@ -118,10 +121,11 @@ pub async fn shares_on_path(
     Ok(sqlx::query_as(concat!(
         ancestors_cte!(),
         "SELECT s.id, s.node_id, s.wrapped_key, s.permission FROM shares s JOIN anc ON s.node_id = anc.id \
-         WHERE s.recipient_id = ? ORDER BY anc.depth"
+         WHERE s.recipient_id = ? AND (s.expires_at IS NULL OR s.expires_at > ?) ORDER BY anc.depth"
     ))
     .bind(node_id)
     .bind(user_id)
+    .bind(crate::util::now())
     .fetch_all(db)
     .await?)
 }

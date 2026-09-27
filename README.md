@@ -60,6 +60,21 @@ Requirements:
 
 The first account to register becomes the admin.
 
+### With Docker
+
+```sh
+docker build -t thencloud .
+docker run -p 127.0.0.1:8080:8080 -v thencloud-data:/data thencloud
+```
+
+For a server on the internet, `deploy/compose.yaml` runs thencloud behind [Caddy](https://caddyserver.com), which gets a certificate for your domain:
+
+```sh
+THENCLOUD_DOMAIN=cloud.example.com docker compose -f deploy/compose.yaml up -d
+```
+
+The image builds the web client the same way releases do, so `thencloud verify-web` can check it against a signed release. Each release also has server and CLI binaries for Linux (x86_64, arm64) and macOS (arm64); the server needs the release's web client unpacked next to it (`--web-dir`).
+
 ### Server options
 
 Every flag can also be set as an environment variable.
@@ -79,8 +94,22 @@ Every flag can also be set as an environment variable.
 | `--yt-dlp` | `THENCLOUD_YT_DLP` | `yt-dlp` (for the optional video downloader; it stays off until an admin enables it) |
 | `--ffmpeg` | `THENCLOUD_FFMPEG` | `ffmpeg` (lets the downloader merge separate video and audio, which most YouTube videos need) |
 | `--downloader-max-bytes` | `THENCLOUD_DOWNLOADER_MAX_BYTES` | `2147483648` (2 GiB per video) |
+| `--trust-proxy` | `THENCLOUD_TRUST_PROXY` | `false`. Behind a reverse proxy, take the client's address from `X-Forwarded-For` (used only to rate-limit sign-in attempts, never stored). Only turn it on when clients can't reach the server directly |
+| `--metrics-token` | `THENCLOUD_METRICS_TOKEN` | unset. When set, `GET /api/metrics` serves Prometheus metrics (the counts in the admin view) to requests with `Authorization: Bearer <token>` |
 
-**Serve thencloud over HTTPS in production** (for example, behind a reverse proxy). The crypto protects data at rest on the server, but the page and its WASM must reach the browser intact.
+`GET /api/health` answers `200 ok` while the database and data directory are available, and `503` otherwise. It needs no sign-in.
+
+### Backup and restore
+
+```sh
+thencloud-server --data-dir ./data backup /backups/thencloud-2026-09-28
+```
+
+This writes a consistent snapshot of the database and every blob it refers to into a new directory. It's safe while the server is running. On the same filesystem the blobs are hard links, which is instant and takes no extra space; elsewhere they're copied. If a file is deleted while the backup runs, its missing pieces are listed and the command exits with status 2. Like the server, a backup holds only ciphertext and wrapped keys.
+
+To restore, stop the server, copy the backup to where the data should live, and start the server with `--data-dir` pointing at it. Then run `thencloud-server --data-dir <dir> check`: it checks that every blob the database expects is there with the right size, and lists any that nothing refers to. To check that files also decrypt, use Settings > Check your files in the web client.
+
+ (for example, behind a reverse proxy). The crypto protects data at rest on the server, but the page and its WASM must reach the browser intact.
 
 ## Layout
 

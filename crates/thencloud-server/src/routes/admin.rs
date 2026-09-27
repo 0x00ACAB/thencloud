@@ -127,18 +127,26 @@ pub async fn delete_user(
     if id == user.id {
         return Err(AppError::bad("you can't delete your own account here"));
     }
+    delete_account(&state, &id).await?;
+    tracing::info!(user = %id, by = %user.username, "user deleted");
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Delete an account and everything in its tree (by an admin, or by its
+/// owner from Settings).
+pub(crate) async fn delete_account(state: &AppState, id: &str) -> Result<()> {
     let root: Option<String> = sqlx::query_scalar("SELECT root_node_id FROM users WHERE id = ?")
-        .bind(&id)
+        .bind(id)
         .fetch_optional(&state.db)
         .await?;
     let root = root.ok_or(AppError::NotFound)?;
     // Unfinished uploads, including into other people's folders.
     let uploads: Vec<String> = sqlx::query_scalar("SELECT id FROM uploads WHERE user_id = ?")
-        .bind(&id)
+        .bind(id)
         .fetch_all(&state.db)
         .await?;
     for u in uploads {
-        discard(&state, &u).await?;
+        discard(state, &u).await?;
     }
     if sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM nodes WHERE id = ?")
         .bind(&root)
@@ -146,15 +154,14 @@ pub async fn delete_user(
         .await?
         > 0
     {
-        delete_subtree(&state, &root, &id).await?;
+        delete_subtree(state, &root, id).await?;
     }
     // Sessions, shares, links and invites go via ON DELETE CASCADE.
     sqlx::query("DELETE FROM users WHERE id = ?")
-        .bind(&id)
+        .bind(id)
         .execute(&state.db)
         .await?;
-    tracing::info!(user = %id, by = %user.username, "user deleted");
-    Ok(StatusCode::NO_CONTENT)
+    Ok(())
 }
 
 pub async fn get_settings(
@@ -266,11 +273,16 @@ pub async fn delete_invite(
 
 pub async fn stats(State(state): State<AppState>, user: AuthUser) -> Result<Json<ServerStats>> {
     require_admin(&user)?;
+    Ok(Json(server_stats(&state).await?))
+}
+
+/// Counts for the admin view and `/api/metrics`. Nothing about content.
+pub(crate) async fn server_stats(state: &AppState) -> Result<ServerStats> {
     let count = |sql: &'static str| {
         let db = state.db.clone();
         async move { sqlx::query_scalar::<_, i64>(sql).fetch_one(&db).await }
     };
-    Ok(Json(ServerStats {
+    Ok(ServerStats {
         users: count("SELECT COUNT(*) FROM users").await?,
         disabled_users: count("SELECT COUNT(*) FROM users WHERE disabled_at IS NOT NULL").await?,
         active_sessions: sqlx::query_scalar("SELECT COUNT(*) FROM sessions WHERE expires_at > ?")
@@ -287,5 +299,5 @@ pub async fn stats(State(state): State<AppState>, user: AuthUser) -> Result<Json
         versions: count("SELECT COUNT(*) FROM file_versions").await?,
         shares: count("SELECT COUNT(*) FROM shares").await?,
         public_links: count("SELECT COUNT(*) FROM public_links").await?,
-    }))
+    })
 }

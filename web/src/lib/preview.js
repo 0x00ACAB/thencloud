@@ -40,7 +40,8 @@ export function extension(name) {
 /**
  * How to preview a file: { kind, type } where kind is image, video, audio,
  * pdf, markdown or text and type is the Blob type to use, or null if there
- * is no preview for it.
+ * is no preview for it. CSV and TSV are text with `table` set, so they can
+ * be shown as a table and still edited as text.
  */
 export function previewKind(meta) {
   const ext = extension(meta.name);
@@ -50,6 +51,7 @@ export function previewKind(meta) {
   if (AUDIO[ext]) return { kind: 'audio', type: AUDIO[ext] };
   if (ext === 'pdf' || mime === 'application/pdf') return { kind: 'pdf', type: 'application/pdf' };
   if (MARKDOWN.has(ext) || mime === 'text/markdown') return { kind: 'markdown', type: 'text/plain' };
+  if (ext === 'csv' || ext === 'tsv') return { kind: 'text', type: 'text/plain', table: true };
   if (
     TEXT.has(ext) ||
     TEXT_NAMES.has(meta.name.toLowerCase()) ||
