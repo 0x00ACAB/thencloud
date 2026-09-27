@@ -96,6 +96,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/nodes/{id}/children", get(nodes::children))
         .route("/nodes/{id}/path", get(nodes::path))
+        .route("/nodes/{id}/name-tags", post(nodes::tag_names))
         .route("/nodes/{id}/chunks/{idx}", get(nodes::chunk))
         .route(
             "/nodes/{id}/draft",

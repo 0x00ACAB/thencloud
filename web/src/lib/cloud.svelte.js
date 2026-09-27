@@ -370,7 +370,46 @@ export async function listFolder(id, key) {
   const rows = decryptChildren(key, nodes);
   for (const r of rows) keyCache.set(r.node.id, r.key);
   index.set(id, { at: Date.now(), rows });
+  backfillTags(id, key, rows);
   return sortEntries(rows);
+}
+
+// ---------------------------------------------------------------------------
+// Name tags: a keyed hash of each name under its folder's key, so the server
+// can refuse duplicate names in a folder without learning them.
+// ---------------------------------------------------------------------------
+
+const tagFor = (folderKey, name) => b64(tc.name_tag(folderKey, name));
+
+/** Lower-cased names already in a folder (straight from the server, no adoption). */
+async function namesIn(folderId, folderKey) {
+  try {
+    const nodes = await api('GET', `/api/nodes/${folderId}/children`);
+    return new Set(decryptChildren(folderKey, nodes).map((r) => r.meta.name.toLowerCase()));
+  } catch {
+    return new Set();
+  }
+}
+
+/** `name`, or "name (2)", "name (3)"... if that's taken. */
+export function freeName(name, taken) {
+  const dot = name.lastIndexOf('.');
+  const [base, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ''];
+  let n = name;
+  for (let i = 2; taken.has(n.toLowerCase()); i++) n = `${base} (${i})${ext}`;
+  return n;
+}
+
+// Items made before name tags get theirs the first time we list their
+// folder (and can write there; otherwise the server says no, which is fine).
+const tagged = new Set();
+function backfillTags(folderId, folderKey, rows) {
+  const missing = rows.filter((r) => !r.node.name_tagged);
+  if (!missing.length || tagged.has(folderId)) return;
+  tagged.add(folderId);
+  api('POST', `/api/nodes/${folderId}/name-tags`, {
+    body: { tags: missing.map((r) => ({ id: r.node.id, name_tag: tagFor(folderKey, r.meta.name) })) },
+  }).catch(() => {});
 }
 
 // Search across folders: names are only readable here, so the index is
@@ -430,7 +469,18 @@ export function adoptDrops() {
         try {
           const folderKey = await keyOf(d.node.parent_id);
           const key = tc.open_drop_key(sk, unb64(d.sealed_key), d.node.id, d.node.parent_id);
-          await api('POST', `/api/drops/${d.node.id}/adopt`, { body: { enc_key: b64(tc.wrap_node_key(folderKey, key, d.node.id)) } });
+          const enc_key = b64(tc.wrap_node_key(folderKey, key, d.node.id));
+          const meta = decryptMeta(key, d.node);
+          try {
+            await api('POST', `/api/drops/${d.node.id}/adopt`, { body: { enc_key, name_tag: tagFor(folderKey, meta.name) } });
+          } catch (e) {
+            if (e?.code !== 'name_taken') throw e;
+            // Someone dropped a file with a name that's already here: keep both.
+            const name = freeName(meta.name, await namesIn(d.node.parent_id, folderKey));
+            await api('POST', `/api/drops/${d.node.id}/adopt`, {
+              body: { enc_key, enc_metadata: encryptMeta(key, d.node.id, { ...meta, name }), name_tag: tagFor(folderKey, name) },
+            });
+          }
           keyCache.set(d.node.id, key);
           n++;
         } catch {
@@ -456,6 +506,7 @@ export async function createFolder(parentId, parentKey, name) {
       parent_id: parentId,
       enc_key: b64(tc.wrap_node_key(parentKey, key, id)),
       enc_metadata: encryptMeta(key, id, { name, size: 0, mtime: Date.now() }),
+      name_tag: tagFor(parentKey, name),
     },
   });
   keyCache.set(id, key);
@@ -464,8 +515,9 @@ export async function createFolder(parentId, parentKey, name) {
 
 export async function rename(entry, name) {
   const { node, key, meta } = entry;
+  const parentKey = await keyOf(node.parent_id);
   await api('PATCH', `/api/nodes/${node.id}`, {
-    body: { enc_metadata: encryptMeta(key, node.id, { ...meta, name }), if_revision: node.revision },
+    body: { enc_metadata: encryptMeta(key, node.id, { ...meta, name }), if_revision: node.revision, name_tag: tagFor(parentKey, name) },
   });
 }
 
@@ -477,6 +529,7 @@ export async function move(entry, targetId, targetKey) {
       parent_id: targetId,
       enc_key: b64(tc.wrap_node_key(targetKey, key, node.id)),
       if_revision: node.revision,
+      name_tag: tagFor(targetKey, entry.meta.name),
     },
   });
 }
@@ -504,7 +557,7 @@ export async function trashItems() {
         return { node, key, meta: decryptMeta(key, node) };
       });
       const entry = chain[chain.length - 1];
-      return { ...it, entry, location: chain.slice(0, -1).map((c) => c.meta.name) };
+      return { ...it, entry, chain, location: chain.slice(0, -1).map((c) => c.meta.name) };
     } catch (e) {
       return { ...it, error: String(e?.message || e) };
     }
@@ -518,17 +571,32 @@ export async function trashItems() {
  */
 export async function restoreFromTrash(item) {
   const id = item.node.id;
+  const { key, meta } = item.entry;
+  // If the name has been taken meanwhile, come back as "name (2)".
+  const renamed = async (folderId, folderKey) => {
+    const name = freeName(meta.name, await namesIn(folderId, folderKey));
+    return { enc_metadata: encryptMeta(key, id, { ...meta, name }), name_tag: tagFor(folderKey, name) };
+  };
   try {
     await api('POST', `/api/trash/${id}/restore`, { body: {} });
     return null;
   } catch (e) {
+    if (e.code === 'name_taken') {
+      const parentKey = item.chain[item.chain.length - 2].key;
+      await api('POST', `/api/trash/${id}/restore`, { body: await renamed(item.node.parent_id, parentKey) });
+      return null;
+    }
     if (e.code !== 'parent_unavailable') throw e;
   }
   const rootId = session.me.keys.root_node_id;
   const rootKey = await keyOf(rootId);
-  await api('POST', `/api/trash/${id}/restore`, {
-    body: { parent_id: rootId, enc_key: b64(tc.wrap_node_key(rootKey, item.entry.key, id)) },
-  });
+  const move = { parent_id: rootId, enc_key: b64(tc.wrap_node_key(rootKey, key, id)) };
+  try {
+    await api('POST', `/api/trash/${id}/restore`, { body: { ...move, name_tag: tagFor(rootKey, meta.name) } });
+  } catch (e) {
+    if (e.code !== 'name_taken') throw e;
+    await api('POST', `/api/trash/${id}/restore`, { body: { ...move, ...(await renamed(rootId, rootKey)) } });
+  }
   return 'My files';
 }
 
@@ -628,18 +696,29 @@ export async function upload(file, { parentId, parentKey, existing }, onProgress
     mtime: file.lastModified || Date.now(),
   };
 
-  const up = await api('POST', '/api/uploads', {
-    body: {
-      node_id: nodeId,
-      parent_id: existing ? undefined : parentId,
-      enc_key: existing ? undefined : b64(tc.wrap_node_key(parentKey, nodeKey, nodeId)),
-      enc_metadata: encryptMeta(nodeKey, nodeId, meta),
-      version_id: versionId,
-      enc_content_key: b64(tc.wrap_content_key(nodeKey, contentKey, nodeId, versionId)),
-      chunk_count: chunkCount,
-      if_revision: existing ? existing.node.revision : undefined,
-    },
-  });
+  const start = () =>
+    api('POST', '/api/uploads', {
+      body: {
+        node_id: nodeId,
+        parent_id: existing ? undefined : parentId,
+        enc_key: existing ? undefined : b64(tc.wrap_node_key(parentKey, nodeKey, nodeId)),
+        enc_metadata: encryptMeta(nodeKey, nodeId, meta),
+        version_id: versionId,
+        enc_content_key: b64(tc.wrap_content_key(nodeKey, contentKey, nodeId, versionId)),
+        chunk_count: chunkCount,
+        if_revision: existing ? existing.node.revision : undefined,
+        name_tag: existing ? undefined : tagFor(parentKey, meta.name),
+      },
+    });
+  let up;
+  try {
+    up = await start();
+  } catch (e) {
+    // A new file with a name that's already here: keep both.
+    if (existing || e?.code !== 'name_taken') throw e;
+    meta.name = freeName(meta.name, await namesIn(parentId, parentKey));
+    up = await start();
+  }
   let node;
   try {
     for (let i = 0; i < chunkCount; i++) {

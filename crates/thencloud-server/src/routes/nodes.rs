@@ -7,7 +7,7 @@ use thencloud_crypto::api::*;
 use crate::access::{self, Access};
 use crate::auth::AuthUser;
 use crate::db::{NodeRow, get_children, get_node};
-use crate::error::{AppError, Result, is_unique_violation};
+use crate::error::{AppError, Result, is_unique_violation, name_conflict};
 use crate::util::*;
 use crate::{AppState, subtree_cte};
 
@@ -89,6 +89,7 @@ pub async fn create_folder(
     check_id(&req.parent_id, "parent_id")?;
     check_len(&req.enc_key, WRAPPED_KEY_LEN, "enc_key")?;
     check_metadata(&req.enc_metadata)?;
+    check_name_tag(&req.name_tag)?;
     access::require(&state.db, &user.id, &req.parent_id, Access::Write).await?;
     let parent = get_node(&state.db, &req.parent_id)
         .await?
@@ -98,8 +99,8 @@ pub async fn create_folder(
     }
     let t = now();
     let res = sqlx::query(
-        "INSERT INTO nodes (id, owner_id, created_by, parent_id, kind, enc_key, enc_metadata, created_at, updated_at) \
-         VALUES (?, ?, ?, ?, 'folder', ?, ?, ?, ?)",
+        "INSERT INTO nodes (id, owner_id, created_by, parent_id, kind, enc_key, enc_metadata, created_at, updated_at, \
+         name_tag) VALUES (?, ?, ?, ?, 'folder', ?, ?, ?, ?, ?)",
     )
     .bind(&req.id)
     .bind(&parent.owner_id)
@@ -109,11 +110,15 @@ pub async fn create_folder(
     .bind(&req.enc_metadata.0)
     .bind(t)
     .bind(t)
+    .bind(req.name_tag.as_ref().map(|t| t.0.clone()))
     .execute(&state.db)
     .await;
     match res {
         Err(e) if is_unique_violation(&e) => {
-            return Err(AppError::Conflict("node id already exists".into()));
+            return Err(match name_conflict(e) {
+                AppError::NameTaken => AppError::NameTaken,
+                _ => AppError::Conflict("node id already exists".into()),
+            });
         }
         r => r?,
     };
@@ -150,6 +155,7 @@ pub async fn update(
     if let Some(m) = &req.enc_metadata {
         check_metadata(m)?;
     }
+    check_name_tag(&req.name_tag)?;
     let moving_to = req.parent_id.as_deref().filter(|p| *p != parent);
     let new_key = match (moving_to, &req.enc_key) {
         (Some(target), Some(key)) => {
@@ -183,18 +189,22 @@ pub async fn update(
     }
 
     let expected = req.if_revision.unwrap_or(node.revision);
+    // A rename or move makes the old name tag wrong: take the new one, or none.
     let res = sqlx::query(
         "UPDATE nodes SET enc_metadata = COALESCE(?, enc_metadata), parent_id = COALESCE(?, parent_id), \
-         enc_key = COALESCE(?, enc_key), revision = revision + 1, updated_at = ? WHERE id = ? AND revision = ?",
+         enc_key = COALESCE(?, enc_key), name_tag = ?, revision = revision + 1, updated_at = ? \
+         WHERE id = ? AND revision = ?",
     )
     .bind(req.enc_metadata.as_ref().map(|m| m.0.clone()))
     .bind(moving_to)
     .bind(new_key)
+    .bind(req.name_tag.as_ref().map(|t| t.0.clone()))
     .bind(now())
     .bind(&id)
     .bind(expected)
     .execute(&state.db)
-    .await?;
+    .await
+    .map_err(name_conflict)?;
     if res.rows_affected() == 0 {
         return Err(AppError::Conflict(
             "the node was modified by someone else; reload and retry".into(),
@@ -206,6 +216,33 @@ pub async fn update(
             .ok_or(AppError::NotFound)?
             .into_api(),
     ))
+}
+
+/// Tag children made before name tags existed. Best effort: a tag that
+/// clashes with another child's is skipped.
+pub async fn tag_names(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<String>,
+    Json(req): Json<NameTags>,
+) -> Result<StatusCode> {
+    access::require(&state.db, &user.id, &id, Access::Write).await?;
+    for t in req.tags.iter().take(10_000) {
+        check_len(&t.name_tag, NAME_TAG_LEN, "name_tag")?;
+        let r = sqlx::query(
+            "UPDATE nodes SET name_tag = ? WHERE id = ? AND parent_id = ? AND name_tag IS NULL",
+        )
+        .bind(&t.name_tag.0)
+        .bind(&t.id)
+        .bind(&id)
+        .execute(&state.db)
+        .await;
+        match r.map_err(name_conflict) {
+            Err(AppError::NameTaken) | Ok(_) => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Move a node (and, implicitly, everything below it) to the owner's trash.

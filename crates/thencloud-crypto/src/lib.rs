@@ -571,6 +571,18 @@ pub fn unwrap_node_key(parent_key: &Key, wrapped: &[u8], node_id: &str) -> Resul
     open_key(parent_key, wrapped, &aad("node-key", &[node_id]))
 }
 
+/// A tag for a name in a folder: the same for names that differ only in
+/// case, different in every folder, and meaningless without the folder
+/// key. The server stores it with the node so it can refuse duplicate
+/// names without learning them.
+pub fn name_tag(folder_key: &Key, name: &str) -> Vec<u8> {
+    let hk = Hkdf::<Sha256>::new(Some(b"thencloud/v1/name-index"), folder_key.as_bytes());
+    let mut tag = vec![0u8; 32];
+    hk.expand(name.to_lowercase().as_bytes(), &mut tag)
+        .expect("valid length");
+    tag
+}
+
 /// Everything about a node the server must not learn.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Metadata {
@@ -723,6 +735,14 @@ mod tests {
     use super::*;
 
     #[test]
+    fn name_tags() {
+        let (a, b) = (Key::generate(), Key::generate());
+        assert_eq!(name_tag(&a, "Report.PDF"), name_tag(&a, "report.pdf"));
+        assert_ne!(name_tag(&a, "report.pdf"), name_tag(&a, "report2.pdf"));
+        assert_ne!(name_tag(&a, "report.pdf"), name_tag(&b, "report.pdf"));
+    }
+
+    #[test]
     fn padding() {
         assert_eq!(padded_size(0), 256);
         assert_eq!(padded_size(1000), 1024);
@@ -733,8 +753,28 @@ mod tests {
         }
         let k = Key::generate();
         let id = new_id();
-        let short = encrypt_metadata(&k, &id, &Metadata { name: "a".into(), mime: None, size: 1, mtime: 0 }).unwrap();
-        let long = encrypt_metadata(&k, &id, &Metadata { name: "a".repeat(60), mime: None, size: 1, mtime: 0 }).unwrap();
+        let short = encrypt_metadata(
+            &k,
+            &id,
+            &Metadata {
+                name: "a".into(),
+                mime: None,
+                size: 1,
+                mtime: 0,
+            },
+        )
+        .unwrap();
+        let long = encrypt_metadata(
+            &k,
+            &id,
+            &Metadata {
+                name: "a".repeat(60),
+                mime: None,
+                size: 1,
+                mtime: 0,
+            },
+        )
+        .unwrap();
         assert_eq!(short.len(), long.len());
         assert_eq!(decrypt_metadata(&k, &id, &long).unwrap().name.len(), 60);
     }
@@ -863,7 +903,10 @@ mod tests {
         let v = new_id();
         let c = encrypt_content(&ck, &v, &[]);
         assert_eq!(c.len(), 1);
-        assert_eq!(decrypt_chunk(&ck, &v, 0, true, &c[0]).unwrap(), vec![0; 256]);
+        assert_eq!(
+            decrypt_chunk(&ck, &v, 0, true, &c[0]).unwrap(),
+            vec![0; 256]
+        );
     }
 
     #[test]

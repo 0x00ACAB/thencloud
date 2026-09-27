@@ -3,6 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
+use thencloud_crypto::api::B64;
 use thencloud_crypto::{KEY_LEN, NONCE_LEN, TAG_LEN};
 
 use crate::error::{AppError, Result};
@@ -50,6 +51,15 @@ pub fn check_id(id: &str, what: &str) -> Result<()> {
     match uuid::Uuid::parse_str(id) {
         Ok(u) if u.hyphenated().to_string() == id => Ok(()),
         _ => Err(AppError::bad(format!("{what} must be a lowercase UUID"))),
+    }
+}
+
+pub const NAME_TAG_LEN: usize = 32;
+
+pub fn check_name_tag(tag: &Option<B64>) -> Result<()> {
+    match tag {
+        Some(t) => check_len(t, NAME_TAG_LEN, "name_tag"),
+        None => Ok(()),
     }
 }
 

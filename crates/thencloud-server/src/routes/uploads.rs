@@ -36,6 +36,7 @@ struct UploadRow {
     enc_content_key: Vec<u8>,
     chunk_count: i64,
     if_revision: Option<i64>,
+    name_tag: Option<Vec<u8>>,
 }
 
 /// Who is uploading: a signed-in user, or a visitor to an upload-only link.
@@ -58,7 +59,7 @@ async fn load_upload(state: &AppState, id: &str, who: &Uploader<'_>) -> Result<U
     };
     sqlx::query_as(&format!(
         "SELECT id, owner_id, node_id, parent_id, enc_key, enc_metadata, version_id, enc_content_key, \
-         chunk_count, if_revision FROM uploads WHERE id = ? AND {filter} AND expires_at > ?"
+         chunk_count, if_revision, name_tag FROM uploads WHERE id = ? AND {filter} AND expires_at > ?"
     ))
     .bind(id)
     .bind(by)
@@ -146,7 +147,26 @@ pub async fn start(
         (None, None) => {}
     }
 
+    check_name_tag(&req.name_tag)?;
     let owner_id = check_target(state, &who, &req.node_id, req.parent_id.as_deref()).await?;
+    // Only new files are named here; visitors to a file drop can't make tags.
+    let name_tag = match (&who, &req.parent_id) {
+        (Uploader::User(_), Some(_)) => req.name_tag.as_ref().map(|t| t.0.clone()),
+        _ => None,
+    };
+    if let (Some(tag), Some(parent)) = (&name_tag, &req.parent_id) {
+        let taken: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM nodes WHERE parent_id = ? AND name_tag = ? \
+             AND trashed_at IS NULL AND dropped = 0)",
+        )
+        .bind(parent)
+        .bind(tag)
+        .fetch_one(&state.db)
+        .await?;
+        if taken {
+            return Err(AppError::NameTaken);
+        }
+    }
     let (user_id, link_id) = match who {
         Uploader::User(u) => (u.id.clone(), None),
         Uploader::Link(l) => (l.owner_id.clone(), Some(l.id.clone())),
@@ -174,8 +194,8 @@ pub async fn start(
     let expires_at = t + state.config.upload_ttl_hours * 3600;
     let res = sqlx::query(
         "INSERT INTO uploads (id, user_id, owner_id, node_id, parent_id, enc_key, enc_metadata, version_id, \
-         enc_content_key, chunk_count, if_revision, created_at, expires_at, link_id) \
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+         enc_content_key, chunk_count, if_revision, created_at, expires_at, link_id, name_tag) \
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
     )
     .bind(&id)
     .bind(&user_id)
@@ -191,6 +211,7 @@ pub async fn start(
     .bind(t)
     .bind(expires_at)
     .bind(link_id)
+    .bind(name_tag)
     .execute(&state.db)
     .await;
     match res {
@@ -343,7 +364,8 @@ pub async fn publish(state: &AppState, who: Uploader<'_>, id: &str) -> Result<Js
     if let Some(parent) = &up.parent_id {
         let res = sqlx::query(
             "INSERT INTO nodes (id, owner_id, created_by, parent_id, kind, enc_key, enc_metadata, \
-             current_version_id, created_at, updated_at, dropped) VALUES (?, ?, ?, ?, 'file', ?, ?, ?, ?, ?, ?)",
+             current_version_id, created_at, updated_at, dropped, name_tag) \
+             VALUES (?, ?, ?, ?, 'file', ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&up.node_id)
         .bind(&up.owner_id)
@@ -355,11 +377,15 @@ pub async fn publish(state: &AppState, who: Uploader<'_>, id: &str) -> Result<Js
         .bind(t)
         .bind(t)
         .bind(dropped)
+        .bind(&up.name_tag)
         .execute(&mut *tx)
         .await;
         match res {
             Err(e) if is_unique_violation(&e) => {
-                return Err(AppError::Conflict("node id already exists".into()));
+                return Err(match crate::error::name_conflict(e) {
+                    AppError::NameTaken => AppError::NameTaken,
+                    _ => AppError::Conflict("node id already exists".into()),
+                });
             }
             Err(e) if is_fk_violation(&e) => {
                 return Err(AppError::Conflict(

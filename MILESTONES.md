@@ -105,7 +105,7 @@ Smaller things:
 - [x] **Upload-only "file drop" links**: the link carries the owner's public key after `#`; visitors encrypt each file and seal its key to the owner (bound to the file and folder ids), and see nothing in the folder. Dropped files stay hidden until the owner's client wraps their keys under the folder key
 - [x] **Streaming downloads** through a service worker, so large files aren't buffered in memory. The page decrypts; the worker only relays pieces and never sees a key
 - [ ] **Native CLI and desktop sync client** reusing `thencloud-crypto`
-- [ ] **Encrypted name index**: HMAC of name under the folder key, so the server can reject duplicate names without learning them
+- [x] **Encrypted name index**: each node carries a keyed hash of its (lower-cased) name under its folder's key, and the server refuses a second one in the same folder (409 `name_taken`) without learning the names. Uploads keep both as "name (2)", restores and dropped files pick a free name, and older items are tagged the first time their folder is listed
 - [x] **Metadata padding**: file contents are padded with zeros to a Padmé bucket (at most about 12% more) before encryption, and encrypted metadata to 128-byte steps, so the server sees only rough sizes. The real size lives in the encrypted metadata
 - [ ] **Calendar and contacts**, end-to-end encrypted
 - [ ] **Linux mount**: Mount the disk (or a subdirectory) as a linux drive

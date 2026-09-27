@@ -58,14 +58,22 @@ pub async fn adopt(
     Json(req): Json<AdoptDropRequest>,
 ) -> Result<Json<Node>> {
     check_len(&req.enc_key, WRAPPED_KEY_LEN, "enc_key")?;
+    if let Some(m) = &req.enc_metadata {
+        check_metadata(m)?;
+    }
+    check_name_tag(&req.name_tag)?;
     dropped_node(&state, &user, &id).await?;
     sqlx::query(
-        "UPDATE nodes SET enc_key = ?, dropped = 0, revision = revision + 1 WHERE id = ? AND dropped = 1",
+        "UPDATE nodes SET enc_key = ?, enc_metadata = COALESCE(?, enc_metadata), name_tag = ?, dropped = 0, \
+         revision = revision + 1 WHERE id = ? AND dropped = 1",
     )
     .bind(&req.enc_key.0)
+    .bind(req.enc_metadata.as_ref().map(|m| m.0.clone()))
+    .bind(req.name_tag.as_ref().map(|t| t.0.clone()))
     .bind(&id)
     .execute(&state.db)
-    .await?;
+    .await
+    .map_err(crate::error::name_conflict)?;
     Ok(Json(
         crate::db::get_node(&state.db, &id)
             .await?
