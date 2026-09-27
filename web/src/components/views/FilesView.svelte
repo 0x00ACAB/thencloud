@@ -1,5 +1,5 @@
 <script>
-  import { session, resolvePath, listFolder, createFolder, rename, trash, untrash, download, downloadZip, fetchEntry, upload, saveText, refreshMe, toolsInfo, loadDraft, storeDraft, dropDraft } from '../../lib/cloud.svelte.js';
+  import { session, resolvePath, listFolder, createFolder, rename, trash, untrash, download, downloadZip, fetchEntry, upload, saveText, refreshMe, toolsInfo, loadDraft, storeDraft, dropDraft, searchTree } from '../../lib/cloud.svelte.js';
   import { toast, toastError, trackTransfer, errorMessage, sort, sortBy } from '../../lib/ui.svelte.js';
   import { formatSize, formatWhen, fullDate, plural, sortEntries, nameError } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
@@ -17,10 +17,10 @@
   import ConvertDialog from '../dialogs/ConvertDialog.svelte';
   import BatchConvertDialog from '../dialogs/BatchConvertDialog.svelte';
   import VideoDownloadDialog from '../dialogs/VideoDownloadDialog.svelte';
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { sourceKind } from '../../lib/convert.js';
 
-  let { folderId, go, inShare = $bindable(false) } = $props();
+  let { folderId, openId = null, go, inShare = $bindable(false) } = $props();
 
   let path = $state([]); // [{ node, key, meta }] from the tree root down
   let share = $state(null); // set when browsing a folder shared with us
@@ -53,6 +53,9 @@
       share = p.share;
       inShare = !!p.share;
       rows = list;
+      // Opened from a search result: show that file.
+      const wanted = openId && rows.find((r) => r.node.id === openId && r.node.kind === 'file');
+      if (wanted && !dialog) untrack(() => preview(wanted));
     } catch (e) {
       loadError = errorMessage(e);
     } finally {
@@ -79,6 +82,47 @@
   });
 
   const open = (id) => go({ name: 'files', folderId: id });
+
+  // Search everywhere below the top of this tree (My files, or the shared
+  // folder we're in), not just this folder.
+  let scope = $state('folder'); // folder | all
+  let found = $state([]);
+  let searching = $state(false);
+  let searchRun = null;
+  $effect(() => {
+    const q = query.trim();
+    const top = path[0];
+    searchRun?.abort();
+    found = [];
+    if (scope !== 'all' || !q || !top) return;
+    const run = (searchRun = new AbortController());
+    const timer = setTimeout(async () => {
+      searching = true;
+      const hits = [];
+      await searchTree(top, q, {
+        signal: run.signal,
+        onResult: (r) => {
+          hits.push(r);
+          if (hits.length <= 500) found = sortEntries([...hits], sort);
+        },
+      });
+      if (!run.signal.aborted) searching = false;
+    }, 200);
+    return () => {
+      clearTimeout(timer);
+      run.abort();
+      searching = false;
+    };
+  });
+
+  function openFound(r) {
+    if (r.node.kind === 'folder') return open(r.node.id);
+    if (r.parentId === folderId) {
+      const hit = rows.find((x) => x.node.id === r.node.id);
+      return hit && preview(hit);
+    }
+    go({ name: 'files', folderId: r.parentId, open: r.node.id });
+  }
 
   // ------------------------------------------------------------------ uploads
 
@@ -578,6 +622,18 @@
           spellcheck="false" />
         {#if !query}<kbd class="kbd pointer-events-none absolute top-1/2 right-2 -translate-y-1/2">/</kbd>{/if}
       </label>
+      {#if query.trim() && path.length}
+        <div class="flex h-8 rounded-md border border-line p-0.5" role="radiogroup" aria-label="Search in">
+          {#each [['folder', 'This folder'], ['all', share ? 'Whole share' : 'Everywhere']] as [value, label] (value)}
+            <button
+              type="button"
+              role="radio"
+              aria-checked={scope === value}
+              class="cursor-pointer rounded px-2 text-xs font-medium transition-colors {scope === value ? 'bg-muted text-fg' : 'text-fg-muted hover:text-fg'}"
+              onclick={() => (scope = value)}>{label}</button>
+          {/each}
+        </div>
+      {/if}
     {/if}
     {#if canWrite}
       <button type="button" class="btn btn-secondary" disabled={!here} onclick={() => (dialog = { type: 'note' })}>
@@ -620,6 +676,42 @@
         <button type="button" class="btn btn-ghost" onclick={() => open(session.me.keys.root_node_id)}>Back to my files</button>
       </div>
     </div>
+  {:else if scope === 'all' && query.trim()}
+    <table class="table animate-enter">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th class="hidden md:table-cell">Location</th>
+          <th class="hidden w-28 text-right sm:table-cell">Size</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#if !found.length}
+          <tr>
+            <td colspan="3" class="h-24 text-center text-[13px] text-fg-muted">
+              {#if searching}<Icon name="loader-circle" class="spinner mr-1.5 inline size-4 align-[-3px]" />Looking through your folders{:else}Nothing matches "{query.trim()}".{/if}
+            </td>
+          </tr>
+        {/if}
+        {#each found as r (r.node.id)}
+          {@const folder = r.node.kind === 'folder'}
+          <tr class="group">
+            <td class="max-w-0">
+              <button type="button" class="flex max-w-full cursor-pointer items-center gap-3 text-left" onclick={() => openFound(r)}>
+                {#if folder}<Icon name="folder" class="size-4 shrink-0 text-accent-text" />{:else}<FileIcon meta={r.meta} />{/if}
+                <span class="truncate font-medium group-hover:underline group-hover:decoration-line-strong group-hover:underline-offset-4">{r.meta.name}</span>
+              </button>
+            </td>
+            <td class="hidden max-w-0 md:table-cell">
+              <button type="button" class="block max-w-full cursor-pointer truncate text-fg-muted hover:text-fg" title={r.location.join(' / ')} onclick={() => open(r.parentId)}>
+                {r.location.join(' / ')}
+              </button>
+            </td>
+            <td class="hidden text-right text-fg-muted tabular-nums sm:table-cell">{folder ? '' : formatSize(r.meta.size)}</td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
   {:else if !rows.length}
     <div class="grid place-items-center gap-1 px-6 py-20 text-center animate-enter">
       {#if path.length === 1 && !share}
@@ -733,7 +825,7 @@
 {#if rows.length}
   <div class="mt-3 flex items-center justify-between gap-4 px-1 text-xs text-fg-faint">
     <p>
-      {#if query.trim()}{visible.length} of {rows.length} shown ·{/if}
+      {#if query.trim() && scope === 'all'}{found.length} found{searching ? ' so far' : ''} ·{:else if query.trim()}{visible.length} of {rows.length} shown ·{/if}
       {plural(rows.filter((r) => r.node.kind === 'folder').length, 'folder')}, {plural(rows.filter((r) => r.node.kind === 'file').length, 'file')}
     </p>
     <button type="button" class="hidden cursor-pointer items-center gap-1.5 hover:text-fg-muted sm:flex" onclick={() => (dialog = { type: 'shortcuts' })}>

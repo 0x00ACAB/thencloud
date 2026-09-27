@@ -132,7 +132,7 @@
       {#key view.name}
       <div class="mx-auto max-w-5xl animate-enter">
         {#if view.name === 'files'}
-          <FilesView folderId={view.folderId} {go} bind:inShare />
+          <FilesView folderId={view.folderId} openId={view.open} {go} bind:inShare />
         {:else if view.name === 'shared-with-me'}
           <SharedWithMe {go} />
         {:else if view.name === 'shared-by-me'}
