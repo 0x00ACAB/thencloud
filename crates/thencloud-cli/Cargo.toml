@@ -13,7 +13,9 @@ path = "src/main.rs"
 thencloud-crypto.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-ureq = { version = "3", features = ["json"] }
+ureq = { version = "3", features = ["json", "brotli"] }
+sha2.workspace = true
+minisign-verify = "0.3"
 clap = { version = "4", features = ["derive", "env"] }
 tempfile = "3"
 
@@ -22,6 +24,10 @@ fuser = "0.18"
 libc = "0.2"
 
 [dev-dependencies]
+flate2 = "1"
+ring = "0.17"
+blake2 = "0.11"
+base64.workspace = true
 thencloud-server = { path = "../thencloud-server" }
 tokio = { version = "1", features = ["rt-multi-thread", "net"] }
 axum = "0.8"

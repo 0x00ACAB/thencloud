@@ -10,6 +10,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 #[cfg(target_os = "linux")]
 pub mod mount;
+pub mod verify;
 
 use serde::Serialize;
 use serde::de::DeserializeOwned;

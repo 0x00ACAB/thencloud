@@ -12,7 +12,7 @@ use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 #[cfg(target_os = "linux")]
 use thencloud_cli::mount::{self, MountOptions};
-use thencloud_cli::{Client, Error, Result, parse_app_password, safe_name};
+use thencloud_cli::{Client, Error, Result, parse_app_password, safe_name, verify};
 
 #[derive(Parser)]
 #[command(
@@ -53,6 +53,23 @@ enum Command {
     Pull { remote: String, local: PathBuf },
     /// Upload new and changed files from a local directory into a folder.
     Push { local: PathBuf, remote: String },
+    /// Check that a server sends exactly the web client of a signed release.
+    VerifyWeb {
+        /// The server's address, e.g. https://cloud.example.com.
+        server: String,
+        /// The release manifest (thencloud-web-<version>.json).
+        #[arg(long)]
+        manifest: PathBuf,
+        /// Its minisign signature [default: the manifest's path + .minisig].
+        #[arg(long)]
+        signature: Option<PathBuf>,
+        /// The minisign public key the release is signed with.
+        #[arg(long, env = "THENCLOUD_RELEASE_KEY")]
+        key: Option<String>,
+        /// Skip the signature, to compare with a manifest you built yourself.
+        #[arg(long, conflicts_with_all = ["signature", "key"])]
+        unsigned: bool,
+    },
     /// Mount a folder ("" is My files) as a drive with FUSE. Runs until
     /// unmounted with `fusermount3 -u <mountpoint>` or Ctrl+C.
     #[cfg(target_os = "linux")]
@@ -144,6 +161,22 @@ fn run(cmd: Command) -> Result<()> {
             server: server.clone(),
             app_password: text.trim().into(),
         });
+    }
+    if let Command::VerifyWeb {
+        server,
+        manifest,
+        signature,
+        key,
+        unsigned,
+    } = &cmd
+    {
+        return verify_web(
+            server,
+            manifest,
+            signature.as_deref(),
+            key.as_deref(),
+            *unsigned,
+        );
     }
     if let Command::Logout = cmd {
         let _ = fs::remove_file(config_path()?);
@@ -260,12 +293,66 @@ fn run(cmd: Command) -> Result<()> {
             }
             #[cfg(target_os = "linux")]
             Command::Mount { .. } => unreachable!(),
-            Command::Login { .. } | Command::Logout => unreachable!(),
+            Command::Login { .. } | Command::Logout | Command::VerifyWeb { .. } => unreachable!(),
         }
         Ok(())
     })();
     let _ = client.logout();
     result
+}
+
+fn verify_web(
+    server: &str,
+    manifest: &Path,
+    signature: Option<&Path>,
+    key: Option<&str>,
+    unsigned: bool,
+) -> Result<()> {
+    let bytes = fs::read(manifest)?;
+    if !unsigned {
+        let sig_path = signature
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from(format!("{}.minisig", manifest.display())));
+        let sig = fs::read_to_string(&sig_path)
+            .map_err(|e| Error::Usage(format!("{}: {e}", sig_path.display())))?;
+        let keys: Vec<&str> = match key {
+            Some(k) => vec![k],
+            None => verify::RELEASE_KEYS.to_vec(),
+        };
+        if keys.is_empty() {
+            return Err(Error::Usage(
+                "no release key is built in yet; pass --key with the signer's minisign public key"
+                    .into(),
+            ));
+        }
+        let comment = keys
+            .iter()
+            .find_map(|k| verify::verify_minisign(&bytes, &sig, k).ok())
+            .ok_or_else(|| Error::Usage("the manifest's signature doesn't check out".into()))?;
+        println!("Signature good: {comment}");
+    }
+    let m = verify::Manifest::parse(&bytes)?;
+    println!(
+        "Checking {} files of thencloud web {} on {server}...",
+        m.files.len(),
+        m.version
+    );
+    let report = verify::verify_web(server, &m)?;
+    if report.problems.is_empty() {
+        println!(
+            "All {} responses match: this server sends exactly that release.",
+            report.checked
+        );
+        return Ok(());
+    }
+    for p in &report.problems {
+        println!("  {p}");
+    }
+    Err(Error::Usage(format!(
+        "{} of {} responses don't match the release",
+        report.problems.len(),
+        report.checked
+    )))
 }
 
 fn main() -> ExitCode {
