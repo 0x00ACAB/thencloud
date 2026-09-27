@@ -1,0 +1,43 @@
+name: Bug report
+description: Something doesn't work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Found a way for the server to learn a key, password, file name or contents? Please [report it privately](https://github.com/0x00ACAB/thencloud/security/advisories/new) instead.
+
+        Don't paste public links: the part after `#` is the key.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: And what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Upload a folder with ...
+        2. Share it with ...
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: v0.1.0 or 48b4f4e
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and OS
+      placeholder: Firefox 142 on Linux
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Browser console or server output, with anything private removed.
+      render: text
