@@ -41,6 +41,7 @@ Files, folder names and keys are encrypted and decrypted **in your browser**. Th
 - **Previews and editing:** images, video, audio, PDF, code with highlighting, and a Markdown editor, all decrypted in the browser.
 - **Converting:** images, video and audio to other formats in the browser with canvas encoders and ffmpeg.wasm.
 - **Accounts:** an optional recovery key, session and device list, and an admin view that counts things but can't read them.
+- **Command line and Linux drive:** a native client that signs in with an app password, syncs folders, and mounts your files as a drive (FUSE) for Dolphin, Nautilus or the shell. See [crates/thencloud-cli](crates/thencloud-cli/README.md).
 - **Self-hosted and small:** one Rust binary, SQLite and a folder of encrypted blobs. Nothing loads from a CDN.
 
 ## Quick start
@@ -86,6 +87,7 @@ Every flag can also be set as an environment variable.
 crates/thencloud-crypto   All cryptography + shared JSON wire types (native & WASM)
 crates/thencloud-wasm     wasm-bindgen bindings used by the web client
 crates/thencloud-server   axum + SQLite server, local blob store
+crates/thencloud-cli      command-line client and FUSE mount (`thencloud`)
 web/                      browser client: Svelte 5 + Vite + Tailwind CSS
 ```
 
@@ -145,7 +147,7 @@ As a result, a malicious server cannot swap files, move ciphertexts between node
 - File contents.
 
 **Known limitations**, most of them tracked in [MILESTONES.md](MILESTONES.md):
-- **The web client is served by the server.** A malicious or compromised server could serve modified JavaScript. This is inherent to every browser-based E2EE app. A native client (planned) avoids it.
+- **The web client is served by the server.** A malicious or compromised server could serve modified JavaScript. This is inherent to every browser-based E2EE app. The native client (`crates/thencloud-cli`) avoids it.
 - **Public keys are trust-on-first-use.** Compare fingerprints out of band the first time you share with someone, or a malicious server could substitute its own key. After that the key is pinned in your verified contacts (encrypted under your master key and bound to your account), and a different key for that person blocks sharing until you check again.
 - **Revoking a share** stops the server from serving the data, but it does not re-key. A former recipient who kept the key could decrypt ciphertext they get from elsewhere.
 - **File drop links** (upload-only) carry your public key instead of a folder key. Visitors seal each file's key to it, and your client wraps it under the folder key the next time you browse, but only for folders that have a file drop link. When a dropped file is taken in, it gets a fresh key, so the key the visitor chose can't read later versions. Files dropped through a link that has since gone are never taken in automatically; they wait for you to keep or delete them. Anyone with the link, the server included, can add files to that folder, but nobody but you can read them. A drop can't make the server delete your old versions to make room.
@@ -163,7 +165,7 @@ cd web && npm run dev           # hot-reloading client; proxies /api to a server
 cd web && npm run check         # svelte-check
 ```
 
-`crates/thencloud-server/tests/e2e.rs` drives a real server in-process with a native client built on `thencloud-crypto`. It covers register, upload, move, share, public link, revoke, version history and the trash. It then scans the SQLite database and blob store to check that no plaintext names, contents, passwords or keys were stored.
+`crates/thencloud-server/tests/e2e.rs` drives a real server in-process with a native client built on `thencloud-crypto`. It covers register, upload, move, share, public link, revoke, version history and the trash. It then scans the SQLite database and blob store to check that no plaintext names, contents, passwords or keys were stored. `crates/thencloud-cli/tests/cli.rs` does the same for the command-line client and the FUSE mount over real HTTP (the mount tests need `/dev/fuse` and `fusermount3`, and are skipped without them).
 
 CI runs `cargo fmt`, `cargo clippy`, the tests, `svelte-check` and a full web build on every pull request, and CodeQL scans the Rust, JavaScript and workflow code. Dependabot keeps Cargo, npm and Actions dependencies current. See [CONTRIBUTING.md](CONTRIBUTING.md) before sending a pull request.
 
