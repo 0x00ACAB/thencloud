@@ -53,7 +53,7 @@
   - Images (PNG, JPEG, WebP, AVIF, BMP) with the browser's own encoders, with a quality setting
   - Video and audio (MP4, WebM, AVI, MKV, MOV, MP3, M4A, Ogg, Opus, FLAC, WAV, GIF from video) with ffmpeg compiled to WASM: 32 MB (10 MB gzipped), self-hosted, loaded only on first use, single-threaded, with progress and Stop. Container-only changes (MOV/MKV/MP4) copy the streams instead of re-encoding
   - Only for signed-in users, not on public links
-  - [ ] For several selected files at once
+  - [x] For several selected files at once (Convert in the selection bar): one format for all, images optionally scaled to a longest side, converted one after another; files already in that format are skipped
   - [x] Crop (free or a fixed shape, dragged on the image) and resize for images; trim for video and audio. The same format can be kept, to just edit
 - [x] **Video downloader (yt-dlp)**, the one deliberate exception to "no plaintext on the server", so it's explicit and opt-in:
   - **Off by default**; an admin turns it on in the Admin view, and yt-dlp must be installed on the server. Admins only by default, optionally everyone
