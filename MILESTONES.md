@@ -78,9 +78,9 @@ Bigger pieces:
 - [ ] Optionally per-name folder icons
 - [x] **Multi-select** with bulk move, download and delete (checkboxes, shift-click ranges, `x`, select all, a floating action bar; one Undo for a bulk trash)
 - [x] **Folder uploads** (drag a whole folder in, or Upload > Folder) and **zip downloads** of folders, selections and public folder links, zipped in the browser
-- [ ] Streamed zips for very large folders (today a zip is built in memory, up to 4 GB)
 - [x] **Search and sort** within a folder (search is client-side over decrypted names; sort by name, size or date)
 - [x] **Keyboard shortcuts** (`/` search, `j`/`k` or arrows through rows, Backspace up a folder, `n` new folder, `u` upload, Delete to trash) plus a `?` cheat sheet
+- [ ] Streamed zips for very large folders (today a zip is built in memory, up to 4 GB)
 - [ ] Search across all folders (needs a client-side index of decrypted names, built as you browse or on demand)
 - [ ] Music player (ability to select a folder as the music root) with a spotify-eqsue UI (we'd possibly have no cover art)
 - [ ] **Profile pictures**: shown in the top bar, share dialogs and shared-with lists. Decide who can see them: encrypted to people you share with (server can't see) vs. plain on the server (simpler, but visible to it)
