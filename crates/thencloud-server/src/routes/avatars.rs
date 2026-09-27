@@ -89,7 +89,7 @@ pub async fn grant(
     Path(username): Path<String>,
     Json(req): Json<AvatarGrant>,
 ) -> Result<StatusCode> {
-    check_len(&req.sealed_key, SEALED_KEY_LEN, "sealed_key")?;
+    check_sealed(&req.sealed_key, "sealed_key")?;
     let other = user_id(&state, &username).await?;
     let related: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM shares WHERE (owner_id = ? AND recipient_id = ?) \

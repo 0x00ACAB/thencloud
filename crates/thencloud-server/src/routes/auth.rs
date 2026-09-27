@@ -32,6 +32,8 @@ pub(crate) struct UserRow {
     pub(crate) totp_secret: Option<Vec<u8>>,
     totp_created_at: Option<i64>,
     pub(crate) totp_last_step: Option<i64>,
+    pq_public_key: Option<Vec<u8>>,
+    enc_pq_private_key: Option<Vec<u8>>,
 }
 
 impl UserRow {
@@ -51,6 +53,8 @@ impl UserRow {
                 public_key: B64(self.public_key),
                 enc_private_key: B64(self.enc_private_key),
                 root_node_id: self.root_node_id,
+                pq_public_key: self.pq_public_key.map(B64),
+                enc_pq_private_key: self.enc_pq_private_key.map(B64),
             },
             max_versions: cfg.max_versions,
             trash_days: cfg.trash_days,
@@ -62,7 +66,7 @@ impl UserRow {
 
 const USER_SELECT: &str = "SELECT id, username, auth_hash, kdf_salt, kdf_params, enc_master_key, public_key, \
      enc_private_key, root_node_id, quota_bytes, used_bytes, is_admin, disabled_at, recovery_hash, \
-     enc_master_key_recovery, recovery_created_at, totp_secret, totp_created_at, totp_last_step FROM users";
+     enc_master_key_recovery, recovery_created_at, totp_secret, totp_created_at, totp_last_step, pq_public_key, enc_pq_private_key FROM users";
 
 async fn user_by_name(state: &AppState, username: &str) -> Result<Option<UserRow>> {
     let sql = format!("{USER_SELECT} WHERE username = ?");
@@ -138,6 +142,7 @@ pub async fn register(
     check_len(&req.enc_master_key, WRAPPED_KEY_LEN, "enc_master_key")?;
     check_len(&req.public_key, 32, "public_key")?;
     check_len(&req.enc_private_key, WRAPPED_KEY_LEN, "enc_private_key")?;
+    check_pq_key(&req.pq_public_key, &req.enc_pq_private_key)?;
     check_id(&req.root.id, "root.id")?;
     check_len(&req.root.enc_key, WRAPPED_KEY_LEN, "root.enc_key")?;
     check_metadata(&req.root.enc_metadata)?;
@@ -149,7 +154,8 @@ pub async fn register(
     let mut tx = state.db.begin().await?;
     let res = sqlx::query(
         "INSERT INTO users (id, username, auth_hash, kdf_salt, kdf_params, enc_master_key, public_key, \
-         enc_private_key, root_node_id, quota_bytes, is_admin, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+         enc_private_key, root_node_id, quota_bytes, is_admin, created_at, pq_public_key, \
+         enc_pq_private_key) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
     )
     .bind(&user_id)
     .bind(&username)
@@ -163,6 +169,8 @@ pub async fn register(
     .bind(state.config.default_quota)
     .bind(user_count == 0)
     .bind(t)
+    .bind(req.pq_public_key.as_ref().map(|k| &k.0))
+    .bind(req.enc_pq_private_key.as_ref().map(|k| &k.0))
     .execute(&mut *tx)
     .await;
     match res {
@@ -252,10 +260,10 @@ pub async fn login(
         return Ok(Json(LoginResponse::SecondFactor { second_factor }));
     }
     let token = create_session(&state, &user.id, req.device_name.as_deref(), None).await?;
-    Ok(Json(LoginResponse::Session(SessionResponse {
+    Ok(Json(LoginResponse::Session(Box::new(SessionResponse {
         token,
         me: user.into_me(&state.config)?,
-    })))
+    }))))
 }
 
 pub async fn logout(State(state): State<AppState>, user: AuthUser) -> Result<StatusCode> {
@@ -312,6 +320,35 @@ pub async fn change_password(
         .await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Add the post-quantum key to an account made before them. Once only: a
+/// key that's already set is never replaced.
+pub async fn set_pq_key(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(req): Json<SetPqKeyRequest>,
+) -> Result<Json<Me>> {
+    check_pq_key(
+        &Some(req.pq_public_key.clone()),
+        &Some(req.enc_pq_private_key.clone()),
+    )?;
+    let r = sqlx::query(
+        "UPDATE users SET pq_public_key = ?, enc_pq_private_key = ? WHERE id = ? AND pq_public_key IS NULL",
+    )
+    .bind(&req.pq_public_key.0)
+    .bind(&req.enc_pq_private_key.0)
+    .bind(&user.id)
+    .execute(&state.db)
+    .await?;
+    if r.rows_affected() == 0 {
+        return Err(AppError::Conflict(
+            "this account already has a post-quantum key".into(),
+        ));
+    }
+    Ok(Json(
+        user_by_id(&state, &user.id).await?.into_me(&state.config)?,
+    ))
 }
 
 /// Public: what the sign-in screen can offer.

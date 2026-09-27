@@ -141,6 +141,15 @@ struct Client {
     root: String,
 }
 
+/// What to seal to: both halves of their key when they have both.
+fn sealing_key(u: &UserPublicKey) -> Vec<u8> {
+    let mut k = u.public_key.0.clone();
+    if let Some(pq) = &u.pq_public_key {
+        k.extend_from_slice(pq);
+    }
+    k
+}
+
 fn meta(name: &str, size: u64) -> Metadata {
     Metadata {
         name: name.into(),
@@ -170,7 +179,8 @@ async fn try_register(
     let salt = c::random_bytes(c::SALT_LEN);
     let ak = c::derive_account_keys(password, &salt, FAST_KDF).unwrap();
     let mk = Key::generate();
-    let kp = KeyPair::generate();
+    let kp = KeyPair::generate().with_pq(c::PqKeyPair::generate());
+    let pq = kp.pq.as_ref().unwrap();
     let root_id = c::new_id();
     let root_key = Key::generate();
     let req = RegisterRequest {
@@ -181,6 +191,8 @@ async fn try_register(
         enc_master_key: B64(c::wrap_master_key(&ak.kek, &mk)),
         public_key: B64(kp.public.to_vec()),
         enc_private_key: B64(c::wrap_private_key(&mk, &kp.secret)),
+        pq_public_key: Some(B64(pq.public.clone())),
+        enc_pq_private_key: Some(B64(c::wrap_pq_private_key(&mk, pq))),
         root: NewRootFolder {
             id: root_id.clone(),
             enc_key: B64(c::wrap_node_key(&mk, &root_key, &root_id)),
@@ -229,7 +241,10 @@ async fn login(h: &Harness, username: &str, password: &str) -> Result<Client, Bo
     }
     let s: SessionResponse = r.json();
     let mk = c::unwrap_master_key(&ak.kek, &s.me.keys.enc_master_key).unwrap();
-    let kp = c::unwrap_private_key(&mk, &s.me.keys.enc_private_key).unwrap();
+    let mut kp = c::unwrap_private_key(&mk, &s.me.keys.enc_private_key).unwrap();
+    if let Some(w) = &s.me.keys.enc_pq_private_key {
+        kp = kp.with_pq(c::unwrap_pq_private_key(&mk, w).unwrap());
+    }
     Ok(Client {
         username: username.into(),
         token: s.token,
@@ -602,7 +617,7 @@ async fn full_lifecycle_is_zero_knowledge() {
     let share_req = CreateShareRequest {
         node_id: other.clone(),
         recipient: "bob".into(),
-        wrapped_key: B64(c::seal_share_key(&pk.public_key, &other_key, &other).unwrap()),
+        wrapped_key: B64(c::seal_share_key(&sealing_key(&pk), &other_key, &other).unwrap()),
         permission: Permission::Read,
     };
     let r = h
@@ -1316,7 +1331,7 @@ async fn version_history_restore_and_limits() {
             Some(CreateShareRequest {
                 node_id: f.id.clone(),
                 recipient: "bob".into(),
-                wrapped_key: B64(c::seal_share_key(&pk.public_key, &key, &f.id).unwrap()),
+                wrapped_key: B64(c::seal_share_key(&sealing_key(&pk), &key, &f.id).unwrap()),
                 permission: Permission::Read,
             }),
         )
@@ -1939,7 +1954,7 @@ async fn drafts_are_per_user_writers_only_and_opaque() {
     let share = |permission| CreateShareRequest {
         node_id: folder.clone(),
         recipient: "bob".into(),
-        wrapped_key: B64(c::seal_share_key(&pk.public_key, &folder_key, &folder).unwrap()),
+        wrapped_key: B64(c::seal_share_key(&sealing_key(&pk), &folder_key, &folder).unwrap()),
         permission,
     };
     let r = h
@@ -2069,7 +2084,7 @@ async fn profile_pictures_are_encrypted_and_only_for_share_partners() {
         .await
         .json();
     let grant = AvatarGrant {
-        sealed_key: B64(c::seal_avatar_key(&bob_pk.public_key, &ak, "alice", "bob").unwrap()),
+        sealed_key: B64(c::seal_avatar_key(&sealing_key(&bob_pk), &ak, "alice", "bob").unwrap()),
     };
     // Only between people who share with each other.
     let r = h
@@ -2089,7 +2104,9 @@ async fn profile_pictures_are_encrypted_and_only_for_share_partners() {
         Some(CreateShareRequest {
             node_id: folder.clone(),
             recipient: "bob".into(),
-            wrapped_key: B64(c::seal_share_key(&bob_pk.public_key, &folder_key, &folder).unwrap()),
+            wrapped_key: B64(
+                c::seal_share_key(&sealing_key(&bob_pk), &folder_key, &folder).unwrap(),
+            ),
             permission: Permission::Read,
         }),
     )
@@ -2514,7 +2531,7 @@ async fn trash_hides_restores_and_purges() {
         Some(CreateShareRequest {
             node_id: folder.clone(),
             recipient: "bob".into(),
-            wrapped_key: B64(c::seal_share_key(&pk.public_key, &folder_key, &folder).unwrap()),
+            wrapped_key: B64(c::seal_share_key(&sealing_key(&pk), &folder_key, &folder).unwrap()),
             permission: Permission::Write,
         }),
     )
@@ -4156,4 +4173,190 @@ async fn two_factor_sign_in_with_totp_and_passkeys() {
         password_login(&h, "alice", password).await,
         LoginResponse::Session(_)
     ));
+}
+
+#[tokio::test]
+async fn post_quantum_keys_seal_shares_and_drops() {
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "pw").await;
+
+    // An account from before post-quantum keys gets one on its next sign-in.
+    let salt = c::random_bytes(c::SALT_LEN);
+    let ak = c::derive_account_keys("pw", &salt, FAST_KDF).unwrap();
+    let (mk, kp, root_id, root_key) = (
+        Key::generate(),
+        KeyPair::generate(),
+        c::new_id(),
+        Key::generate(),
+    );
+    let r = h
+        .call(
+            Method::POST,
+            "/api/auth/register",
+            None,
+            Some(RegisterRequest {
+                username: "old".into(),
+                auth_key: B64(ak.auth_key.as_bytes().to_vec()),
+                kdf_salt: B64(salt),
+                kdf_params: FAST_KDF,
+                enc_master_key: B64(c::wrap_master_key(&ak.kek, &mk)),
+                public_key: B64(kp.public.to_vec()),
+                enc_private_key: B64(c::wrap_private_key(&mk, &kp.secret)),
+                pq_public_key: None,
+                enc_pq_private_key: None,
+                root: NewRootFolder {
+                    id: root_id.clone(),
+                    enc_key: B64(c::wrap_node_key(&mk, &root_key, &root_id)),
+                    enc_metadata: B64(
+                        c::encrypt_metadata(&root_key, &root_id, &meta("root", 0)).unwrap()
+                    ),
+                },
+                device_name: None,
+                invite: None,
+            }),
+        )
+        .await;
+    let old: SessionResponse = r.json();
+    let pk: UserPublicKey = h
+        .get("/api/users/old/public-key", &alice.token)
+        .await
+        .json();
+    assert!(pk.pq_public_key.is_none());
+    // Shares to it are classic until then.
+    assert_eq!(sealing_key(&pk).len(), 32);
+
+    let pq = c::PqKeyPair::generate();
+    let set = |public: Vec<u8>, wrapped: Vec<u8>| SetPqKeyRequest {
+        pq_public_key: B64(public),
+        enc_pq_private_key: B64(wrapped),
+    };
+    let r = h
+        .call(
+            Method::PUT,
+            "/api/me/pq-key",
+            Some(&old.token),
+            Some(set(
+                pq.public[..100].to_vec(),
+                c::wrap_pq_private_key(&mk, &pq),
+            )),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    let r = h
+        .call(
+            Method::PUT,
+            "/api/me/pq-key",
+            Some(&old.token),
+            Some(set(pq.public.clone(), c::wrap_pq_private_key(&mk, &pq))),
+        )
+        .await;
+    let me: Me = r.json();
+    let kp =
+        kp.with_pq(c::unwrap_pq_private_key(&mk, &me.keys.enc_pq_private_key.unwrap()).unwrap());
+    // It is never replaced, so a server can't be asked to swap it.
+    let r = h
+        .call(
+            Method::PUT,
+            "/api/me/pq-key",
+            Some(&old.token),
+            Some(set(
+                c::PqKeyPair::generate().public.clone(),
+                c::wrap_pq_private_key(&mk, &pq),
+            )),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT);
+
+    // Now shares to it are hybrid and open with both halves.
+    let pk: UserPublicKey = h
+        .get("/api/users/old/public-key", &alice.token)
+        .await
+        .json();
+    assert_eq!(pk.pq_public_key.as_deref(), Some(&pq.public[..]));
+    let (folder, folder_key) = alice.mkdir(&h, &alice.root, "Quantum-safe").await;
+    let wrapped = c::seal_share_key(&sealing_key(&pk), &folder_key, &folder).unwrap();
+    assert_eq!(wrapped.len(), thencloud_server::util::HYBRID_SEALED_KEY_LEN);
+    let r = h
+        .call(
+            Method::POST,
+            "/api/shares",
+            Some(&alice.token),
+            Some(CreateShareRequest {
+                node_id: folder.clone(),
+                recipient: "old".into(),
+                wrapped_key: B64(wrapped),
+                permission: Permission::Read,
+            }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{r:?}");
+    let shares: Vec<IncomingShare> = h.get("/api/shares/incoming", &old.token).await.json();
+    assert_eq!(
+        shares[0].owner_pq_public_key.as_deref(),
+        Some(&alice.kp.pq.as_ref().unwrap().public[..])
+    );
+    assert!(c::open_share_key(&kp, &shares[0].wrapped_key, &folder).unwrap() == folder_key);
+    // A wrong-sized sealed key is refused.
+    let r = h
+        .call(
+            Method::POST,
+            "/api/shares",
+            Some(&alice.token),
+            Some(CreateShareRequest {
+                node_id: folder.clone(),
+                recipient: "old".into(),
+                wrapped_key: B64(vec![2; 500]),
+                permission: Permission::Read,
+            }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+
+    // A drop link names the hash of the owner's ML-KEM key after `#`; the
+    // key itself comes from the server and must match it.
+    let (inbox, _) = alice.mkdir(&h, &alice.root, "Inbox").await;
+    let link: Link = h
+        .call(
+            Method::POST,
+            "/api/links",
+            Some(&alice.token),
+            Some(CreateLinkRequest {
+                node_id: inbox.clone(),
+                password: None,
+                expires_at: None,
+                upload_only: true,
+            }),
+        )
+        .await
+        .json();
+    let info: PublicLinkInfo = h
+        .call(
+            Method::GET,
+            &format!("/api/public/{}", link.token),
+            None,
+            None::<()>,
+        )
+        .await
+        .json();
+    let alice_pq = info.owner_pq_public_key.unwrap();
+    let fragment = c::identity(
+        &alice.kp.public,
+        Some(&alice.kp.pq.as_ref().unwrap().public),
+    );
+    assert_eq!(c::identity(&fragment[..32], Some(&alice_pq)), fragment);
+    let owner_key = [&fragment[..32], &alice_pq[..]].concat();
+    let (id, k, st) = drop_file(&h, &link.token, &owner_key, &inbox, "q.txt", b"quantum").await;
+    assert_eq!(st, StatusCode::NO_CONTENT);
+    let drops: Vec<DroppedFile> = h.get("/api/drops", &alice.token).await.json();
+    assert!(c::open_drop_key(&alice.kp, &drops[0].sealed_key, &id, &inbox).unwrap() == k);
+
+    // No ML-KEM seed is stored in the clear.
+    let mut files = Vec::new();
+    all_files(&h.dir.path().join("data"), &mut files);
+    for p in &files {
+        let bytes = std::fs::read(p).unwrap();
+        for seed in [pq.seed(), alice.kp.pq.as_ref().unwrap().seed()] {
+            assert!(!contains(&bytes, seed), "ML-KEM seed in {}", p.display());
+        }
+    }
 }

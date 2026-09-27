@@ -96,6 +96,8 @@ fn start() -> Server {
             enc_master_key: B64(c::wrap_master_key(&ak.kek, &mk)),
             public_key: B64(kp.public.to_vec()),
             enc_private_key: B64(c::wrap_private_key(&mk, &kp.secret)),
+            pq_public_key: None,
+            enc_pq_private_key: None,
             root: NewRootFolder {
                 id: root_id.clone(),
                 enc_key: B64(c::wrap_node_key(&mk, &root_key, &root_id)),

@@ -71,6 +71,7 @@ pub fn router(state: AppState) -> Router {
         .route("/app-passwords/{id}", delete(app_passwords::delete))
         .route("/auth/password", post(auth::change_password))
         .route("/me", get(auth::me))
+        .route("/me/pq-key", put(auth::set_pq_key))
         .route("/me/contacts", get(contacts::get).put(contacts::put))
         .route(
             "/me/data/{name}",
