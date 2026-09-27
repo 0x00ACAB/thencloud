@@ -100,7 +100,7 @@ As a result, a malicious server cannot swap files, move ciphertexts between node
 
 **Known limitations**, most of them tracked in [MILESTONES.md](MILESTONES.md):
 - **The web client is served by the server.** A malicious or compromised server could serve modified JavaScript. This is inherent to every browser-based E2EE app. A native client (planned) avoids it.
-- **Public keys are trust-on-first-use.** Compare fingerprints out of band, or a malicious server could substitute its own key when you share.
+- **Public keys are trust-on-first-use.** Compare fingerprints out of band the first time you share with someone, or a malicious server could substitute its own key. After that the key is pinned in your verified contacts (encrypted under your master key and bound to your account), and a different key for that person blocks sharing until you check again.
 - **Revoking a share** stops the server from serving the data, but it does not re-key. A former recipient who kept the key could decrypt ciphertext they get from elsewhere.
 - **Anyone who has a full public link** (including the `#` part, for example from chat history) can decrypt what it points to.
 - **There is no password reset by the server.** A forgotten password means the data is lost, unless you created a recovery key. Anyone with your recovery key and username can take over the account, so keep it as private as the password.

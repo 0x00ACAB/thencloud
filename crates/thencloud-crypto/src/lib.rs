@@ -351,6 +351,25 @@ pub fn unwrap_master_key_recovery(kek: &Key, wrapped: &[u8]) -> Result<Key> {
 }
 
 // ---------------------------------------------------------------------------
+// Private account data (e.g. verified contacts): sealed under the master key
+// and bound to the user and a label, so the server can store it but not read
+// it, change it, or swap it with another user's or another kind of data.
+// ---------------------------------------------------------------------------
+
+pub fn encrypt_private_data(mk: &Key, user_id: &str, label: &str, plaintext: &[u8]) -> Vec<u8> {
+    seal(mk, plaintext, &aad("private-data", &[user_id, label]))
+}
+
+pub fn decrypt_private_data(
+    mk: &Key,
+    user_id: &str,
+    label: &str,
+    sealed: &[u8],
+) -> Result<Vec<u8>> {
+    open(mk, sealed, &aad("private-data", &[user_id, label]))
+}
+
+// ---------------------------------------------------------------------------
 // Asymmetric keys (sharing)
 // ---------------------------------------------------------------------------
 
@@ -745,5 +764,18 @@ mod tests {
         assert!(unwrap_master_key(&rk.kek, &wrapped).is_err());
         let other = derive_recovery_keys(&Key::generate());
         assert!(unwrap_master_key_recovery(&other.kek, &wrapped).is_err());
+    }
+
+    #[test]
+    fn private_data_is_bound_to_user_and_label() {
+        let mk = Key::generate();
+        let sealed = encrypt_private_data(&mk, "user-a", "contacts", b"{\"bob\":1}");
+        assert_eq!(
+            decrypt_private_data(&mk, "user-a", "contacts", &sealed).unwrap(),
+            b"{\"bob\":1}"
+        );
+        assert!(decrypt_private_data(&mk, "user-b", "contacts", &sealed).is_err());
+        assert!(decrypt_private_data(&mk, "user-a", "other", &sealed).is_err());
+        assert!(decrypt_private_data(&Key::generate(), "user-a", "contacts", &sealed).is_err());
     }
 }

@@ -544,3 +544,21 @@ pub struct RecoveryResetRequest {
     #[serde(default)]
     pub device_name: Option<String>,
 }
+
+// ---------------------------------------------------------------------------
+// Private account data (verified contacts), encrypted under the master key
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrivateData {
+    /// None until the client first saves something.
+    pub data: Option<B64>,
+    pub revision: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PutPrivateData {
+    pub data: B64,
+    /// The revision this change is based on; 409 if it moved on.
+    pub if_revision: i64,
+}

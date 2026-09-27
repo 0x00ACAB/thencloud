@@ -81,7 +81,8 @@ Smaller things:
 
 - [x] **Recovery key**: an optional printable key that also wraps the master key; "Forgot your password?" uses it to set a new one without losing data
 - [ ] **Key rotation on revocation**: re-key a folder subtree when a share is revoked, so former recipients can't decrypt future content
-- [ ] **Contact verification / key transparency**: signed key directory or verified-contact store, so a malicious server can't substitute public keys when a user doesn't compare fingerprints
+- [x] **Verified contacts**: keys checked by fingerprint are pinned in an encrypted contact list; a changed key blocks sharing until it's checked again
+- [ ] **Key transparency**: a signed or auditable key directory, so even a first share doesn't depend on comparing fingerprints
 - [ ] **Upload-only "file drop" links**
 - [ ] **Streaming downloads** through a service worker, so large files aren't buffered in memory
 - [ ] **Native CLI and desktop sync client** reusing `thencloud-crypto`
