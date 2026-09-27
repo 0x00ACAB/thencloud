@@ -1,5 +1,5 @@
 <script>
-  import { session, resolvePath, listFolder, createFolder, rename, trash, untrash, download, fetchEntry, upload, refreshMe } from '../../lib/cloud.svelte.js';
+  import { session, resolvePath, listFolder, createFolder, rename, trash, untrash, download, fetchEntry, upload, saveText, refreshMe } from '../../lib/cloud.svelte.js';
   import { toast, toastError, trackTransfer, errorMessage } from '../../lib/ui.svelte.js';
   import { formatSize, formatWhen, fullDate, plural } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
@@ -174,7 +174,23 @@
   }
 
   // The list is fixed when the preview opens, so a reload behind it doesn't shift ← and →.
-  const preview = (entry) => (dialog = { type: 'preview', entries: files, start: files.indexOf(entry) });
+  const preview = (entry, edit = false) => (dialog = { type: 'preview', entries: files, start: files.indexOf(entry), edit });
+
+  function untitledName() {
+    const taken = new Set(rows.map((r) => r.meta.name.toLowerCase()));
+    for (let i = 1; ; i++) {
+      const name = i === 1 ? 'Untitled.md' : `Untitled ${i}.md`;
+      if (!taken.has(name.toLowerCase())) return name;
+    }
+  }
+
+  async function newNote(name) {
+    const file = new File([''], /\.(md|markdown)$/i.test(name) ? name : `${name}.md`, { type: 'text/markdown' });
+    const created = await upload(file, { parentId: here.node.id, parentKey: here.key });
+    await load();
+    const entry = rows.find((r) => r.node.id === created.node.id);
+    if (entry) preview(entry, true);
+  }
 
   function menuFor(entry) {
     const folder = entry.node.kind === 'folder';
@@ -238,6 +254,9 @@
   </div>
   {#if canWrite}
     <div class="flex gap-2">
+      <button type="button" class="btn btn-secondary" disabled={!here} onclick={() => (dialog = { type: 'note' })}>
+        <Icon name="file-plus" /> New note
+      </button>
       <button type="button" class="btn btn-secondary" disabled={!here} onclick={() => (dialog = { type: 'mkdir' })}>
         <Icon name="folder-plus" /> New folder
       </button>
@@ -329,6 +348,14 @@
       await load();
     }}
     onclose={close} />
+{:else if dialog?.type === 'note'}
+  <NameDialog
+    title="New note"
+    initial={untitledName()}
+    confirmLabel="Create"
+    create
+    onsave={newNote}
+    onclose={() => dialog?.type === 'note' && close()} />
 {:else if dialog?.type === 'rename'}
   <NameDialog
     title="Rename"
@@ -352,7 +379,15 @@
 {:else if dialog?.type === 'versions'}
   <VersionsDialog entry={dialog.entry} {canWrite} onchanged={() => (load(), refreshMe().catch(() => {}))} onclose={close} />
 {:else if dialog?.type === 'preview'}
-  <Preview entries={dialog.entries} start={dialog.start} fetch={fetchEntry} ondownload={downloadEntry} onclose={close} />
+  <Preview
+    entries={dialog.entries}
+    start={dialog.start}
+    edit={dialog.edit}
+    fetch={fetchEntry}
+    save={canWrite ? saveText : null}
+    onsaved={() => (load(), refreshMe().catch(() => {}))}
+    ondownload={downloadEntry}
+    onclose={close} />
 {:else if dialog?.type === 'share'}
   <ShareDialog entry={dialog.entry} onclose={close} />
 {:else if dialog?.type === 'link'}

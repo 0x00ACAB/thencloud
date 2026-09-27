@@ -100,7 +100,7 @@ As a result, a malicious server cannot swap files, move ciphertexts between node
 - **Revoking a share** stops the server from serving the data, but it does not re-key. A former recipient who kept the key could decrypt ciphertext they get from elsewhere.
 - **Anyone who has a full public link** (including the `#` part, for example from chat history) can decrypt what it points to.
 - **There is no password recovery.** A forgotten password means the data is lost.
-- **Previews render files other people shared with you** inside the app, where your keys live. Decrypted bytes are always re-typed to a fixed, known-safe type (never the stored MIME type), Markdown goes through DOMPurify with images and scripts removed, and PDFs are drawn to canvas by pdf.js without running any PDF JavaScript. The CSP is the second line of defence.
+- **Previews render files other people shared with you** inside the app, where your keys live. Decrypted bytes are always re-typed to a fixed, known-safe type (never the stored MIME type), Markdown goes through DOMPurify with scripts removed and images never loaded (in the preview and the editor, so a relative image path can't make the browser request a plaintext name from the server), and PDFs are drawn to canvas by pdf.js without running any PDF JavaScript. The CSP is the second line of defence.
 
 ## Development
 
@@ -120,4 +120,4 @@ Parts of thencloud are written with the help of AI (commits say so in a `Co-Auth
 
 AGPL-3.0-or-later. See [LICENSE](LICENSE).
 
-The web client bundles [Geist](https://vercel.com/font) (OFL), [Lucide](https://lucide.dev) icons (ISC), [highlight.js](https://highlightjs.org) (BSD-3-Clause), [marked](https://marked.js.org) (MIT), [DOMPurify](https://github.com/cure53/DOMPurify) (Apache-2.0 or MPL-2.0) [pdf.js](https://mozilla.github.io/pdf.js/) (Apache-2.0), and the file icon packs [Material Icon Theme](https://github.com/material-extensions/vscode-material-icon-theme) (MIT), [vscode-icons](https://github.com/vscode-icons/vscode-icons) (MIT) and [Seti UI](https://github.com/jesseweed/seti-ui) (MIT). All of it is served from your own server; nothing loads from a CDN.
+The web client bundles [Geist](https://vercel.com/font) (OFL), [Lucide](https://lucide.dev) icons (ISC), [highlight.js](https://highlightjs.org) (BSD-3-Clause), [marked](https://marked.js.org) (MIT), [DOMPurify](https://github.com/cure53/DOMPurify) (Apache-2.0 or MPL-2.0), [Milkdown](https://milkdown.dev) (MIT), [pdf.js](https://mozilla.github.io/pdf.js/) (Apache-2.0), and the file icon packs [Material Icon Theme](https://github.com/material-extensions/vscode-material-icon-theme) (MIT), [vscode-icons](https://github.com/vscode-icons/vscode-icons) (MIT) and [Seti UI](https://github.com/jesseweed/seti-ui) (MIT). All of it is served from your own server; nothing loads from a CDN.

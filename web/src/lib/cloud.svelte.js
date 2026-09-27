@@ -333,6 +333,7 @@ export async function upload(file, { parentId, parentKey, existing }, onProgress
       if_revision: existing ? existing.node.revision : undefined,
     },
   });
+  let node;
   try {
     for (let i = 0; i < chunkCount; i++) {
       const plain = new Uint8Array(await file.slice(i * chunkSize, (i + 1) * chunkSize).arrayBuffer());
@@ -340,12 +341,22 @@ export async function upload(file, { parentId, parentKey, existing }, onProgress
       await api('PUT', `/api/uploads/${up.upload_id}/chunks/${i}`, { raw: enc });
       onProgress?.((i + 1) / chunkCount);
     }
-    await api('POST', `/api/uploads/${up.upload_id}/finish`);
+    node = await api('POST', `/api/uploads/${up.upload_id}/finish`);
   } catch (e) {
     api('DELETE', `/api/uploads/${up.upload_id}`).catch(() => {});
     throw e;
   }
   keyCache.set(nodeId, nodeKey);
+  return { node, key: nodeKey, meta };
+}
+
+/**
+ * Save edited text as a new version of `entry`. Fails with a 409 if the file
+ * changed since `entry` was loaded. Returns the updated entry.
+ */
+export function saveText(entry, text) {
+  const file = new File([text], entry.meta.name, { type: entry.meta.mime || 'text/markdown', lastModified: Date.now() });
+  return upload(file, { existing: entry });
 }
 
 // ---------------------------------------------------------------------------
