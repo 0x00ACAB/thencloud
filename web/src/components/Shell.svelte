@@ -12,6 +12,7 @@
   import LinksView from './views/LinksView.svelte';
   import SettingsView from './views/SettingsView.svelte';
   import TrashView from './views/TrashView.svelte';
+  import AdminView from './views/AdminView.svelte';
 
   const rootId = session.me.keys.root_node_id;
 
@@ -39,6 +40,7 @@
     { name: 'links', label: 'Public links', icon: 'link', to: () => ({ name: 'links' }) },
     { name: 'trash', label: 'Trash', icon: 'trash-2', to: () => ({ name: 'trash' }) },
     { name: 'settings', label: 'Settings', icon: 'settings', to: () => ({ name: 'settings' }) },
+    ...(session.me.is_admin ? [{ name: 'admin', label: 'Admin', icon: 'shield-check', to: () => ({ name: 'admin' }) }] : []),
   ];
 
   // "My files" stays highlighted while browsing own folders; folders reached
@@ -141,6 +143,8 @@
           <TrashView {go} />
         {:else if view.name === 'settings'}
           <SettingsView />
+        {:else if view.name === 'admin' && session.me.is_admin}
+          <AdminView />
         {/if}
       </div>
       {/key}

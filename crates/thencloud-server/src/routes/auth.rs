@@ -7,6 +7,7 @@ use thencloud_crypto::{KEY_LEN, KdfParams, SALT_LEN};
 use crate::AppState;
 use crate::auth::{AuthUser, ClientIp, create_session};
 use crate::error::{AppError, Result, is_unique_violation};
+use crate::settings;
 use crate::util::*;
 
 #[derive(sqlx::FromRow)]
@@ -23,6 +24,7 @@ struct UserRow {
     quota_bytes: i64,
     used_bytes: i64,
     is_admin: bool,
+    disabled_at: Option<i64>,
 }
 
 impl UserRow {
@@ -50,7 +52,7 @@ impl UserRow {
 }
 
 const USER_SELECT: &str = "SELECT id, username, auth_hash, kdf_salt, kdf_params, enc_master_key, public_key, \
-     enc_private_key, root_node_id, quota_bytes, used_bytes, is_admin FROM users";
+     enc_private_key, root_node_id, quota_bytes, used_bytes, is_admin, disabled_at FROM users";
 
 async fn user_by_name(state: &AppState, username: &str) -> Result<Option<UserRow>> {
     let sql = format!("{USER_SELECT} WHERE username = ?");
@@ -109,9 +111,18 @@ pub async fn register(
     let user_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
         .fetch_one(&state.db)
         .await?;
-    if user_count > 0 && !state.config.allow_registration {
-        return Err(AppError::RegistrationClosed);
-    }
+    // The first account can always be created (it becomes the admin).
+    let invite = if user_count == 0 {
+        None
+    } else {
+        match (settings::registration(&state).await?, req.invite.as_deref()) {
+            (Registration::Open, _) => None,
+            (Registration::Invite, Some(token)) => Some(sha256(token.as_bytes())),
+            (Registration::Invite, None) | (Registration::Closed, _) => {
+                return Err(AppError::RegistrationClosed);
+            }
+        }
+    };
     check_len(&req.auth_key, KEY_LEN, "auth_key")?;
     check_kdf(&req.kdf_salt, &req.kdf_params)?;
     check_len(&req.enc_master_key, WRAPPED_KEY_LEN, "enc_master_key")?;
@@ -169,6 +180,22 @@ pub async fn register(
         }
         r => r?,
     };
+    // Use up the invite in the same transaction, so it works exactly once.
+    if let Some(hash) = invite {
+        let used = sqlx::query(
+            "UPDATE invites SET used_by = ?, used_at = ? \
+             WHERE token_hash = ? AND used_by IS NULL AND used_at IS NULL AND expires_at > ?",
+        )
+        .bind(&user_id)
+        .bind(t)
+        .bind(&hash)
+        .bind(t)
+        .execute(&mut *tx)
+        .await?;
+        if used.rows_affected() != 1 {
+            return Err(AppError::InvalidInvite);
+        }
+    }
     tx.commit().await?;
     tracing::info!(%username, admin = user_count == 0, "user registered");
 
@@ -205,6 +232,10 @@ pub async fn login(
         }
     };
     state.limiter.clear(&ukey);
+    // Only said after a correct password, so it reveals nothing new.
+    if user.disabled_at.is_some() {
+        return Err(AppError::AccountDisabled);
+    }
     let token = create_session(&state, &user.id, req.device_name.as_deref()).await?;
     Ok(Json(SessionResponse {
         token,
@@ -266,4 +297,17 @@ pub async fn change_password(
         .await?;
     tx.commit().await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Public: what the sign-in screen can offer.
+pub async fn options(State(state): State<AppState>) -> Result<Json<AuthOptions>> {
+    let users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+        .fetch_one(&state.db)
+        .await?;
+    let registration = if users == 0 {
+        Registration::Open
+    } else {
+        settings::registration(&state).await?
+    };
+    Ok(Json(AuthOptions { registration }))
 }

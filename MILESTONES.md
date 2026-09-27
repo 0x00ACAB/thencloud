@@ -39,12 +39,12 @@
 - [x] Deletes inside a shared folder go to the tree owner's trash; the recipient sees a note that the owner can restore it
 - [ ] Age-based version retention (e.g. thin out old versions: hourly, then daily, then weekly)
 
-## Milestone 4: Admin and devices
+## Milestone 4: Admin and devices (mostly done)
 
-- [ ] Admin UI and API: list users, set quotas, disable or delete users, open or close registration at runtime, invite links
+- [x] Admin UI and API: list users, set quotas, make or remove admins, disable (signs out everywhere) or delete users, registration open / invite-only / closed at runtime, single-use invite links (only a hash is stored; the link carries the token after `#`)
 - [x] Session and device list: see active sessions (device name, last seen; no IPs kept) and sign them out, one at a time or all others. A signed-out browser drops its keys on its next request
 - [ ] App passwords or per-device credentials for sync clients (scoped, revocable, never the account password)
-- [ ] Server stats for admins, without revealing anything encrypted: user count, storage used, blob count
+- [x] Server stats for admins, without revealing anything encrypted: accounts, sessions, storage, file/folder/version counts, shares and links
 
 ## UI
 

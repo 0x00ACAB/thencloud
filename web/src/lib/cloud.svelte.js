@@ -57,7 +57,7 @@ const deviceName = () => {
 // Account
 // ---------------------------------------------------------------------------
 
-export async function register(username, password) {
+export async function register(username, password, invite = null) {
   const salt = tc.random_salt();
   const params = JSON.parse(tc.default_kdf_params());
   const ak = await deriveAccountKeys(password, salt, params);
@@ -80,6 +80,7 @@ export async function register(username, password) {
         enc_metadata: encryptMeta(rootKey, rootId, { name: 'My files', size: 0, mtime: Date.now() }),
       },
       device_name: deviceName(),
+      invite: invite || undefined,
     },
   });
   kp.free();
@@ -133,6 +134,9 @@ export async function logout() {
 export const listSessions = () => api('GET', '/api/sessions');
 export const revokeSession = (id) => api('DELETE', `/api/sessions/${encodeURIComponent(id)}`);
 export const revokeOtherSessions = () => api('DELETE', '/api/sessions');
+
+/** What the sign-in screen may offer (registration open, invite-only or closed). */
+export const authOptions = () => request('GET', '/api/auth/options');
 
 export async function changePassword(current, next) {
   const pre = await request('POST', '/api/auth/prelogin', { body: { username: session.me.username } });
@@ -479,3 +483,20 @@ export async function links(nodeId) {
 }
 
 export const deleteLink = (id) => api('DELETE', `/api/links/${id}`);
+
+// ---------------------------------------------------------------------------
+// Administration (admins only; accounts and counts, never content)
+// ---------------------------------------------------------------------------
+
+export const adminUsers = () => api('GET', '/api/admin/users');
+export const adminUpdateUser = (id, body) => api('PATCH', `/api/admin/users/${encodeURIComponent(id)}`, { body });
+export const adminDeleteUser = (id) => api('DELETE', `/api/admin/users/${encodeURIComponent(id)}`);
+export const adminSettings = () => api('GET', '/api/admin/settings');
+export const adminUpdateSettings = (body) => api('PATCH', '/api/admin/settings', { body });
+export const adminInvites = () => api('GET', '/api/admin/invites');
+export const adminCreateInvite = (days) => api('POST', '/api/admin/invites', { body: { days } });
+export const adminDeleteInvite = (id) => api('DELETE', `/api/admin/invites/${encodeURIComponent(id)}`);
+export const adminStats = () => api('GET', '/api/admin/stats');
+
+/** Invite links carry the token in the fragment, which is never sent to the server. */
+export const inviteUrl = (token) => `${location.origin}/#invite=${encodeURIComponent(token)}`;

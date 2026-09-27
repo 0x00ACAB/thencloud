@@ -12,6 +12,7 @@ pub mod error;
 pub mod janitor;
 pub mod limiter;
 pub mod routes;
+pub mod settings;
 pub mod util;
 
 use std::sync::Arc;

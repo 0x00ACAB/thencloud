@@ -1,5 +1,6 @@
 <script>
-  import { login, register } from '../lib/cloud.svelte.js';
+  import { onMount } from 'svelte';
+  import { login, register, authOptions } from '../lib/cloud.svelte.js';
   import { errorMessage } from '../lib/ui.svelte.js';
   import Icon from './Icon.svelte';
 
@@ -19,6 +20,29 @@
     /* private mode */
   }
 
+  // An invite link is /#invite=<token>. Read it once, then clear it from
+  // the address bar so it isn't left in history.
+  let invite = $state(null);
+  function readInvite() {
+    const m = location.hash.match(/^#invite=([\w-]+)$/);
+    if (!m) return;
+    history.replaceState(null, '', location.pathname);
+    invite = m[1];
+    switchMode('signup');
+  }
+
+  let registration = $state('open'); // open | invite | closed
+  onMount(() => {
+    readInvite();
+    authOptions()
+      .then((o) => (registration = o.registration))
+      .catch(() => {});
+    // Also when the link is pasted into a tab that's already here.
+    addEventListener('hashchange', readInvite);
+    return () => removeEventListener('hashchange', readInvite);
+  });
+  const canSignUp = $derived(registration === 'open' || (registration === 'invite' && !!invite));
+
   const signup = $derived(mode === 'signup');
 
   function switchMode(m) {
@@ -37,10 +61,16 @@
     }
     busy = true;
     try {
-      if (signup) await register(username, password);
+      if (signup) await register(username, password, invite);
       else await login(username, password);
     } catch (err) {
-      error = err?.code === 'invalid_credentials' ? 'Wrong username or password.' : errorMessage(err);
+      error =
+        {
+          invalid_credentials: 'Wrong username or password.',
+          account_disabled: 'This account has been disabled. Ask the person who runs this server.',
+          invalid_invite: 'This invite link has already been used or has expired. Ask for a new one.',
+          registration_closed: 'New accounts are not being accepted on this server right now.',
+        }[err?.code] ?? errorMessage(err);
     } finally {
       busy = false;
     }
@@ -63,6 +93,15 @@
           onclick={() => switchMode(m)}>{label}</button>
       {/each}
     </div>
+
+    {#if signup && invite}
+      <p class="mt-4 flex items-center gap-2 text-[13px] text-fg-muted"><Icon name="user-round-plus" class="size-4" />You've been invited to create an account here.</p>
+    {:else if signup && !canSignUp}
+      <p class="mt-4 flex items-start gap-2 rounded-md border border-line bg-subtle p-3 text-[13px] text-fg-muted">
+        <Icon name="lock" class="mt-0.5 size-4 shrink-0" />
+        {registration === 'invite' ? 'This server is invite-only. Open the invite link you were sent to create an account.' : 'This server is not accepting new accounts.'}
+      </p>
+    {/if}
 
     <form class="mt-6 grid gap-4" onsubmit={submit}>
       <div class="field">
@@ -111,7 +150,7 @@
         <p class="flex items-center gap-2 text-[13px] text-danger" role="alert"><Icon name="circle-alert" />{error}</p>
       {/if}
 
-      <button class="btn btn-primary btn-lg w-full" disabled={busy}>
+      <button class="btn btn-primary btn-lg w-full" disabled={busy || (signup && !canSignUp)}>
         {#if busy}
           <Icon name="loader-circle" class="spinner" />
           {signup ? 'Generating your keys' : 'Unlocking your files'}

@@ -151,6 +151,22 @@ fn meta(name: &str, size: u64) -> Metadata {
 }
 
 async fn register(h: &Harness, username: &str, password: &str) -> Client {
+    match try_register(h, username, password, None).await {
+        Ok(c) => c,
+        Err(r) => panic!(
+            "register failed: {} {}",
+            r.status,
+            String::from_utf8_lossy(&r.body)
+        ),
+    }
+}
+
+async fn try_register(
+    h: &Harness,
+    username: &str,
+    password: &str,
+    invite: Option<&str>,
+) -> Result<Client, Resp> {
     let salt = c::random_bytes(c::SALT_LEN);
     let ak = c::derive_account_keys(password, &salt, FAST_KDF).unwrap();
     let mk = Key::generate();
@@ -171,24 +187,22 @@ async fn register(h: &Harness, username: &str, password: &str) -> Client {
             enc_metadata: B64(c::encrypt_metadata(&root_key, &root_id, &meta("root", 0)).unwrap()),
         },
         device_name: Some("test".into()),
+        invite: invite.map(Into::into),
     };
     let r = h
         .call(Method::POST, "/api/auth/register", None, Some(&req))
         .await;
-    assert_eq!(
-        r.status,
-        StatusCode::CREATED,
-        "{}",
-        String::from_utf8_lossy(&r.body)
-    );
+    if r.status != StatusCode::CREATED {
+        return Err(r);
+    }
     let s: SessionResponse = r.json();
-    Client {
+    Ok(Client {
         username: username.into(),
         token: s.token,
         mk,
         kp,
         root: root_id,
-    }
+    })
 }
 
 async fn login(h: &Harness, username: &str, password: &str) -> Result<Client, Resp> {
@@ -1602,4 +1616,234 @@ async fn sessions_list_and_revoke() {
     assert!(list[0].current);
     // Other users' sessions are untouched.
     assert_eq!(h.get("/api/me", &other.token).await.status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn admin_users_registration_and_invites() {
+    let h = Harness::new().await;
+    let admin = register(&h, "root", "admin password").await;
+    let bob = register(&h, "bob", "bob's password").await;
+    let del = |uri: String, t: &str| {
+        let uri = uri.clone();
+        let t = t.to_string();
+        let h = &h;
+        async move { h.call(Method::DELETE, &uri, Some(&t), None::<()>).await }
+    };
+
+    // Only admins get in.
+    for uri in [
+        "/api/admin/users",
+        "/api/admin/stats",
+        "/api/admin/settings",
+        "/api/admin/invites",
+    ] {
+        assert_eq!(
+            h.get(uri, &bob.token).await.status,
+            StatusCode::FORBIDDEN,
+            "{uri}"
+        );
+    }
+    let users: Vec<AdminUser> = h.get("/api/admin/users", &admin.token).await.json();
+    assert_eq!(users.len(), 2);
+    let bob_id = users
+        .iter()
+        .find(|u| u.username == "bob")
+        .unwrap()
+        .id
+        .clone();
+    let root_id = users
+        .iter()
+        .find(|u| u.username == "root")
+        .unwrap()
+        .id
+        .clone();
+    assert!(
+        users
+            .iter()
+            .find(|u| u.username == "root")
+            .unwrap()
+            .is_admin
+    );
+
+    // Invite-only registration.
+    let r = h
+        .call(
+            Method::PATCH,
+            "/api/admin/settings",
+            Some(&admin.token),
+            Some(json!({"registration": "invite"})),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+    let opts: AuthOptions = h
+        .call(Method::GET, "/api/auth/options", None, None::<()>)
+        .await
+        .json();
+    assert_eq!(opts.registration, Registration::Invite);
+    let err = try_register(&h, "carol", "carol's password", None)
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(err.status, StatusCode::FORBIDDEN);
+    let r = h
+        .call(
+            Method::POST,
+            "/api/admin/invites",
+            Some(&admin.token),
+            Some(json!({"days": 0})),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    let inv: CreatedInvite = h
+        .call(
+            Method::POST,
+            "/api/admin/invites",
+            Some(&admin.token),
+            Some(json!({"days": 7})),
+        )
+        .await
+        .json();
+    let bad = try_register(&h, "carol", "carol's password", Some("not-a-real-invite"))
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(bad.status, StatusCode::FORBIDDEN);
+    try_register(&h, "carol", "carol's password", Some(&inv.token))
+        .await
+        .ok()
+        .unwrap();
+    // Single use.
+    let again = try_register(&h, "dan", "dan's password", Some(&inv.token))
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(again.status, StatusCode::FORBIDDEN);
+    let list: Vec<Invite> = h.get("/api/admin/invites", &admin.token).await.json();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].used_by.as_deref(), Some("carol"));
+    assert!(
+        !String::from_utf8(h.get("/api/admin/invites", &admin.token).await.body)
+            .unwrap()
+            .contains(&inv.token)
+    );
+
+    // Closed: even a fresh invite doesn't work.
+    let inv2: CreatedInvite = h
+        .call(
+            Method::POST,
+            "/api/admin/invites",
+            Some(&admin.token),
+            Some(json!({"days": 1})),
+        )
+        .await
+        .json();
+    h.call(
+        Method::PATCH,
+        "/api/admin/settings",
+        Some(&admin.token),
+        Some(json!({"registration": "closed"})),
+    )
+    .await;
+    let closed = try_register(&h, "dan", "dan's password", Some(&inv2.token))
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(closed.status, StatusCode::FORBIDDEN);
+    assert_eq!(
+        del(
+            format!("/api/admin/invites/{}", inv2.invite.id),
+            &admin.token
+        )
+        .await
+        .status,
+        StatusCode::NO_CONTENT
+    );
+
+    // Quotas, and disabling.
+    let file = bob
+        .upload(&h, &bob.root, None, "bob.txt", b"hello from bob")
+        .await
+        .unwrap();
+    let vid = file.version.as_ref().unwrap().id.clone();
+    assert!(blob_exists(&h, &vid));
+    let u: AdminUser = h
+        .call(
+            Method::PATCH,
+            &format!("/api/admin/users/{bob_id}"),
+            Some(&admin.token),
+            Some(json!({"quota_bytes": 1000})),
+        )
+        .await
+        .json();
+    assert_eq!(u.quota_bytes, 1000);
+    assert!(u.used_bytes > 0);
+    let r = h
+        .call(
+            Method::PATCH,
+            &format!("/api/admin/users/{bob_id}"),
+            Some(&admin.token),
+            Some(json!({"disabled": true})),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+    assert_eq!(
+        h.get("/api/me", &bob.token).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    let err = login(&h, "bob", "bob's password").await.err().unwrap();
+    assert_eq!(err.status, StatusCode::FORBIDDEN);
+    assert!(String::from_utf8_lossy(&err.body).contains("account_disabled"));
+    // A wrong password still just looks wrong.
+    assert_eq!(
+        login(&h, "bob", "nope").await.err().unwrap().status,
+        StatusCode::UNAUTHORIZED
+    );
+    h.call(
+        Method::PATCH,
+        &format!("/api/admin/users/{bob_id}"),
+        Some(&admin.token),
+        Some(json!({"disabled": false})),
+    )
+    .await;
+    let bob = login(&h, "bob", "bob's password").await.ok().unwrap();
+
+    // Admins can't lock themselves out.
+    for body in [json!({"disabled": true}), json!({"is_admin": false})] {
+        let r = h
+            .call(
+                Method::PATCH,
+                &format!("/api/admin/users/{root_id}"),
+                Some(&admin.token),
+                Some(body),
+            )
+            .await;
+        assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    }
+    assert_eq!(
+        del(format!("/api/admin/users/{root_id}"), &admin.token)
+            .await
+            .status,
+        StatusCode::BAD_REQUEST
+    );
+
+    let stats: ServerStats = h.get("/api/admin/stats", &admin.token).await.json();
+    assert_eq!(stats.users, 3);
+    assert_eq!(stats.files, 1);
+
+    // Deleting an account removes its data and blobs.
+    assert_eq!(
+        del(format!("/api/admin/users/{bob_id}"), &admin.token)
+            .await
+            .status,
+        StatusCode::NO_CONTENT
+    );
+    assert!(!blob_exists(&h, &vid));
+    assert_eq!(
+        h.get("/api/me", &bob.token).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    let users: Vec<AdminUser> = h.get("/api/admin/users", &admin.token).await.json();
+    assert_eq!(users.len(), 2);
+    let stats: ServerStats = h.get("/api/admin/stats", &admin.token).await.json();
+    assert_eq!((stats.files, stats.users), (0, 2));
 }
