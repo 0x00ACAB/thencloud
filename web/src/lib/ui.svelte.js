@@ -151,7 +151,9 @@ export async function copyText(text, what = 'Copied to clipboard') {
 // File icon pack (see lib/file-icons.svelte.js). A display preference only.
 function readIconPack() {
   try {
-    return localStorage.getItem('iconPack') || 'minimal';
+    const v = localStorage.getItem('iconPack');
+    // Packs that were removed (Seti, vscode-icons) fall back to the default.
+    return ['minimal', 'material', 'symbols', 'documents'].includes(v) ? v : 'minimal';
   } catch {
     return 'minimal';
   }

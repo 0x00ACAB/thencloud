@@ -7,15 +7,15 @@ import { previewKind } from './preview.js';
 
 export const ICON_PACKS = [
   { id: 'minimal', name: 'Minimal', credit: 'Lucide' },
-  { id: 'seti', name: 'Seti', credit: 'Seti UI, the VS Code default' },
   { id: 'material', name: 'Material', credit: 'Material Icon Theme' },
-  { id: 'vscode', name: 'vscode-icons', credit: 'vscode-icons' },
+  { id: 'symbols', name: 'Symbols', credit: 'Symbols by Miguel Solorio' },
+  { id: 'documents', name: 'Documents', credit: 'file-icon-vectors' },
 ];
 
 const LOADERS = {
-  seti: () => import('virtual:file-icons/seti'),
   material: () => import('virtual:file-icons/material'),
-  vscode: () => import('virtual:file-icons/vscode'),
+  symbols: () => import('virtual:file-icons/symbols'),
+  documents: () => import('virtual:file-icons/documents'),
 };
 
 const tables = $state({}); // pack id -> tables, once loaded

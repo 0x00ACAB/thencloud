@@ -14,11 +14,13 @@
 // The client imports a pack's tables only when that pack is chosen, and the
 // browser fetches only the icons it shows. Folder icons aren't used.
 //
-// Packs:
-//   material  Material Icon Theme (MIT), npm material-icon-theme
-//   vscode    vscode-icons (MIT): tables from vscode-icons-js, SVGs from @iconify-json/vscode-icons
-//   seti      Seti UI (MIT), VS Code's default, vendored in vendor/seti/
-import { readFileSync } from 'node:fs';
+// Packs (Minimal, the default, is Lucide and needs nothing here):
+//   material   Material Icon Theme (MIT), npm material-icon-theme
+//   symbols    Symbols by Miguel Solorio (MIT), npm vscode-symbols: quiet,
+//              muted icons
+//   documents  file-icon-vectors "vivid" (MIT), npm file-icon-vectors:
+//              document-shaped icons labelled with the file type
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 
@@ -27,129 +29,83 @@ const pkgDir = (name) => dirname(require.resolve(`${name}/package.json`));
 const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'));
 const lower = (o = {}) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k.toLowerCase(), v]));
 
-// Each loader returns { tables, svgs: Map<id, () => svg source> }.
-
-function material() {
-  const root = pkgDir('material-icon-theme');
-  const m = readJson(join(root, 'dist/material-icons.json'));
-  const names = lower(m.fileNames);
-  const extensions = lower(m.fileExtensions);
-  // The pack overrides a few names/extensions for light themes; turn those
-  // into id -> light id so every file using that icon gets the variant.
-  const light = {};
-  for (const [k, id] of Object.entries(lower(m.light?.fileNames))) if (names[k]) light[names[k]] = id;
-  for (const [k, id] of Object.entries(lower(m.light?.fileExtensions))) if (extensions[k]) light[extensions[k]] = id;
-  const tables = { names, extensions, light, fallback: m.file, mime: { image: 'image', video: 'video', audio: 'audio' } };
-  const svgs = new Map();
-  for (const id of usedIds(tables)) {
-    const def = m.iconDefinitions[id];
-    if (def) svgs.set(id, () => readFileSync(join(root, 'dist', def.iconPath)));
-  }
-  return { tables, svgs };
-}
-
-function vscode() {
-  const gen = join(pkgDir('vscode-icons-js'), 'dist/generated');
-  const table = (file, key) => lower(require(join(gen, file))[key]);
-  const strip = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, v.replace(/\.svg$/, '')]));
-  // Like vscode-icons-js: exact extensions first, then the per-language table
-  // (keyed by extension too) as a fallback.
-  const extensions = strip({
-    ...table('LanguagesToIcon.js', 'LanguagesToIcon'),
-    ...table('FileExtensions1ToIcon.js', 'FileExtensions1ToIcon'),
-    ...table('FileExtensions2ToIcon.js', 'FileExtensions2ToIcon'),
-  });
-  const names = strip(table('FileNamesToIcon.js', 'FileNamesToIcon'));
-
-  const set = readJson(join(pkgDir('@iconify-json/vscode-icons'), 'icons.json'));
-  const icon = (id) => {
-    let name = id.replaceAll('_', '-');
-    let props = {};
-    for (let hops = 0; !set.icons[name] && set.aliases?.[name] && hops < 5; hops++) {
-      props = { ...set.aliases[name], ...props };
-      name = set.aliases[name].parent;
-    }
-    const i = set.icons[name];
-    if (!i) return null;
-    const w = props.width ?? i.width ?? set.width ?? 16;
-    const h = props.height ?? i.height ?? set.height ?? 16;
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}">${i.body}</svg>`;
-  };
-
-  // Some entries point straight at a light-theme variant; use the base icon
-  // and let `light` pick the variant.
-  for (const t of [names, extensions]) {
-    for (const [k, id] of Object.entries(t)) {
-      const base = id.replace(/^file_type_light_/, 'file_type_');
-      if (base !== id && icon(base)) t[k] = base;
-    }
-  }
-
-  const tables = {
-    names,
-    extensions,
-    light: {},
-    fallback: 'default_file',
-    mime: { image: 'file_type_image', video: 'file_type_video', audio: 'file_type_audio' },
-  };
-  for (const id of usedIds(tables)) {
-    const lightId = id.replace(/^file_type_(?!light_)/, 'file_type_light_');
-    if (lightId !== id && icon(lightId)) tables.light[id] = lightId;
-  }
-  const svgs = new Map();
-  for (const id of usedIds(tables)) {
-    const svg = icon(id);
-    if (svg) svgs.set(id, () => svg);
-  }
-  return { tables, svgs };
-}
-
-// Seti's colour palette, and darker shades for the two that don't read on
-// a light background.
-const SETI_COLOURS = {
-  blue: '#519aba', grey: '#4d5a5e', 'grey-light': '#6d8086', green: '#8dc149', orange: '#e37933', pink: '#f55385',
-  purple: '#a074c4', red: '#cc3e44', white: '#d4d7d6', yellow: '#cbcb41', ignore: '#41535b',
-};
-const SETI_LIGHT = { white: '#6d8086', yellow: '#a3a32e' };
-
-function seti() {
-  const vendor = new URL('../vendor/seti/', import.meta.url);
-  const defs = readJson(new URL('definitions.json', vendor));
-  const glyphs = readJson(new URL('icons.json', vendor));
-  const id = ([glyph, colour]) => `${glyph}-${colour}`;
-  const names = {};
-  for (const [k, v] of Object.entries(defs.files)) names[k.toLowerCase()] = id(v);
-  const extensions = {};
-  for (const [k, v] of Object.entries(defs.extensions)) extensions[k.replace(/^\./, '').toLowerCase()] = id(v);
-  const tables = {
-    names,
-    extensions,
-    light: {},
-    fallback: id(defs.default),
-    mime: { image: 'image-purple', video: 'video-pink', audio: 'audio-purple' },
-  };
-  const svgs = new Map();
-  // Longest colour names first, so "grey-light" isn't read as "grey".
-  const colours = Object.keys(SETI_COLOURS).sort((x, y) => y.length - x.length);
-  for (const i of usedIds(tables)) {
-    const colour = colours.find((c) => i.endsWith(`-${c}`));
-    const glyph = colour && glyphs[i.slice(0, -colour.length - 1)];
-    if (!glyph) continue;
-    const svg = (fill) => glyph.replace('<svg ', `<svg xmlns="http://www.w3.org/2000/svg" fill="${fill}" `);
-    svgs.set(i, () => svg(SETI_COLOURS[colour]));
-    if (SETI_LIGHT[colour]) {
-      tables.light[i] = `${i}-light`;
-      svgs.set(`${i}-light`, () => svg(SETI_LIGHT[colour]));
-    }
-  }
-  return { tables, svgs };
-}
-
 function usedIds(t) {
   return new Set([t.fallback, ...Object.values(t.mime), ...Object.values(t.names), ...Object.values(t.extensions), ...Object.values(t.light)]);
 }
 
-const PACKS = { material, vscode, seti };
+/**
+ * A VS Code icon theme (the format Material and Symbols use): fileNames,
+ * fileExtensions, an optional `light` section, and iconDefinitions with
+ * paths relative to the theme file.
+ */
+function vscodeTheme(themeFile, mime) {
+  const base = dirname(themeFile);
+  const m = readJson(themeFile);
+  const names = lower(m.fileNames);
+  const extensions = lower(m.fileExtensions);
+  // Light-theme overrides by name/extension become id -> light id, so every
+  // file using that icon gets the variant.
+  const light = {};
+  for (const [k, id] of Object.entries(lower(m.light?.fileNames))) if (names[k]) light[names[k]] = id;
+  for (const [k, id] of Object.entries(lower(m.light?.fileExtensions))) if (extensions[k]) light[extensions[k]] = id;
+  const tables = { names, extensions, light, fallback: m.file, mime };
+  const svgs = new Map();
+  for (const id of usedIds(tables)) {
+    // Trimmed: a path in Symbols has a stray trailing space. Icons whose
+    // file is missing are left out (the lookup then falls back).
+    const path = m.iconDefinitions[id] && join(base, m.iconDefinitions[id].iconPath.trim());
+    if (path && existsSync(path)) svgs.set(id, () => readFileSync(path));
+  }
+  return { tables, svgs };
+}
+
+const material = () =>
+  vscodeTheme(join(pkgDir('material-icon-theme'), 'dist/material-icons.json'), { image: 'image', video: 'video', audio: 'audio' });
+
+const symbols = () =>
+  vscodeTheme(join(pkgDir('vscode-symbols'), 'src/symbol-icon-theme.json'), { image: 'image', video: 'video', audio: 'audio' });
+
+/**
+ * Our CSP (sent with every response, SVGs included) blocks <style> inside
+ * an SVG, so turn simple class rules like `.st0{fill:#c11e07}` into
+ * presentation attributes on the elements that use them.
+ */
+function inlineStyles(svg) {
+  const style = svg.match(/<style[^>]*>([\s\S]*?)<\/style>/);
+  if (!style) return svg;
+  const rules = {};
+  for (const [, selectors, body] of style[1].matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+    const decls = body
+      .split(';')
+      .map((d) => d.split(':').map((x) => x.trim()))
+      .filter(([k, v]) => k && v);
+    for (const sel of selectors.split(',')) {
+      const cls = sel.trim().match(/^\.([\w-]+)$/)?.[1];
+      if (cls) rules[cls] = [...(rules[cls] ?? []), ...decls];
+    }
+  }
+  return svg.replace(style[0], '').replace(/class="([^"]*)"/g, (_, classes) =>
+    classes
+      .split(/\s+/)
+      .flatMap((c) => rules[c] ?? [])
+      .map(([k, v]) => `${k}="${v}"`)
+      .join(' '),
+  );
+}
+
+function documents() {
+  const dir = join(pkgDir('file-icon-vectors'), 'dist/icons/vivid');
+  const ids = readdirSync(dir)
+    .filter((f) => f.endsWith('.svg'))
+    .map((f) => f.slice(0, -4));
+  // One icon per extension, named after it.
+  const extensions = Object.fromEntries(ids.filter((id) => id !== 'blank').map((id) => [id.toLowerCase(), id]));
+  const tables = { names: {}, extensions, light: {}, fallback: 'blank', mime: { image: 'image', video: 'mp4', audio: 'mp3' } };
+  const svgs = new Map(ids.map((id) => [id, () => inlineStyles(readFileSync(join(dir, `${id}.svg`), 'utf8'))]));
+  return { tables, svgs };
+}
+
+const PACKS = { material, symbols, documents };
 const PREFIX = 'virtual:file-icons/';
 
 export default function fileIcons() {
