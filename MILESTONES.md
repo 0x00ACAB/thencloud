@@ -56,7 +56,8 @@ Bigger pieces:
 - [x] **Markdown preview**: rendered and sanitised, with a Source toggle
 - [ ] **Markdown editor**: WYSIWYG, saving back as a new encrypted version
 - [ ] Previews: streamed video (today the whole file is decrypted into memory first, up to 256 MB), images referenced from Markdown by relative path, PDF text selection and links
-- [ ] **Per-file-type icons** from an IDE-style icon pack (Rust, JS, Markdown, archives and so on), served locally like the Lucide set
+- [x] **Per-file-type icons**: choose Minimal (Lucide), Seti, Material or vscode-icons in Settings; served locally, and only the chosen pack's tables and the icons on screen are downloaded
+- [ ] More icon packs (Catppuccin: its icons are on npm but its file-name mapping isn't), and optionally per-name folder icons
 - [ ] **Multi-select** with bulk move, download and delete
 - [ ] **Folder uploads** (drag a whole folder in) and zip download of folders
 - [ ] **Search and sort** within a folder (search is client-side over decrypted names)

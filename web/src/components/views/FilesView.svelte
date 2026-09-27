@@ -1,8 +1,9 @@
 <script>
   import { session, resolvePath, listFolder, createFolder, rename, trash, untrash, download, fetchEntry, upload, refreshMe } from '../../lib/cloud.svelte.js';
   import { toast, toastError, trackTransfer, errorMessage } from '../../lib/ui.svelte.js';
-  import { formatSize, formatWhen, fullDate, fileIcon, plural } from '../../lib/format.js';
+  import { formatSize, formatWhen, fullDate, plural } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
+  import FileIcon from '../FileIcon.svelte';
   import Menu from '../Menu.svelte';
   import NameDialog from '../dialogs/NameDialog.svelte';
   import VersionsDialog from '../dialogs/VersionsDialog.svelte';
@@ -293,7 +294,7 @@
           <tr class="group" in:fade out:fade={{ duration: 120 }} animate:flip={flipParams()}>
             <td class="max-w-0">
               <button type="button" class="flex max-w-full cursor-pointer items-center gap-3 text-left" onclick={() => activate(entry)}>
-                <Icon name={folder ? 'folder' : fileIcon(entry.meta)} class="size-4 shrink-0 {folder ? 'text-accent-text' : 'text-fg-muted'}" />
+                {#if folder}<Icon name="folder" class="size-4 shrink-0 text-accent-text" />{:else}<FileIcon meta={entry.meta} />{/if}
                 <span class="truncate font-medium group-hover:underline group-hover:underline-offset-4 group-hover:decoration-line-strong">{entry.meta.name}</span>
               </button>
             </td>

@@ -3,6 +3,7 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 import tailwindcss from '@tailwindcss/vite';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import fileIcons from './scripts/file-icons-plugin.mjs';
 
 // pdf.js loads fonts, CMaps and image decoders at runtime from these folders.
 // They are copied to /pdfjs/ so the CSP's same-origin rule covers them.
@@ -22,6 +23,7 @@ export default defineConfig({
   plugins: [
     tailwindcss(),
     svelte(),
+    fileIcons(),
     {
       name: 'thencloud-pdfjs-assets',
       configureServer(server) {

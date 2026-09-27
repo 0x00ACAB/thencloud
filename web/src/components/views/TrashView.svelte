@@ -2,9 +2,10 @@
   import { onMount } from 'svelte';
   import { session, trashItems, restoreFromTrash, purgeFromTrash, emptyTrash, refreshMe } from '../../lib/cloud.svelte.js';
   import { toast, toastError } from '../../lib/ui.svelte.js';
-  import { formatSize, formatWhen, fullDate, fileIcon, plural } from '../../lib/format.js';
+  import { formatSize, formatWhen, fullDate, plural } from '../../lib/format.js';
   import { fade, flip, flipParams } from '../../lib/motion.js';
   import Icon from '../Icon.svelte';
+  import FileIcon from '../FileIcon.svelte';
   import Menu from '../Menu.svelte';
   import ConfirmDialog from '../dialogs/ConfirmDialog.svelte';
 
@@ -90,7 +91,7 @@
                 <span class="flex items-center gap-3 text-fg-muted"><Icon name="circle-alert" class="size-4 text-danger" />Couldn't decrypt this item</span>
               {:else}
                 <span class="flex items-center gap-3">
-                  <Icon name={folder ? 'folder' : fileIcon(it.entry.meta)} class="size-4 shrink-0 text-fg-faint" />
+                  {#if folder}<Icon name="folder" class="size-4 shrink-0 text-fg-faint" />{:else}<FileIcon meta={it.entry.meta} minimalClass="text-fg-faint" />{/if}
                   <span class="truncate font-medium">{it.entry.meta.name}</span>
                   {#if !folder}<span class="hidden text-fg-faint sm:inline">{formatSize(it.entry.meta.size)}</span>{/if}
                 </span>

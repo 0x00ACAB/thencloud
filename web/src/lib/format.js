@@ -1,3 +1,5 @@
+import { previewKind } from './preview.js';
+
 export function formatSize(n) {
   if (n == null) return '';
   if (n < 1024) return `${n} B`;
@@ -37,9 +39,10 @@ export function fullDate(ms) {
 export function fileIcon(meta) {
   const mime = meta.mime || '';
   const ext = (meta.name.split('.').pop() || '').toLowerCase();
-  if (mime.startsWith('image/')) return 'file-image';
-  if (mime.startsWith('video/')) return 'file-video';
-  if (mime.startsWith('audio/')) return 'file-audio';
+  const kind = previewKind(meta)?.kind;
+  if (kind === 'image' || mime.startsWith('image/')) return 'file-image';
+  if (kind === 'video' || mime.startsWith('video/')) return 'file-video';
+  if (kind === 'audio' || mime.startsWith('audio/')) return 'file-audio';
   if (['zip', 'tar', 'gz', 'tgz', '7z', 'rar', 'xz', 'zst', 'bz2'].includes(ext)) return 'file-archive';
   if (['js', 'ts', 'rs', 'py', 'go', 'c', 'h', 'cpp', 'java', 'json', 'toml', 'yaml', 'yml', 'html', 'css', 'sh', 'svelte'].includes(ext)) return 'file-code';
   if (mime.startsWith('text/') || ['md', 'txt', 'pdf', 'doc', 'docx', 'odt', 'rtf'].includes(ext)) return 'file-text';

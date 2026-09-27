@@ -1,8 +1,9 @@
 <script>
   import { links, deleteLink } from '../../lib/cloud.svelte.js';
   import { toast, toastError, copyText } from '../../lib/ui.svelte.js';
-  import { formatDate, fileIcon } from '../../lib/format.js';
+  import { formatDate } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
+  import FileIcon from '../FileIcon.svelte';
   import ConfirmDialog from '../dialogs/ConfirmDialog.svelte';
 
   let { go } = $props();
@@ -58,7 +59,7 @@
           <tr class="group">
             <td class="max-w-0">
               <button type="button" class="flex max-w-full cursor-pointer items-center gap-3 text-left" onclick={() => open(l)}>
-                <Icon name={folder ? 'folder' : l.entry ? fileIcon(l.entry.meta) : 'file'} class="size-4 shrink-0 {folder ? 'text-accent-text' : 'text-fg-muted'}" />
+                {#if folder}<Icon name="folder" class="size-4 shrink-0 text-accent-text" />{:else if l.entry}<FileIcon meta={l.entry.meta} />{:else}<Icon name="file" class="size-4 shrink-0 text-fg-muted" />{/if}
                 <span class="truncate font-medium group-hover:underline group-hover:decoration-line-strong group-hover:underline-offset-4">{l.entry?.meta.name ?? 'Unavailable'}</span>
               </button>
             </td>
