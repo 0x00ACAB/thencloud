@@ -1,6 +1,6 @@
-// "Convert to": change a file's format in the browser. The file is already
-// decrypted here; the result is downloaded or uploaded as a new encrypted
-// file, so the server never sees either.
+// "Convert": change a file's format, and crop, resize or trim it, in the
+// browser. The file is already decrypted here; the result is downloaded or
+// uploaded as a new encrypted file, so the server never sees either.
 //
 // Images use the browser's own decoders and encoders (plus a tiny BMP
 // writer). Video and audio use ffmpeg compiled to WASM (lib/ffmpeg.js),
@@ -77,23 +77,24 @@ async function imageEncoders() {
 
 /**
  * Formats `meta` can be converted to, grouped: [{ title, targets }]. Its own
- * format is left out. Video can also become audio (the soundtrack) or a GIF.
+ * format is included (marked `same`) for resizing, cropping or trimming
+ * without changing it. Video can also become audio (the soundtrack) or a GIF.
  */
 export async function targetsFor(meta) {
   const kind = sourceKind(meta);
   const ext = extension(meta.name);
-  const same = (t) => t.ext === ext || (t.id === 'jpeg' && ext === 'jpeg') || (t.id === 'opus' && ext === 'opus');
+  const mark = (t) => ({ ...t, same: t.ext === ext || (t.id === 'jpeg' && ext === 'jpeg') });
   if (kind === 'image') {
     const ok = await imageEncoders();
-    return [{ title: 'Image', targets: IMAGE_TARGETS.filter((t) => ok.has(t.id) && !same(t)) }];
+    return [{ title: 'Image', targets: IMAGE_TARGETS.filter((t) => ok.has(t.id)).map(mark) }];
   }
   if (kind === 'video') {
     return [
-      { title: 'Video', targets: VIDEO_TARGETS.filter((t) => !same(t)) },
+      { title: 'Video', targets: VIDEO_TARGETS.map(mark) },
       { title: 'Audio only', targets: AUDIO_TARGETS },
     ];
   }
-  if (kind === 'audio') return [{ title: 'Audio', targets: AUDIO_TARGETS.filter((t) => !same(t)) }];
+  if (kind === 'audio') return [{ title: 'Audio', targets: AUDIO_TARGETS.map(mark) }];
   return [];
 }
 
@@ -104,17 +105,24 @@ export function convertedName(name, target) {
 }
 
 /**
- * Convert `blob`. `quality` is 0..1 for lossy image formats. Reports
- * progress 0..1 and can be stopped with `signal`. Resolves to a Blob.
+ * Convert `blob`. For images, `quality` is 0..1 for lossy formats, `crop`
+ * is { x, y, w, h } in source pixels and `size` { w, h } the output size.
+ * For video and audio, `trim` is { start, end } in seconds (either may be
+ * null). Reports progress 0..1 and can be stopped with `signal`. Resolves
+ * to a Blob.
  */
-export async function convert(blob, meta, target, { quality = 0.9, onProgress, onStage, signal } = {}) {
-  if (target.kind === 'image' && sourceKind(meta) === 'image') return convertImage(blob, target, quality);
+export async function convert(blob, meta, target, { quality = 0.9, crop, size, trim, onProgress, onStage, signal } = {}) {
+  if (target.kind === 'image' && sourceKind(meta) === 'image') return convertImage(blob, target, quality, crop, size);
   const { transcode } = await import('./ffmpeg.js');
-  return transcode(blob, extension(meta.name) || 'bin', target, { onProgress, onStage, signal });
+  return transcode(blob, extension(meta.name) || 'bin', target, { trim, onProgress, onStage, signal });
 }
 
-async function convertImage(blob, target, quality) {
-  const bitmap = await createImageBitmap(blob);
+async function convertImage(blob, target, quality, crop, size) {
+  const full = await createImageBitmap(blob);
+  const c = crop ?? { x: 0, y: 0, w: full.width, h: full.height };
+  const out = size ?? { w: c.w, h: c.h };
+  const bitmap = await createImageBitmap(full, c.x, c.y, c.w, c.h, { resizeWidth: out.w, resizeHeight: out.h, resizeQuality: 'high' });
+  full.close();
   const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
   const ctx = canvas.getContext('2d');
   // JPEG and BMP have no transparency; put it on white instead of black.
@@ -156,4 +164,12 @@ function encodeBmp({ width, height, data }) {
     }
   }
   return new Blob([buf], { type: 'image/bmp' });
+}
+
+/** "1:05", "0:01:05", "65" or "65.5" to seconds; null if empty, NaN if not a time. */
+export function parseTime(text) {
+  const t = String(text ?? '').trim();
+  if (!t) return null;
+  if (!/^\d+(:\d{1,2}){0,2}(\.\d+)?$/.test(t)) return NaN;
+  return t.split(':').reduce((acc, part) => acc * 60 + Number(part), 0);
 }

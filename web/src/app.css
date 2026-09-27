@@ -534,3 +534,29 @@
     @apply inline-grid h-5 min-w-5 place-items-center rounded border border-line bg-subtle px-1 font-mono text-[11px] leading-none text-fg-muted;
   }
 }
+
+/* Image crop box: everything outside it is dimmed. */
+@layer components {
+  .crop-box {
+    outline: 1px solid rgb(255 255 255 / 0.9);
+    box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.55);
+  }
+  .crop-box:focus-visible {
+    @apply outline-2 outline-accent;
+  }
+  .crop-handle {
+    @apply absolute size-3 rounded-sm border border-black/40 bg-white;
+  }
+  .crop-nw {
+    @apply -top-1.5 -left-1.5 cursor-nwse-resize;
+  }
+  .crop-ne {
+    @apply -top-1.5 -right-1.5 cursor-nesw-resize;
+  }
+  .crop-sw {
+    @apply -bottom-1.5 -left-1.5 cursor-nesw-resize;
+  }
+  .crop-se {
+    @apply -right-1.5 -bottom-1.5 cursor-nwse-resize;
+  }
+}
