@@ -1,0 +1,23 @@
+[package]
+name = "thencloud-cli"
+description = "Command-line client for thencloud: encrypts and decrypts locally, signs in with an app password"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "thencloud"
+path = "src/main.rs"
+
+[dependencies]
+thencloud-crypto.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+ureq = { version = "3", features = ["json"] }
+clap = { version = "4", features = ["derive", "env"] }
+
+[dev-dependencies]
+thencloud-server = { path = "../thencloud-server" }
+tokio = { version = "1", features = ["rt-multi-thread", "net"] }
+axum = "0.8"
+tempfile = "3"
