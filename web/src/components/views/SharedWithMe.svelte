@@ -3,6 +3,7 @@
   import { toast, toastError, trackTransfer, errorMessage } from '../../lib/ui.svelte.js';
   import { formatSize } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
+  import Avatar from '../Avatar.svelte';
   import Time from '../Time.svelte';
   import FileIcon from '../FileIcon.svelte';
   import FolderIcon from '../FolderIcon.svelte';
@@ -83,8 +84,13 @@
               {/if}
             </td>
             <td class="hidden md:table-cell">
-              <p class="font-medium">{s.owner}</p>
-              {#if s.ownerFingerprint}<p class="font-mono text-[11px] text-fg-faint" title="Owner's key fingerprint">{s.ownerFingerprint}</p>{/if}
+              <div class="flex items-center gap-2.5">
+                <Avatar username={s.owner} class="size-7 text-xs" />
+                <div class="min-w-0">
+                  <p class="font-medium">{s.owner}</p>
+                  {#if s.ownerFingerprint}<p class="font-mono text-[11px] text-fg-faint" title="Owner's key fingerprint">{s.ownerFingerprint}</p>{/if}
+                </div>
+              </div>
             </td>
             <td class="hidden sm:table-cell">
               <span class="badge {s.permission === 'write' ? 'badge-accent' : ''}">{s.permission === 'write' ? 'Can edit' : 'View only'}</span>

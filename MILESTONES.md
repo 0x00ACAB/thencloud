@@ -85,7 +85,7 @@ Bigger pieces:
 - [x] **Keyboard shortcuts** (`/` search, `j`/`k` or arrows through rows, Backspace up a folder, `n` new folder, `u` upload, Delete to trash) plus a `?` cheat sheet
 - [x] Search across all folders ("Everywhere" next to the search box): names are decrypted in the browser, from an in-memory index built as you browse and filled in by walking the tree when you search; results show where each one is and open in place
 
-- [ ] **Profile pictures**: shown in the top bar, share dialogs and shared-with lists. Decide who can see them: encrypted to people you share with (server can't see) vs. plain on the server (simpler, but visible to it)
+- [x] **Profile pictures**: shown in the top bar, share dialogs, shared-with lists and verified contacts. Encrypted in the browser under a per-user avatar key that is sealed to each person you share with, either way round; the server can't see them
 
 Smaller things:
 - [x] Inline rename on the row instead of a dialog (menu or F2; Enter or clicking away saves, Esc cancels)

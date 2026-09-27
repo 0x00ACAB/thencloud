@@ -8,6 +8,7 @@
   import { onMount } from 'svelte';
   import Modal from '../Modal.svelte';
   import Icon from '../Icon.svelte';
+  import Avatar from '../Avatar.svelte';
   import { lookupUser, share, outgoingShares, setSharePermission, deleteShare, session, contactStatus, verifyContact } from '../../lib/cloud.svelte.js';
   import Time from '../Time.svelte';
   import { errorMessage, toast, toastError } from '../../lib/ui.svelte.js';
@@ -104,7 +105,7 @@
   {:else}
     <div class="grid gap-3 rounded-md border border-line p-4">
       <div class="flex items-center gap-3">
-        <span class="grid size-8 place-items-center rounded-full bg-muted text-xs font-semibold uppercase">{user.username.slice(0, 1)}</span>
+        <Avatar username={user.username} class="size-8 text-xs" />
         <div class="min-w-0 flex-1">
           <p class="font-medium">{user.username}</p>
           <p class="hint">Their key fingerprint</p>
@@ -161,7 +162,7 @@
       <ul class="divide-y divide-line rounded-md border border-line">
         {#each people as p (p.id)}
           <li class="flex items-center gap-3 px-3 py-2">
-            <span class="grid size-7 shrink-0 place-items-center rounded-full bg-muted text-xs font-semibold uppercase">{p.recipient.slice(0, 1)}</span>
+            <Avatar username={p.recipient} class="size-7 text-xs" />
             <span class="min-w-0 flex-1 truncate text-sm">{p.recipient}</span>
             <select
               class="input h-8 w-auto text-[13px]"

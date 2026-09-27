@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { session, changePassword, listSessions, revokeSession, revokeOtherSessions, removeRecoveryKey, listAppPasswords, deleteAppPassword, listContacts, forgetContact, forgetThisBrowser } from '../../lib/cloud.svelte.js';
+  import { session, changePassword, listSessions, revokeSession, revokeOtherSessions, removeRecoveryKey, listAppPasswords, deleteAppPassword, avatar, loadMyAvatar, setAvatar, removeAvatar, listContacts, forgetContact, forgetThisBrowser } from '../../lib/cloud.svelte.js';
   import RecoveryKeyDialog from '../dialogs/RecoveryKeyDialog.svelte';
   import ConfirmDialog from '../dialogs/ConfirmDialog.svelte';
   import AppPasswordDialog from '../dialogs/AppPasswordDialog.svelte';
@@ -8,6 +8,7 @@
   import { formatSize, formatWhen, formatDate, fullDate } from '../../lib/format.js';
   import { slide } from '../../lib/motion.js';
   import Icon from '../Icon.svelte';
+  import Avatar from '../Avatar.svelte';
   import Time from '../Time.svelte';
   import FileIcon from '../FileIcon.svelte';
   import FolderIcon from '../FolderIcon.svelte';
@@ -35,6 +36,37 @@
       error = err?.code === 'invalid_credentials' ? 'Your current password is wrong.' : errorMessage(err);
     } finally {
       busy = false;
+    }
+  }
+
+  // Profile picture.
+  let avatarBusy = $state(false);
+  onMount(() => loadMyAvatar().catch(() => {}));
+
+  async function pickAvatar(e) {
+    const file = e.currentTarget.files?.[0];
+    e.currentTarget.value = '';
+    if (!file) return;
+    avatarBusy = true;
+    try {
+      await setAvatar(file);
+      toast('Profile picture updated', { kind: 'success' });
+    } catch (err) {
+      toastError(err?.name === 'InvalidStateError' || err?.name === 'EncodingError' ? new Error("That image couldn't be read.") : err);
+    } finally {
+      avatarBusy = false;
+    }
+  }
+
+  async function dropAvatar() {
+    avatarBusy = true;
+    try {
+      await removeAvatar();
+      toast('Profile picture removed');
+    } catch (err) {
+      toastError(err);
+    } finally {
+      avatarBusy = false;
     }
   }
 
@@ -140,6 +172,24 @@
 
 <div class="mt-6 grid gap-6">
   {#snippet accountBody()}
+    <div class="flex flex-wrap items-center gap-4">
+      {#if avatar.url}
+        <img src={avatar.url} alt="You" class="size-16 rounded-full object-cover" />
+      {:else}
+        <span class="grid size-16 place-items-center rounded-full bg-muted text-xl font-semibold uppercase" aria-hidden="true">{session.me.username.slice(0, 1)}</span>
+      {/if}
+      <div class="grid gap-2">
+        <div class="flex flex-wrap gap-2">
+          <label class="btn btn-secondary {avatarBusy ? 'pointer-events-none opacity-60' : ''}">
+            {#if avatarBusy}<Icon name="loader-circle" class="spinner" />{:else}<Icon name="upload" />{/if}
+            {avatar.url ? 'Change picture' : 'Add a picture'}
+            <input type="file" accept="image/*" class="sr-only" onchange={pickAvatar} />
+          </label>
+          {#if avatar.url}<button type="button" class="btn btn-ghost" disabled={avatarBusy} onclick={dropAvatar}>Remove</button>{/if}
+        </div>
+        <p class="max-w-md text-xs text-fg-muted">Encrypted in this browser. Only people you share with, or who share with you, can see it; the server can't.</p>
+      </div>
+    </div>
     <dl class="grid gap-3 text-sm sm:grid-cols-[10rem_1fr]">
       <dt class="text-fg-muted">Username</dt>
       <dd class="font-medium">{session.me.username}{#if session.me.is_admin}<span class="badge ml-2">Admin</span>{/if}</dd>
@@ -177,7 +227,7 @@
       <ul class="divide-y divide-line rounded-md border border-line">
         {#each contacts as c (c.username)}
           <li class="flex items-center gap-3 px-3 py-2.5" out:slide>
-            <span class="grid size-7 shrink-0 place-items-center rounded-full bg-muted text-xs font-semibold uppercase">{c.username.slice(0, 1)}</span>
+            <Avatar username={c.username} class="size-7 text-xs" />
             <div class="min-w-0 flex-1">
               <p class="truncate text-sm font-medium">{c.username}</p>
               <p class="fingerprint truncate text-xs text-fg-muted">{c.fingerprint}</p>

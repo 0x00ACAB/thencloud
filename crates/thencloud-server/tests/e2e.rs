@@ -1901,6 +1901,117 @@ async fn drafts_are_per_user_writers_only_and_opaque() {
 }
 
 #[tokio::test]
+async fn profile_pictures_are_encrypted_and_only_for_share_partners() {
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "pw").await;
+    let bob = register(&h, "bob", "pw").await;
+    let carol = register(&h, "carol", "pw").await;
+    let alice_id = alice.me(&h).await.user_id;
+    let picture = b"AVATAR-PNG-SECRET-PIXELS";
+    let ak = Key::generate();
+    let r = h
+        .call(
+            Method::PUT,
+            "/api/me/avatar",
+            Some(&alice.token),
+            Some(SetAvatar {
+                data: B64(c::encrypt_avatar(&ak, "alice", picture)),
+                enc_key: B64(c::encrypt_private_data(
+                    &alice.mk,
+                    &alice_id,
+                    "avatar-key",
+                    ak.as_bytes(),
+                )),
+            }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT, "{r:?}");
+    let mine: MyAvatar = h.get("/api/me/avatar", &alice.token).await.json();
+    let key = c::decrypt_private_data(&alice.mk, &alice_id, "avatar-key", &mine.enc_key.unwrap())
+        .unwrap();
+    assert_eq!(key, ak.as_bytes());
+
+    // No grant yet: nobody else gets it.
+    let none: Option<UserAvatar> = h.get("/api/users/alice/avatar", &bob.token).await.json();
+    assert!(none.is_none());
+    let bob_pk: UserPublicKey = h
+        .get("/api/users/bob/public-key", &alice.token)
+        .await
+        .json();
+    let grant = AvatarGrant {
+        sealed_key: B64(c::seal_avatar_key(&bob_pk.public_key, &ak, "alice", "bob").unwrap()),
+    };
+    // Only between people who share with each other.
+    let r = h
+        .call(
+            Method::PUT,
+            "/api/avatar-grants/bob",
+            Some(&alice.token),
+            Some(&grant),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN);
+    let (folder, folder_key) = alice.mkdir(&h, &alice.root, "Shared").await;
+    h.call(
+        Method::POST,
+        "/api/shares",
+        Some(&alice.token),
+        Some(CreateShareRequest {
+            node_id: folder.clone(),
+            recipient: "bob".into(),
+            wrapped_key: B64(c::seal_share_key(&bob_pk.public_key, &folder_key, &folder).unwrap()),
+            permission: Permission::Read,
+        }),
+    )
+    .await;
+    let r = h
+        .call(
+            Method::PUT,
+            "/api/avatar-grants/bob",
+            Some(&alice.token),
+            Some(&grant),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    let got: UserAvatar = h
+        .get("/api/users/alice/avatar", &bob.token)
+        .await
+        .json::<Option<UserAvatar>>()
+        .unwrap();
+    let k = c::open_avatar_key(&bob.kp, &got.sealed_key, "alice", "bob").unwrap();
+    assert_eq!(c::decrypt_avatar(&k, "alice", &got.data).unwrap(), picture);
+    let none: Option<UserAvatar> = h.get("/api/users/alice/avatar", &carol.token).await.json();
+    assert!(none.is_none());
+    let mine: MyAvatar = h.get("/api/me/avatar", &alice.token).await.json();
+    assert_eq!(mine.grantees, ["bob"]);
+
+    // Opaque to the server.
+    let mut files = Vec::new();
+    all_files(&h.dir.path().join("data"), &mut files);
+    for p in &files {
+        let bytes = std::fs::read(p).unwrap();
+        for n in [picture.as_slice(), ak.as_bytes()] {
+            assert!(!contains(&bytes, n), "avatar data found in {}", p.display());
+        }
+    }
+
+    // Removing it takes back every grant.
+    let r = h
+        .call(
+            Method::DELETE,
+            "/api/me/avatar",
+            Some(&alice.token),
+            None::<()>,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    let none: Option<UserAvatar> = h.get("/api/users/alice/avatar", &bob.token).await.json();
+    assert!(none.is_none());
+    let mine: MyAvatar = h.get("/api/me/avatar", &alice.token).await.json();
+    assert!(mine.data.is_none() && mine.grantees.is_empty());
+}
+
+#[tokio::test]
 async fn janitor_thins_old_versions_by_age() {
     let h = Harness::new().await;
     let a = register(&h, "alice", "pw").await;

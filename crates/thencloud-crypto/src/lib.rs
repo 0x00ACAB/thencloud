@@ -520,6 +520,40 @@ pub fn open_drop_key(kp: &KeyPair, sealed: &[u8], node_id: &str, folder_id: &str
 }
 
 // ---------------------------------------------------------------------------
+// Profile pictures: encrypted under a per-user avatar key, which is sealed
+// to each person the user shares with (in either direction). The owner's
+// own copy is kept with `encrypt_private_data`.
+// ---------------------------------------------------------------------------
+
+pub fn encrypt_avatar(key: &Key, owner: &str, image: &[u8]) -> Vec<u8> {
+    seal(key, image, &aad("avatar", &[owner]))
+}
+
+pub fn decrypt_avatar(key: &Key, owner: &str, sealed: &[u8]) -> Result<Vec<u8>> {
+    open(key, sealed, &aad("avatar", &[owner]))
+}
+
+pub fn seal_avatar_key(
+    grantee_pub: &[u8],
+    key: &Key,
+    owner: &str,
+    grantee: &str,
+) -> Result<Vec<u8>> {
+    seal_to_public(
+        grantee_pub,
+        key.as_bytes(),
+        &aad("avatar-key", &[owner, grantee]),
+    )
+}
+
+pub fn open_avatar_key(kp: &KeyPair, sealed: &[u8], owner: &str, grantee: &str) -> Result<Key> {
+    let mut pt = open_sealed(kp, sealed, &aad("avatar-key", &[owner, grantee]))?;
+    let k = Key::from_slice(&pt);
+    pt.zeroize();
+    k
+}
+
+// ---------------------------------------------------------------------------
 // Node keys and metadata
 // ---------------------------------------------------------------------------
 
@@ -732,6 +766,14 @@ mod tests {
         assert!(open_drop_key(&kp, &d, &id, &folder).unwrap() == nk);
         assert!(open_drop_key(&kp, &d, &id, &new_id()).is_err());
         assert!(open_share_key(&kp, &d, &id).is_err());
+
+        let ak = Key::generate();
+        let pic = encrypt_avatar(&ak, "alice", b"png");
+        assert_eq!(decrypt_avatar(&ak, "alice", &pic).unwrap(), b"png");
+        assert!(decrypt_avatar(&ak, "bob", &pic).is_err());
+        let g = seal_avatar_key(&kp.public, &ak, "alice", "bob").unwrap();
+        assert!(open_avatar_key(&kp, &g, "alice", "bob").unwrap() == ak);
+        assert!(open_avatar_key(&kp, &g, "alice", "carol").is_err());
 
         let mk = Key::generate();
         let w = wrap_private_key(&mk, &kp.secret);
