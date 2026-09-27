@@ -16,6 +16,13 @@
 
   const rootId = session.me.keys.root_node_id;
 
+  // Phones get a bottom tab bar; fixed things (toasts, the transfer tray,
+  // the selection bar, the + button) sit above it using --bottom-bar.
+  $effect(() => {
+    document.documentElement.classList.add('has-bottom-bar');
+    return () => document.documentElement.classList.remove('has-bottom-bar');
+  });
+
   // In-app navigation. Uses history.pushState so the browser's back button
   // works, but never puts anything in the URL.
   let view = $state({ name: 'files', folderId: rootId });
@@ -34,14 +41,17 @@
   });
 
   const nav = [
-    { name: 'files', label: 'My files', icon: 'folder', to: () => ({ name: 'files', folderId: rootId }) },
-    { name: 'shared-with-me', label: 'Shared with me', icon: 'inbox', to: () => ({ name: 'shared-with-me' }) },
+    { name: 'files', label: 'My files', short: 'Files', icon: 'folder', to: () => ({ name: 'files', folderId: rootId }) },
+    { name: 'shared-with-me', label: 'Shared with me', short: 'Shared', icon: 'inbox', to: () => ({ name: 'shared-with-me' }) },
     { name: 'shared-by-me', label: 'Shared by me', icon: 'users', to: () => ({ name: 'shared-by-me' }) },
     { name: 'links', label: 'Public links', icon: 'link', to: () => ({ name: 'links' }) },
     { name: 'trash', label: 'Trash', icon: 'trash-2', to: () => ({ name: 'trash' }) },
     { name: 'settings', label: 'Settings', icon: 'settings', to: () => ({ name: 'settings' }) },
     ...(session.me.is_admin ? [{ name: 'admin', label: 'Admin', icon: 'shield-check', to: () => ({ name: 'admin' }) }] : []),
   ];
+
+  /** The sections on the phone tab bar; the others go under More. */
+  const MOBILE_TABS = ['files', 'shared-with-me', 'trash', 'settings'];
 
   // "My files" stays highlighted while browsing own folders; folders reached
   // through a share highlight "Shared with me".
@@ -97,13 +107,6 @@
       </div>
     </div>
 
-    <nav class="flex gap-1 overflow-x-auto px-3 pb-2 md:hidden" aria-label="Sections">
-      {#each nav as item (item.name)}
-        <button type="button" class="nav-item w-auto shrink-0" aria-current={current === item.name ? 'page' : undefined} onclick={() => go(item.to())}>
-          <Icon name={item.icon} />{item.label}
-        </button>
-      {/each}
-    </nav>
   </header>
 
   <div class="flex flex-1">
@@ -128,7 +131,7 @@
       </div>
     </aside>
 
-    <main class="min-w-0 flex-1 px-4 py-6 md:px-8 md:py-8">
+    <main class="min-w-0 flex-1 px-4 pt-6 pb-[calc(var(--bottom-bar)+1.5rem)] md:px-8 md:py-8">
       {#key view.name}
       <div class="mx-auto max-w-5xl animate-enter">
         {#if view.name === 'files'}
@@ -151,5 +154,29 @@
     </main>
   </div>
 </div>
+
+<!-- Phones: the main sections as a bottom tab bar; the rest under More. -->
+<nav
+  class="fixed inset-x-0 bottom-0 z-30 flex border-t border-line bg-bg/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden"
+  aria-label="Sections">
+  {#each nav.filter((n) => MOBILE_TABS.includes(n.name)) as item (item.name)}
+    <button
+      type="button"
+      class="tab-item"
+      aria-current={current === item.name ? 'page' : undefined}
+      onclick={() => go(item.to())}>
+      <Icon name={item.icon} class="size-5" />{item.short ?? item.label}
+    </button>
+  {/each}
+  <Menu
+    label="More sections"
+    align="end"
+    buttonClass="tab-item {MOBILE_TABS.includes(current) ? '' : 'text-fg'}"
+    items={nav
+      .filter((n) => !MOBILE_TABS.includes(n.name))
+      .map((n) => ({ label: n.label, icon: n.icon, onclick: () => go(n.to()) }))}>
+    {#snippet trigger()}<Icon name="ellipsis" class="size-5" />More{/snippet}
+  </Menu>
+</nav>
 
 <TransferTray />
