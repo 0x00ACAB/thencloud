@@ -1,10 +1,47 @@
-# thencloud
+<p align="center">
+  <img src="assets/thencloud-logo-mark.png" alt="" width="96">
+</p>
 
-An open-source, **end-to-end encrypted** alternative to Nextcloud.
+<h1 align="center">thencloud</h1>
+
+<p align="center">
+  An open-source, <b>end-to-end encrypted</b> alternative to Nextcloud.
+</p>
+
+<p align="center">
+  <a href="https://github.com/0x00ACAB/thencloud/actions/workflows/ci.yml"><img src="https://github.com/0x00ACAB/thencloud/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/0x00ACAB/thencloud/actions/workflows/codeql.yml"><img src="https://github.com/0x00ACAB/thencloud/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-3B47F9" alt="License: AGPL-3.0-or-later"></a>
+  <a href="https://github.com/0x00ACAB/thencloud/milestones"><img src="https://img.shields.io/github/milestones/open/0x00ACAB/thencloud?label=milestones" alt="Open milestones"></a>
+  <img src="https://img.shields.io/badge/rust-2024_edition-000?logo=rust" alt="Rust 2024 edition">
+  <img src="https://img.shields.io/badge/svelte-5-000?logo=svelte" alt="Svelte 5">
+</p>
+
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#how-the-encryption-works">How the encryption works</a> ·
+  <a href="#threat-model">Threat model</a> ·
+  <a href="MILESTONES.md">Roadmap</a> ·
+  <a href="CONTRIBUTING.md">Contributing</a>
+</p>
 
 Files, folder names and keys are encrypted and decrypted **in your browser**. The server stores ciphertext and wrapped keys. It never receives your password, your keys, your file names or your file contents.
 
-> **Status:** early. The backend is a complete file cloud: accounts, folders, chunked uploads, quotas, sharing and public links, with a web client for all of it. See [MILESTONES.md](MILESTONES.md).
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/screenshot-dark.png">
+  <img src=".github/assets/screenshot-light.png" alt="The thencloud file browser: folders and files in My files, with storage use and an end-to-end encrypted note in the sidebar">
+</picture>
+
+> **Status:** early, no stable release yet. The backend is a complete file cloud: accounts, folders, chunked uploads, quotas, sharing and public links, with a web client for all of it. See [MILESTONES.md](MILESTONES.md).
+
+## Features
+
+- **Files:** folders, drag-and-drop and folder uploads, resumable 4 MiB chunks, zip downloads, versions, trash, quotas.
+- **Sharing:** with other users (read or write) after a fingerprint check, or by public link with the key after `#`, an optional password and expiry.
+- **Previews and editing:** images, video, audio, PDF, code with highlighting, and a Markdown editor, all decrypted in the browser.
+- **Converting:** images, video and audio to other formats in the browser with canvas encoders and ffmpeg.wasm.
+- **Accounts:** an optional recovery key, session and device list, and an admin view that counts things but can't read them.
+- **Self-hosted and small:** one Rust binary, SQLite and a folder of encrypted blobs. Nothing loads from a CDN.
 
 ## Quick start
 
@@ -120,6 +157,16 @@ cd web && npm run check         # svelte-check
 ```
 
 `crates/thencloud-server/tests/e2e.rs` drives a real server in-process with a native client built on `thencloud-crypto`. It covers register, upload, move, share, public link, revoke, version history and the trash. It then scans the SQLite database and blob store to check that no plaintext names, contents, passwords or keys were stored.
+
+CI runs `cargo fmt`, `cargo clippy`, the tests, `svelte-check` and a full web build on every pull request, and CodeQL scans the Rust, JavaScript and workflow code. Dependabot keeps Cargo, npm and Actions dependencies current. See [CONTRIBUTING.md](CONTRIBUTING.md) before sending a pull request.
+
+## Roadmap
+
+[MILESTONES.md](MILESTONES.md) is the roadmap. Each section is mirrored as a [GitHub milestone]({R}/milestones) and each open item as an issue labelled [`roadmap`]({R}/issues?q=label%3Aroadmap), which a workflow keeps in sync.
+
+## Security
+
+Found a way for the server to learn something it shouldn't? Please report it privately; see [SECURITY.md](SECURITY.md).
 
 ## AI assistance
 
