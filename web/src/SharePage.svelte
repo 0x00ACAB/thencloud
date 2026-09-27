@@ -48,7 +48,9 @@
     if (!token || !fragment) return null;
     try {
       const k = unb64(fragment);
-      return k.length === 32 ? k : null;
+      // A folder key, or for a file drop the owner's key (32 bytes) or its
+      // X25519 half and the hash of its ML-KEM half (64).
+      return k.length === 32 || k.length === 64 ? k : null;
     } catch {
       return null;
     }
@@ -73,6 +75,19 @@
     }
     expiresAt = info.expires_at;
     if (info.upload_only) {
+      if (rootKey.length === 64) {
+        const pq = info.owner_pq_public_key ? unb64(info.owner_pq_public_key) : new Uint8Array();
+        // The server supplies the ML-KEM key; the link says which one it must be.
+        if (b64(tc.identity(rootKey.subarray(0, 32), pq)) !== b64(rootKey)) {
+          return fail(
+            "This link doesn't match its owner's key",
+            "The server gave a different key than the link names, so nothing can be sent safely. Don't upload anything; let the owner know.",
+          );
+        }
+        dropKey = new Uint8Array([...rootKey.subarray(0, 32), ...pq]);
+      } else {
+        dropKey = rootKey;
+      }
       owner = info.owner;
       dropFolder = info.folder_id;
       phase = 'drop';
@@ -158,6 +173,7 @@
   // --- File drop -----------------------------------------------------------
 
   let owner = $state('');
+  let dropKey = null; // what dropped files' keys are sealed to
   let sent = $state([]); // { id, name, size, progress, status, error }
   let dragging = $state(false);
   let picker = $state();
@@ -183,7 +199,7 @@
         body: {
           node_id: nodeId,
           parent_id: folderId,
-          enc_key: b64(tc.seal_drop_key(rootKey, nodeKey, nodeId, folderId)),
+          enc_key: b64(tc.seal_drop_key(dropKey, nodeKey, nodeId, folderId)),
           enc_metadata: encryptMeta(nodeKey, nodeId, meta),
           version_id: versionId,
           enc_content_key: b64(tc.wrap_content_key(nodeKey, contentKey, nodeId, versionId)),

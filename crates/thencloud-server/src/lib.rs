@@ -14,7 +14,9 @@ pub mod janitor;
 pub mod limiter;
 pub mod routes;
 pub mod settings;
+pub mod totp;
 pub mod util;
+pub mod webauthn;
 
 use std::sync::Arc;
 

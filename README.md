@@ -41,7 +41,7 @@ Files, folder names and keys are encrypted and decrypted **in your browser**. Th
 - **Previews and editing:** images, video, audio, PDF, code with highlighting, and a Markdown editor, all decrypted in the browser.
 - **Converting:** images, video and audio to other formats in the browser with canvas encoders and ffmpeg.wasm.
 - **Music:** pick a folder and play it as a library of albums, with a queue, shuffle, cover art and media keys. Tracks are decrypted as they stream; tags are read in the browser.
-- **Accounts:** an optional recovery key, session and device list, and an admin view that counts things but can't read them.
+- **Accounts:** two-step sign-in with an authenticator app or passkeys (which can also sign in without the password), an optional recovery key, session and device list, and an admin view that counts things but can't read them.
 - **Command line and Linux drive:** a native client that signs in with an app password, syncs folders, and mounts your files as a drive (FUSE) for Dolphin, Nautilus or the shell. See [crates/thencloud-cli](crates/thencloud-cli/README.md).
 - **Self-hosted and small:** one Rust binary, SQLite and a folder of encrypted blobs. Nothing loads from a CDN.
 
@@ -100,7 +100,8 @@ password ──Argon2id──► root ──HKDF──┬─► auth_key  → se
 kek        ──wraps──► master key
 recovery key (optional, 256-bit) ──HKDF──┬─► recovery auth → server (stored only as Argon2id)
                                          └─► recovery kek ──wraps──► master key
-master key ──wraps──► X25519 private key, root folder key
+passkey PRF output (optional) ──HKDF──► passkey kek ──wraps──► master key
+master key ──wraps──► X25519 private key, ML-KEM-768 seed, root folder key
 folder key ──wraps──► child node keys
 node key   ──seals──► metadata {name, mime, size, mtime}
 file key   ──wraps──► per-version content key ──seals──► 4 MiB chunks
@@ -109,7 +110,7 @@ file key   ──wraps──► per-version content key ──seals──► 4 M
 Primitives:
 - **AEAD:** XChaCha20-Poly1305.
 - **KDF:** Argon2id (64 MiB, t=3) and HKDF-SHA256.
-- **Sharing:** X25519 sealed boxes.
+- **Sharing:** hybrid X25519 + ML-KEM-768 sealed boxes (plain X25519 to accounts that don't have an ML-KEM key yet).
 
 Every ciphertext carries associated data that binds it to its context:
 - Node keys and metadata are bound to the node id.
@@ -119,6 +120,12 @@ Every ciphertext carries associated data that binds it to its context:
 As a result, a malicious server cannot swap files, move ciphertexts between nodes, reorder or truncate chunks, or serve an old version's chunks under a new one. Decryption fails if it tries.
 
 **Sharing with a user:** the owner fetches the recipient's public key, checks its fingerprint (shown in both users' UIs), and seals the folder or file key to it. The recipient opens the sealed key with their private key and can then unwrap the whole subtree.
+
+**Post-quantum sealing:** every account has an ML-KEM-768 keypair (FIPS 203) next to its X25519 one; the 64-byte seed is wrapped under the master key, and accounts made before this get one on their next sign-in (the server never replaces one once set). A key sealed to such a user runs both key exchanges and feeds both shared secrets to HKDF, with every public value in the salt, so a recording of the share stays closed unless both X25519 and ML-KEM are broken. The fingerprint covers the X25519 key and the SHA-256 of the ML-KEM key. A contact verified before they had an ML-KEM key stays verified while the X25519 half matches, and the new half is pinned the first time it's seen. File drop links carry the same 64 bytes after `#`; the page takes the ML-KEM key from the server and refuses it unless its hash matches.
+
+**Two-step sign-in:** with an authenticator app (TOTP) or any passkey set up, a correct password gets a short-lived ticket instead of a session, and the wrapped master key is only handed out once a code or a passkey assertion checks out. Neither holds a key: the TOTP secret is a verifier, and codes are single-use. App passwords and the recovery key skip this step; they are 256-bit secrets of their own, and the recovery key is the way back in when the phone and passkeys are gone.
+
+**Passkeys** (WebAuthn) work as that second step, and when the authenticator supports the PRF extension they can also sign in on their own. The browser asks the passkey for its PRF output for a fixed input, derives a KEK from it with HKDF, and wraps a copy of the master key under it, bound to the credential id. Signing in with the passkey alone needs user verification (PIN or biometric); the server checks the signature (ES256, EdDSA or RS256) against a one-time challenge and only then returns the wrapped copy, which it can't unwrap itself. Each passkey is bound to the host it was made on.
 
 **Recovery key (optional):** made in the browser and shown once as 11 groups of 5 characters (Crockford base32 with a checksum, so typos are caught). The server stores the master key wrapped under its KEK and a hash of its auth part, so it can check the key but never use it. With the key and a username, "Forgot your password?" unwraps the master key locally and sets a new password; every session is signed out. Setting, replacing or removing the key needs the current password.
 
@@ -148,7 +155,7 @@ As a result, a malicious server cannot swap files, move ciphertexts between node
 - File contents.
 
 **Known limitations**, most of them tracked in [MILESTONES.md](MILESTONES.md):
-- **The web client is served by the server.** A malicious or compromised server could serve modified JavaScript. This is inherent to every browser-based E2EE app. The native client (`crates/thencloud-cli`) avoids it.
+- **The web client is served by the server.** A malicious or compromised server could serve modified JavaScript. This is inherent to every browser-based E2EE app. The native client (`crates/thencloud-cli`) avoids it, and releases make it checkable: the web client builds reproducibly (`scripts/release-web.sh`, byte for byte the same on any machine with the pinned toolchain), each release publishes a minisign-signed manifest of every file's SHA-256, and `thencloud verify-web https://your.server --manifest thencloud-web-<version>.json` fetches every file in every encoding the server offers and compares. That shows what the server sends to anyone who asks; a server that singles out one browser needs a check inside the browser to catch.
 - **Public keys are trust-on-first-use.** Compare fingerprints out of band the first time you share with someone, or a malicious server could substitute its own key. After that the key is pinned in your verified contacts (encrypted under your master key and bound to your account), and a different key for that person blocks sharing until you check again.
 - **Revoking a share** stops the server from serving the data, but it does not re-key. A former recipient who kept the key could decrypt ciphertext they get from elsewhere.
 - **File drop links** (upload-only) carry your public key instead of a folder key. Visitors seal each file's key to it, and your client wraps it under the folder key the next time you browse, but only for folders that have a file drop link. When a dropped file is taken in, it gets a fresh key, so the key the visitor chose can't read later versions. Files dropped through a link that has since gone are never taken in automatically; they wait for you to keep or delete them. Anyone with the link, the server included, can add files to that folder, but nobody but you can read them. A drop can't make the server delete your old versions to make room.
@@ -168,7 +175,7 @@ cd web && npm run check         # svelte-check
 
 `crates/thencloud-server/tests/e2e.rs` drives a real server in-process with a native client built on `thencloud-crypto`. It covers register, upload, move, share, public link, revoke, version history and the trash. It then scans the SQLite database and blob store to check that no plaintext names, contents, passwords or keys were stored. `crates/thencloud-cli/tests/cli.rs` does the same for the command-line client and the FUSE mount over real HTTP (the mount tests need `/dev/fuse` and `fusermount3`, and are skipped without them).
 
-CI runs `cargo fmt`, `cargo clippy`, the tests, `svelte-check` and a full web build on every pull request, and CodeQL scans the Rust, JavaScript and workflow code. Dependabot keeps Cargo, npm and Actions dependencies current. See [CONTRIBUTING.md](CONTRIBUTING.md) before sending a pull request.
+CI runs `cargo fmt`, `cargo clippy`, the tests, `svelte-check` and a full web build on every pull request, and CodeQL scans the Rust, JavaScript and workflow code. On a release tag, the web client is built with `scripts/release-web.sh` on two different runner images, the two must match byte for byte, and the manifest and build go into a draft release; a maintainer rebuilds it, signs the manifest with `minisign -Sm` and publishes. Dependabot keeps Cargo, npm and Actions dependencies current. See [CONTRIBUTING.md](CONTRIBUTING.md) before sending a pull request.
 
 ## Roadmap
 

@@ -12,8 +12,17 @@ fn key(b: &[u8]) -> R<c::Key> {
     Ok(c::Key::from_slice(b)?)
 }
 
+/// Our secret key as JS holds it: the X25519 secret, followed by the
+/// ML-KEM seed when the account has one.
 fn keypair(secret: &[u8]) -> R<c::KeyPair> {
-    Ok(c::KeyPair::from_secret(key(secret)?))
+    let kp = c::KeyPair::from_secret(key(&secret[..secret.len().min(c::KEY_LEN)])?);
+    Ok(match secret.len() {
+        c::KEY_LEN => kp,
+        n if n == c::KEY_LEN + c::PQ_SEED_LEN => {
+            kp.with_pq(c::PqKeyPair::from_seed(&secret[c::KEY_LEN..])?)
+        }
+        _ => return Err(c::Error::KeyLength.into()),
+    })
 }
 
 #[wasm_bindgen]
@@ -203,6 +212,44 @@ pub fn fingerprint(public: &[u8]) -> String {
     c::fingerprint(public)
 }
 
+/// A new ML-KEM-768 keypair: `secret` is the 64-byte seed.
+#[wasm_bindgen]
+pub fn generate_pq_keypair() -> KeyPair {
+    let kp = c::PqKeyPair::generate();
+    KeyPair {
+        secret: kp.seed().to_vec(),
+        public: kp.public.clone(),
+    }
+}
+
+#[wasm_bindgen]
+pub fn wrap_pq_private_key(mk: &[u8], seed: &[u8]) -> R<Vec<u8>> {
+    Ok(c::wrap_pq_private_key(
+        &key(mk)?,
+        &c::PqKeyPair::from_seed(seed)?,
+    ))
+}
+
+/// Returns the 64-byte seed.
+#[wasm_bindgen]
+pub fn unwrap_pq_private_key(mk: &[u8], wrapped: &[u8]) -> R<Vec<u8>> {
+    Ok(c::unwrap_pq_private_key(&key(mk)?, wrapped)?
+        .seed()
+        .to_vec())
+}
+
+#[wasm_bindgen]
+pub fn pq_public_key_from_seed(seed: &[u8]) -> R<Vec<u8>> {
+    Ok(c::PqKeyPair::from_seed(seed)?.public.clone())
+}
+
+/// What a fingerprint covers: the X25519 key, plus the ML-KEM key's hash
+/// (pass an empty array when there's none).
+#[wasm_bindgen]
+pub fn identity(x25519_public: &[u8], pq_public: &[u8]) -> Vec<u8> {
+    c::identity(x25519_public, (!pq_public.is_empty()).then_some(pq_public))
+}
+
 #[wasm_bindgen]
 pub fn wrap_node_key(parent_key: &[u8], node_key: &[u8], node_id: &str) -> R<Vec<u8>> {
     Ok(c::wrap_node_key(
@@ -352,6 +399,30 @@ pub fn wrap_master_key_app(kek: &[u8], mk: &[u8], app_password_id: &str) -> R<Ve
         &key(mk)?,
         app_password_id,
     ))
+}
+
+/// The input for the WebAuthn PRF extension.
+#[wasm_bindgen]
+pub fn passkey_prf_salt() -> Vec<u8> {
+    c::passkey_prf_salt().to_vec()
+}
+
+#[wasm_bindgen]
+pub fn wrap_master_key_passkey(prf_output: &[u8], mk: &[u8], credential_id: &[u8]) -> R<Vec<u8>> {
+    let kek = c::derive_passkey_kek(prf_output)?;
+    Ok(c::wrap_master_key_passkey(&kek, &key(mk)?, credential_id))
+}
+
+#[wasm_bindgen]
+pub fn unwrap_master_key_passkey(
+    prf_output: &[u8],
+    wrapped: &[u8],
+    credential_id: &[u8],
+) -> R<Vec<u8>> {
+    let kek = c::derive_passkey_kek(prf_output)?;
+    Ok(c::unwrap_master_key_passkey(&kek, wrapped, credential_id)?
+        .as_bytes()
+        .to_vec())
 }
 
 #[wasm_bindgen]
