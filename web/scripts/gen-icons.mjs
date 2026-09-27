@@ -13,6 +13,8 @@ const ICONS = [
   'undo-2', 'redo-2', 'heading-1', 'heading-2', 'heading-3', 'bold', 'italic', 'strikethrough', 'list', 'list-ordered',
   'list-todo', 'text-quote', 'square-code', 'minus', 'file-plus', 'save', 'search', 'arrow-up', 'arrow-down', 'keyboard', 'folder-up', 'chevron-down', 'laptop', 'smartphone', 'file-cog', 'lock-open',
   'list-checks', 'table', 'between-horizontal-end', 'between-vertical-end', 'grid-2x2-x', 'columns-2',
+  'music', 'play', 'pause', 'skip-forward', 'skip-back', 'shuffle', 'repeat', 'repeat-1', 'volume-2', 'volume-1', 'volume-x',
+  'list-music', 'disc-3', 'audio-lines', 'list-start', 'list-end',
 ];
 
 const out = {};
