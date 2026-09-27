@@ -92,6 +92,11 @@ pub struct RegisterRequest {
     pub enc_master_key: B64,
     pub public_key: B64,
     pub enc_private_key: B64,
+    /// The ML-KEM-768 public key and its seed wrapped under the master key.
+    #[serde(default)]
+    pub pq_public_key: Option<B64>,
+    #[serde(default)]
+    pub enc_pq_private_key: Option<B64>,
     pub root: NewRootFolder,
     #[serde(default)]
     pub device_name: Option<String>,
@@ -132,6 +137,18 @@ pub struct KeyBundle {
     pub public_key: B64,
     pub enc_private_key: B64,
     pub root_node_id: String,
+    /// Absent for accounts made before post-quantum keys.
+    #[serde(default)]
+    pub pq_public_key: Option<B64>,
+    #[serde(default)]
+    pub enc_pq_private_key: Option<B64>,
+}
+
+/// Give an older account its post-quantum key. Only once.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetPqKeyRequest {
+    pub pq_public_key: B64,
+    pub enc_pq_private_key: B64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -165,7 +182,7 @@ pub struct SessionResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum LoginResponse {
-    Session(SessionResponse),
+    Session(Box<SessionResponse>),
     SecondFactor {
         second_factor: SecondFactorChallenge,
     },
@@ -549,6 +566,9 @@ pub struct UploadResponse {
 pub struct UserPublicKey {
     pub username: String,
     pub public_key: B64,
+    /// Their ML-KEM-768 key, if they have one: seal to both.
+    #[serde(default)]
+    pub pq_public_key: Option<B64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -570,6 +590,8 @@ pub struct IncomingShare {
     pub id: String,
     pub owner: String,
     pub owner_public_key: B64,
+    #[serde(default)]
+    pub owner_pq_public_key: Option<B64>,
     pub permission: Permission,
     pub wrapped_key: B64,
     pub node: Node,
@@ -644,6 +666,10 @@ pub struct PublicLinkInfo {
     pub owner: Option<String>,
     #[serde(default)]
     pub folder_id: Option<String>,
+    /// The owner's ML-KEM key, for upload-only links whose `#` part names
+    /// its hash. Checked against it, so the server can't swap it.
+    #[serde(default)]
+    pub owner_pq_public_key: Option<B64>,
 }
 
 /// A file added through an upload-only link, waiting for the folder owner

@@ -100,7 +100,16 @@ pub async fn info(
     let node = get_node(&state.db, &link.node_id)
         .await?
         .ok_or(AppError::NotFound)?;
+    let owner_pq_public_key = if link.upload_only {
+        sqlx::query_scalar("SELECT pq_public_key FROM users WHERE id = ?")
+            .bind(&link.owner_id)
+            .fetch_one(&state.db)
+            .await?
+    } else {
+        None
+    };
     Ok(Json(PublicLinkInfo {
+        owner_pq_public_key: owner_pq_public_key.map(B64),
         expires_at: link.expires_at,
         upload_only: link.upload_only,
         owner: link.upload_only.then(|| node.owner.clone()),

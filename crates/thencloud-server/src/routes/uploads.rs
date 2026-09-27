@@ -124,9 +124,9 @@ pub async fn start(
     req: CreateUploadRequest,
 ) -> Result<(StatusCode, Json<UploadResponse>)> {
     // A dropped file's key is sealed to the owner, not wrapped.
-    let key_len = match who {
-        Uploader::User(_) => WRAPPED_KEY_LEN,
-        Uploader::Link(_) => SEALED_KEY_LEN,
+    let check_key = |k: &[u8]| match who {
+        Uploader::User(_) => check_len(k, WRAPPED_KEY_LEN, "enc_key"),
+        Uploader::Link(_) => check_sealed(k, "enc_key"),
     };
     check_id(&req.node_id, "node_id")?;
     check_id(&req.version_id, "version_id")?;
@@ -140,7 +140,7 @@ pub async fn start(
     match (&req.parent_id, &req.enc_key) {
         (Some(p), Some(k)) => {
             check_id(p, "parent_id")?;
-            check_len(k, key_len, "enc_key")?;
+            check_key(k)?;
         }
         (Some(_), None) => return Err(AppError::bad("enc_key is required for a new file")),
         (None, Some(_)) => return Err(AppError::bad("enc_key is only accepted for new files")),

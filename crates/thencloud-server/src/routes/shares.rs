@@ -36,15 +36,16 @@ pub async fn public_key(
     _user: AuthUser,
     Path(username): Path<String>,
 ) -> Result<Json<UserPublicKey>> {
-    let row: Option<(String, Vec<u8>)> =
-        sqlx::query_as("SELECT username, public_key FROM users WHERE username = ?")
+    let row: Option<(String, Vec<u8>, Option<Vec<u8>>)> =
+        sqlx::query_as("SELECT username, public_key, pq_public_key FROM users WHERE username = ?")
             .bind(username.trim().to_lowercase())
             .fetch_optional(&state.db)
             .await?;
-    let (username, pk) = row.ok_or(AppError::NotFound)?;
+    let (username, pk, pq) = row.ok_or(AppError::NotFound)?;
     Ok(Json(UserPublicKey {
         username,
         public_key: B64(pk),
+        pq_public_key: pq.map(B64),
     }))
 }
 
@@ -55,7 +56,7 @@ pub async fn create(
     Json(req): Json<CreateShareRequest>,
 ) -> Result<(StatusCode, Json<OutgoingShare>)> {
     check_id(&req.node_id, "node_id")?;
-    check_len(&req.wrapped_key, SEALED_KEY_LEN, "wrapped_key")?;
+    check_sealed(&req.wrapped_key, "wrapped_key")?;
     access::require(&state.db, &user.id, &req.node_id, Access::Owner).await?;
     let recipient: Option<(String, String)> =
         sqlx::query_as("SELECT id, username FROM users WHERE username = ?")
@@ -103,6 +104,7 @@ struct IncomingRow {
     id: String,
     owner: String,
     owner_pk: Vec<u8>,
+    owner_pq: Option<Vec<u8>>,
     permission: String,
     wrapped_key: Vec<u8>,
     node_id: String,
@@ -114,7 +116,7 @@ pub async fn incoming(
     user: AuthUser,
 ) -> Result<Json<Vec<IncomingShare>>> {
     let rows: Vec<IncomingRow> = sqlx::query_as(
-        "SELECT s.id, o.username AS owner, o.public_key AS owner_pk, s.permission, s.wrapped_key, s.node_id, s.created_at \
+        "SELECT s.id, o.username AS owner, o.public_key AS owner_pk, o.pq_public_key AS owner_pq, s.permission, s.wrapped_key, s.node_id, s.created_at \
          FROM shares s JOIN users o ON o.id = s.owner_id WHERE s.recipient_id = ? ORDER BY s.created_at",
     )
     .bind(&user.id)
@@ -132,6 +134,7 @@ pub async fn incoming(
             id: r.id,
             owner: r.owner,
             owner_public_key: B64(r.owner_pk),
+            owner_pq_public_key: r.owner_pq.map(B64),
             permission: parse_perm(&r.permission),
             wrapped_key: B64(r.wrapped_key),
             node: node.into_api(),
