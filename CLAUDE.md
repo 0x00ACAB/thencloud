@@ -13,7 +13,8 @@ thencloud is an open-source, end-to-end encrypted alternative to Nextcloud. Read
 - The server only stores and serves ciphertext, wrapped keys and public keys.
 - Public links are `/s/<token>#<key>`. The key lives only in the URL fragment and must never be put into a path, query string, header, request body or log.
 - New ciphertext formats must bind their context (node id, version id, etc.) as AEAD associated data, like the existing ones in `thencloud-crypto/src/lib.rs`.
-- Any new server feature must be added to the zero-knowledge scan in `crates/thencloud-server/tests/e2e.rs`, which checks the DB and blob store for plaintext.
+- Any new server feature must be added to the zero-knowledge scan in `crates/thencloud-server/tests/e2e.rs`, which checks the DB and blob store for plaintext. New browser flows belong in `web/e2e/`, whose `watchRequests` fails a test if any request carries a name, contents, a password or a key.
+- New parsers of untrusted files go in `web/tests/` (browser) or `fuzz/` (Rust) with a fuzz test.
 - The one deliberate exception is the video downloader (`src/downloader.rs`, `routes/tools.rs`): opt-in by an admin (off by default), and the UI says the server sees the link and the video. It must stay stream-only: pipes and FIFOs, no files written (a scratch dir, holding only the FIFOs, that is deleted), no caches, nothing logged, site extractors only, private addresses refused. Don't let yt-dlp merge to stdout itself: it then downloads through ffmpeg's HTTP client, which YouTube throttles to about playback speed. Its tests use a fake yt-dlp and ffmpeg.
 
 ## Commands
@@ -22,6 +23,9 @@ thencloud is an open-source, end-to-end encrypted alternative to Nextcloud. Read
 ./build.sh                  # WASM (web/src/wasm) + web client (web/dist) + server; puts ~/.cargo/bin first because the Gentoo rustc lacks the wasm target
 cd web && npm run dev       # Vite dev server with hot reload; proxies /api to a server on 127.0.0.1:8080 (override with THENCLOUD_API=http://host:port)
 cd web && npm run check     # svelte-check; keep at zero warnings
+cd web && npm test          # fuzz tests of the browser's parsers (node --test; FUZZ_RUNS, FUZZ_SEED to replay)
+cd web && npx playwright test   # browser tests against a fresh server (see web/e2e/README.md; runs in Docker too)
+cd fuzz && cargo +nightly fuzz run <target>   # cargo-fuzz: crypto-decode, sealed-box, webauthn-register, webauthn-assert, api-json, server-input
 cargo test --workspace      # crypto unit tests + in-process end-to-end server tests
 cargo clippy --workspace --all-targets   # keep at zero warnings
 cargo fmt --all
