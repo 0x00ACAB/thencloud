@@ -1,4 +1,5 @@
 pub mod admin;
+pub mod app_data;
 pub mod app_passwords;
 pub mod auth;
 pub mod avatars;
@@ -58,6 +59,12 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/password", post(auth::change_password))
         .route("/me", get(auth::me))
         .route("/me/contacts", get(contacts::get).put(contacts::put))
+        .route(
+            "/me/data/{name}",
+            get(app_data::get)
+                .put(app_data::put)
+                .layer(DefaultBodyLimit::max(4 * 1024 * 1024)),
+        )
         .route(
             "/me/avatar",
             get(avatars::get_mine)

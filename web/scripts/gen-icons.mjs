@@ -15,6 +15,7 @@ const ICONS = [
   'list-checks', 'table', 'between-horizontal-end', 'between-vertical-end', 'grid-2x2-x', 'columns-2',
   'music', 'play', 'pause', 'skip-forward', 'skip-back', 'shuffle', 'repeat', 'repeat-1', 'volume-2', 'volume-1', 'volume-x',
   'list-music', 'disc-3', 'audio-lines', 'list-start', 'list-end',
+  'list-plus', 'image', 'clapperboard', 'tv', 'film',
 ];
 
 const out = {};
