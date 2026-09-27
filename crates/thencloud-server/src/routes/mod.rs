@@ -6,6 +6,7 @@ pub mod avatars;
 pub mod contacts;
 pub mod drafts;
 pub mod drops;
+pub mod health;
 pub mod links;
 pub mod nodes;
 pub mod passkeys;
@@ -41,6 +42,8 @@ const CSP: &str = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; con
 
 pub fn router(state: AppState) -> Router {
     let api = Router::new()
+        .route("/health", get(health::health))
+        .route("/metrics", get(health::metrics))
         .route("/auth/prelogin", post(auth::prelogin))
         .route("/auth/register", post(auth::register))
         .route("/auth/login", post(auth::login))
@@ -71,6 +74,7 @@ pub fn router(state: AppState) -> Router {
         .route("/app-passwords/{id}", delete(app_passwords::delete))
         .route("/auth/password", post(auth::change_password))
         .route("/me", get(auth::me))
+        .route("/me/delete", post(auth::delete_me))
         .route("/me/pq-key", put(auth::set_pq_key))
         .route("/me/contacts", get(contacts::get).put(contacts::put))
         .route(

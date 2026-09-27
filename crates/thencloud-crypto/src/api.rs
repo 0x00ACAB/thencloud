@@ -578,6 +578,9 @@ pub struct CreateShareRequest {
     /// Node key sealed to the recipient's public key.
     pub wrapped_key: B64,
     pub permission: Permission,
+    /// Unix seconds; the share ends then.
+    #[serde(default)]
+    pub expires_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -596,6 +599,8 @@ pub struct IncomingShare {
     pub wrapped_key: B64,
     pub node: Node,
     pub created_at: i64,
+    #[serde(default)]
+    pub expires_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -605,6 +610,8 @@ pub struct OutgoingShare {
     pub permission: Permission,
     pub node_id: String,
     pub created_at: i64,
+    #[serde(default)]
+    pub expires_at: Option<i64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -627,6 +634,10 @@ pub struct CreateLinkRequest {
     /// the folder key.
     #[serde(default)]
     pub upload_only: bool,
+    /// Stop working after this many opens (1: after the first). An open is
+    /// a visit to the link page; the visit itself can then fetch everything.
+    #[serde(default)]
+    pub max_opens: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -639,6 +650,10 @@ pub struct Link {
     pub created_at: i64,
     #[serde(default)]
     pub upload_only: bool,
+    #[serde(default)]
+    pub max_opens: Option<i64>,
+    #[serde(default)]
+    pub opens: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -670,6 +685,10 @@ pub struct PublicLinkInfo {
     /// its hash. Checked against it, so the server can't swap it.
     #[serde(default)]
     pub owner_pq_public_key: Option<B64>,
+    /// For a link with a limited number of opens: this visit's token, to
+    /// pass back in the `X-Link-Token` header.
+    #[serde(default)]
+    pub link_token: Option<String>,
 }
 
 /// A file added through an upload-only link, waiting for the folder owner
@@ -826,6 +845,12 @@ pub struct SetRecoveryRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RemoveRecoveryRequest {
+    pub current_auth_key: B64,
+}
+
+/// Delete your own account, proving the password again.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeleteAccountRequest {
     pub current_auth_key: B64,
 }
 

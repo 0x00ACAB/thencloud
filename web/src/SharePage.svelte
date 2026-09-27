@@ -74,6 +74,8 @@
       return fail("Couldn't open this link", errorMessage(e));
     }
     expiresAt = info.expires_at;
+    // A link with limited opens counted this visit; its token covers the rest.
+    if (info.link_token) linkToken = info.link_token;
     if (info.upload_only) {
       if (rootKey.length === 64) {
         const pq = info.owner_pq_public_key ? unb64(info.owner_pq_public_key) : new Uint8Array();

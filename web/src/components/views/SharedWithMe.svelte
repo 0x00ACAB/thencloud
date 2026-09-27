@@ -93,7 +93,10 @@
               </div>
             </td>
             <td class="hidden sm:table-cell">
-              <span class="badge {s.permission === 'write' ? 'badge-accent' : ''}">{s.permission === 'write' ? 'Can edit' : 'View only'}</span>
+              <span class="flex flex-wrap gap-1.5">
+                <span class="badge {s.permission === 'write' ? 'badge-accent' : ''}">{s.permission === 'write' ? 'Can edit' : 'View only'}</span>
+                {#if s.expires_at}<span class="badge"><Time ms={s.expires_at * 1000} prefix="Until " /></span>{/if}
+              </span>
             </td>
             <td class="hidden text-fg-muted lg:table-cell"><Time ms={s.created_at * 1000} /></td>
             <td class="text-right">

@@ -387,6 +387,36 @@ pub(crate) async fn verify_current(
     Ok(row)
 }
 
+/// Delete your own account and everything in it. Needs the password again
+/// (not an app password), and the last admin can't leave others without one.
+pub async fn delete_me(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(req): Json<DeleteAccountRequest>,
+) -> Result<StatusCode> {
+    if user.app_password_id.is_some() {
+        return Err(AppError::Forbidden);
+    }
+    verify_current(&state, &user, &req.current_auth_key).await?;
+    if user.is_admin {
+        let (admins, others): (i64, i64) = sqlx::query_as(
+            "SELECT COUNT(*) FILTER (WHERE is_admin AND disabled_at IS NULL AND id != ?1), \
+             COUNT(*) FILTER (WHERE id != ?1) FROM users",
+        )
+        .bind(&user.id)
+        .fetch_one(&state.db)
+        .await?;
+        if admins == 0 && others > 0 {
+            return Err(AppError::bad(
+                "you're the only admin; make someone else an admin first",
+            ));
+        }
+    }
+    crate::routes::admin::delete_account(&state, &user.id).await?;
+    tracing::info!(user = %user.id, "account deleted by its owner");
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub async fn set_recovery(
     State(state): State<AppState>,
     user: AuthUser,

@@ -67,6 +67,11 @@ pub struct Config {
     #[arg(long, env = "THENCLOUD_DOWNLOADER_MAX_BYTES", default_value_t = 2 * 1024 * 1024 * 1024)]
     pub downloader_max_bytes: u64,
 
+    /// Serve Prometheus metrics at /api/metrics to requests that carry
+    /// `Authorization: Bearer <this token>`. Off when unset.
+    #[arg(long, env = "THENCLOUD_METRICS_TOKEN", hide_env_values = true)]
+    pub metrics_token: Option<String>,
+
     /// Refuse downloader links that point at private or local addresses.
     /// Always on outside tests.
     #[arg(skip = true)]
@@ -92,6 +97,7 @@ impl Config {
             ffmpeg: "ffmpeg".into(),
             downloader_max_bytes: 2 * 1024 * 1024 * 1024,
             downloader_public_only: true,
+            metrics_token: None,
         }
     }
 }

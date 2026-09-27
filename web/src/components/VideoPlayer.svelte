@@ -4,7 +4,10 @@
   import { onMount, onDestroy, untrack } from 'svelte';
   import Icon from './Icon.svelte';
   import { fade, portal } from '../lib/motion.js';
-  import { details, openVideo, saveProgress, resumeAt, seriesOf } from '../lib/videos.svelte.js';
+  import { details, openVideo, saveProgress, resumeAt, seriesOf, subtitlesFor } from '../lib/videos.svelte.js';
+  import { fetchEntry } from '../lib/cloud.svelte.js';
+  import { loadSubtitles, release as releaseSubtitles } from '../lib/subtitles.js';
+  import SubtitlePicker from './SubtitlePicker.svelte';
   import { player as music, toggle as toggleMusic } from '../lib/music.svelte.js';
   import { errorMessage } from '../lib/ui.svelte.js';
 
@@ -30,6 +33,25 @@
   $effect(() => {
     const cur = v;
     untrack(() => load(cur));
+  });
+
+  // Subtitles named after the video, next to it.
+  let subtitles = $state([]);
+  $effect(() => {
+    const matched = subtitlesFor(v);
+    if (!matched.length) return;
+    let live = true;
+    let got = [];
+    loadSubtitles(matched, fetchEntry).then((t) => {
+      got = t;
+      if (live) subtitles = t;
+      else releaseSubtitles(t);
+    });
+    return () => {
+      live = false;
+      releaseSubtitles(got);
+      subtitles = [];
+    };
   });
 
   async function load(cur) {
@@ -102,8 +124,9 @@
       <span class="truncate text-sm font-medium">{d.label}</span>
       {#if d.series}<span class="truncate text-xs text-fg-muted">{d.series}</span>{/if}
     </div>
+    <SubtitlePicker tracks={subtitles} video={el} class="ml-auto shrink-0" />
     {#if nextVideo}
-      <button type="button" class="btn btn-ghost ml-auto shrink-0" onclick={() => go(nextVideo)}>
+      <button type="button" class="btn btn-ghost shrink-0 {subtitles.length ? '' : 'ml-auto'}" onclick={() => go(nextVideo)}>
         <Icon name="skip-forward" /><span class="hidden sm:inline">Next episode</span>
       </button>
     {/if}
@@ -117,7 +140,9 @@
       </div>
     {:else if src}
       <!-- svelte-ignore a11y_media_has_caption -->
-      <video bind:this={el} {src} controls autoplay playsinline class="size-full object-contain" {ontimeupdate} {onloadedmetadata} {onended} onpause={save}></video>
+      <video bind:this={el} {src} controls autoplay playsinline class="size-full object-contain" {ontimeupdate} {onloadedmetadata} {onended} onpause={save}>
+        {#each subtitles as t (t.url)}<track kind="subtitles" src={t.url} srclang={t.lang || undefined} label={t.label} />{/each}
+      </video>
     {:else}
       <Icon name="loader-circle" class="spinner size-6 text-fg-faint" />
     {/if}

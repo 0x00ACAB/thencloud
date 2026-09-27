@@ -1,5 +1,5 @@
 <script>
-  import { session, resolvePath, listFolder, createFolder, rename, trash, untrash, download, downloadZip, fetchEntry, upload, saveText, refreshMe, toolsInfo, loadDraft, storeDraft, dropDraft, searchTree, openEntry, strayDrops } from '../../lib/cloud.svelte.js';
+  import { session, resolvePath, listFolder, createFolder, rename, move, trash, untrash, download, downloadZip, fetchEntry, upload, saveText, refreshMe, toolsInfo, loadDraft, storeDraft, dropDraft, searchTree, openEntry, strayDrops } from '../../lib/cloud.svelte.js';
   import { toast, toastError, trackTransfer, errorMessage, sort, sortBy } from '../../lib/ui.svelte.js';
   import { formatSize, formatWhen, fullDate, plural, sortEntries, nameError } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
@@ -23,6 +23,7 @@
   import { sourceKind } from '../../lib/convert.js';
   import { previewKind } from '../../lib/preview.js';
   import { play, enqueue, makeTrack } from '../../lib/music.svelte.js';
+  import { isFavourite, toggleFavourite, noteRecent } from '../../lib/places.svelte.js';
 
   let { folderId, openId = null, go, inShare = $bindable(false) } = $props();
 
@@ -285,9 +286,80 @@
     return out;
   }
 
+  // Paste to upload: a screenshot or files copied in the file manager.
+  function onPaste(e) {
+    if (!canWrite || !here || dialog || document.querySelector('dialog[open]')) return;
+    const t = e.target;
+    if (t instanceof HTMLElement && (t.isContentEditable || t.closest('input, textarea, select'))) return;
+    const files = [...(e.clipboardData?.files ?? [])];
+    if (!files.length) return;
+    e.preventDefault();
+    uploadFiles(files.map(pastedName));
+  }
+
+  /** Browsers call every pasted screenshot "image.png"; give it a date instead. */
+  function pastedName(file) {
+    if (!/^image\.\w+$/i.test(file.name)) return file;
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}.${pad(d.getMinutes())}.${pad(d.getSeconds())}`;
+    return new File([file], `Pasted image ${stamp}${file.name.slice(file.name.lastIndexOf('.'))}`, { type: file.type, lastModified: file.lastModified });
+  }
+
+  // ---------------------------------------------------------- drag to move
+
+  // Rows dragged onto a folder row or a folder in the path are moved there.
+  // The drag carries nothing but a type; what's being moved stays here.
+  const NODES = 'application/x-thencloud-nodes';
+  let dragged = null; // entries being dragged
+  let dropTarget = $state(null); // node id of the folder under the pointer
+
+  function rowDragStart(e, entry) {
+    if (!canWrite || renaming) return e.preventDefault();
+    dragged = selected.has(entry.node.id) ? [...chosen] : [entry];
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData(NODES, '');
+  }
+
+  function rowDragEnd() {
+    dragged = null;
+    dropTarget = null;
+  }
+
+  function dragOverFolder(e, id) {
+    if (!dragged || id === folderId || dragged.some((d) => d.node.id === id)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    dropTarget = id;
+  }
+
+  function dragLeaveFolder(e, id) {
+    if (dropTarget === id && !e.currentTarget.contains(e.relatedTarget)) dropTarget = null;
+  }
+
+  async function dropOnFolder(e, target) {
+    if (!dragged || target.node.id === folderId) return;
+    e.preventDefault();
+    const list = dragged.filter((d) => d.node.id !== target.node.id);
+    rowDragEnd();
+    let done = 0;
+    for (const entry of list) {
+      try {
+        await move(entry, target.node.id, target.key);
+        done++;
+      } catch (err) {
+        toast(`Couldn't move ${entry.meta.name}: ${errorMessage(err)}`, { kind: 'error' });
+      }
+    }
+    if (done) toast(done > 1 ? `Moved ${done} items to ${target.meta.name}` : `Moved ${list[0].meta.name} to ${target.meta.name}`, { kind: 'success' });
+    selected.clear();
+    load();
+  }
+
   // ---------------------------------------------------------------- actions
 
   async function downloadEntry(entry) {
+    noteRecent(entry.node.id);
     const t = trackTransfer('download', entry.meta.name, entry.meta.size);
     try {
       await download(entry, (p) => (t.progress = p));
@@ -483,7 +555,19 @@
   }
 
   // The list is fixed when the preview opens, so a reload behind it doesn't shift ← and →.
-  const preview = (entry, edit = false) => (dialog = { type: 'preview', entries: files, start: files.indexOf(entry), edit });
+  function preview(entry, edit = false) {
+    noteRecent(entry.node.id);
+    dialog = { type: 'preview', entries: files, start: files.indexOf(entry), edit };
+  }
+
+  async function star(entry) {
+    try {
+      const on = await toggleFavourite(entry.node.id);
+      toast(on ? `Added ${entry.meta.name} to favourites` : `Removed ${entry.meta.name} from favourites`, { icon: on ? 'star' : 'star-off' });
+    } catch (e) {
+      toastError(e);
+    }
+  }
 
   // Server-side tools this user may use (the video downloader is opt-in).
   let tools = $state({ video_downloader: false });
@@ -548,6 +632,9 @@
       folder
         ? { label: 'Download as zip', icon: 'download', onclick: () => zipEntries([entry], `${entry.meta.name}.zip`) }
         : { label: 'Download', icon: 'download', onclick: () => downloadEntry(entry) },
+      isFavourite(entry.node.id)
+        ? { label: 'Remove from favourites', icon: 'star-off', onclick: () => star(entry) }
+        : { label: 'Add to favourites', icon: 'star', onclick: () => star(entry) },
       ...(isOwner
         ? [
             { label: 'Share', icon: 'share-2', onclick: () => (dialog = { type: 'share', entry }) },
@@ -634,7 +721,7 @@
   const reload = () => load();
 </script>
 
-<svelte:window {onkeydown} ondragenter={onDragEnter} ondragover={onDragOver} ondragleave={onDragLeave} ondrop={onDrop} />
+<svelte:window {onkeydown} onpaste={onPaste} ondragenter={onDragEnter} ondragover={onDragOver} ondragleave={onDragLeave} ondrop={onDrop} />
 
 <input bind:this={fileInput} type="file" multiple hidden onchange={onPick} />
 <input bind:this={folderInput} type="file" webkitdirectory hidden onchange={onPickFolder} />
@@ -652,7 +739,13 @@
         {#if i === path.length - 1}
           <h1 class="truncate px-1 text-xl font-semibold tracking-tight">{crumb.meta.name}</h1>
         {:else}
-          <button type="button" class="max-w-48 cursor-pointer truncate rounded px-1 text-fg-muted hover:text-fg" onclick={() => open(crumb.node.id)}>{crumb.meta.name}</button>
+          <button
+            type="button"
+            class="max-w-48 cursor-pointer truncate rounded px-1 text-fg-muted hover:text-fg {dropTarget === crumb.node.id ? 'bg-accent-soft text-accent-text ring-1 ring-accent' : ''}"
+            onclick={() => open(crumb.node.id)}
+            ondragover={(e) => dragOverFolder(e, crumb.node.id)}
+            ondragleave={(e) => dragLeaveFolder(e, crumb.node.id)}
+            ondrop={(e) => dropOnFolder(e, crumb)}>{crumb.meta.name}</button>
         {/if}
       {/each}
     </nav>
@@ -839,7 +932,18 @@
         {#each visible as entry (entry.node.id)}
           {@const folder = entry.node.kind === 'folder'}
           {@const isSelected = selected.has(entry.node.id)}
-          <tr class="group {isSelected ? 'bg-accent-soft/60 hover:bg-accent-soft/60' : ''}" aria-selected={isSelected} in:fade out:fade={{ duration: 120 }} animate:flip={flipParams()}>
+          <tr
+            class="group {isSelected ? 'bg-accent-soft/60 hover:bg-accent-soft/60' : ''} {dropTarget === entry.node.id ? 'drop-target' : ''}"
+            aria-selected={isSelected}
+            draggable={canWrite && !touch && renaming !== entry.node.id}
+            ondragstart={(e) => rowDragStart(e, entry)}
+            ondragend={rowDragEnd}
+            ondragover={folder ? (e) => dragOverFolder(e, entry.node.id) : undefined}
+            ondragleave={folder ? (e) => dragLeaveFolder(e, entry.node.id) : undefined}
+            ondrop={folder ? (e) => dropOnFolder(e, entry) : undefined}
+            in:fade
+            out:fade={{ duration: 120 }}
+            animate:flip={flipParams()}>
             <td class="w-10 !pr-0 {selected.size ? '' : 'max-md:hidden'}">
               <input
                 type="checkbox"
