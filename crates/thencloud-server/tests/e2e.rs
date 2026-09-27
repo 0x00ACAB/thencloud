@@ -2109,11 +2109,17 @@ echo leftover > scratch-file.tmp
 url=""; for a in "$@"; do url="$a"; done
 case "$url" in *fail*) echo "ERROR: [youtube] abc: Video unavailable" >&2; exit 1;; esac
 case " $* " in *" --dump-single-json "*)
-  echo '{"title":"A test clip","extractor_key":"Youtube","uploader":"Someone","duration":12.5,"formats":[{"ext":"webm","vcodec":"vp9","acodec":"opus","height":480},{"ext":"mp4","vcodec":"avc1","acodec":"mp4a","height":360,"filesize":3000},{"ext":"m4a","vcodec":"none","acodec":"mp4a","filesize":900}]}'
+  echo '{"title":"A test clip","extractor_key":"Youtube","uploader":"Someone","duration":12.5,"formats":[{"format_id":"140","ext":"m4a","vcodec":"none","acodec":"mp4a","filesize":900,"protocol":"https"},{"format_id":"134","ext":"mp4","vcodec":"avc1","acodec":"none","height":240,"filesize":2000,"protocol":"https"},{"format_id":"18","ext":"mp4","vcodec":"avc1","acodec":"mp4a","height":360,"filesize":3000,"protocol":"https"},{"format_id":"9999","ext":"mp4","vcodec":"avc1","acodec":"mp4a","height":2160,"protocol":"https"}]}'
   exit 0;;
 esac
 case "$url" in *big*) head -c 5000 /dev/zero; exit 0;; esac
 case "$url" in *slow*) printf 'FAKE'; sleep 3; printf 'VIDEO'; exit 0;; esac
+case " $* " in
+  *" -f 140 "*) printf 'AUDIO-ONLY-BYTES'; exit 0;;
+  *" -f 134 "*) printf 'VIDEO-ONLY-BYTES'; exit 0;;
+  *" -f 18 "*) ;;
+  *) echo "ERROR: unexpected format: $*" >&2; exit 8;;
+esac
 i=0; while [ $i -lt 100 ]; do printf 'FAKE-VIDEO-BYTES'; i=$((i+1)); done
 "#;
 
@@ -2353,8 +2359,10 @@ async fn video_downloader_pipes_video_through_ffmpeg() {
         "ffmpeg",
         r#"#!/bin/sh
 case " $* " in *" -version "*) echo ffmpeg fake; exit 0;; esac
-case " $* " in *" -c copy "*" -f mp4 "*"pipe:1"*) ;; *) exit 7;; esac
-printf 'REMUXED:'; cat
+case " $* " in *" -c copy -f mp4 "*"pipe:1"*) ;; *) exit 7;; esac
+# Read every -i input in turn, like a merge would.
+printf 'MERGED'
+prev=""; for a in "$@"; do [ "$prev" = "-i" ] && { printf ':'; cat "$a"; }; prev="$a"; done
 "#,
     );
     let h = Harness::with_config(|c| {
@@ -2373,6 +2381,21 @@ printf 'REMUXED:'; cat
     .await;
     let s: AdminSettings = h.get("/api/admin/settings", &admin.token).await.json();
     assert!(s.downloader_can_merge);
+    let info: VideoInfo = h
+        .call(
+            Method::POST,
+            "/api/tools/video/info",
+            Some(&admin.token),
+            Some(json!({"url": "https://videos.test/watch?v=1"})),
+        )
+        .await
+        .json();
+    let v = info.video.unwrap();
+    // H.264 video-only (240p, not the 2160p above the cap) plus AAC audio.
+    assert_eq!(
+        (v.ext.as_str(), v.size, v.height),
+        ("mp4", Some(2900), Some(240))
+    );
     let r = h
         .call(
             Method::POST,
@@ -2382,10 +2405,10 @@ printf 'REMUXED:'; cat
         )
         .await;
     assert_eq!(r.status, StatusCode::OK);
-    let mut want = b"REMUXED:".to_vec();
-    want.extend(b"FAKE-VIDEO-BYTES".repeat(100));
-    assert_eq!(r.body, want);
-    // Audio skips the remux.
+    // Separate video and audio, fetched by two yt-dlp processes into FIFOs
+    // and read by ffmpeg in order.
+    assert_eq!(r.body, b"MERGED:VIDEO-ONLY-BYTES:AUDIO-ONLY-BYTES");
+    // Audio is one file, sent as is.
     let r = h
         .call(
             Method::POST,
@@ -2394,7 +2417,7 @@ printf 'REMUXED:'; cat
             Some(json!({"url": "https://videos.test/watch?v=1", "kind": "audio"})),
         )
         .await;
-    assert_eq!(r.body, b"FAKE-VIDEO-BYTES".repeat(100));
+    assert_eq!(r.body, b"AUDIO-ONLY-BYTES");
     let mut files = Vec::new();
     all_files(&h.dir.path().join("data/downloads"), &mut files);
     assert!(files.is_empty(), "left behind: {files:?}");

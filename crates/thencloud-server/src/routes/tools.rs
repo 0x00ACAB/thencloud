@@ -55,7 +55,7 @@ pub async fn video_info(
     check_link(url, state.config.downloader_public_only).await?;
     // Counts against the same one-at-a-time slot as downloads.
     let _slot = state.downloader.slot(&user.id)?;
-    Ok(Json(state.downloader.info(url).await?))
+    Ok(Json(state.downloader.info(&user.id, url).await?))
 }
 
 /// Stream the video (or its audio) to the browser as it downloads.
@@ -71,7 +71,7 @@ pub async fn video_download(
     let kind = req.kind.unwrap_or(VideoKind::Video);
     let stream = state
         .downloader
-        .stream(url, kind, state.config.downloader_max_bytes, slot)
+        .stream(&user.id, url, kind, state.config.downloader_max_bytes, slot)
         .await?;
     let mut res = Response::new(Body::from_stream(stream));
     res.headers_mut().insert(
