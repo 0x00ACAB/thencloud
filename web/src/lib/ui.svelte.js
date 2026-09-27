@@ -213,6 +213,28 @@ export function setFolderIcons(named) {
   }
 }
 
+// What to do with location and camera details in photos being uploaded:
+// ask when a photo has a location, always remove them, or keep them.
+function readPhotoDetails() {
+  try {
+    const v = localStorage.getItem('photoDetails');
+    return ['ask', 'remove', 'keep'].includes(v) ? v : 'ask';
+  } catch {
+    return 'ask';
+  }
+}
+
+export const photoDetails = $state({ value: readPhotoDetails() });
+
+export function setPhotoDetails(v) {
+  photoDetails.value = v;
+  try {
+    localStorage.setItem('photoDetails', v);
+  } catch {
+    /* private mode */
+  }
+}
+
 // Sort order of folder listings, remembered per device.
 function readSort() {
   try {

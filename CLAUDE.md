@@ -41,6 +41,8 @@ cargo run -p thencloud-server -- --bind 127.0.0.1:8080 --data-dir ./data
   - File drops (upload-only links): `routes/public.rs` takes the uploads, `routes/drops.rs` lets the owner take them in. A dropped node's `enc_key` is sealed to the owner until then, and `access.rs` hides it like a trashed one.
   - `routes/avatars.rs`: encrypted profile pictures; grants (the avatar key sealed to someone) only between people with a share either way. The client grants automatically on sharing and when it lists incoming shares (`grantAvatar` in `cloud.svelte.js`).
   - Name tags (`name_tag` in the crypto crate): every route that creates, renames, moves, restores or adopts a node takes one, and the unique index `nodes_name_tag` turns a duplicate into 409 `name_taken` (`name_conflict` in `error.rs`). A rename or move without a tag leaves the node untagged.
+  - `maintenance.rs`: the `backup DIR` (SQLite `VACUUM INTO` plus the blobs it refers to, hard-linked where possible) and `check` subcommands (`main.rs`).
+  - `ClientIp` (`auth.rs`) is only for rate limiting and never stored; with `--trust-proxy` it's the last `X-Forwarded-For` entry.
   - `routes/health.rs`: `/api/health` (no sign-in) and `/api/metrics` (Prometheus, the admin view's counts, only with `--metrics-token`).
   - Public links with `max_opens`: `public::info` counts an open and returns a signed visit token (`X-Link-Token`), which every other link route then requires; it also stands for the password. Shares may have `expires_at`: `access.rs` and the share lists ignore expired ones, and the janitor deletes them.
   - Deleting a node only marks it trashed; `delete_subtree` in `routes/nodes.rs` is the one permanent delete (used by the trash and the janitor).
@@ -69,8 +71,12 @@ cargo run -p thencloud-server -- --bind 127.0.0.1:8080 --data-dir ./data
   - Navigation (`Shell.svelte`) keeps the section and folder after the `#` (`#/files/<id>`, `#/music/album/<id>`) so reloads land in place. Only opaque ids go there, never names: history may be synced to a browser vendor.
   - Favourites and Recent (`lib/places.svelte.js`, `views/PlacesView.svelte`): node ids in the `files` app data; names are resolved and decrypted when shown.
   - CSV/TSV previews are text with `table` set in `previewKind`, shown by `preview/TableView.svelte` (`lib/csv.js` parses). Subtitles (`lib/subtitles.js`, `SubtitlePicker.svelte`): `.srt`/`.vtt` named after a video, SRT turned into WebVTT, served as `text/vtt` blob: URLs.
+  - Photos (`lib/exif.js`): EXIF/XMP/IPTC found and removed in JPEG, PNG and WebP before upload (`checkPhotos` in `FilesView.svelte`, per the `photoDetails` setting) and offered before sharing one (`PhotoLocationNotice.svelte`); only the orientation is kept. Untrusted input: bounds-checked, and anything that doesn't parse is left alone.
+  - "Check your files" in Settings is `verifyTree` in `cloud.svelte.js`: it downloads and decrypts everything, node by node, and reports each failure with its path.
+  - The PWA manifest and icons are in `public/` (`manifest.webmanifest`, `icons/`). The icons are PNGs with no metadata chunks, so the build stays reproducible. There is no share target: a POST of the shared files would reach the server whenever the service worker isn't running.
   - Text and code editing: `components/preview/TextEditor.svelte` (a textarea). Drafts (`routes/drafts.rs`, `loadDraft`/`storeDraft` in `cloud.svelte.js`) are encrypted with `encrypt_private_data` under the master key, labelled `draft:<node id>`.
   - Markdown editing: `components/preview/MarkdownEditor.svelte` over `lib/editor.js` (Milkdown, loaded on demand). `Preview` gets a `save` prop only when the viewer can write; `saveText` in `cloud.svelte.js` uploads the text as a new version with `if_revision`, so a concurrent change fails with 409 `conflict` instead of being overwritten.
+- `Dockerfile` builds the web client like `scripts/release-web.sh` (same toolchain and path mapping), so a container passes `thencloud verify-web`; keep the two in step. `deploy/` has a compose example with Caddy.
 - `assets/`: branding. The logo mark is `thencloud-logo-mark.png`; `branding.txt` has the name, the katakana ゼンクラウド and the accent colour `#3B47F9`.
 
 ## Web UI direction

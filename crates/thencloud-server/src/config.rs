@@ -67,6 +67,13 @@ pub struct Config {
     #[arg(long, env = "THENCLOUD_DOWNLOADER_MAX_BYTES", default_value_t = 2 * 1024 * 1024 * 1024)]
     pub downloader_max_bytes: u64,
 
+    /// Behind a reverse proxy: take the client's address from the last
+    /// entry of X-Forwarded-For (used only to rate-limit sign-in attempts).
+    /// Only turn this on when the proxy sets that header and clients can't
+    /// reach the server directly.
+    #[arg(long, env = "THENCLOUD_TRUST_PROXY", default_value_t = false, action = ArgAction::Set)]
+    pub trust_proxy: bool,
+
     /// Serve Prometheus metrics at /api/metrics to requests that carry
     /// `Authorization: Bearer <this token>`. Off when unset.
     #[arg(long, env = "THENCLOUD_METRICS_TOKEN", hide_env_values = true)]
@@ -98,6 +105,7 @@ impl Config {
             downloader_max_bytes: 2 * 1024 * 1024 * 1024,
             downloader_public_only: true,
             metrics_token: None,
+            trust_proxy: false,
         }
     }
 }

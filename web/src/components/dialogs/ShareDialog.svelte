@@ -8,6 +8,7 @@
   import { onMount } from 'svelte';
   import Modal from '../Modal.svelte';
   import Icon from '../Icon.svelte';
+  import PhotoLocationNotice from '../PhotoLocationNotice.svelte';
   import Avatar from '../Avatar.svelte';
   import { lookupUser, share, outgoingShares, setSharePermission, deleteShare, session, contactStatus, verifyContact } from '../../lib/cloud.svelte.js';
   import Time from '../Time.svelte';
@@ -165,6 +166,8 @@
       </div>
     </div>
   {/if}
+
+  <PhotoLocationNotice {entry} />
 
   {#if error}<p class="text-[13px] text-danger">{error}</p>{/if}
 

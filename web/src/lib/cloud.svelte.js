@@ -616,6 +616,60 @@ export async function walkTree(top, { onEntry, signal } = {}) {
   } while (queue.length && !signal?.aborted);
 }
 
+/**
+ * Check that everything under `top` decrypts: every key and name, and every
+ * piece of every file's current version (the ciphertext's tags prove it
+ * hasn't been changed). Downloads all of it. Calls `onProgress({ files,
+ * folders, bytes })` as it goes and `onProblem({ location, name, id,
+ * error })` for each item that fails; `name` is null when it can't be read.
+ */
+export async function verifyTree(top, { signal, onProgress, onProblem } = {}) {
+  const queue = [{ entry: top, location: [top.meta.name] }];
+  const done = { files: 0, folders: 0, bytes: 0 };
+  const problem = (location, node, name, e) =>
+    onProblem?.({ location, name, id: node.id, error: typeof e === 'string' ? e : String(e?.message || e) });
+  while (queue.length && !signal?.aborted) {
+    const { entry, location } = queue.shift();
+    let nodes;
+    try {
+      nodes = await api('GET', `/api/nodes/${entry.node.id}/children`);
+    } catch (e) {
+      problem(location.slice(0, -1), entry.node, entry.meta.name, e);
+      continue;
+    }
+    for (const node of nodes) {
+      if (signal?.aborted) return done;
+      let key, meta;
+      try {
+        key = unwrapChild(entry.key, node);
+        meta = decryptMeta(key, node);
+      } catch {
+        problem(location, node, null, "Its key or name can't be decrypted.");
+        continue;
+      }
+      if (node.kind === 'folder') {
+        done.folders++;
+        queue.push({ entry: { node, key, meta }, location: [...location, meta.name] });
+      } else if (!node.version) {
+        problem(location, node, meta.name, 'It has no content.');
+      } else {
+        try {
+          const f = openEntry({ node, key });
+          for (let i = 0; i < f.count && !signal?.aborted; i++) {
+            done.bytes += (await f.read(i)).length;
+            onProgress?.({ ...done });
+          }
+          done.files++;
+        } catch (e) {
+          problem(location, node, meta.name, e?.status ? "The server couldn't send all of it." : "It doesn't decrypt: it was damaged or changed on the server.");
+        }
+      }
+      onProgress?.({ ...done });
+    }
+  }
+  return done;
+}
+
 /** Entries under `top` whose name contains `query`, as walkTree finds them. */
 export function searchTree(top, query, { onResult, signal } = {}) {
   const q = query.trim().toLowerCase();

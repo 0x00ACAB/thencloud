@@ -4772,3 +4772,129 @@ async fn health_check_and_metrics() {
     assert!(text.contains("\nthencloud_files 1\n"));
     assert!(!text.contains("counted"));
 }
+
+#[tokio::test]
+async fn backup_restore_and_check() {
+    use thencloud_server::maintenance;
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "pw").await;
+    let (folder, folder_key) = alice.mkdir(&h, &alice.root, "Kept").await;
+    let data = secret_payload(c::CHUNK_SIZE + 99);
+    let file = alice
+        .upload(&h, &folder, None, "keep.bin", &data)
+        .await
+        .unwrap();
+    let data_dir = h.dir.path().join("data");
+
+    let r = maintenance::check(&h.state.db, &data_dir).await.unwrap();
+    assert!(r.is_ok(), "{r:?}");
+    assert_eq!((r.versions, r.chunks), (1, 2));
+
+    let dest = h.dir.path().join("backup");
+    let b = maintenance::backup(&h.state.db, &data_dir, &dest)
+        .await
+        .unwrap();
+    assert_eq!(b.chunks, 2);
+    assert!(b.missing.is_empty());
+    // A second backup into the same place is refused.
+    assert!(
+        maintenance::backup(&h.state.db, &data_dir, &dest)
+            .await
+            .is_err()
+    );
+
+    // Changes after the backup don't reach it.
+    alice.delete(&h, &file.id).await;
+    let r = h
+        .call(Method::DELETE, "/api/trash", Some(&alice.token), None::<()>)
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+
+    // Restore: a server started on the backup has the file back.
+    let mut cfg = Config::for_dir(h.dir.path());
+    cfg.data_dir = dest.clone();
+    let state = AppState::new(cfg).await.unwrap();
+    let restored = Harness {
+        app: router(state.clone()),
+        state,
+        dir: tempfile::tempdir().unwrap(),
+    };
+    let alice2 = login(&restored, "alice", "pw").await.unwrap();
+    let kids: Vec<Node> = alice2.children(&restored, &folder).await.json();
+    let f = find_by_name(&kids, &folder_key, "keep.bin");
+    let fk = c::unwrap_node_key(&folder_key, &f.enc_key, &f.id).unwrap();
+    assert_eq!(alice2.download(&restored, f, &fk).await.1, data);
+    let r = maintenance::check(&restored.state.db, &dest).await.unwrap();
+    assert!(r.is_ok() && r.orphans.is_empty(), "{r:?}");
+
+    // A lost or truncated blob, and one nothing refers to, are reported.
+    let version = f.version.as_ref().unwrap().id.clone();
+    let vdir = dest.join("blobs").join(&version[..2]).join(&version);
+    std::fs::write(vdir.join("1"), b"short").unwrap();
+    std::fs::remove_file(vdir.join("0")).unwrap();
+    let stray = dest.join("blobs/ab/abcdef00-0000-4000-8000-000000000000");
+    std::fs::create_dir_all(&stray).unwrap();
+    let r = maintenance::check(&restored.state.db, &dest).await.unwrap();
+    assert!(!r.is_ok());
+    assert_eq!(r.missing, vec![(version.clone(), 0)]);
+    assert_eq!(
+        r.orphans,
+        vec!["abcdef00-0000-4000-8000-000000000000".to_string()]
+    );
+
+    // Nothing in the backup is plaintext.
+    let mut files = Vec::new();
+    all_files(&dest, &mut files);
+    for p in &files {
+        let bytes = std::fs::read(p).unwrap();
+        for n in [MARKER, b"keep.bin", b"Kept", folder_key.as_bytes()] {
+            assert!(!contains(&bytes, n), "plaintext in {}", p.display());
+        }
+    }
+}
+
+#[tokio::test]
+async fn behind_a_proxy_rate_limits_use_forwarded_for() {
+    async fn attempt(h: &Harness, username: &str, key: &Key, from: &str) -> StatusCode {
+        let body = serde_json::to_vec(&LoginRequest {
+            username: username.into(),
+            auth_key: B64(key.as_bytes().to_vec()),
+            device_name: None,
+        })
+        .unwrap();
+        h.raw(
+            Method::POST,
+            "/api/auth/login",
+            None,
+            &[("x-forwarded-for", from)],
+            Body::from(body),
+            Some("application/json"),
+        )
+        .await
+        .status
+    }
+    for trust in [false, true] {
+        let h = Harness::with_config(|c| c.trust_proxy = trust).await;
+        register(&h, "erin", "pw").await;
+        let good = auth_of(&h, "erin", "pw").await;
+        let bad = Key::generate();
+        for i in 0..10 {
+            let st = attempt(&h, &format!("nobody{i}"), &bad, "10.0.0.1, 203.0.113.5").await;
+            assert_eq!(st, StatusCode::UNAUTHORIZED);
+        }
+        // The same client is now blocked, whatever it claims further left.
+        assert_eq!(
+            attempt(&h, "erin", &good, "198.51.100.9, 203.0.113.5").await,
+            StatusCode::TOO_MANY_REQUESTS
+        );
+        // Another client behind the same proxy isn't, but only when the
+        // proxy is trusted; otherwise the header means nothing.
+        let other = attempt(&h, "erin", &good, "203.0.113.77").await;
+        let expected = if trust {
+            StatusCode::OK
+        } else {
+            StatusCode::TOO_MANY_REQUESTS
+        };
+        assert_eq!(other, expected, "trust_proxy = {trust}");
+    }
+}

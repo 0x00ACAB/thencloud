@@ -1,0 +1,7 @@
+{$THENCLOUD_DOMAIN} {
+	# Uploads go up in 4 MiB pieces, so no body size limit needs raising.
+	# thencloud sets its own security headers (CSP and the rest). Caddy
+	# keeps no access log unless one is configured; leave it that way, as it
+	# would record who fetched which public link.
+	reverse_proxy thencloud:8080
+}
