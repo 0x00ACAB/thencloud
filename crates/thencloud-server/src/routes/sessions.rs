@@ -14,9 +14,10 @@ pub async fn list(
     State(state): State<AppState>,
     user: AuthUser,
 ) -> Result<Json<Vec<DeviceSession>>> {
-    let rows: Vec<(String, String, i64, i64, bool)> = sqlx::query_as(
-        "SELECT id, device_name, created_at, last_seen, token_hash = ? FROM sessions \
-         WHERE user_id = ? AND expires_at > ? ORDER BY last_seen DESC",
+    let rows: Vec<(String, String, i64, i64, bool, Option<String>)> = sqlx::query_as(
+        "SELECT s.id, s.device_name, s.created_at, s.last_seen, s.token_hash = ?, a.name FROM sessions s \
+         LEFT JOIN app_passwords a ON a.id = s.app_password_id \
+         WHERE s.user_id = ? AND s.expires_at > ? ORDER BY s.last_seen DESC",
     )
     .bind(&user.token_hash)
     .bind(&user.id)
@@ -26,12 +27,13 @@ pub async fn list(
     Ok(Json(
         rows.into_iter()
             .map(
-                |(id, device_name, created_at, last_seen, current)| DeviceSession {
+                |(id, device_name, created_at, last_seen, current, app_password)| DeviceSession {
                     id,
                     device_name,
                     created_at,
                     last_seen,
                     current,
+                    app_password,
                 },
             )
             .collect(),
@@ -44,11 +46,21 @@ pub async fn revoke(
     user: AuthUser,
     Path(id): Path<String>,
 ) -> Result<StatusCode> {
-    let r = sqlx::query("DELETE FROM sessions WHERE id = ? AND user_id = ?")
-        .bind(&id)
-        .bind(&user.id)
-        .execute(&state.db)
-        .await?;
+    // A device signed in with an app password may only sign itself out.
+    let own = if user.app_password_id.is_some() {
+        Some(&user.token_hash)
+    } else {
+        None
+    };
+    let r = sqlx::query(
+        "DELETE FROM sessions WHERE id = ? AND user_id = ? AND (? IS NULL OR token_hash = ?)",
+    )
+    .bind(&id)
+    .bind(&user.id)
+    .bind(own)
+    .bind(own)
+    .execute(&state.db)
+    .await?;
     if r.rows_affected() == 0 {
         return Err(AppError::NotFound);
     }
@@ -57,6 +69,9 @@ pub async fn revoke(
 
 /// Sign out every session except this one.
 pub async fn revoke_others(State(state): State<AppState>, user: AuthUser) -> Result<StatusCode> {
+    if user.app_password_id.is_some() {
+        return Err(AppError::Forbidden);
+    }
     sqlx::query("DELETE FROM sessions WHERE user_id = ? AND token_hash != ?")
         .bind(&user.id)
         .bind(&user.token_hash)

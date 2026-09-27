@@ -3,14 +3,18 @@
   //
   // Only <token> is sent to the server. The key after '#' is read from
   // location.hash here and used only for decryption in this page; it never
-  // appears in any request URL, header or body.
+  // appears in any request URL, header or body. For a file drop (upload-only
+  // link) the fragment holds the owner's public key instead, and files are
+  // sealed to it here before upload.
   import { request } from './lib/api.js';
-  import { unb64, decryptMeta, decryptChildren, fetchFile, saveBlob } from './lib/crypto.js';
+  import { tc, b64, unb64, encryptMeta, decryptMeta, decryptChildren, fetchFile, openFile, encryptPiece, saveBlob } from './lib/crypto.js';
+  import { streamsAvailable, streamDownload } from './lib/stream.js';
   import { formatSize, sortEntries } from './lib/format.js';
   import { errorMessage, trackTransfer } from './lib/ui.svelte.js';
   import Icon from './components/Icon.svelte';
   import Time from './components/Time.svelte';
   import FileIcon from './components/FileIcon.svelte';
+  import FolderIcon from './components/FolderIcon.svelte';
   import Toasts from './components/Toasts.svelte';
   import TransferTray from './components/TransferTray.svelte';
   import Preview from './components/Preview.svelte';
@@ -19,7 +23,7 @@
   const token = decodeURIComponent(location.pathname.split('/').filter(Boolean)[1] || '');
   const base = `/api/public/${encodeURIComponent(token)}`;
 
-  let phase = $state('loading'); // loading | password | ready | error
+  let phase = $state('loading'); // loading | password | ready | drop | error
   let error = $state({ title: '', detail: '' });
   let linkToken = null;
   let expiresAt = $state(null);
@@ -67,13 +71,19 @@
       if (e.status === 404) return fail('This link has expired or was removed', 'Ask the person who shared it for a new link.');
       return fail("Couldn't open this link", errorMessage(e));
     }
+    expiresAt = info.expires_at;
+    if (info.upload_only) {
+      owner = info.owner;
+      dropFolder = info.folder_id;
+      phase = 'drop';
+      return;
+    }
     let meta;
     try {
       meta = decryptMeta(rootKey, info.node);
     } catch {
       return fail('The key in this link is wrong', 'The part after the # does not match. Make sure you copied the whole link.');
     }
-    expiresAt = info.expires_at;
     trail = [{ node: info.node, key: rootKey, meta }];
     phase = 'ready';
   }
@@ -106,8 +116,9 @@
       .finally(() => (listing = false));
   });
 
-  const fetchEntry = (entry, onProgress) =>
-    fetchFile(entry.node, entry.key, (i) => request('GET', `${base}/nodes/${entry.node.id}/chunks/${i}`, opts()), onProgress);
+  const getChunk = (entry) => (i) => request('GET', `${base}/nodes/${entry.node.id}/chunks/${i}`, opts());
+  const fetchEntry = (entry, onProgress) => fetchFile(entry.node, entry.key, getChunk(entry), onProgress);
+  const openEntry = (entry) => openFile(entry.node, entry.key, getChunk(entry));
 
   let preview = $state(null); // { entries, start }
   const files = $derived(rows.filter((r) => r.node.kind === 'file'));
@@ -119,8 +130,8 @@
     const name = `${here.meta.name}.zip`;
     const t = trackTransfer('download', name, null);
     try {
-      const { zipEntries } = await import('./lib/zip.js');
-      saveBlob(await zipEntries(rows, { list: listFolder, fetch: fetchEntry, onProgress: (p) => (t.progress = p) }), name);
+      const { saveZip } = await import('./lib/zip.js');
+      await saveZip(rows, name, { list: listFolder, open: openEntry, onProgress: (p) => (t.progress = p) });
       t.status = 'done';
     } catch (e) {
       t.status = 'error';
@@ -131,8 +142,12 @@
   async function downloadEntry(entry) {
     const t = trackTransfer('download', entry.meta.name, entry.meta.size);
     try {
-      const { blob, meta } = await fetchEntry(entry, (p) => (t.progress = p));
-      saveBlob(blob, meta.name);
+      if (entry.meta.size > 16 * 1024 * 1024 && (await streamsAvailable())) {
+        await streamDownload(openEntry(entry), (p) => (t.progress = p));
+      } else {
+        const { blob, meta } = await fetchEntry(entry, (p) => (t.progress = p));
+        saveBlob(blob, meta.name);
+      }
       t.status = 'done';
     } catch (e) {
       t.status = 'error';
@@ -140,8 +155,83 @@
     }
   }
 
+  // --- File drop -----------------------------------------------------------
+
+  let owner = $state('');
+  let sent = $state([]); // { id, name, size, progress, status, error }
+  let dragging = $state(false);
+  let picker = $state();
+  const fingerprint = $derived(phase === 'drop' ? tc.fingerprint(rootKey) : '');
+
+  /** Encrypt `file` under a fresh key sealed to the owner, and upload it. */
+  async function dropFile(file) {
+    const item = { id: tc.new_id(), name: file.name, size: file.size, progress: 0, status: 'active', error: '' };
+    sent.push(item);
+    const row = sent[sent.length - 1];
+    const folderId = dropFolder;
+    const nodeId = item.id;
+    const nodeKey = tc.random_key();
+    const versionId = tc.new_id();
+    const contentKey = tc.random_key();
+    const padded = tc.padded_size(file.size);
+    const chunkCount = tc.chunk_count(padded);
+    const meta = { name: file.name, mime: file.type || null, size: file.size, mtime: file.lastModified || Date.now() };
+    let upId = null;
+    try {
+      const up = await request('POST', `${base}/uploads`, {
+        ...opts(),
+        body: {
+          node_id: nodeId,
+          parent_id: folderId,
+          enc_key: b64(tc.seal_drop_key(rootKey, nodeKey, nodeId, folderId)),
+          enc_metadata: encryptMeta(nodeKey, nodeId, meta),
+          version_id: versionId,
+          enc_content_key: b64(tc.wrap_content_key(nodeKey, contentKey, nodeId, versionId)),
+          chunk_count: chunkCount,
+        },
+      });
+      upId = up.upload_id;
+      for (let i = 0; i < chunkCount; i++) {
+        const enc = await encryptPiece(file, i, padded, contentKey, versionId, chunkCount);
+        await request('PUT', `${base}/uploads/${up.upload_id}/chunks/${i}`, { ...opts(), raw: enc });
+        row.progress = (i + 1) / chunkCount;
+      }
+      await request('POST', `${base}/uploads/${up.upload_id}/finish`, opts());
+      row.status = 'done';
+    } catch (e) {
+      // Free the space it took straight away.
+      if (upId) request('DELETE', `${base}/uploads/${upId}`, opts()).catch(() => {});
+      row.status = 'error';
+      row.error = e?.status === 507 ? "There's no room left in this folder." : errorMessage(e);
+    }
+  }
+
+  // The folder id is bound into each sealed key, so the owner's client
+  // takes the file into the folder it was meant for.
+  let dropFolder = null;
+
+  async function sendFiles(list) {
+    for (const f of list) await dropFile(f);
+  }
+
+  function onDrop(e) {
+    e.preventDefault();
+    dragging = false;
+    if (phase !== 'drop') return;
+    const list = [...(e.dataTransfer?.files ?? [])];
+    if (list.length) sendFiles(list);
+  }
+
+  function onDragOver(e) {
+    if (phase !== 'drop' || !e.dataTransfer?.types.includes('Files')) return;
+    e.preventDefault();
+    dragging = true;
+  }
+
   load();
 </script>
+
+<svelte:window ondragover={onDragOver} ondragleave={(e) => !e.relatedTarget && (dragging = false)} ondrop={onDrop} />
 
 <div class="flex min-h-dvh flex-col">
   <header class="border-b border-line">
@@ -174,6 +264,43 @@
           Unlock
         </button>
       </form>
+    {:else if phase === 'drop'}
+      <div class="mx-auto grid max-w-lg gap-6">
+        <div class="grid gap-1">
+          <h1 class="text-xl font-semibold tracking-tight">Send files to {owner}</h1>
+          <p class="text-[13px] text-fg-muted">
+            Files are encrypted in your browser so only {owner} can open them. You can't see what's already in this folder, and neither can the server.
+          </p>
+        </div>
+        <button
+          type="button"
+          class="grid cursor-pointer justify-items-center gap-2 rounded-lg border border-dashed p-10 text-center transition-colors {dragging ? 'border-accent bg-accent-soft' : 'border-line-strong hover:bg-subtle'}"
+          onclick={() => picker.click()}>
+          <Icon name="upload" class="size-5 text-fg-muted" />
+          <span class="text-sm font-medium">Drop files here or choose them</span>
+          <span class="text-xs text-fg-muted">Nothing leaves your browser unencrypted.</span>
+        </button>
+        <input bind:this={picker} type="file" multiple class="hidden" onchange={(e) => (sendFiles([...e.currentTarget.files]), (e.currentTarget.value = ''))} />
+        {#if sent.length}
+          <ul class="card divide-y divide-line">
+            {#each sent as f (f.id)}
+              <li class="flex items-center gap-3 px-4 py-2.5">
+                <FileIcon meta={{ name: f.name }} />
+                <div class="min-w-0 flex-1">
+                  <p class="truncate text-[13px] font-medium">{f.name}</p>
+                  <p class="text-xs {f.status === 'error' ? 'text-danger' : 'text-fg-muted'}">
+                    {#if f.status === 'error'}{f.error}{:else if f.status === 'done'}Sent · {formatSize(f.size)}{:else}{Math.round(f.progress * 100)}% of {formatSize(f.size)}{/if}
+                  </p>
+                </div>
+                {#if f.status === 'done'}<Icon name="check" class="size-4 text-accent-text" />{:else if f.status === 'active'}<Icon name="loader-circle" class="spinner size-4 text-fg-muted" />{/if}
+              </li>
+            {/each}
+          </ul>
+        {/if}
+        <p class="text-xs text-fg-muted">
+          {owner}'s key fingerprint is <span class="font-mono text-fg">{fingerprint}</span>. If it matters who can read these files, check it with them.
+        </p>
+      </div>
     {:else if here.node.kind === 'file'}
       <div class="card mx-auto grid max-w-md justify-items-center gap-1 p-8 text-center">
         <div class="mb-3 grid size-14 place-items-center rounded-xl border border-line bg-subtle">
@@ -231,7 +358,7 @@
                       type="button"
                       class="flex max-w-full cursor-pointer items-center gap-3 text-left"
                       onclick={() => (folder ? ((rows = []), (trail = [...trail, entry])) : (preview = { entries: files, start: files.indexOf(entry) }))}>
-                      {#if folder}<Icon name="folder" class="size-4 shrink-0 text-accent-text" />{:else}<FileIcon meta={entry.meta} />{/if}
+                      {#if folder}<FolderIcon name={entry.meta.name} />{:else}<FileIcon meta={entry.meta} />{/if}
                       <span class="truncate font-medium group-hover:underline group-hover:decoration-line-strong group-hover:underline-offset-4">{entry.meta.name}</span>
                     </button>
                   </td>
@@ -256,7 +383,7 @@
     <div class="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-2 px-4 py-5 text-xs text-fg-muted">
       <p class="flex items-center gap-1.5">
         <Icon name="shield-check" class="size-3.5" />
-        Decrypted in your browser. The key is never sent to the server.
+        {#if phase === 'drop'}Encrypted in your browser before upload.{:else}Decrypted in your browser. The key is never sent to the server.{/if}
       </p>
       {#if expiresAt}<p><Time ms={expiresAt * 1000} prefix="Link expires " /></p>{/if}
     </div>
@@ -264,7 +391,15 @@
 </div>
 
 {#if preview}
-  <Preview entries={preview.entries} start={preview.start} fetch={fetchEntry} ondownload={downloadEntry} onclose={() => (preview = null)} />
+  <Preview
+    entries={preview.entries}
+    start={preview.start}
+    fetch={fetchEntry}
+    open={openEntry}
+    trail={here?.node.kind === 'folder' ? trail : null}
+    list={listFolder}
+    ondownload={downloadEntry}
+    onclose={() => (preview = null)} />
 {/if}
 
 <TransferTray />

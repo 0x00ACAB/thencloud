@@ -21,6 +21,12 @@ pub fn chunk_size() -> usize {
     c::CHUNK_SIZE
 }
 
+/// The size a file is padded to before encryption.
+#[wasm_bindgen]
+pub fn padded_size(size: f64) -> f64 {
+    c::padded_size(size as u64) as f64
+}
+
 #[wasm_bindgen]
 pub fn chunk_count(size: f64) -> u32 {
     c::chunk_count(size as u64)
@@ -304,4 +310,86 @@ pub fn open_share_key(secret: &[u8], sealed: &[u8], node_id: &str) -> R<Vec<u8>>
     Ok(c::open_share_key(&keypair(secret)?, sealed, node_id)?
         .as_bytes()
         .to_vec())
+}
+
+#[wasm_bindgen]
+pub fn seal_drop_key(
+    owner_public: &[u8],
+    node_key: &[u8],
+    node_id: &str,
+    folder_id: &str,
+) -> R<Vec<u8>> {
+    Ok(c::seal_drop_key(
+        owner_public,
+        &key(node_key)?,
+        node_id,
+        folder_id,
+    )?)
+}
+
+#[wasm_bindgen]
+pub fn open_drop_key(secret: &[u8], sealed: &[u8], node_id: &str, folder_id: &str) -> R<Vec<u8>> {
+    Ok(
+        c::open_drop_key(&keypair(secret)?, sealed, node_id, folder_id)?
+            .as_bytes()
+            .to_vec(),
+    )
+}
+
+#[wasm_bindgen]
+pub fn derive_app_password_keys(k: &[u8]) -> R<AccountKeys> {
+    let r = c::derive_app_password_keys(&key(k)?);
+    Ok(AccountKeys {
+        auth_key: r.auth_key.as_bytes().to_vec(),
+        kek: r.kek.as_bytes().to_vec(),
+    })
+}
+
+#[wasm_bindgen]
+pub fn wrap_master_key_app(kek: &[u8], mk: &[u8], app_password_id: &str) -> R<Vec<u8>> {
+    Ok(c::wrap_master_key_app(
+        &key(kek)?,
+        &key(mk)?,
+        app_password_id,
+    ))
+}
+
+#[wasm_bindgen]
+pub fn encrypt_avatar(key_bytes: &[u8], owner: &str, image: &[u8]) -> R<Vec<u8>> {
+    Ok(c::encrypt_avatar(&key(key_bytes)?, owner, image))
+}
+
+#[wasm_bindgen]
+pub fn decrypt_avatar(key_bytes: &[u8], owner: &str, sealed: &[u8]) -> R<Vec<u8>> {
+    Ok(c::decrypt_avatar(&key(key_bytes)?, owner, sealed)?)
+}
+
+#[wasm_bindgen]
+pub fn seal_avatar_key(
+    grantee_public: &[u8],
+    key_bytes: &[u8],
+    owner: &str,
+    grantee: &str,
+) -> R<Vec<u8>> {
+    Ok(c::seal_avatar_key(
+        grantee_public,
+        &key(key_bytes)?,
+        owner,
+        grantee,
+    )?)
+}
+
+#[wasm_bindgen]
+pub fn open_avatar_key(secret: &[u8], sealed: &[u8], owner: &str, grantee: &str) -> R<Vec<u8>> {
+    Ok(
+        c::open_avatar_key(&keypair(secret)?, sealed, owner, grantee)?
+            .as_bytes()
+            .to_vec(),
+    )
+}
+
+/// The folder-scoped tag the server uses to refuse duplicate names.
+#[wasm_bindgen]
+pub fn name_tag(folder_key: &[u8], name: &str) -> R<Vec<u8>> {
+    Ok(c::name_tag(&key(folder_key)?, name))
 }

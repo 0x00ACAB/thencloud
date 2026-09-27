@@ -351,6 +351,39 @@ pub fn unwrap_master_key_recovery(kek: &Key, wrapped: &[u8]) -> Result<Key> {
 }
 
 // ---------------------------------------------------------------------------
+// App passwords: per-device credentials for sync clients, made like recovery
+// keys (32 random bytes, shown in the same format) but each wrapping its own
+// copy of the master key, bound to the app password's id, so any one can be
+// revoked without touching the others or the account password.
+// ---------------------------------------------------------------------------
+
+pub fn derive_app_password_keys(k: &Key) -> AccountKeys {
+    let hk = Hkdf::<Sha256>::new(Some(b"thencloud/v1/app-password"), k.as_bytes());
+    let mut auth = [0u8; KEY_LEN];
+    let mut kek = [0u8; KEY_LEN];
+    hk.expand(b"thencloud/v1/app-password-auth", &mut auth)
+        .expect("valid length");
+    hk.expand(b"thencloud/v1/app-password-kek", &mut kek)
+        .expect("valid length");
+    AccountKeys {
+        auth_key: Key(auth),
+        kek: Key(kek),
+    }
+}
+
+pub fn wrap_master_key_app(kek: &Key, mk: &Key, app_password_id: &str) -> Vec<u8> {
+    seal(
+        kek,
+        mk.as_bytes(),
+        &aad("master-key-app", &[app_password_id]),
+    )
+}
+
+pub fn unwrap_master_key_app(kek: &Key, wrapped: &[u8], app_password_id: &str) -> Result<Key> {
+    open_key(kek, wrapped, &aad("master-key-app", &[app_password_id]))
+}
+
+// ---------------------------------------------------------------------------
 // Private account data (e.g. verified contacts): sealed under the master key
 // and bound to the user and a label, so the server can store it but not read
 // it, change it, or swap it with another user's or another kind of data.
@@ -464,6 +497,62 @@ pub fn open_share_key(kp: &KeyPair, sealed: &[u8], node_id: &str) -> Result<Key>
     k
 }
 
+/// Seal a new file's key to a folder owner, for a file dropped through an
+/// upload-only link. Bound to the file and the folder it was dropped into.
+pub fn seal_drop_key(
+    owner_pub: &[u8],
+    node_key: &Key,
+    node_id: &str,
+    folder_id: &str,
+) -> Result<Vec<u8>> {
+    seal_to_public(
+        owner_pub,
+        node_key.as_bytes(),
+        &aad("drop", &[node_id, folder_id]),
+    )
+}
+
+pub fn open_drop_key(kp: &KeyPair, sealed: &[u8], node_id: &str, folder_id: &str) -> Result<Key> {
+    let mut pt = open_sealed(kp, sealed, &aad("drop", &[node_id, folder_id]))?;
+    let k = Key::from_slice(&pt);
+    pt.zeroize();
+    k
+}
+
+// ---------------------------------------------------------------------------
+// Profile pictures: encrypted under a per-user avatar key, which is sealed
+// to each person the user shares with (in either direction). The owner's
+// own copy is kept with `encrypt_private_data`.
+// ---------------------------------------------------------------------------
+
+pub fn encrypt_avatar(key: &Key, owner: &str, image: &[u8]) -> Vec<u8> {
+    seal(key, image, &aad("avatar", &[owner]))
+}
+
+pub fn decrypt_avatar(key: &Key, owner: &str, sealed: &[u8]) -> Result<Vec<u8>> {
+    open(key, sealed, &aad("avatar", &[owner]))
+}
+
+pub fn seal_avatar_key(
+    grantee_pub: &[u8],
+    key: &Key,
+    owner: &str,
+    grantee: &str,
+) -> Result<Vec<u8>> {
+    seal_to_public(
+        grantee_pub,
+        key.as_bytes(),
+        &aad("avatar-key", &[owner, grantee]),
+    )
+}
+
+pub fn open_avatar_key(kp: &KeyPair, sealed: &[u8], owner: &str, grantee: &str) -> Result<Key> {
+    let mut pt = open_sealed(kp, sealed, &aad("avatar-key", &[owner, grantee]))?;
+    let k = Key::from_slice(&pt);
+    pt.zeroize();
+    k
+}
+
 // ---------------------------------------------------------------------------
 // Node keys and metadata
 // ---------------------------------------------------------------------------
@@ -480,6 +569,18 @@ pub fn wrap_node_key(parent_key: &Key, node_key: &Key, node_id: &str) -> Vec<u8>
 
 pub fn unwrap_node_key(parent_key: &Key, wrapped: &[u8], node_id: &str) -> Result<Key> {
     open_key(parent_key, wrapped, &aad("node-key", &[node_id]))
+}
+
+/// A tag for a name in a folder: the same for names that differ only in
+/// case, different in every folder, and meaningless without the folder
+/// key. The server stores it with the node so it can refuse duplicate
+/// names without learning them.
+pub fn name_tag(folder_key: &Key, name: &str) -> Vec<u8> {
+    let hk = Hkdf::<Sha256>::new(Some(b"thencloud/v1/name-index"), folder_key.as_bytes());
+    let mut tag = vec![0u8; 32];
+    hk.expand(name.to_lowercase().as_bytes(), &mut tag)
+        .expect("valid length");
+    tag
 }
 
 /// Everything about a node the server must not learn.
@@ -512,9 +613,15 @@ impl Metadata {
     }
 }
 
+/// Encrypted metadata is padded to a multiple of this, so its length says
+/// little about the name.
+const METADATA_PAD: usize = 128;
+
 pub fn encrypt_metadata(node_key: &Key, node_id: &str, meta: &Metadata) -> Result<Vec<u8>> {
     meta.validate()?;
-    let json = serde_json::to_vec(meta).map_err(|e| Error::Metadata(e.to_string()))?;
+    let mut json = serde_json::to_vec(meta).map_err(|e| Error::Metadata(e.to_string()))?;
+    // Trailing spaces are valid JSON whitespace.
+    json.resize(json.len().next_multiple_of(METADATA_PAD), b' ');
     Ok(seal(node_key, &json, &aad("metadata", &[node_id])))
 }
 
@@ -551,6 +658,20 @@ pub fn unwrap_content_key(
         wrapped,
         &aad("content-key", &[node_id, version_id]),
     )
+}
+
+/// Smallest padded file size.
+const MIN_PADDED: u64 = 256;
+
+/// The size a file is padded to before encryption (Padmé: at most about
+/// 12% more), so the stored size gives away only a rough bucket. The real
+/// size is in the encrypted metadata; readers drop the zeros after it.
+pub fn padded_size(size: u64) -> u64 {
+    let l = size.max(MIN_PADDED);
+    let e = 63 - l.leading_zeros() as u64; // floor(log2 l)
+    let s = 64 - e.leading_zeros() as u64; // floor(log2 e) + 1
+    let mask = (1u64 << (e - s)) - 1;
+    (l + mask) & !mask
 }
 
 /// Number of chunks for a plaintext of `size` bytes. An empty file is one
@@ -591,14 +712,20 @@ pub fn decrypt_chunk(
     open(content_key, sealed, &chunk_aad(version_id, index, is_last))
 }
 
-/// Encrypt a whole in-memory buffer into chunks.
+/// Encrypt a whole in-memory buffer into chunks, padded with zeros to
+/// `padded_size`.
 pub fn encrypt_content(content_key: &Key, version_id: &str, data: &[u8]) -> Vec<Vec<u8>> {
-    let n = chunk_count(data.len() as u64);
+    let total = padded_size(data.len() as u64) as usize;
+    let n = chunk_count(total as u64);
     (0..n)
         .map(|i| {
             let start = i as usize * CHUNK_SIZE;
+            let mut piece = vec![0u8; CHUNK_SIZE.min(total - start)];
             let end = (start + CHUNK_SIZE).min(data.len());
-            encrypt_chunk(content_key, version_id, i, i + 1 == n, &data[start..end])
+            if start < end {
+                piece[..end - start].copy_from_slice(&data[start..end]);
+            }
+            encrypt_chunk(content_key, version_id, i, i + 1 == n, &piece)
         })
         .collect()
 }
@@ -606,6 +733,51 @@ pub fn encrypt_content(content_key: &Key, version_id: &str, data: &[u8]) -> Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn name_tags() {
+        let (a, b) = (Key::generate(), Key::generate());
+        assert_eq!(name_tag(&a, "Report.PDF"), name_tag(&a, "report.pdf"));
+        assert_ne!(name_tag(&a, "report.pdf"), name_tag(&a, "report2.pdf"));
+        assert_ne!(name_tag(&a, "report.pdf"), name_tag(&b, "report.pdf"));
+    }
+
+    #[test]
+    fn padding() {
+        assert_eq!(padded_size(0), 256);
+        assert_eq!(padded_size(1000), 1024);
+        for size in [1u64, 300, 5000, 123_456, 9_999_999, 3_000_000_000] {
+            let p = padded_size(size);
+            let l = size.max(256);
+            assert!(p >= l && (p - l) as f64 <= l as f64 * 0.12, "{size} -> {p}");
+        }
+        let k = Key::generate();
+        let id = new_id();
+        let short = encrypt_metadata(
+            &k,
+            &id,
+            &Metadata {
+                name: "a".into(),
+                mime: None,
+                size: 1,
+                mtime: 0,
+            },
+        )
+        .unwrap();
+        let long = encrypt_metadata(
+            &k,
+            &id,
+            &Metadata {
+                name: "a".repeat(60),
+                mime: None,
+                size: 1,
+                mtime: 0,
+            },
+        )
+        .unwrap();
+        assert_eq!(short.len(), long.len());
+        assert_eq!(decrypt_metadata(&k, &id, &long).unwrap().name.len(), 60);
+    }
 
     fn fast() -> KdfParams {
         KdfParams {
@@ -672,6 +844,20 @@ mod tests {
         assert!(open_share_key(&other, &s, &id).is_err());
         assert!(open_share_key(&kp, &s, &new_id()).is_err());
 
+        let folder = new_id();
+        let d = seal_drop_key(&kp.public, &nk, &id, &folder).unwrap();
+        assert!(open_drop_key(&kp, &d, &id, &folder).unwrap() == nk);
+        assert!(open_drop_key(&kp, &d, &id, &new_id()).is_err());
+        assert!(open_share_key(&kp, &d, &id).is_err());
+
+        let ak = Key::generate();
+        let pic = encrypt_avatar(&ak, "alice", b"png");
+        assert_eq!(decrypt_avatar(&ak, "alice", &pic).unwrap(), b"png");
+        assert!(decrypt_avatar(&ak, "bob", &pic).is_err());
+        let g = seal_avatar_key(&kp.public, &ak, "alice", "bob").unwrap();
+        assert!(open_avatar_key(&kp, &g, "alice", "bob").unwrap() == ak);
+        assert!(open_avatar_key(&kp, &g, "alice", "carol").is_err());
+
         let mk = Key::generate();
         let w = wrap_private_key(&mk, &kp.secret);
         assert_eq!(unwrap_private_key(&mk, &w).unwrap().public, kp.public);
@@ -690,6 +876,10 @@ mod tests {
         for (i, c) in chunks.iter().enumerate() {
             out.extend(decrypt_chunk(&ck, &v, i as u32, i == 2, c).unwrap());
         }
+        // Padded with zeros after the data.
+        assert_eq!(out.len() as u64, padded_size(data.len() as u64));
+        assert!(out[data.len()..].iter().all(|&b| b == 0));
+        out.truncate(data.len());
         assert_eq!(out, data);
 
         // reorder
@@ -713,7 +903,10 @@ mod tests {
         let v = new_id();
         let c = encrypt_content(&ck, &v, &[]);
         assert_eq!(c.len(), 1);
-        assert!(decrypt_chunk(&ck, &v, 0, true, &c[0]).unwrap().is_empty());
+        assert_eq!(
+            decrypt_chunk(&ck, &v, 0, true, &c[0]).unwrap(),
+            vec![0; 256]
+        );
     }
 
     #[test]

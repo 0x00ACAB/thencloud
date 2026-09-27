@@ -3,16 +3,18 @@
 // For each pack this provides a virtual module, `virtual:file-icons/<pack>`,
 // with lookup tables in one shared shape:
 //
-//   { names, extensions, light, fallback, mime }
+//   { names, extensions, light, fallback, mime, folders, folder }
 //
 // names/extensions map a lower-case file name or extension (possibly
 // compound, like "d.ts") to an icon id; light maps an icon id to its
-// variant for light backgrounds; mime has generic image/video/audio ids.
+// variant for light backgrounds; mime has generic image/video/audio ids;
+// folders maps a lower-case folder name to its icon (folder is the plain
+// one), for the optional per-name folder icons.
 //
 // The SVGs are served from /file-icons/<pack>/<id>.svg (and copied into
 // dist/ on build) so they come from our own origin like everything else.
 // The client imports a pack's tables only when that pack is chosen, and the
-// browser fetches only the icons it shows. Folder icons aren't used.
+// browser fetches only the icons it shows.
 //
 // Packs (Minimal, the default, is Lucide and needs nothing here):
 //   material   Material Icon Theme (MIT), npm material-icon-theme
@@ -30,7 +32,9 @@ const readJson = (path) => JSON.parse(readFileSync(path, 'utf8'));
 const lower = (o = {}) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k.toLowerCase(), v]));
 
 function usedIds(t) {
-  return new Set([t.fallback, ...Object.values(t.mime), ...Object.values(t.names), ...Object.values(t.extensions), ...Object.values(t.light)]);
+  return new Set(
+    [t.fallback, t.folder, ...Object.values(t.mime), ...Object.values(t.names), ...Object.values(t.extensions), ...Object.values(t.light), ...Object.values(t.folders)].filter(Boolean),
+  );
 }
 
 /**
@@ -48,7 +52,9 @@ function vscodeTheme(themeFile, mime) {
   const light = {};
   for (const [k, id] of Object.entries(lower(m.light?.fileNames))) if (names[k]) light[names[k]] = id;
   for (const [k, id] of Object.entries(lower(m.light?.fileExtensions))) if (extensions[k]) light[extensions[k]] = id;
-  const tables = { names, extensions, light, fallback: m.file, mime };
+  const folders = lower(m.folderNames);
+  for (const [k, id] of Object.entries(lower(m.light?.folderNames))) if (folders[k]) light[folders[k]] = id;
+  const tables = { names, extensions, light, fallback: m.file, mime, folders, folder: m.folder };
   const svgs = new Map();
   for (const id of usedIds(tables)) {
     // Trimmed: a path in Symbols has a stray trailing space. Icons whose
@@ -100,7 +106,7 @@ function documents() {
     .map((f) => f.slice(0, -4));
   // One icon per extension, named after it.
   const extensions = Object.fromEntries(ids.filter((id) => id !== 'blank').map((id) => [id.toLowerCase(), id]));
-  const tables = { names: {}, extensions, light: {}, fallback: 'blank', mime: { image: 'image', video: 'mp4', audio: 'mp3' } };
+  const tables = { names: {}, extensions, light: {}, fallback: 'blank', mime: { image: 'image', video: 'mp4', audio: 'mp3' }, folders: {}, folder: null };
   const svgs = new Map(ids.map((id) => [id, () => inlineStyles(readFileSync(join(dir, `${id}.svg`), 'utf8'))]));
   return { tables, svgs };
 }

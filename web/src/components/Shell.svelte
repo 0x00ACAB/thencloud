@@ -1,5 +1,5 @@
 <script>
-  import { session, logout } from '../lib/cloud.svelte.js';
+  import { session, logout, avatar, loadMyAvatar } from '../lib/cloud.svelte.js';
   import { theme, setTheme } from '../lib/ui.svelte.js';
   import { formatSize } from '../lib/format.js';
   import Icon from './Icon.svelte';
@@ -15,6 +15,7 @@
   import AdminView from './views/AdminView.svelte';
 
   const rootId = session.me.keys.root_node_id;
+  loadMyAvatar().catch(() => {});
 
   // Phones get a bottom tab bar; fixed things (toasts, the transfer tray,
   // the selection bar, the + button) sit above it using --bottom-bar.
@@ -102,7 +103,7 @@
             'sep',
             { label: 'Sign out', icon: 'log-out', onclick: logout },
           ]}>
-          {#snippet trigger()}{session.me.username.slice(0, 1)}{/snippet}
+          {#snippet trigger()}{#if avatar.url}<img src={avatar.url} alt="" class="size-8 rounded-full object-cover" />{:else}{session.me.username.slice(0, 1)}{/if}{/snippet}
         </Menu>
       </div>
     </div>
@@ -135,7 +136,7 @@
       {#key view.name}
       <div class="mx-auto max-w-5xl animate-enter">
         {#if view.name === 'files'}
-          <FilesView folderId={view.folderId} {go} bind:inShare />
+          <FilesView folderId={view.folderId} openId={view.open} {go} bind:inShare />
         {:else if view.name === 'shared-with-me'}
           <SharedWithMe {go} />
         {:else if view.name === 'shared-by-me'}

@@ -48,3 +48,18 @@ export function fileIconUrl(pack, meta, dark) {
   if (!dark && t.light[id]) id = t.light[id];
   return `/file-icons/${pack}/${encodeURIComponent(id)}.svg`;
 }
+
+/**
+ * URL of a pack's icon for a folder with this name, or null for the plain
+ * folder (no icon for that name, or the pack has none).
+ */
+export function folderIconUrl(pack, name, dark) {
+  ensure(pack);
+  let id = tables[pack]?.folders?.[name.toLowerCase()];
+  if (!id) return null;
+  if (!dark && tables[pack].light[id]) id = tables[pack].light[id];
+  return `/file-icons/${pack}/${encodeURIComponent(id)}.svg`;
+}
+
+/** Whether a pack has icons for folder names. */
+export const hasFolderIcons = (pack) => pack === 'material' || pack === 'symbols';

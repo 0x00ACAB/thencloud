@@ -170,6 +170,26 @@ export function setIconPack(id) {
   }
 }
 
+// Icons for folders by name ("src", "images"...), from the chosen pack.
+function readFolderIcons() {
+  try {
+    return localStorage.getItem('folderIcons') === 'named';
+  } catch {
+    return false;
+  }
+}
+
+export const folderIcons = $state({ named: readFolderIcons() });
+
+export function setFolderIcons(named) {
+  folderIcons.named = named;
+  try {
+    localStorage.setItem('folderIcons', named ? 'named' : 'plain');
+  } catch {
+    /* private mode */
+  }
+}
+
 // Sort order of folder listings, remembered per device.
 function readSort() {
   try {

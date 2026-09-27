@@ -66,9 +66,48 @@ export async function fetchFile(node, nodeKey, getChunk, onProgress) {
     parts.push(tc.decrypt_chunk(ck, v.id, i, i === v.chunk_count - 1, enc));
     onProgress?.((i + 1) / v.chunk_count);
   }
-  const blob = new Blob(parts, { type: meta.mime || 'application/octet-stream' });
-  if (blob.size !== meta.size) throw new Error('Decrypted size does not match the file metadata.');
+  // Contents are padded with zeros past the real size (see padded_size).
+  const all = new Blob(parts);
+  if (all.size < meta.size) throw new Error('Decrypted size does not match the file metadata.');
+  const blob = all.slice(0, meta.size, meta.mime || 'application/octet-stream');
   return { blob, meta };
+}
+
+/** Encrypt piece `i` of `file`, padded with zeros up to `padded` bytes in all. */
+export async function encryptPiece(file, i, padded, contentKey, versionId, count) {
+  const size = tc.chunk_size();
+  const plain = new Uint8Array(Math.min(size, padded - i * size));
+  plain.set(new Uint8Array(await file.slice(i * size, (i + 1) * size).arrayBuffer()));
+  return tc.encrypt_chunk(contentKey, versionId, i, i === count - 1, plain);
+}
+
+/**
+ * A file to read one plaintext piece at a time (for streaming):
+ * { meta, size, count, chunkSize, read(index) -> Uint8Array }. Each piece is
+ * checked against the size in the metadata, so a stream can't come out
+ * longer or shorter than announced.
+ */
+export function openFile(node, nodeKey, getChunk) {
+  const meta = decryptMeta(nodeKey, node);
+  const v = node.version;
+  const ck = tc.unwrap_content_key(nodeKey, unb64(v.enc_content_key), node.id, v.id);
+  const chunkSize = tc.chunk_size();
+  const size = meta.size;
+  return {
+    meta,
+    size,
+    count: v.chunk_count,
+    chunkSize,
+    async read(i) {
+      const last = i === v.chunk_count - 1;
+      const plain = tc.decrypt_chunk(ck, v.id, i, last, await getChunk(i));
+      // Every piece but the last is full; the file ends inside the padding.
+      if ((!last && plain.length !== chunkSize) || (last && i * chunkSize + plain.length < size)) {
+        throw new Error('Decrypted size does not match the file metadata.');
+      }
+      return plain.subarray(0, Math.max(0, Math.min(plain.length, size - i * chunkSize)));
+    },
+  };
 }
 
 export function saveBlob(blob, name) {

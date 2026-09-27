@@ -5,8 +5,9 @@
 //! ciphertext the server itself cannot read.
 
 use axum::Json;
+use axum::body::Bytes;
 use axum::extract::{Path, State};
-use axum::http::HeaderMap;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;
 use thencloud_crypto::api::*;
 
@@ -16,31 +17,31 @@ use crate::auth::ClientIp;
 use crate::db::{NodeRow, get_children, get_node};
 use crate::error::{AppError, Result};
 use crate::routes::nodes::current_chunk;
+use crate::routes::uploads::{self, DropLink, Uploader};
 use crate::util::*;
 
 const LINK_SESSION_SECS: i64 = 12 * 3600;
 
+#[derive(sqlx::FromRow)]
 struct LinkRow {
+    id: String,
     node_id: String,
+    owner_id: String,
     password_hash: Option<String>,
     expires_at: Option<i64>,
+    upload_only: bool,
 }
 
 async fn find(state: &AppState, token: &str) -> Result<LinkRow> {
-    let row: Option<(String, Option<String>, Option<i64>)> = sqlx::query_as(
-        "SELECT node_id, password_hash, expires_at FROM public_links \
+    sqlx::query_as(
+        "SELECT id, node_id, owner_id, password_hash, expires_at, upload_only FROM public_links \
          WHERE token = ? AND (expires_at IS NULL OR expires_at > ?)",
     )
     .bind(token)
     .bind(now())
     .fetch_optional(&state.db)
-    .await?;
-    let (node_id, password_hash, expires_at) = row.ok_or(AppError::NotFound)?;
-    Ok(LinkRow {
-        node_id,
-        password_hash,
-        expires_at,
-    })
+    .await?
+    .ok_or(AppError::NotFound)
 }
 
 fn session_msg(token: &str, exp: i64) -> Vec<u8> {
@@ -73,6 +74,10 @@ async fn resolve(state: &AppState, token: &str, headers: &HeaderMap) -> Result<L
 }
 
 async fn node_in_link(state: &AppState, link: &LinkRow, node_id: &str) -> Result<NodeRow> {
+    // Visitors to a file drop see nothing in the folder.
+    if link.upload_only {
+        return Err(AppError::Forbidden);
+    }
     if !access::is_within(&state.db, node_id, &link.node_id).await?
         || access::is_trashed(&state.db, node_id).await?
     {
@@ -96,8 +101,11 @@ pub async fn info(
         .await?
         .ok_or(AppError::NotFound)?;
     Ok(Json(PublicLinkInfo {
-        node: node.into_api(),
         expires_at: link.expires_at,
+        upload_only: link.upload_only,
+        owner: link.upload_only.then(|| node.owner.clone()),
+        folder_id: link.upload_only.then(|| node.id.clone()),
+        node: (!link.upload_only).then(|| node.into_api()),
     }))
 }
 
@@ -153,4 +161,61 @@ pub async fn chunk(
     let link = resolve(&state, &token, &headers).await?;
     let node = node_in_link(&state, &link, &id).await?;
     current_chunk(&state, node, idx).await
+}
+
+/// Resolve an upload-only link for a visitor adding a file.
+async fn drop_link(state: &AppState, token: &str, headers: &HeaderMap) -> Result<DropLink> {
+    let link = resolve(state, token, headers).await?;
+    if !link.upload_only {
+        return Err(AppError::Forbidden);
+    }
+    Ok(DropLink {
+        id: link.id,
+        folder_id: link.node_id,
+        owner_id: link.owner_id,
+    })
+}
+
+pub async fn upload_create(
+    State(state): State<AppState>,
+    Path(token): Path<String>,
+    headers: HeaderMap,
+    Json(req): Json<CreateUploadRequest>,
+) -> Result<(StatusCode, Json<UploadResponse>)> {
+    if req.parent_id.is_none() {
+        return Err(AppError::bad("a file drop only accepts new files"));
+    }
+    let link = drop_link(&state, &token, &headers).await?;
+    uploads::start(&state, Uploader::Link(&link), req).await
+}
+
+pub async fn upload_chunk(
+    State(state): State<AppState>,
+    Path((token, id, idx)): Path<(String, String, u32)>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<StatusCode> {
+    let link = drop_link(&state, &token, &headers).await?;
+    uploads::store_chunk(&state, Uploader::Link(&link), &id, idx, body).await
+}
+
+/// Finishes the upload. The visitor learns nothing back but that it worked.
+pub async fn upload_finish(
+    State(state): State<AppState>,
+    Path((token, id)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Result<StatusCode> {
+    let link = drop_link(&state, &token, &headers).await?;
+    let _ = uploads::publish(&state, Uploader::Link(&link), &id, Default::default()).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// A visitor gives up on an upload: its space is freed straight away.
+pub async fn upload_abort(
+    State(state): State<AppState>,
+    Path((token, id)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Result<StatusCode> {
+    let link = drop_link(&state, &token, &headers).await?;
+    uploads::cancel(&state, Uploader::Link(&link), &id).await
 }

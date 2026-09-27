@@ -564,6 +564,12 @@
   .editor li[data-item-type="task"] > * {
     @apply m-0 min-w-0 flex-1;
   }
+  .editor li[data-item-type="task"]::before {
+    @apply cursor-pointer;
+  }
+  .editor :is(th, td) {
+    @apply min-w-16;
+  }
 }
 
 @layer components {
@@ -596,6 +602,72 @@
   .crop-se {
     @apply -right-1.5 -bottom-1.5 cursor-nwse-resize;
   }
+}
+
+/* ----------------------------------------------------------- PDF text/links */
+/* pdf.js's text layer: transparent text over the canvas, for selecting and
+   copying. Sizes follow --total-scale-factor, set on each page. */
+.pdf-text {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  overflow: clip;
+  line-height: 1;
+  text-align: initial;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.pdf-text :is(span, br) {
+  position: absolute;
+  color: transparent;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+.pdf-text > :not(.markedContent),
+.pdf-text .markedContent span:not(.markedContent) {
+  --font-height: 0;
+  --scale-x: 1;
+  --rotate: 0deg;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.pdf-text .markedContent {
+  display: contents;
+}
+.pdf-text span[role='img'] {
+  user-select: none;
+  cursor: default;
+}
+.pdf-text ::selection {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  color: transparent;
+}
+.pdf-text br::selection {
+  background: transparent;
+}
+.pdf-text .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  user-select: none;
+  cursor: default;
+}
+.pdf-text.selecting .endOfContent {
+  top: 0;
+}
+.pdf-links a {
+  position: absolute;
+  border-radius: 2px;
+}
+.pdf-links a:hover,
+.pdf-links a:focus-visible {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
 }
 
 /* ------------------------------------------------------------------ phones */

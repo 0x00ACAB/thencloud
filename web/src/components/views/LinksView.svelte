@@ -4,6 +4,7 @@
   import Icon from '../Icon.svelte';
   import Time from '../Time.svelte';
   import FileIcon from '../FileIcon.svelte';
+  import FolderIcon from '../FolderIcon.svelte';
   import ConfirmDialog from '../dialogs/ConfirmDialog.svelte';
 
   let { go } = $props();
@@ -59,15 +60,16 @@
           <tr class="group">
             <td class="max-w-0">
               <button type="button" class="flex max-w-full cursor-pointer items-center gap-3 text-left" onclick={() => open(l)}>
-                {#if folder}<Icon name="folder" class="size-4 shrink-0 text-accent-text" />{:else if l.entry}<FileIcon meta={l.entry.meta} />{:else}<Icon name="file" class="size-4 shrink-0 text-fg-muted" />{/if}
+                {#if folder}<FolderIcon name={l.entry?.meta.name} />{:else if l.entry}<FileIcon meta={l.entry.meta} />{:else}<Icon name="file" class="size-4 shrink-0 text-fg-muted" />{/if}
                 <span class="truncate font-medium group-hover:underline group-hover:decoration-line-strong group-hover:underline-offset-4">{l.entry?.meta.name ?? 'Unavailable'}</span>
               </button>
             </td>
             <td class="hidden sm:table-cell">
               <span class="flex flex-wrap gap-1.5">
+                {#if l.upload_only}<span class="badge"><Icon name="inbox" />File drop</span>{/if}
                 {#if l.has_password}<span class="badge"><Icon name="lock" />Password</span>{/if}
                 {#if l.expires_at}<span class="badge"><Time ms={l.expires_at * 1000} prefix="Expires " /></span>{/if}
-                {#if !l.has_password && !l.expires_at}<span class="text-[13px] text-fg-faint">None</span>{/if}
+                {#if !l.has_password && !l.expires_at && !l.upload_only}<span class="text-[13px] text-fg-faint">None</span>{/if}
               </span>
             </td>
             <td class="hidden text-fg-muted md:table-cell"><Time ms={l.created_at * 1000} /></td>

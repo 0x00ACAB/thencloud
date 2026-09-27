@@ -1,6 +1,10 @@
 pub mod admin;
+pub mod app_passwords;
 pub mod auth;
+pub mod avatars;
 pub mod contacts;
+pub mod drafts;
+pub mod drops;
 pub mod links;
 pub mod nodes;
 pub mod public;
@@ -45,9 +49,23 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/recovery/unlock", post(auth::recovery_unlock))
         .route("/auth/recovery/reset", post(auth::recovery_reset))
         .route("/auth/logout", post(auth::logout))
+        .route("/auth/app-login", post(app_passwords::login))
+        .route(
+            "/app-passwords",
+            get(app_passwords::list).post(app_passwords::create),
+        )
+        .route("/app-passwords/{id}", delete(app_passwords::delete))
         .route("/auth/password", post(auth::change_password))
         .route("/me", get(auth::me))
         .route("/me/contacts", get(contacts::get).put(contacts::put))
+        .route(
+            "/me/avatar",
+            get(avatars::get_mine)
+                .put(avatars::set)
+                .delete(avatars::remove),
+        )
+        .route("/users/{username}/avatar", get(avatars::get_user))
+        .route("/avatar-grants/{username}", put(avatars::grant))
         .route(
             "/sessions",
             get(sessions::list).delete(sessions::revoke_others),
@@ -78,7 +96,15 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/nodes/{id}/children", get(nodes::children))
         .route("/nodes/{id}/path", get(nodes::path))
+        .route("/nodes/{id}/name-tags", post(nodes::tag_names))
         .route("/nodes/{id}/chunks/{idx}", get(nodes::chunk))
+        .route(
+            "/nodes/{id}/draft",
+            get(drafts::get)
+                .put(drafts::put)
+                .delete(drafts::delete)
+                .layer(DefaultBodyLimit::max(8 * 1024 * 1024)),
+        )
         .route("/nodes/{id}/versions", get(versions::list))
         .route("/nodes/{id}/versions/{vid}", delete(versions::delete))
         .route(
@@ -104,6 +130,9 @@ pub fn router(state: AppState) -> Router {
         .route("/shares/incoming", get(shares::incoming))
         .route("/shares/outgoing", get(shares::outgoing))
         .route("/shares/{id}", patch(shares::update).delete(shares::delete))
+        .route("/drops", get(drops::list))
+        .route("/drops/{id}", delete(drops::discard))
+        .route("/drops/{id}/adopt", post(drops::adopt))
         .route("/links", post(links::create).get(links::list))
         .route("/links/{id}", delete(links::delete))
         .route("/public/{token}", get(public::info))
@@ -112,6 +141,16 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/public/{token}/nodes/{id}/chunks/{idx}",
             get(public::chunk),
+        )
+        .route("/public/{token}/uploads", post(public::upload_create))
+        .route("/public/{token}/uploads/{id}", delete(public::upload_abort))
+        .route(
+            "/public/{token}/uploads/{id}/chunks/{idx}",
+            put(public::upload_chunk).layer(DefaultBodyLimit::max(MAX_ENCRYPTED_CHUNK + 1024)),
+        )
+        .route(
+            "/public/{token}/uploads/{id}/finish",
+            post(public::upload_finish),
         )
         .fallback(|| async { AppError::NotFound });
 

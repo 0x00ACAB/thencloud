@@ -71,6 +71,7 @@ Every flag can also be set as an environment variable.
 | `--default-quota` | `THENCLOUD_DEFAULT_QUOTA` | 10 GiB |
 | `--session-days` | `THENCLOUD_SESSION_DAYS` | `30` |
 | `--max-versions` | `THENCLOUD_MAX_VERSIONS` | `10` (versions kept per file, including the current one) |
+| `--version-thinning` | `THENCLOUD_VERSION_THINNING` | `true` (thin out old versions by age: all from the last hour, then one per hour for a day, one per day for 30 days, one per week after that) |
 | `--trash-days` | `THENCLOUD_TRASH_DAYS` | `30` (days before trashed items are purged) |
 | `--upload-ttl-hours` | `THENCLOUD_UPLOAD_TTL_HOURS` | `24` |
 | `--yt-dlp` | `THENCLOUD_YT_DLP` | `yt-dlp` (for the optional video downloader; it stays off until an admin enables it) |
@@ -118,6 +119,10 @@ As a result, a malicious server cannot swap files, move ciphertexts between node
 
 **Recovery key (optional):** made in the browser and shown once as 11 groups of 5 characters (Crockford base32 with a checksum, so typos are caught). The server stores the master key wrapped under its KEK and a hash of its auth part, so it can check the key but never use it. With the key and a username, "Forgot your password?" unwraps the master key locally and sets a new password; every session is signed out. Setting, replacing or removing the key needs the current password.
 
+**App passwords** are for sync clients and other devices. Each is 32 random bytes made in the browser and shown once, in the same format as the recovery key. HKDF splits it into an auth key (the server keeps its SHA-256, which is enough for a random 256-bit secret) and a KEK that wraps its own copy of the master key, bound to the app password's id. A client signs in with `POST /api/auth/app-login` and the auth key alone, then unwraps the master key locally. App passwords can be read only, need the account password to create, survive password changes, and revoking one signs out every session it started.
+
+**Profile pictures** are encrypted in the browser under a random avatar key. Your own copy of that key is encrypted under your master key, and it is sealed to each person you share with, or who shares with you, so only they can see the picture. Each new picture gets a new key, sealed only to verified contacts you share with at the time, and the server stops handing it to someone once you no longer share anything. Removing the picture also deletes every sealed copy.
+
 **Public links** look like `https://host/s/<token>#<key>`. Browsers never send the part after `#` in any HTTP request, so the server only ever sees `<token>`. The share page reads the key from `location.hash` and decrypts locally. Other defences:
 - `Referrer-Policy: no-referrer` and a strict same-origin CSP keep the URL from leaking to third parties.
 - The optional link password is a separate server-side gate. It is not derived from the key.
@@ -127,7 +132,8 @@ As a result, a malicious server cannot swap files, move ciphertexts between node
 **The server can see:**
 - Usernames and public keys.
 - The shape of the folder tree: which node is inside which, and file vs folder.
-- Ciphertext sizes and chunk counts, which approximate file sizes.
+- Whether two items in the same folder have the same name (each carries a keyed hash of its lower-cased name under the folder key, so duplicates can be refused), but not what the names are.
+- Ciphertext sizes and chunk counts. File contents are padded (Padmé, at most about 12% extra) and metadata to 128-byte steps, so these give only rough sizes.
 - Timestamps.
 - Who shares with whom, with what permission, and which nodes have public links.
 - IP addresses and access patterns.
@@ -142,6 +148,7 @@ As a result, a malicious server cannot swap files, move ciphertexts between node
 - **The web client is served by the server.** A malicious or compromised server could serve modified JavaScript. This is inherent to every browser-based E2EE app. A native client (planned) avoids it.
 - **Public keys are trust-on-first-use.** Compare fingerprints out of band the first time you share with someone, or a malicious server could substitute its own key. After that the key is pinned in your verified contacts (encrypted under your master key and bound to your account), and a different key for that person blocks sharing until you check again.
 - **Revoking a share** stops the server from serving the data, but it does not re-key. A former recipient who kept the key could decrypt ciphertext they get from elsewhere.
+- **File drop links** (upload-only) carry your public key instead of a folder key. Visitors seal each file's key to it, and your client wraps it under the folder key the next time you browse, but only for folders that have a file drop link. When a dropped file is taken in, it gets a fresh key, so the key the visitor chose can't read later versions. Files dropped through a link that has since gone are never taken in automatically; they wait for you to keep or delete them. Anyone with the link, the server included, can add files to that folder, but nobody but you can read them. A drop can't make the server delete your old versions to make room.
 - **Anyone who has a full public link** (including the `#` part, for example from chat history) can decrypt what it points to.
 - **The video downloader is the one feature where the server sees content.** It's off unless an admin turns it on. When used, the server runs yt-dlp (and ffmpeg to remux) for the link you give it and streams the video to your browser, which encrypts and uploads it like any file. So the server sees the link and the video while it passes through. Nothing is written to its disk or logged, only yt-dlp's site extractors run, and links to private or local addresses are refused.
 - **"Keep me signed in on this browser" is a trade-off you opt into.** Normally keys live only in memory and a reload asks for your password. With the box ticked, the session token and master key are saved in the browser's IndexedDB, encrypted with a key the browser won't let any script export. That protects them at rest about as well as your browser profile and disk encryption do; anyone who can use that computer account can open your files. They're deleted when you sign out, choose "Stop keeping signed in", or the session ends on the server.

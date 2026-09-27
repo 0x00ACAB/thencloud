@@ -7,10 +7,11 @@
 import { request } from './api.js';
 import {
   tc, b64, unb64, decryptMeta, encryptMeta, unwrapChild, decryptChildren,
-  deriveAccountKeys, fetchFile, saveBlob,
+  deriveAccountKeys, fetchFile, openFile, encryptPiece, saveBlob,
 } from './crypto.js';
 import { sortEntries } from './format.js';
 import { rememberSession, rememberedSession, forgetSession } from './remember.js';
+import { streamsAvailable, streamDownload } from './stream.js';
 
 export const session = $state({
   token: null,
@@ -282,6 +283,39 @@ export async function recoverAccount(username, recoveryKey, newPassword, remembe
   }
 }
 
+// ---------------------------------------------------------------------------
+// App passwords: for sync clients and other devices. Each is 32 random bytes
+// made here, wrapping its own copy of the master key; the server keeps a hash
+// of its auth half. Shown once, in the same format as the recovery key.
+// ---------------------------------------------------------------------------
+
+export const listAppPasswords = () => api('GET', '/api/app-passwords');
+export const deleteAppPassword = (id) => api('DELETE', `/api/app-passwords/${encodeURIComponent(id)}`);
+
+/** Returns the new app password as text, to show once. */
+export async function createAppPassword(password, name, scope) {
+  const current = await authKeyFor(password);
+  const secret = tc.random_key();
+  const d = tc.derive_app_password_keys(secret);
+  const id = tc.new_id();
+  try {
+    await api('POST', '/api/app-passwords', {
+      body: {
+        id,
+        name,
+        scope,
+        current_auth_key: current,
+        auth_key: b64(d.auth_key),
+        enc_master_key: b64(tc.wrap_master_key_app(d.kek, mk, id)),
+      },
+    });
+    return tc.encode_recovery_key(secret);
+  } finally {
+    d.free();
+    secret.fill(0);
+  }
+}
+
 export async function changePassword(current, next) {
   const pre = await request('POST', '/api/auth/prelogin', { body: { username: session.me.username } });
   const cur = await deriveAccountKeys(current, unb64(pre.kdf_salt), pre.kdf_params);
@@ -331,10 +365,176 @@ export async function keyOf(id) {
 }
 
 export async function listFolder(id, key) {
+  await adoptDrops();
   const nodes = await api('GET', `/api/nodes/${id}/children`);
   const rows = decryptChildren(key, nodes);
   for (const r of rows) keyCache.set(r.node.id, r.key);
+  index.set(id, { at: Date.now(), rows });
+  backfillTags(id, key, rows);
   return sortEntries(rows);
+}
+
+// ---------------------------------------------------------------------------
+// Name tags: a keyed hash of each name under its folder's key, so the server
+// can refuse duplicate names in a folder without learning them.
+// ---------------------------------------------------------------------------
+
+const tagFor = (folderKey, name) => b64(tc.name_tag(folderKey, name));
+
+/** Lower-cased names already in a folder (straight from the server, no adoption). */
+async function namesIn(folderId, folderKey) {
+  try {
+    const nodes = await api('GET', `/api/nodes/${folderId}/children`);
+    return new Set(decryptChildren(folderKey, nodes).map((r) => r.meta.name.toLowerCase()));
+  } catch {
+    return new Set();
+  }
+}
+
+/** `name`, or "name (2)", "name (3)"... if that's taken. */
+export function freeName(name, taken) {
+  const dot = name.lastIndexOf('.');
+  const [base, ext] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, ''];
+  let n = name;
+  for (let i = 2; taken.has(n.toLowerCase()); i++) n = `${base} (${i})${ext}`;
+  return n;
+}
+
+// Items made before name tags get theirs the first time we list their
+// folder (and can write there; otherwise the server says no, which is fine).
+const tagged = new Set();
+function backfillTags(folderId, folderKey, rows) {
+  const missing = rows.filter((r) => !r.node.name_tagged);
+  if (!missing.length || tagged.has(folderId)) return;
+  tagged.add(folderId);
+  api('POST', `/api/nodes/${folderId}/name-tags`, {
+    body: { tags: missing.map((r) => ({ id: r.node.id, name_tag: tagFor(folderKey, r.meta.name) })) },
+  }).catch(() => {});
+}
+
+// Search across folders: names are only readable here, so the index is
+// built in memory from folder listings, as you browse and when you search.
+const index = new Map(); // folder id -> { at, rows }
+const INDEX_TTL = 2 * 60 * 1000;
+
+/**
+ * Find entries under `top` (a folder entry) whose name contains `query`.
+ * Calls `onResult({ ...entry, location: [folder names], parentId })` as
+ * matches turn up; stops early when `signal` aborts.
+ */
+export async function searchTree(top, query, { onResult, signal } = {}) {
+  const q = query.trim().toLowerCase();
+  const queue = [{ entry: top, location: [top.meta.name] }];
+  const worker = async () => {
+    while (queue.length && !signal?.aborted) {
+      const { entry, location } = queue.shift();
+      const cached = index.get(entry.node.id);
+      let rows;
+      try {
+        rows = cached && Date.now() - cached.at < INDEX_TTL ? cached.rows : await listFolder(entry.node.id, entry.key);
+      } catch {
+        continue; // unreadable or gone: skip it
+      }
+      if (signal?.aborted) return;
+      for (const r of rows) {
+        if (r.meta.name.toLowerCase().includes(q)) onResult?.({ ...r, location, parentId: entry.node.id });
+        if (r.node.kind === 'folder') queue.push({ entry: r, location: [...location, r.meta.name] });
+      }
+    }
+  };
+  // A few folders at a time; each worker picks up folders the others find.
+  let active = [];
+  do {
+    active = [worker(), worker(), worker(), worker()];
+    await Promise.all(active);
+  } while (queue.length && !signal?.aborted);
+}
+
+// Files dropped through upload-only links arrive with their key sealed to
+// our public key. Open it, wrap it under the folder key and take the file in.
+let dropsChecked = 0;
+let adopting = null;
+
+/** Files dropped through a link that no longer exists, or whose key doesn't open, for the owner to review. */
+export const strayDrops = $state({ list: [] }); // [{ drop, folder, meta | null }]
+
+/**
+ * Take a dropped file in: open its sealed key, give it a fresh node key
+ * (re-wrapping its content key, so the visitor's key stops mattering) and
+ * wrap that under the folder key. A taken name becomes "name (2)".
+ */
+async function adoptDrop(d, folderKey) {
+  const id = d.node.id;
+  const v = d.node.version;
+  const visitorKey = tc.open_drop_key(sk, unb64(d.sealed_key), id, d.node.parent_id);
+  const meta = decryptMeta(visitorKey, d.node);
+  const ck = tc.unwrap_content_key(visitorKey, unb64(v.enc_content_key), id, v.id);
+  const key = tc.random_key();
+  const base = {
+    enc_key: b64(tc.wrap_node_key(folderKey, key, id)),
+    enc_content_key: b64(tc.wrap_content_key(key, ck, id, v.id)),
+  };
+  const named = (name) => ({ ...base, enc_metadata: encryptMeta(key, id, { ...meta, name }), name_tag: tagFor(folderKey, name) });
+  try {
+    await api('POST', `/api/drops/${id}/adopt`, { body: named(meta.name) });
+  } catch (e) {
+    if (e?.code !== 'name_taken') throw e;
+    await api('POST', `/api/drops/${id}/adopt`, { body: named(freeName(meta.name, await namesIn(d.node.parent_id, folderKey))) });
+  }
+  keyCache.set(id, key);
+}
+
+export function adoptDrops() {
+  if (adopting) return adopting;
+  if (Date.now() - dropsChecked < 5000) return Promise.resolve(0);
+  adopting = (async () => {
+    let n = 0;
+    const stray = [];
+    try {
+      const drops = await api('GET', '/api/drops');
+      // Taken in automatically only into folders with a drop link now;
+      // anything else waits for the owner to look at it.
+      const open = drops.length ? new Set((await api('GET', '/api/links')).filter((l) => l.upload_only).map((l) => l.node_id)) : null;
+      for (const d of drops) {
+        let folder = null;
+        try {
+          folder = { key: await keyOf(d.node.parent_id), id: d.node.parent_id };
+          if (open.has(d.node.parent_id)) {
+            await adoptDrop(d, folder.key);
+            n++;
+            continue;
+          }
+        } catch {
+          /* listed for review below */
+        }
+        let meta = null;
+        try {
+          meta = decryptMeta(tc.open_drop_key(sk, unb64(d.sealed_key), d.node.id, d.node.parent_id), d.node);
+        } catch {
+          /* its key doesn't open: it can only be deleted */
+        }
+        stray.push({ drop: d, folder, meta });
+      }
+    } catch {
+      /* the listing still works without it */
+    }
+    strayDrops.list = stray;
+    dropsChecked = Date.now();
+    adopting = null;
+    return n;
+  })();
+  return adopting;
+}
+
+/** Take in a stray drop the owner chose to keep. */
+export async function keepStrayDrop(item) {
+  await adoptDrop(item.drop, item.folder.key);
+  strayDrops.list = strayDrops.list.filter((x) => x !== item);
+}
+
+export async function deleteStrayDrop(item) {
+  await api('DELETE', `/api/drops/${item.drop.node.id}`);
+  strayDrops.list = strayDrops.list.filter((x) => x !== item);
 }
 
 export async function createFolder(parentId, parentKey, name) {
@@ -346,6 +546,7 @@ export async function createFolder(parentId, parentKey, name) {
       parent_id: parentId,
       enc_key: b64(tc.wrap_node_key(parentKey, key, id)),
       enc_metadata: encryptMeta(key, id, { name, size: 0, mtime: Date.now() }),
+      name_tag: tagFor(parentKey, name),
     },
   });
   keyCache.set(id, key);
@@ -354,8 +555,9 @@ export async function createFolder(parentId, parentKey, name) {
 
 export async function rename(entry, name) {
   const { node, key, meta } = entry;
+  const parentKey = await keyOf(node.parent_id);
   await api('PATCH', `/api/nodes/${node.id}`, {
-    body: { enc_metadata: encryptMeta(key, node.id, { ...meta, name }), if_revision: node.revision },
+    body: { enc_metadata: encryptMeta(key, node.id, { ...meta, name }), if_revision: node.revision, name_tag: tagFor(parentKey, name) },
   });
 }
 
@@ -367,6 +569,7 @@ export async function move(entry, targetId, targetKey) {
       parent_id: targetId,
       enc_key: b64(tc.wrap_node_key(targetKey, key, node.id)),
       if_revision: node.revision,
+      name_tag: tagFor(targetKey, entry.meta.name),
     },
   });
 }
@@ -394,7 +597,7 @@ export async function trashItems() {
         return { node, key, meta: decryptMeta(key, node) };
       });
       const entry = chain[chain.length - 1];
-      return { ...it, entry, location: chain.slice(0, -1).map((c) => c.meta.name) };
+      return { ...it, entry, chain, location: chain.slice(0, -1).map((c) => c.meta.name) };
     } catch (e) {
       return { ...it, error: String(e?.message || e) };
     }
@@ -408,17 +611,32 @@ export async function trashItems() {
  */
 export async function restoreFromTrash(item) {
   const id = item.node.id;
+  const { key, meta } = item.entry;
+  // If the name has been taken meanwhile, come back as "name (2)".
+  const renamed = async (folderId, folderKey) => {
+    const name = freeName(meta.name, await namesIn(folderId, folderKey));
+    return { enc_metadata: encryptMeta(key, id, { ...meta, name }), name_tag: tagFor(folderKey, name) };
+  };
   try {
     await api('POST', `/api/trash/${id}/restore`, { body: {} });
     return null;
   } catch (e) {
+    if (e.code === 'name_taken') {
+      const parentKey = item.chain[item.chain.length - 2].key;
+      await api('POST', `/api/trash/${id}/restore`, { body: await renamed(item.node.parent_id, parentKey) });
+      return null;
+    }
     if (e.code !== 'parent_unavailable') throw e;
   }
   const rootId = session.me.keys.root_node_id;
   const rootKey = await keyOf(rootId);
-  await api('POST', `/api/trash/${id}/restore`, {
-    body: { parent_id: rootId, enc_key: b64(tc.wrap_node_key(rootKey, item.entry.key, id)) },
-  });
+  const move = { parent_id: rootId, enc_key: b64(tc.wrap_node_key(rootKey, key, id)) };
+  try {
+    await api('POST', `/api/trash/${id}/restore`, { body: { ...move, name_tag: tagFor(rootKey, meta.name) } });
+  } catch (e) {
+    if (e.code !== 'name_taken') throw e;
+    await api('POST', `/api/trash/${id}/restore`, { body: { ...move, ...(await renamed(rootId, rootKey)) } });
+  }
   return 'My files';
 }
 
@@ -479,14 +697,23 @@ export function fetchEntry(entry, onProgress) {
   return fetchFile(node, key, (i) => api('GET', `/api/nodes/${node.id}/chunks/${i}`), onProgress);
 }
 
-/** Download files and folders as one zip, decrypted and zipped in the browser. */
-export async function downloadZip(entries, name, onProgress) {
-  const { zipEntries } = await import('./zip.js');
-  const blob = await zipEntries(entries, { list: (e) => listFolder(e.node.id, e.key), fetch: fetchEntry, onProgress });
-  saveBlob(blob, name);
+/** A file's decrypted pieces, one at a time (see openFile in crypto.js). */
+export function openEntry(entry) {
+  const { node, key } = entry;
+  return openFile(node, key, (i) => api('GET', `/api/nodes/${node.id}/chunks/${i}`));
 }
 
+/** Download files and folders as one zip, decrypted and zipped in the browser (and streamed to disk where possible). */
+export async function downloadZip(entries, name, onProgress) {
+  const { saveZip } = await import('./zip.js');
+  await saveZip(entries, name, { list: (e) => listFolder(e.node.id, e.key), open: openEntry, onProgress });
+}
+
+/** Files larger than this are streamed to disk instead of decrypted into memory first. */
+const STREAM_FROM = 16 * 1024 * 1024;
+
 export async function download(entry, onProgress) {
+  if (entry.meta.size > STREAM_FROM && (await streamsAvailable())) return streamDownload(openEntry(entry), onProgress);
   const { blob, meta } = await fetchEntry(entry, onProgress);
   saveBlob(blob, meta.name);
 }
@@ -500,8 +727,8 @@ export async function upload(file, { parentId, parentKey, existing }, onProgress
   const nodeKey = existing ? existing.key : tc.random_key();
   const versionId = tc.new_id();
   const contentKey = tc.random_key();
-  const chunkCount = tc.chunk_count(file.size);
-  const chunkSize = tc.chunk_size();
+  const padded = tc.padded_size(file.size);
+  const chunkCount = tc.chunk_count(padded);
   const meta = {
     name: existing ? existing.meta.name : file.name,
     mime: file.type || null,
@@ -509,27 +736,46 @@ export async function upload(file, { parentId, parentKey, existing }, onProgress
     mtime: file.lastModified || Date.now(),
   };
 
-  const up = await api('POST', '/api/uploads', {
-    body: {
-      node_id: nodeId,
-      parent_id: existing ? undefined : parentId,
-      enc_key: existing ? undefined : b64(tc.wrap_node_key(parentKey, nodeKey, nodeId)),
-      enc_metadata: encryptMeta(nodeKey, nodeId, meta),
-      version_id: versionId,
-      enc_content_key: b64(tc.wrap_content_key(nodeKey, contentKey, nodeId, versionId)),
-      chunk_count: chunkCount,
-      if_revision: existing ? existing.node.revision : undefined,
-    },
-  });
+  const start = () =>
+    api('POST', '/api/uploads', {
+      body: {
+        node_id: nodeId,
+        parent_id: existing ? undefined : parentId,
+        enc_key: existing ? undefined : b64(tc.wrap_node_key(parentKey, nodeKey, nodeId)),
+        enc_metadata: encryptMeta(nodeKey, nodeId, meta),
+        version_id: versionId,
+        enc_content_key: b64(tc.wrap_content_key(nodeKey, contentKey, nodeId, versionId)),
+        chunk_count: chunkCount,
+        if_revision: existing ? existing.node.revision : undefined,
+        name_tag: existing ? undefined : tagFor(parentKey, meta.name),
+      },
+    });
+  let up;
+  try {
+    up = await start();
+  } catch (e) {
+    // A new file with a name that's already here: keep both.
+    if (existing || e?.code !== 'name_taken') throw e;
+    meta.name = freeName(meta.name, await namesIn(parentId, parentKey));
+    up = await start();
+  }
   let node;
   try {
     for (let i = 0; i < chunkCount; i++) {
-      const plain = new Uint8Array(await file.slice(i * chunkSize, (i + 1) * chunkSize).arrayBuffer());
-      const enc = tc.encrypt_chunk(contentKey, versionId, i, i === chunkCount - 1, plain);
+      const enc = await encryptPiece(file, i, padded, contentKey, versionId, chunkCount);
       await api('PUT', `/api/uploads/${up.upload_id}/chunks/${i}`, { raw: enc });
       onProgress?.((i + 1) / chunkCount);
     }
-    node = await api('POST', `/api/uploads/${up.upload_id}/finish`);
+    try {
+      node = await api('POST', `/api/uploads/${up.upload_id}/finish`);
+    } catch (e) {
+      // The name was taken while the chunks went up: keep both.
+      if (existing || e?.code !== 'name_taken') throw e;
+      meta.name = freeName(meta.name, await namesIn(parentId, parentKey));
+      node = await api('POST', `/api/uploads/${up.upload_id}/finish`, {
+        body: { enc_metadata: encryptMeta(nodeKey, nodeId, meta), name_tag: tagFor(parentKey, meta.name) },
+      });
+    }
   } catch (e) {
     api('DELETE', `/api/uploads/${up.upload_id}`).catch(() => {});
     throw e;
@@ -543,9 +789,31 @@ export async function upload(file, { parentId, parentKey, existing }, onProgress
  * changed since `entry` was loaded. Returns the updated entry.
  */
 export function saveText(entry, text) {
-  const file = new File([text], entry.meta.name, { type: entry.meta.mime || 'text/markdown', lastModified: Date.now() });
+  const file = new File([text], entry.meta.name, { type: entry.meta.mime || '', lastModified: Date.now() });
   return upload(file, { existing: entry });
 }
+
+// ---------------------------------------------------------------------------
+// Drafts: unsaved edits, kept on the server encrypted under the master key and
+// bound to this account and the file, so a closed tab doesn't lose them.
+// ---------------------------------------------------------------------------
+
+const draftLabel = (entry) => `draft:${entry.node.id}`;
+
+/** { text, baseRevision, updatedAt }, or null if there's none. */
+export async function loadDraft(entry) {
+  const d = await api('GET', `/api/nodes/${entry.node.id}/draft`);
+  if (!d) return null;
+  const text = dec.decode(tc.decrypt_private_data(mk, session.me.user_id, draftLabel(entry), unb64(d.data)));
+  return { text, baseRevision: d.base_revision, updatedAt: d.updated_at };
+}
+
+export const storeDraft = (entry, text) =>
+  api('PUT', `/api/nodes/${entry.node.id}/draft`, {
+    body: { data: b64(tc.encrypt_private_data(mk, session.me.user_id, draftLabel(entry), enc.encode(text))), base_revision: entry.node.revision },
+  });
+
+export const dropDraft = (entry) => api('DELETE', `/api/nodes/${entry.node.id}/draft`).catch(() => {});
 
 // ---------------------------------------------------------------------------
 // Sharing
@@ -639,10 +907,13 @@ export async function share(entry, user, permission) {
       permission,
     },
   });
+  grantAvatar(user.username, user.publicKey).catch(() => {});
 }
 
 export async function incomingShares() {
   const shares = await api('GET', '/api/shares/incoming');
+  // People who share with us see our picture too.
+  for (const s of shares) grantAvatar(s.owner, unb64(s.owner_public_key)).catch(() => {});
   return shares.map((s) => {
     try {
       const key = tc.open_share_key(sk, unb64(s.wrapped_key), s.node.id);
@@ -681,11 +952,17 @@ export function linkUrl(token, nodeKey) {
   return `${location.origin}/s/${token}#${b64(nodeKey)}`;
 }
 
-export async function createLink(entry, { password, expiresAt }) {
+/**
+ * An upload-only link carries our public key instead of the folder key, so
+ * visitors can seal files to us without being able to read anything.
+ */
+const urlFor = (link, entry) => (link.upload_only ? linkUrl(link.token, unb64(session.me.keys.public_key)) : linkUrl(link.token, entry.key));
+
+export async function createLink(entry, { password, expiresAt, uploadOnly = false }) {
   const link = await api('POST', '/api/links', {
-    body: { node_id: entry.node.id, password: password || null, expires_at: expiresAt ?? null },
+    body: { node_id: entry.node.id, password: password || null, expires_at: expiresAt ?? null, upload_only: uploadOnly },
   });
-  return { ...link, url: linkUrl(link.token, entry.key) };
+  return { ...link, url: urlFor(link, entry) };
 }
 
 export async function links(nodeId) {
@@ -694,12 +971,123 @@ export async function links(nodeId) {
   return Promise.all(
     list.map(async (l) => {
       const entry = await entryFor(l.node_id);
-      return { ...l, entry, url: entry ? linkUrl(l.token, entry.key) : null };
+      return { ...l, entry, url: entry ? urlFor(l, entry) : null };
     }),
   );
 }
 
 export const deleteLink = (id) => api('DELETE', `/api/links/${id}`);
+
+// ---------------------------------------------------------------------------
+// Profile pictures: encrypted under our avatar key, which is sealed to each
+// person we share with (either way round). The server can't see them.
+// ---------------------------------------------------------------------------
+
+export const avatar = $state({ url: null }); // our own picture, as a blob: URL
+let avatarState = null; // { key, grantees: Set }
+const avatarUrls = new Map(); // username -> Promise<url | null>
+
+const imageType = (b) =>
+  b[0] === 0x89 ? 'image/png' : b[0] === 0x52 && b[8] === 0x57 ? 'image/webp' : 'image/jpeg';
+
+function avatarBlobUrl(bytes) {
+  return URL.createObjectURL(new Blob([bytes], { type: imageType(bytes) }));
+}
+
+/** Load our own picture (once per session). */
+export async function loadMyAvatar() {
+  if (avatarState) return avatarState;
+  const r = await api('GET', '/api/me/avatar');
+  const me = session.me;
+  let key = null;
+  if (r.data && r.enc_key) {
+    key = tc.decrypt_private_data(mk, me.user_id, 'avatar-key', unb64(r.enc_key));
+    avatar.url = avatarBlobUrl(tc.decrypt_avatar(key, me.username, unb64(r.data)));
+  }
+  avatarState = { key, grantees: new Set(r.grantees) };
+  return avatarState;
+}
+
+/**
+ * Give `username` our avatar key, if we have a picture and haven't yet.
+ * Only to a verified contact whose key still matches: the same rule as
+ * sharing, so a key the server swapped in never gets it.
+ */
+async function grantAvatar(username, publicKey) {
+  const a = await loadMyAvatar();
+  if (!a.key || a.grantees.has(username) || username === session.me.username) return;
+  const pinned = (await loadContacts()).data[username];
+  if (!pinned || pinned.public_key !== b64(publicKey)) return;
+  a.grantees.add(username);
+  await api('PUT', `/api/avatar-grants/${encodeURIComponent(username)}`, {
+    body: { sealed_key: b64(tc.seal_avatar_key(publicKey, a.key, session.me.username, username)) },
+  });
+}
+
+/** Everyone we share with, either way round. */
+async function sharePartners() {
+  const partners = new Set();
+  for (const s of await api('GET', '/api/shares/incoming')) partners.add(s.owner);
+  for (const s of await api('GET', '/api/shares/outgoing')) partners.add(s.recipient);
+  return partners;
+}
+
+/** Set our picture from an image file: cropped square, 256 px, encrypted here. */
+export async function setAvatar(file) {
+  const bitmap = await createImageBitmap(file);
+  const side = Math.min(bitmap.width, bitmap.height);
+  const canvas = new OffscreenCanvas(256, 256);
+  canvas.getContext('2d').drawImage(bitmap, (bitmap.width - side) / 2, (bitmap.height - side) / 2, side, side, 0, 0, 256, 256);
+  bitmap.close();
+  let blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.85 });
+  if (blob.type !== 'image/webp') blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.85 });
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const a = await loadMyAvatar();
+  // A new key for each picture, given to the people we share with now, so
+  // someone we've stopped sharing with never gets a later one.
+  const key = tc.random_key();
+  const me = session.me;
+  await api('PUT', '/api/me/avatar', {
+    body: {
+      data: b64(tc.encrypt_avatar(key, me.username, bytes)),
+      enc_key: b64(tc.encrypt_private_data(mk, me.user_id, 'avatar-key', key)),
+    },
+  });
+  a.key = key;
+  a.grantees = new Set();
+  if (avatar.url) URL.revokeObjectURL(avatar.url);
+  avatar.url = avatarBlobUrl(bytes);
+  const pinned = (await loadContacts()).data;
+  for (const username of await sharePartners()) {
+    if (pinned[username]) await grantAvatar(username, unb64(pinned[username].public_key)).catch(() => {});
+  }
+}
+
+/** Remove our picture and take back the key from everyone. */
+export async function removeAvatar() {
+  await api('DELETE', '/api/me/avatar');
+  if (avatar.url) URL.revokeObjectURL(avatar.url);
+  avatar.url = null;
+  avatarState = { key: null, grantees: new Set() };
+}
+
+/** Someone's picture as a blob: URL, or null if they haven't given us one. */
+export function avatarUrl(username) {
+  if (username === session.me?.username) return loadMyAvatar().then(() => avatar.url);
+  if (!avatarUrls.has(username)) {
+    avatarUrls.set(
+      username,
+      api('GET', `/api/users/${encodeURIComponent(username)}/avatar`)
+        .then((r) => {
+          if (!r) return null;
+          const key = tc.open_avatar_key(sk, unb64(r.sealed_key), username, session.me.username);
+          return avatarBlobUrl(tc.decrypt_avatar(key, username, unb64(r.data)));
+        })
+        .catch(() => null),
+    );
+  }
+  return avatarUrls.get(username);
+}
 
 // ---------------------------------------------------------------------------
 // Administration (admins only; accounts and counts, never content)
@@ -735,18 +1123,19 @@ export const resetToolsInfo = () => (tools = null);
 export const videoInfo = (url) => api('POST', '/api/tools/video/info', { body: { url } });
 
 /**
- * Download a video (kind 'video') or its audio ('audio') through the server.
+ * Download a video (kind 'video', at `quality`: '480' | '720' | '1080' | 'best')
+ * or its audio ('audio') through the server.
  * Resolves to a Blob. `onProgress(bytes)`; stop with `signal`. A download
  * the server cut short (too large, failed) rejects instead of returning a
  * partial file.
  */
-export async function downloadVideo(url, kind, { onProgress, signal } = {}) {
+export async function downloadVideo(url, kind, { quality, onProgress, signal } = {}) {
   let res;
   try {
     res = await fetch('/api/tools/video/download', {
       method: 'POST',
       headers: { Authorization: `Bearer ${session.token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, kind }),
+      body: JSON.stringify({ url, kind, quality }),
       cache: 'no-store',
       referrerPolicy: 'no-referrer',
       signal,
