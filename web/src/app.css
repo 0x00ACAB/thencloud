@@ -5,6 +5,44 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* Console Sans (OFL) is the UI font. Geist stays as a fallback for the
+ * characters it lacks (arrows, check marks, Cyrillic); Geist Mono is for
+ * fingerprints, IDs and code. */
+@font-face {
+  font-family: "Console Sans";
+  src: url("/fonts/ConsoleSans/ConsoleSans-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Console Sans";
+  src: url("/fonts/ConsoleSans/ConsoleSans-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Console Sans";
+  src: url("/fonts/ConsoleSans/ConsoleSans-Semibold.woff2") format("woff2");
+  font-weight: 600;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Console Sans";
+  src: url("/fonts/ConsoleSans/ConsoleSans-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Console Sans";
+  src: url("/fonts/ConsoleSans/ConsoleSans-Extrabold.woff2") format("woff2");
+  font-weight: 800;
+  font-display: swap;
+}
+
 @font-face {
   font-family: "Geist";
   src: url("/fonts/Geist.woff2") format("woff2");
@@ -68,7 +106,7 @@
 }
 
 @theme inline {
-  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Console Sans", "Geist", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --color-bg: var(--bg);
   --color-subtle: var(--subtle);
@@ -92,7 +130,6 @@
 @layer base {
   html {
     @apply bg-bg text-fg antialiased;
-    font-feature-settings: "ss01", "cv11";
   }
   body {
     @apply min-h-dvh font-sans text-sm;
