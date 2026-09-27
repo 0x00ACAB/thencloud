@@ -13,6 +13,7 @@
   import Icon from './components/Icon.svelte';
   import Time from './components/Time.svelte';
   import FileIcon from './components/FileIcon.svelte';
+  import FolderIcon from './components/FolderIcon.svelte';
   import Toasts from './components/Toasts.svelte';
   import TransferTray from './components/TransferTray.svelte';
   import Preview from './components/Preview.svelte';
@@ -348,7 +349,7 @@
                       type="button"
                       class="flex max-w-full cursor-pointer items-center gap-3 text-left"
                       onclick={() => (folder ? ((rows = []), (trail = [...trail, entry])) : (preview = { entries: files, start: files.indexOf(entry) }))}>
-                      {#if folder}<Icon name="folder" class="size-4 shrink-0 text-accent-text" />{:else}<FileIcon meta={entry.meta} />{/if}
+                      {#if folder}<FolderIcon name={entry.meta.name} />{:else}<FileIcon meta={entry.meta} />{/if}
                       <span class="truncate font-medium group-hover:underline group-hover:decoration-line-strong group-hover:underline-offset-4">{entry.meta.name}</span>
                     </button>
                   </td>

@@ -4,13 +4,14 @@
   import RecoveryKeyDialog from '../dialogs/RecoveryKeyDialog.svelte';
   import ConfirmDialog from '../dialogs/ConfirmDialog.svelte';
   import AppPasswordDialog from '../dialogs/AppPasswordDialog.svelte';
-  import { theme, setTheme, toast, toastError, errorMessage, copyText, accent, setAccent, ACCENT_PRESETS, DEFAULT_ACCENT, contrast, accentForeground, iconPack, setIconPack } from '../../lib/ui.svelte.js';
+  import { theme, setTheme, toast, toastError, errorMessage, copyText, accent, setAccent, ACCENT_PRESETS, DEFAULT_ACCENT, contrast, accentForeground, iconPack, setIconPack, folderIcons, setFolderIcons } from '../../lib/ui.svelte.js';
   import { formatSize, formatWhen, formatDate, fullDate } from '../../lib/format.js';
   import { slide } from '../../lib/motion.js';
   import Icon from '../Icon.svelte';
   import Time from '../Time.svelte';
   import FileIcon from '../FileIcon.svelte';
-  import { ICON_PACKS } from '../../lib/file-icons.svelte.js';
+  import FolderIcon from '../FolderIcon.svelte';
+  import { ICON_PACKS, hasFolderIcons } from '../../lib/file-icons.svelte.js';
 
   let current = $state('');
   let next = $state('');
@@ -426,8 +427,21 @@
         </button>
       {/each}
     </div>
+    <label class="flex cursor-pointer items-center gap-3 text-sm {hasFolderIcons(iconPack.value) ? '' : 'pointer-events-none opacity-50'}">
+      <input
+        type="checkbox"
+        class="size-4 accent-accent"
+        checked={folderIcons.named}
+        disabled={!hasFolderIcons(iconPack.value)}
+        onchange={(e) => setFolderIcons(e.currentTarget.checked)} />
+      <span>Folder icons by name</span>
+      <span class="flex gap-2" aria-hidden="true">
+        {#each ['src', 'images', 'docs', 'music'] as name (name)}<FolderIcon {name} named={hasFolderIcons(iconPack.value)} class="size-5" />{/each}
+      </span>
+    </label>
+    {#if !hasFolderIcons(iconPack.value)}<p class="-mt-2 text-xs text-fg-muted">Material and Symbols have icons for common folder names.</p>{/if}
   {/snippet}
-  {@render section('File icons', 'Icons for files by type. Folders keep the same icon either way.', iconsBody)}
+  {@render section('File icons', 'Icons for files by type, and optionally for folders by name.', iconsBody)}
 
   {#snippet aboutBody()}
     <div class="grid gap-2 text-[13px] text-fg-muted">

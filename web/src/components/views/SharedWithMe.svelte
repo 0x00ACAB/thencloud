@@ -5,6 +5,7 @@
   import Icon from '../Icon.svelte';
   import Time from '../Time.svelte';
   import FileIcon from '../FileIcon.svelte';
+  import FolderIcon from '../FolderIcon.svelte';
   import Menu from '../Menu.svelte';
   import ConfirmDialog from '../dialogs/ConfirmDialog.svelte';
 
@@ -75,7 +76,7 @@
                 <span class="flex items-center gap-3 text-fg-muted"><Icon name="circle-alert" class="size-4 text-danger" />Couldn't decrypt this share</span>
               {:else}
                 <button type="button" class="flex max-w-full cursor-pointer items-center gap-3 text-left" onclick={() => open(s)}>
-                  {#if folder}<Icon name="folder" class="size-4 shrink-0 text-accent-text" />{:else}<FileIcon meta={s.entry.meta} />{/if}
+                  {#if folder}<FolderIcon name={s.entry.meta.name} />{:else}<FileIcon meta={s.entry.meta} />{/if}
                   <span class="truncate font-medium group-hover:underline group-hover:decoration-line-strong group-hover:underline-offset-4">{s.entry.meta.name}</span>
                   {#if !folder}<span class="hidden text-fg-faint sm:inline">{formatSize(s.entry.meta.size)}</span>{/if}
                 </button>
