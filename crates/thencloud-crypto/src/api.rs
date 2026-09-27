@@ -692,11 +692,49 @@ pub enum VideoKind {
     Audio,
 }
 
+/// Highest resolution to fetch. Up to 1080p, H.264 is preferred (it plays
+/// everywhere); `Best` takes the tallest there is, whatever the codec.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum VideoQuality {
+    #[serde(rename = "480")]
+    P480,
+    #[serde(rename = "720")]
+    P720,
+    #[serde(rename = "1080")]
+    P1080,
+    #[serde(rename = "best")]
+    Best,
+}
+
+impl VideoQuality {
+    pub const ALL: [VideoQuality; 4] = [Self::P480, Self::P720, Self::P1080, Self::Best];
+
+    pub fn max_height(self) -> Option<u64> {
+        match self {
+            Self::P480 => Some(480),
+            Self::P720 => Some(720),
+            Self::P1080 => Some(1080),
+            Self::Best => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VideoLinkRequest {
     pub url: String,
     #[serde(default)]
     pub kind: Option<VideoKind>,
+    /// Defaults to 1080p.
+    #[serde(default)]
+    pub quality: Option<VideoQuality>,
+}
+
+/// One video in a playlist.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlaylistEntry {
+    pub url: String,
+    pub title: String,
+    pub duration: Option<f64>,
 }
 
 /// What a link points at, and what the downloader would fetch for it.
@@ -711,6 +749,13 @@ pub struct VideoInfo {
     /// audio-only downloads, when the site offers them as one file.
     pub video: Option<VideoOption>,
     pub audio: Option<VideoOption>,
+    /// The video at each quality that gives a different result, lowest
+    /// first.
+    #[serde(default)]
+    pub qualities: Vec<VideoOption>,
+    /// For a playlist link: its videos (and no `video` or `audio`).
+    #[serde(default)]
+    pub entries: Vec<PlaylistEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -719,4 +764,7 @@ pub struct VideoOption {
     pub size: Option<u64>,
     /// Video height in pixels, for video.
     pub height: Option<u32>,
+    /// The quality to ask for to get this, for video.
+    #[serde(default)]
+    pub quality: Option<VideoQuality>,
 }

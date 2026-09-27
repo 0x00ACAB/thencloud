@@ -811,18 +811,19 @@ export const resetToolsInfo = () => (tools = null);
 export const videoInfo = (url) => api('POST', '/api/tools/video/info', { body: { url } });
 
 /**
- * Download a video (kind 'video') or its audio ('audio') through the server.
+ * Download a video (kind 'video', at `quality`: '480' | '720' | '1080' | 'best')
+ * or its audio ('audio') through the server.
  * Resolves to a Blob. `onProgress(bytes)`; stop with `signal`. A download
  * the server cut short (too large, failed) rejects instead of returning a
  * partial file.
  */
-export async function downloadVideo(url, kind, { onProgress, signal } = {}) {
+export async function downloadVideo(url, kind, { quality, onProgress, signal } = {}) {
   let res;
   try {
     res = await fetch('/api/tools/video/download', {
       method: 'POST',
       headers: { Authorization: `Bearer ${session.token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, kind }),
+      body: JSON.stringify({ url, kind, quality }),
       cache: 'no-store',
       referrerPolicy: 'no-referrer',
       signal,

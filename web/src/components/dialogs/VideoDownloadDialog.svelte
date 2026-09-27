@@ -25,8 +25,29 @@
   let error = $state('');
   let result = $state(null);
   let controller = null;
+  let quality = $state('1080');
+  // Playlists: which entries to get, and how far along it is.
+  let picked = $state(new Set());
+  let batch = $state({ index: 0, total: 0, done: 0, failed: [] });
 
-  const option = $derived(info ? (kind === 'video' ? info.video : info.audio) : null);
+  const playlist = $derived(!!info?.entries?.length);
+  const option = $derived(
+    !info || playlist ? null : kind === 'video' ? (info.qualities?.find((q) => q.quality === quality) ?? info.video) : info.audio,
+  );
+  const QUALITIES = [
+    ['480', '480p'],
+    ['720', '720p'],
+    ['1080', '1080p'],
+    ['best', 'Best'],
+  ];
+  const CAP = { 480: 480, 720: 720, 1080: 1080, best: Infinity };
+
+  /** For one playlist video: the closest match to the chosen quality. */
+  function qualityFor(entryInfo) {
+    const opts = entryInfo.qualities ?? [];
+    const fit = opts.filter((o) => (o.height ?? 0) <= CAP[quality]);
+    return (fit[fit.length - 1] ?? opts[0])?.quality ?? '1080';
+  }
 
   function duration(s) {
     if (s == null) return '';
@@ -48,7 +69,9 @@
     phase = 'looking';
     try {
       info = await videoInfo(url.trim());
-      kind = info.video ? 'video' : 'audio';
+      kind = info.video || info.entries?.length ? 'video' : 'audio';
+      quality = info.video?.quality ?? '1080';
+      picked = new Set(info.entries?.map((e) => e.url) ?? []);
       phase = 'choose';
     } catch (e) {
       error = e?.code === 'busy' ? 'You already have a download running. Wait for it to finish.' : errorMessage(e);
@@ -56,24 +79,65 @@
     }
   }
 
+  /** Download (and save) one video; returns { name, size }. */
+  async function fetchOne(link, title, opt, q, signal) {
+    received = 0;
+    stage = 'downloading';
+    const blob = await downloadVideo(link, kind, { quality: q, signal, onProgress: (n) => (received = n) });
+    const name = fileName(title, opt?.ext ?? (kind === 'video' ? 'mp4' : 'm4a'));
+    const type = kind === 'video' ? 'video/mp4' : 'audio/mp4';
+    if (destination === 'save') {
+      stage = 'saving';
+      progress = 0;
+      await save(new File([blob], name, { type, lastModified: Date.now() }), (p) => (progress = p));
+    } else {
+      saveBlob(new Blob([blob], { type: 'application/octet-stream' }), name);
+    }
+    return { name, size: blob.size };
+  }
+
+  async function startPlaylist() {
+    controller = new AbortController();
+    const list = info.entries.filter((e) => picked.has(e.url));
+    batch = { index: 0, total: list.length, done: 0, failed: [], current: '' };
+    phase = 'working';
+    error = '';
+    for (const [i, e] of list.entries()) {
+      if (controller.signal.aborted) break;
+      batch.index = i + 1;
+      batch.current = e.title;
+      try {
+        const one = await videoInfo(e.url);
+        const opt = kind === 'video' ? (one.qualities?.find((q) => q.quality === qualityFor(one)) ?? one.video) : one.audio;
+        if (!opt) throw new Error(kind === 'video' ? 'No video to download' : 'No audio to download');
+        if (maxBytes && opt.size > maxBytes) throw new Error('Too large for this server');
+        batchOption = opt;
+        await fetchOne(e.url, one.title, opt, kind === 'video' ? opt.quality : undefined, controller.signal);
+        batch.done++;
+      } catch (err) {
+        if (err?.name === 'AbortError') break;
+        batch.failed.push({ title: e.title, error: errorMessage(err) });
+      }
+    }
+    const stopped = controller.signal.aborted;
+    controller = null;
+    batchOption = null;
+    result = { playlist: true, done: batch.done, failed: batch.failed, stopped, saved: destination === 'save' };
+    phase = 'done';
+  }
+  let batchOption = $state(null);
+  const shown = $derived(batchOption ?? option);
+
   async function start() {
+    if (playlist) return startPlaylist();
     controller = new AbortController();
     phase = 'working';
     stage = 'downloading';
     received = 0;
     error = '';
     try {
-      const blob = await downloadVideo(url.trim(), kind, { signal: controller.signal, onProgress: (n) => (received = n) });
-      const name = fileName(info.title, option?.ext ?? (kind === 'video' ? 'mp4' : 'm4a'));
-      const type = kind === 'video' ? 'video/mp4' : 'audio/mp4';
-      if (destination === 'save') {
-        stage = 'saving';
-        progress = 0;
-        await save(new File([blob], name, { type, lastModified: Date.now() }), (p) => (progress = p));
-      } else {
-        saveBlob(new Blob([blob], { type: 'application/octet-stream' }), name);
-      }
-      result = { name, size: blob.size, saved: destination === 'save' };
+      const r = await fetchOne(url.trim(), info.title, option, kind === 'video' ? option.quality : undefined, controller.signal);
+      result = { ...r, saved: destination === 'save' };
       phase = 'done';
     } catch (e) {
       phase = 'choose';
@@ -85,7 +149,7 @@
 
   function submit() {
     if (phase === 'link') return url.trim() && lookUp();
-    if (phase === 'choose') return option && start();
+    if (phase === 'choose') return (playlist ? picked.size : option) && start();
     if (phase === 'done') return onclose();
   }
 
@@ -115,17 +179,76 @@
           Look up
         </button>
       </div>
-      <p class="hint">Links to a single video on YouTube, Vimeo and most other video sites work.</p>
+      <p class="hint">Links to a video or a playlist on YouTube, Vimeo and most other video sites work.</p>
     </div>
   {:else if info}
     <div class="grid gap-1 rounded-md border border-line p-3">
       <p class="truncate font-medium" title={info.title}>{info.title}</p>
       <p class="truncate text-xs text-fg-muted">
-        {[info.site, info.uploader, duration(info.duration)].filter(Boolean).join(' · ')}
+        {[info.site, info.uploader, playlist ? `${info.entries.length} videos` : duration(info.duration)].filter(Boolean).join(' · ')}
       </p>
     </div>
 
-    {#if phase === 'choose'}
+    {#if phase === 'choose' && playlist}
+      <div class="grid gap-2">
+        <div class="flex items-center justify-between text-xs text-fg-muted">
+          <span>{picked.size} of {info.entries.length} selected</span>
+          <button
+            type="button"
+            class="cursor-pointer hover:text-fg"
+            onclick={() => (picked = picked.size === info.entries.length ? new Set() : new Set(info.entries.map((e) => e.url)))}>
+            {picked.size === info.entries.length ? 'Select none' : 'Select all'}
+          </button>
+        </div>
+        <ul class="max-h-56 divide-y divide-line overflow-y-auto rounded-md border border-line">
+          {#each info.entries as e (e.url)}
+            <li>
+              <label class="flex cursor-pointer items-center gap-3 px-3 py-2 text-sm hover:bg-subtle">
+                <input
+                  type="checkbox"
+                  class="size-4 accent-accent"
+                  checked={picked.has(e.url)}
+                  onchange={(ev) => {
+                    const next = new Set(picked);
+                    if (ev.currentTarget.checked) next.add(e.url);
+                    else next.delete(e.url);
+                    picked = next;
+                  }} />
+                <span class="min-w-0 flex-1 truncate">{e.title}</span>
+                {#if e.duration}<span class="text-xs text-fg-muted tabular-nums">{duration(e.duration)}</span>{/if}
+              </label>
+            </li>
+          {/each}
+        </ul>
+      </div>
+      <div class="flex flex-wrap items-start gap-4">
+        <div class="field">
+          <span class="label">Get</span>
+          <div class="flex gap-4 text-sm">
+            <label class="flex cursor-pointer items-center gap-2"><input type="radio" class="accent-accent" bind:group={kind} value="video" />Video</label>
+            <label class="flex cursor-pointer items-center gap-2"><input type="radio" class="accent-accent" bind:group={kind} value="audio" />Audio only</label>
+          </div>
+        </div>
+        {#if kind === 'video'}
+          <div class="field">
+            <label class="label" for="pl-quality">Up to</label>
+            <select id="pl-quality" class="input h-8 w-auto" bind:value={quality}>
+              {#each QUALITIES as [value, label] (value)}<option {value}>{label}</option>{/each}
+            </select>
+          </div>
+        {/if}
+      </div>
+      {#if save}
+        <div class="grid gap-2">
+          <p class="text-xs font-medium text-fg-muted">Then</p>
+          <div class="flex flex-wrap gap-4 text-sm">
+            <label class="flex cursor-pointer items-center gap-2"><input type="radio" class="accent-accent" bind:group={destination} value="save" />Save them in this folder</label>
+            <label class="flex cursor-pointer items-center gap-2"><input type="radio" class="accent-accent" bind:group={destination} value="download" />Download them</label>
+          </div>
+        </div>
+      {/if}
+      <p class="hint">Videos are fetched one at a time. Any that fail are skipped and listed at the end.</p>
+    {:else if phase === 'choose'}
       <fieldset class="grid gap-2">
         <legend class="mb-2 text-xs font-medium text-fg-muted">Get</legend>
         {#each [['video', 'Video', info.video], ['audio', 'Audio only', info.audio]] as [value, label, opt] (value)}
@@ -133,8 +256,10 @@
             <input type="radio" class="accent-accent" bind:group={kind} {value} disabled={!opt} />
             <span class="font-medium {kind === value ? 'text-accent-text' : ''}">{label}</span>
             <span class="ml-auto text-xs text-fg-muted tabular-nums">
-              {#if opt}
-                {opt.ext.toUpperCase()}{opt.height ? ` · ${opt.height}p` : ''}{opt.size ? ` · about ${formatSize(opt.size)}` : ''}
+              {#if value === 'video' && opt}{@const o = option ?? opt}
+                {o.ext.toUpperCase()}{o.height ? ` · ${o.height}p` : ''}{o.size ? ` · about ${formatSize(o.size)}` : ''}
+              {:else if opt}
+                {opt.ext.toUpperCase()}{opt.size ? ` · about ${formatSize(opt.size)}` : ''}
               {:else}
                 {canMerge ? 'Not available' : 'Not offered as one file'}
               {/if}
@@ -142,6 +267,20 @@
           </label>
         {/each}
       </fieldset>
+      {#if kind === 'video' && info.qualities?.length > 1}
+        <div class="flex flex-wrap gap-2" role="radiogroup" aria-label="Quality">
+          {#each info.qualities as q (q.quality)}
+            <button
+              type="button"
+              role="radio"
+              aria-checked={quality === q.quality}
+              class="h-8 cursor-pointer rounded-md border px-3 text-[13px] tabular-nums transition-colors {quality === q.quality
+                ? 'border-accent bg-accent-soft font-medium text-accent-text'
+                : 'border-line text-fg-muted hover:bg-subtle hover:text-fg'}"
+              onclick={() => (quality = q.quality)}>{q.height ? `${q.height}p` : 'Default'}</button>
+          {/each}
+        </div>
+      {/if}
       {#if option?.size && maxBytes && option.size > maxBytes}
         <p class="text-[13px] text-danger">That's larger than this server allows ({formatSize(maxBytes)}).</p>
       {/if}
@@ -157,19 +296,34 @@
       {/if}
       <p class="hint">
         {canMerge
-          ? 'Video is saved as MP4, up to 1080p. It is put together as it streams, so nothing is written to the server.'
+          ? `Video is saved as MP4, put together as it streams, so nothing is written to the server.${option?.height > 1080 ? ' Above 1080p it is usually VP9 or AV1, which not every player can open.' : ''}`
           : "This server can only save videos a site offers as one file, and YouTube rarely does. Audio only usually works."}
       </p>
     {:else if phase === 'working'}
       <div class="grid gap-3 py-1" role="status">
+        {#if playlist}
+          <p class="truncate text-xs text-fg-muted">Video {batch.index} of {batch.total}: {batch.current}</p>
+        {/if}
         <p class="flex items-center gap-2 text-sm">
           <Icon name="loader-circle" class="spinner" />
-          {stage === 'saving' ? 'Encrypting and saving' : `Downloading ${formatSize(received)}${option?.size ? ` of about ${formatSize(option.size)}` : ''}`}
+          {stage === 'saving' ? 'Encrypting and saving' : `Downloading ${formatSize(received)}${shown?.size ? ` of about ${formatSize(shown.size)}` : ''}`}
         </p>
-        {#if stage === 'saving' || option?.size}
-          <div class="progress"><div style:width="{Math.round(Math.min(1, stage === 'saving' ? progress : received / option.size) * 100)}%"></div></div>
+        {#if stage === 'saving' || shown?.size}
+          <div class="progress"><div style:width="{Math.round(Math.min(1, stage === 'saving' ? progress : received / shown.size) * 100)}%"></div></div>
         {/if}
       </div>
+    {:else if phase === 'done' && result.playlist}
+      <p class="flex items-center gap-2 py-1 text-sm font-medium">
+        <Icon name="check" class="size-4 text-success" />
+        {result.saved ? 'Saved' : 'Downloaded'} {result.done} of {batch.total} videos{result.stopped ? ' before you stopped' : ''}
+      </p>
+      {#if result.failed.length}
+        <ul class="max-h-40 divide-y divide-line overflow-y-auto rounded-md border border-line text-[13px]">
+          {#each result.failed as f, i (i)}
+            <li class="grid gap-0.5 px-3 py-2"><span class="truncate font-medium">{f.title}</span><span class="text-xs text-danger">{f.error}</span></li>
+          {/each}
+        </ul>
+      {/if}
     {:else if phase === 'done'}
       <p class="flex items-center gap-2 py-1 text-sm font-medium">
         <Icon name="check" class="size-4 text-success" />{result.saved ? `Saved as ${result.name}` : `Downloaded ${result.name}`} ({formatSize(result.size)})
@@ -185,9 +339,9 @@
     {:else if phase === 'choose' || phase === 'working'}
       <button type="button" class="btn btn-secondary mr-auto" disabled={phase === 'working'} onclick={() => ((phase = 'link'), (info = null), (error = ''))}>Back</button>
       <button type="button" class="btn btn-secondary" onclick={cancel}>{phase === 'working' ? 'Stop' : 'Cancel'}</button>
-      <button class="btn btn-primary" disabled={phase === 'working' || !option || (maxBytes && option.size > maxBytes)}>
+      <button class="btn btn-primary" disabled={phase === 'working' || (playlist ? !picked.size : !option || (maxBytes && option.size > maxBytes))}>
         {#if phase === 'working'}<Icon name="loader-circle" class="spinner" />{/if}
-        {destination === 'save' ? 'Download and save' : 'Download'}
+        {destination === 'save' ? 'Download and save' : 'Download'}{playlist ? ` ${picked.size}` : ''}
       </button>
     {:else}
       <button type="button" class="btn btn-secondary" onclick={onclose}>Cancel</button>

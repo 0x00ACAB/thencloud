@@ -38,7 +38,7 @@ use std::time::{Duration, Instant};
 
 use axum::body::Bytes;
 use futures_core::Stream;
-use thencloud_crypto::api::{VideoInfo, VideoKind, VideoOption};
+use thencloud_crypto::api::{PlaylistEntry, VideoInfo, VideoKind, VideoOption, VideoQuality};
 use tokio::process::{Child, ChildStdout, Command};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
@@ -60,8 +60,8 @@ const COMMON: &[&str] = &[
     "default,-generic",
 ];
 
-/// Highest video resolution fetched.
-const MAX_HEIGHT: u64 = 1080;
+/// Most videos listed from a playlist.
+const MAX_PLAYLIST: usize = 500;
 /// How long a lookup is kept for the download that follows it.
 const PLAN_TTL: Duration = Duration::from_secs(600);
 
@@ -92,7 +92,7 @@ enum Plan {
 #[derive(Clone)]
 struct Planned {
     at: Instant,
-    video: Option<Plan>,
+    video: HashMap<VideoQuality, Plan>,
     audio: Option<Plan>,
 }
 
@@ -201,7 +201,7 @@ impl Downloader {
         let out = tokio::time::timeout(
             Duration::from_secs(60),
             self.yt_dlp(&dir.0)
-                .args(["--dump-single-json", "--", url])
+                .args(["--dump-single-json", "--flat-playlist", "--", url])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 .output(),
@@ -228,7 +228,13 @@ impl Downloader {
     }
 
     /// What to fetch: from the lookup, or a fresh one if it expired.
-    async fn plan(&self, user: &str, url: &str, kind: VideoKind) -> Result<Plan> {
+    async fn plan(
+        &self,
+        user: &str,
+        url: &str,
+        kind: VideoKind,
+        quality: VideoQuality,
+    ) -> Result<Plan> {
         let key = (user.to_string(), url.to_string());
         let cached = {
             let plans = self.plans.lock().unwrap();
@@ -250,7 +256,7 @@ impl Downloader {
             }
         };
         match kind {
-            VideoKind::Video => planned.video,
+            VideoKind::Video => planned.video.get(&quality).cloned(),
             VideoKind::Audio => planned.audio,
         }
         .ok_or_else(|| AppError::bad("that isn't available for this video"))
@@ -262,10 +268,11 @@ impl Downloader {
         user: &str,
         url: &str,
         kind: VideoKind,
+        quality: VideoQuality,
         max: u64,
         slot: Slot,
     ) -> Result<DownloadStream> {
-        let plan = self.plan(user, url, kind).await?;
+        let plan = self.plan(user, url, kind, quality).await?;
         let dir = self.scratch_dir().await?;
         let spawn_err = |_| AppError::Unavailable("the downloader couldn't be started".into());
         let fetch = |id: &str| {
@@ -515,66 +522,86 @@ fn yt_dlp_error(stderr: &[u8]) -> String {
         .unwrap_or_else(|| "that link couldn't be downloaded".into())
 }
 
-/// What a lookup shows, and the plans behind the video and audio choices.
-fn parse_info(v: &serde_json::Value, can_merge: bool) -> (VideoInfo, Option<Plan>, Option<Plan>) {
-    type F = serde_json::Value;
-    let s = |k: &str| v.get(k).and_then(|x| x.as_str()).map(str::to_string);
-    let formats: Vec<F> = v
-        .get("formats")
-        .and_then(|f| f.as_array())
-        .cloned()
-        .unwrap_or_default();
-    let text = |f: &F, k: &str| f.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
-    let num = |f: &F, k: &str| f.get(k).and_then(|x| x.as_f64()).unwrap_or(0.0);
-    let has_v = |f: &F| !matches!(text(f, "vcodec").as_str(), "" | "none");
-    let has_a = |f: &F| !matches!(text(f, "acodec").as_str(), "" | "none");
-    let id = |f: &F| text(f, "format_id");
-    let height = |f: &F| f.get("height").and_then(|x| x.as_u64());
-    let size = |f: &F| {
-        f.get("filesize")
-            .or_else(|| f.get("filesize_approx"))
-            .and_then(|x| x.as_f64())
-            .map(|x| x as u64)
-    };
-    // Plain HTTP(S) files download fastest; HLS and DASH fragments work too.
-    let direct = |f: &F| text(f, "protocol").starts_with("http");
-    let aac = |f: &F| text(f, "acodec").starts_with("mp4a");
-    let fits = |f: &F| height(f).is_none_or(|h| h <= MAX_HEIGHT);
-    // Formats come worst to best; `best` keeps the last of the top score.
-    fn best<'a, K: PartialOrd>(
-        it: impl Iterator<Item = &'a F>,
-        key: impl Fn(&F) -> K,
-    ) -> Option<&'a F> {
-        it.fold(None, |acc: Option<&F>, f| match acc {
-            Some(a) if key(a) > key(f) => Some(a),
-            _ => Some(f),
-        })
-    }
-    let usable = |f: &&F| {
-        !id(f).is_empty()
-            && id(f)
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
-    };
+type F = serde_json::Value;
 
-    let mut video = None;
-    let mut video_plan = None;
+fn text(f: &F, k: &str) -> String {
+    f.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string()
+}
+fn num(f: &F, k: &str) -> f64 {
+    f.get(k).and_then(|x| x.as_f64()).unwrap_or(0.0)
+}
+fn has_v(f: &F) -> bool {
+    !matches!(text(f, "vcodec").as_str(), "" | "none")
+}
+fn has_a(f: &F) -> bool {
+    !matches!(text(f, "acodec").as_str(), "" | "none")
+}
+fn id(f: &F) -> String {
+    text(f, "format_id")
+}
+fn height(f: &F) -> Option<u64> {
+    f.get("height").and_then(|x| x.as_u64())
+}
+fn size(f: &F) -> Option<u64> {
+    f.get("filesize")
+        .or_else(|| f.get("filesize_approx"))
+        .and_then(|x| x.as_f64())
+        .map(|x| x as u64)
+}
+/// Plain HTTP(S) files download fastest; HLS and DASH fragments work too.
+fn direct(f: &F) -> bool {
+    text(f, "protocol").starts_with("http")
+}
+fn aac(f: &F) -> bool {
+    text(f, "acodec").starts_with("mp4a")
+}
+fn h264(f: &F) -> bool {
+    text(f, "vcodec").starts_with("avc1")
+}
+fn usable(f: &&F) -> bool {
+    let i = id(f);
+    !i.is_empty()
+        && i.chars()
+            .all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
+}
+/// Formats come worst to best; `best` keeps the last of the top score.
+fn best<'a, K: PartialOrd>(
+    it: impl Iterator<Item = &'a F>,
+    key: impl Fn(&F) -> K,
+) -> Option<&'a F> {
+    it.fold(None, |acc: Option<&F>, f| match acc {
+        Some(a) if key(a) > key(f) => Some(a),
+        _ => Some(f),
+    })
+}
+
+/// The video (with sound) to fetch at `quality`.
+fn pick_video(
+    formats: &[F],
+    can_merge: bool,
+    quality: VideoQuality,
+) -> Option<(VideoOption, Plan)> {
+    let cap = quality.max_height().unwrap_or(u64::MAX);
+    let fits = |f: &F| height(f).is_none_or(|h| h <= cap);
+    // Up to 1080p H.264 comes first, as it plays everywhere; for the best
+    // quality, height does.
+    let tallest = quality == VideoQuality::Best;
+    let rank = |f: &F| {
+        let (a, b) = (h264(f), height(f).unwrap_or(0));
+        if tallest {
+            (b, a as u64)
+        } else {
+            (a as u64, b)
+        }
+    };
     if can_merge {
-        // Separate streams: H.264 first (plays everywhere), then the tallest,
-        // then plain HTTP, then bitrate. AAC audio first, then bitrate.
+        // Separate streams, then plain HTTP, then bitrate. AAC audio first.
         let v_only = best(
             formats
                 .iter()
                 .filter(usable)
                 .filter(|f| has_v(f) && !has_a(f) && fits(f)),
-            |f| {
-                (
-                    text(f, "vcodec").starts_with("avc1"),
-                    height(f).unwrap_or(0),
-                    direct(f),
-                    num(f, "tbr"),
-                )
-            },
+            |f| (rank(f), direct(f), num(f, "tbr")),
         );
         let a_only = best(
             formats
@@ -584,52 +611,90 @@ fn parse_info(v: &serde_json::Value, can_merge: bool) -> (VideoInfo, Option<Plan
             |f| (aac(f), direct(f), num(f, "abr").max(num(f, "tbr"))),
         );
         if let (Some(fv), Some(fa)) = (v_only, a_only) {
-            video = Some(VideoOption {
-                ext: "mp4".into(),
-                size: size(fv).zip(size(fa)).map(|(a, b)| a + b),
-                height: height(fv).map(|h| h as u32),
-            });
-            video_plan = Some(Plan::Merge {
-                video: id(fv),
-                audio: id(fa),
-            });
+            return Some((
+                VideoOption {
+                    ext: "mp4".into(),
+                    size: size(fv).zip(size(fa)).map(|(a, b)| a + b),
+                    height: height(fv).map(|h| h as u32),
+                    quality: Some(quality),
+                },
+                Plan::Merge {
+                    video: id(fv),
+                    audio: id(fa),
+                },
+            ));
         }
     }
-    if video.is_none() {
-        // One file with both: MP4 or WebM over HTTP as is; anything else
-        // (e.g. HLS, which arrives as MPEG-TS) repackaged, if ffmpeg is here.
-        let plays_as_is = |f: &F| direct(f) && matches!(text(f, "ext").as_str(), "mp4" | "webm");
-        let muxed = best(
-            formats
-                .iter()
-                .filter(usable)
-                .filter(|f| has_v(f) && has_a(f) && fits(f) && (can_merge || plays_as_is(f))),
-            |f| {
-                (
-                    plays_as_is(f),
-                    text(f, "ext") == "mp4",
-                    height(f).unwrap_or(0),
-                    num(f, "tbr"),
-                )
-            },
-        );
-        if let Some(f) = muxed {
-            let as_is = plays_as_is(f);
-            video = Some(VideoOption {
-                ext: if as_is { text(f, "ext") } else { "mp4".into() },
-                size: size(f),
-                height: height(f).map(|h| h as u32),
-            });
-            video_plan = Some(if as_is {
-                Plan::Direct(id(f))
-            } else {
-                Plan::Remux {
-                    id: id(f),
-                    aac: aac(f),
-                }
-            });
+    // One file with both: MP4 or WebM over HTTP as is; anything else
+    // (e.g. HLS, which arrives as MPEG-TS) repackaged, if ffmpeg is here.
+    let plays_as_is = |f: &F| direct(f) && matches!(text(f, "ext").as_str(), "mp4" | "webm");
+    let f = best(
+        formats
+            .iter()
+            .filter(usable)
+            .filter(|f| has_v(f) && has_a(f) && fits(f) && (can_merge || plays_as_is(f))),
+        |f| {
+            (
+                plays_as_is(f),
+                text(f, "ext") == "mp4",
+                height(f).unwrap_or(0),
+                num(f, "tbr"),
+            )
+        },
+    )?;
+    let as_is = plays_as_is(f);
+    Some((
+        VideoOption {
+            ext: if as_is { text(f, "ext") } else { "mp4".into() },
+            size: size(f),
+            height: height(f).map(|h| h as u32),
+            quality: Some(quality),
+        },
+        if as_is {
+            Plan::Direct(id(f))
+        } else {
+            Plan::Remux {
+                id: id(f),
+                aac: aac(f),
+            }
+        },
+    ))
+}
+
+/// What a lookup shows, and the plans behind the video (per quality) and
+/// audio choices.
+fn parse_info(
+    v: &serde_json::Value,
+    can_merge: bool,
+) -> (VideoInfo, HashMap<VideoQuality, Plan>, Option<Plan>) {
+    let s = |k: &str| v.get(k).and_then(|x| x.as_str()).map(str::to_string);
+    let formats: Vec<F> = v
+        .get("formats")
+        .and_then(|f| f.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    let mut plans = HashMap::new();
+    // Each distinct result once, under the lowest quality giving it.
+    let mut listed: Vec<(Plan, VideoOption)> = Vec::new();
+    let mut default = None;
+    for q in VideoQuality::ALL {
+        let Some((opt, plan)) = pick_video(&formats, can_merge, q) else {
+            continue;
+        };
+        let shown = match listed.iter().find(|(p, _)| *p == plan) {
+            Some((_, o)) => o.clone(),
+            None => {
+                listed.push((plan.clone(), opt.clone()));
+                opt
+            }
+        };
+        if q == VideoQuality::P1080 {
+            default = Some(shown);
         }
+        plans.insert(q, plan);
     }
+    let qualities: Vec<VideoOption> = listed.into_iter().map(|(_, o)| o).collect();
 
     // Audio: an M4A or WebM file as is, preferring AAC, else repackaged.
     let a_direct = best(
@@ -650,6 +715,7 @@ fn parse_info(v: &serde_json::Value, can_merge: bool) -> (VideoInfo, Option<Plan
                 ext: text(f, "ext"),
                 size: size(f),
                 height: None,
+                quality: None,
             }),
             Some(Plan::Direct(id(f))),
         ),
@@ -665,6 +731,7 @@ fn parse_info(v: &serde_json::Value, can_merge: bool) -> (VideoInfo, Option<Plan
                     ext: "m4a".into(),
                     size: size(f),
                     height: None,
+                    quality: None,
                 }),
                 Some(Plan::Remux {
                     id: id(f),
@@ -676,15 +743,45 @@ fn parse_info(v: &serde_json::Value, can_merge: bool) -> (VideoInfo, Option<Plan
         None => (None, None),
     };
 
+    // A playlist (looked up flat): its entries, each a link of its own.
+    let entries = if s("_type").as_deref() == Some("playlist") {
+        v.get("entries")
+            .and_then(|e| e.as_array())
+            .map(|list| {
+                list.iter()
+                    .filter_map(|e| {
+                        let url = e.get("url").and_then(|x| x.as_str())?;
+                        (url.starts_with("https://") || url.starts_with("http://")).then(|| {
+                            PlaylistEntry {
+                                url: url.to_string(),
+                                title: e
+                                    .get("title")
+                                    .and_then(|x| x.as_str())
+                                    .unwrap_or("video")
+                                    .to_string(),
+                                duration: e.get("duration").and_then(|x| x.as_f64()),
+                            }
+                        })
+                    })
+                    .take(MAX_PLAYLIST)
+                    .collect()
+            })
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
     let info = VideoInfo {
         title: s("title").unwrap_or_else(|| "video".into()),
         site: s("extractor_key").unwrap_or_default(),
         uploader: s("uploader").or_else(|| s("channel")),
         duration: v.get("duration").and_then(|x| x.as_f64()),
-        video,
+        video: default.or_else(|| qualities.last().cloned()),
         audio,
+        qualities,
+        entries,
     };
-    (info, video_plan, audio_plan)
+    (info, plans, audio_plan)
 }
 
 pub async fn check_link(url: &str, public_only: bool) -> Result<()> {

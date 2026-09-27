@@ -2568,6 +2568,11 @@ done
 echo leftover > scratch-file.tmp
 url=""; for a in "$@"; do url="$a"; done
 case "$url" in *fail*) echo "ERROR: [youtube] abc: Video unavailable" >&2; exit 1;; esac
+case " $* " in *" --dump-single-json --flat-playlist "*) ;; *" --dump-single-json "*) echo "ERROR: lookups must be flat" >&2; exit 9;; esac
+case "$url" in *playlist*)
+  echo '{"_type":"playlist","title":"A list","extractor_key":"YoutubeTab","entries":[{"url":"https://videos.test/watch?v=a","title":"First","duration":61},{"url":"file:///etc/passwd","title":"Nope"},{"url":"https://videos.test/watch?v=b","title":"Second"}]}'
+  exit 0;;
+esac
 case " $* " in *" --dump-single-json "*)
   echo '{"title":"A test clip","extractor_key":"Youtube","uploader":"Someone","duration":12.5,"formats":[{"format_id":"140","ext":"m4a","vcodec":"none","acodec":"mp4a","filesize":900,"protocol":"https"},{"format_id":"134","ext":"mp4","vcodec":"avc1","acodec":"none","height":240,"filesize":2000,"protocol":"https"},{"format_id":"18","ext":"mp4","vcodec":"avc1","acodec":"mp4a","height":360,"filesize":3000,"protocol":"https"},{"format_id":"9999","ext":"mp4","vcodec":"avc1","acodec":"mp4a","height":2160,"protocol":"https"}]}'
   exit 0;;
@@ -2577,6 +2582,7 @@ case "$url" in *slow*) printf 'FAKE'; sleep 3; printf 'VIDEO'; exit 0;; esac
 case " $* " in
   *" -f 140 "*) printf 'AUDIO-ONLY-BYTES'; exit 0;;
   *" -f 134 "*) printf 'VIDEO-ONLY-BYTES'; exit 0;;
+  *" -f 9999 "*) printf 'UHD-BYTES'; exit 0;;
   *" -f 18 "*) ;;
   *) echo "ERROR: unexpected format: $*" >&2; exit 8;;
 esac
@@ -2663,6 +2669,39 @@ async fn video_downloader_is_opt_in_streamed_and_cleaned_up() {
         ("mp4", Some(3000), Some(360))
     );
     assert_eq!(info.audio.unwrap().ext, "m4a");
+    // Each quality that gives something different: 360p (for anything up
+    // to 1080p) and the 2160p file for the best.
+    let q: Vec<_> = info
+        .qualities
+        .iter()
+        .map(|o| (o.height, o.quality))
+        .collect();
+    assert_eq!(
+        q,
+        [
+            (Some(360), Some(VideoQuality::P480)),
+            (Some(2160), Some(VideoQuality::Best))
+        ]
+    );
+    assert!(info.entries.is_empty());
+    // A playlist lists its videos (http(s) links only), to fetch one by one.
+    let list: VideoInfo = post(
+        "/api/tools/video/info",
+        admin.token.clone(),
+        link("https://videos.test/playlist?list=x"),
+    )
+    .await
+    .json();
+    assert!(list.video.is_none() && list.audio.is_none());
+    let urls: Vec<_> = list.entries.iter().map(|e| e.url.as_str()).collect();
+    assert_eq!(
+        urls,
+        [
+            "https://videos.test/watch?v=a",
+            "https://videos.test/watch?v=b"
+        ]
+    );
+    assert_eq!(list.entries[0].title, "First");
     let r = post(
         "/api/tools/video/info",
         admin.token.clone(),
@@ -2698,6 +2737,13 @@ async fn video_downloader_is_opt_in_streamed_and_cleaned_up() {
     assert_eq!(r.status, StatusCode::OK);
     assert_eq!(r.body, b"FAKE-VIDEO-BYTES".repeat(100));
     assert_eq!(r.headers.get("cache-control").unwrap(), "no-store");
+    let r = post(
+        "/api/tools/video/download",
+        user.token.clone(),
+        json!({"url": "https://videos.test/watch?v=1", "kind": "video", "quality": "best"}),
+    )
+    .await;
+    assert_eq!(r.body, b"UHD-BYTES");
 
     // Over the size cap: the response is cut off with an error, not ended
     // cleanly, so a partial file can't pass for a whole one.
