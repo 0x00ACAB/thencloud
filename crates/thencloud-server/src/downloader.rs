@@ -184,9 +184,12 @@ impl Downloader {
 
     fn yt_dlp(&self, dir: &Path) -> Command {
         let mut c = Command::new(&self.program);
+        // Its own process group, so stopping it also stops anything it
+        // starts (yt-dlp runs ffmpeg itself for some sites).
         c.args(COMMON)
             .current_dir(dir)
             .stdin(Stdio::null())
+            .process_group(0)
             .kill_on_drop(true);
         c
     }
@@ -283,6 +286,7 @@ impl Downloader {
                 .current_dir(&dir.0)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::null())
+                .process_group(0)
                 .kill_on_drop(true);
             c
         };
@@ -365,9 +369,9 @@ impl Downloader {
                 for t in &tasks {
                     t.abort();
                 }
-                let _ = main.start_kill();
+                kill_group(&mut main);
                 for c in &mut inputs {
-                    let _ = c.start_kill();
+                    kill_group(c);
                 }
             }
             let _ = status_tx.send(ok);
@@ -382,6 +386,15 @@ impl Downloader {
             _dir: dir,
         })
     }
+}
+
+/// Stop a process and everything it started (it leads its own group).
+fn kill_group(c: &mut Child) {
+    if let Some(pid) = c.id() {
+        // SAFETY: killpg only sends a signal; a stale pid fails harmlessly.
+        unsafe { libc::killpg(pid as libc::pid_t, libc::SIGKILL) };
+    }
+    let _ = c.start_kill();
 }
 
 fn path_str(p: &Path) -> Result<&str> {
