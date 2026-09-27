@@ -1,5 +1,5 @@
 <script>
-  import { session, resolvePath, listFolder, createFolder, rename, trash, untrash, download, fetchEntry, upload, saveText, refreshMe } from '../../lib/cloud.svelte.js';
+  import { session, resolvePath, listFolder, createFolder, rename, trash, untrash, download, downloadZip, fetchEntry, upload, saveText, refreshMe } from '../../lib/cloud.svelte.js';
   import { toast, toastError, trackTransfer, errorMessage, sort, sortBy } from '../../lib/ui.svelte.js';
   import { formatSize, formatWhen, fullDate, plural, sortEntries } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
@@ -25,6 +25,7 @@
   let dialog = $state(null); // { type, entry }
   let dragging = $state(false);
   let fileInput;
+  let folderInput;
   let searchInput = $state();
   let tbody = $state();
   let query = $state('');
@@ -76,14 +77,71 @@
 
   // ------------------------------------------------------------------ uploads
 
-  async function uploadFiles(files, existing = null) {
-    const list = [...files];
-    if (!list.length) return;
+  function uploadFiles(files, existing = null) {
     const target = here;
-    const one = async (file) => {
-      const t = trackTransfer('upload', existing ? existing.meta.name : file.name, file.size);
+    const dest = existing ? { existing } : { parentId: target.node.id, parentKey: target.key };
+    return runUploads(
+      [...files].map((file) => ({ file, dest, label: existing ? existing.meta.name : file.name })),
+      target,
+    );
+  }
+
+  // Files the OS adds to folders that nobody means to upload.
+  const JUNK = new Set(['.ds_store', 'thumbs.db', 'desktop.ini']);
+
+  /**
+   * Upload a folder tree into the current folder. `items` is a list of
+   * { dirs, file } where dirs is the folder path (["Photos", "2024"]) and
+   * file may be null for an empty folder. Folders are created first, then
+   * the files go up like any other upload.
+   */
+  async function uploadTree(items) {
+    const target = here;
+    const made = new Map([['', { id: target.node.id, key: target.key }]]);
+    const taken = new Set(rows.map((r) => r.meta.name.toLowerCase()));
+    const topName = new Map(); // a dropped folder's name -> the name it gets here
+    const folderFor = async (dirs) => {
+      let path = '';
+      for (const [i, dir] of dirs.entries()) {
+        const next = path ? `${path}/${dir}` : dir;
+        if (!made.has(next)) {
+          let name = dir;
+          if (i === 0) {
+            // Don't mix into an existing folder of the same name.
+            if (!topName.has(dir)) {
+              let n = dir;
+              for (let k = 2; taken.has(n.toLowerCase()); k++) n = `${dir} (${k})`;
+              taken.add(n.toLowerCase());
+              topName.set(dir, n);
+            }
+            name = topName.get(dir);
+          }
+          const parent = made.get(path);
+          made.set(next, await createFolder(parent.id, parent.key, name));
+        }
+        path = next;
+      }
+      return made.get(path);
+    };
+    const jobs = [];
+    try {
+      for (const { dirs, file } of items) {
+        if (file && JUNK.has(file.name.toLowerCase())) continue;
+        const parent = await folderFor(dirs);
+        if (file) jobs.push({ file, dest: { parentId: parent.id, parentKey: parent.key }, label: [...dirs, file.name].join('/') });
+      }
+    } catch (e) {
+      toastError(e);
+    }
+    if (target.node.id === folderId) await load();
+    await runUploads(jobs, target);
+  }
+
+  async function runUploads(jobs, target) {
+    if (!jobs.length) return;
+    const one = async ({ file, dest, label }) => {
+      const t = trackTransfer('upload', label, file.size);
       try {
-        const dest = existing ? { existing } : { parentId: target.node.id, parentKey: target.key };
         await upload(file, dest, (p) => (t.progress = p));
         t.status = 'done';
       } catch (e) {
@@ -94,9 +152,9 @@
     // Three files at a time; each file's chunks go up sequentially.
     let next = 0;
     const worker = async () => {
-      while (next < list.length) await one(list[next++]);
+      while (next < jobs.length) await one(jobs[next++]);
     };
-    await Promise.all(Array.from({ length: Math.min(3, list.length) }, worker));
+    await Promise.all(Array.from({ length: Math.min(3, jobs.length) }, worker));
     if (target.node.id === folderId) await load();
     refreshMe().catch(() => {});
   }
@@ -106,13 +164,20 @@
     e.currentTarget.value = '';
   }
 
+  function onPickFolder(e) {
+    // Each file carries its path inside the picked folder ("Photos/2024/a.jpg").
+    const items = [...e.currentTarget.files].map((file) => ({ dirs: file.webkitRelativePath.split('/').slice(0, -1), file }));
+    e.currentTarget.value = '';
+    if (items.length) uploadTree(items);
+  }
+
   function onPickVersion(e) {
     const f = e.currentTarget.files;
     if (f.length && versionTarget) uploadFiles([f[0]], versionTarget);
     e.currentTarget.value = '';
   }
 
-  // Drag and drop from the desktop. Only files, not folders.
+  // Drag and drop from the desktop: files and whole folders.
   let dragDepth = 0;
   const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
 
@@ -137,10 +202,34 @@
     e.preventDefault();
     dragDepth = 0;
     dragging = false;
-    const items = [...e.dataTransfer.items].filter((i) => i.kind === 'file');
-    const files = items.filter((i) => !i.webkitGetAsEntry?.()?.isDirectory).map((i) => i.getAsFile());
-    if (files.length < items.length) toast("Folders can't be uploaded yet, only files.");
-    uploadFiles(files);
+    // Entries must be taken now; the drop's data is gone once this returns.
+    const entries = [...e.dataTransfer.items].filter((i) => i.kind === 'file').map((i) => i.webkitGetAsEntry?.() ?? i.getAsFile());
+    const files = [...e.dataTransfer.files];
+    if (entries.some((x) => x?.isDirectory)) readDropped(entries).then(uploadTree, toastError);
+    else uploadFiles(files);
+  }
+
+  /** Walk dropped files and folders into { dirs, file } items. */
+  async function readDropped(entries) {
+    const out = [];
+    const fileOf = (entry) => new Promise((resolve, reject) => entry.file(resolve, reject));
+    async function walk(entry, dirs) {
+      if (entry instanceof File) return out.push({ dirs, file: entry });
+      if (entry.isFile) return out.push({ dirs, file: await fileOf(entry) });
+      const here = [...dirs, entry.name];
+      const reader = entry.createReader();
+      let any = false;
+      // readEntries returns at most ~100 at a time; call until it's empty.
+      for (;;) {
+        const batch = await new Promise((resolve, reject) => reader.readEntries(resolve, reject));
+        if (!batch.length) break;
+        any = true;
+        for (const child of batch) await walk(child, here);
+      }
+      if (!any) out.push({ dirs: here, file: null });
+    }
+    for (const entry of entries) if (entry) await walk(entry, []);
+    return out;
   }
 
   // ---------------------------------------------------------------- actions
@@ -214,10 +303,21 @@
     else for (const r of visible) selected.add(r.node.id);
   }
 
-  async function downloadChosen() {
-    const list = chosen.filter((r) => r.node.kind === 'file');
-    if (list.length < chosen.length) toast("Folders can't be downloaded yet, so they were skipped.");
-    for (const entry of list) await downloadEntry(entry);
+  function downloadChosen() {
+    const list = [...chosen];
+    if (list.length === 1 && list[0].node.kind === 'file') return downloadEntry(list[0]);
+    return zipEntries(list, `${here.meta.name}.zip`);
+  }
+
+  async function zipEntries(list, name) {
+    const t = trackTransfer('download', name, null);
+    try {
+      await downloadZip(list, name, (p) => (t.progress = p));
+      t.status = 'done';
+    } catch (e) {
+      t.status = 'error';
+      t.error = errorMessage(e);
+    }
   }
 
   async function trashChosen() {
@@ -283,7 +383,9 @@
       folder
         ? { label: 'Open', icon: 'folder-open', onclick: () => open(entry.node.id) }
         : { label: 'Preview', icon: 'eye', onclick: () => preview(entry) },
-      ...(!folder ? [{ label: 'Download', icon: 'download', onclick: () => downloadEntry(entry) }] : []),
+      folder
+        ? { label: 'Download as zip', icon: 'download', onclick: () => zipEntries([entry], `${entry.meta.name}.zip`) }
+        : { label: 'Download', icon: 'download', onclick: () => downloadEntry(entry) },
       ...(isOwner
         ? [
             { label: 'Share', icon: 'share-2', onclick: () => (dialog = { type: 'share', entry }) },
@@ -371,6 +473,7 @@
 <svelte:window {onkeydown} ondragenter={onDragEnter} ondragover={onDragOver} ondragleave={onDragLeave} ondrop={onDrop} />
 
 <input bind:this={fileInput} type="file" multiple hidden onchange={onPick} />
+<input bind:this={folderInput} type="file" webkitdirectory hidden onchange={onPickFolder} />
 <input bind:this={versionInput} type="file" hidden onchange={onPickVersion} />
 
 <div class="flex flex-wrap items-start gap-x-4 gap-y-3">
@@ -419,9 +522,15 @@
       <button type="button" class="btn btn-secondary" disabled={!here} onclick={() => (dialog = { type: 'mkdir' })}>
         <Icon name="folder-plus" /> New folder
       </button>
-      <button type="button" class="btn btn-primary" disabled={!here} onclick={() => fileInput.click()}>
-        <Icon name="upload" /> Upload
-      </button>
+      <Menu
+        label="Upload"
+        buttonClass="btn btn-primary"
+        items={[
+          { label: 'Files', icon: 'file-up', onclick: () => fileInput.click() },
+          { label: 'Folder', icon: 'folder-up', onclick: () => folderInput.click() },
+        ]}>
+        {#snippet trigger()}<Icon name="upload" /> Upload<Icon name="chevron-down" class="-mr-1 size-3.5 opacity-70" />{/snippet}
+      </Menu>
     {/if}
   </div>
 </div>

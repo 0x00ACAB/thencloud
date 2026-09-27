@@ -111,6 +111,22 @@
   let preview = $state(null); // { entries, start }
   const files = $derived(rows.filter((r) => r.node.kind === 'file'));
 
+  const listFolder = async (entry) => sortEntries(decryptChildren(entry.key, await request('GET', `${base}/nodes/${entry.node.id}/children`, opts())));
+
+  /** Everything in the folder being viewed, as one zip. */
+  async function downloadAll() {
+    const name = `${here.meta.name}.zip`;
+    const t = trackTransfer('download', name, null);
+    try {
+      const { zipEntries } = await import('./lib/zip.js');
+      saveBlob(await zipEntries(rows, { list: listFolder, fetch: fetchEntry, onProgress: (p) => (t.progress = p) }), name);
+      t.status = 'done';
+    } catch (e) {
+      t.status = 'error';
+      t.error = errorMessage(e);
+    }
+  }
+
   async function downloadEntry(entry) {
     const t = trackTransfer('download', entry.meta.name, entry.meta.size);
     try {
@@ -176,16 +192,21 @@
         </div>
       </div>
     {:else}
-      <nav class="flex flex-wrap items-center gap-1 text-sm" aria-label="Folder path">
-        {#each trail as crumb, i (crumb.node.id)}
-          {#if i}<Icon name="chevron-right" class="size-4 text-fg-faint" />{/if}
-          {#if i === trail.length - 1}
-            <h1 class="truncate px-1 text-xl font-semibold tracking-tight">{crumb.meta.name}</h1>
-          {:else}
-            <button type="button" class="cursor-pointer rounded px-1 text-fg-muted hover:text-fg" onclick={() => ((rows = []), (trail = trail.slice(0, i + 1)))}>{crumb.meta.name}</button>
-          {/if}
-        {/each}
-      </nav>
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <nav class="flex flex-wrap items-center gap-1 text-sm" aria-label="Folder path">
+          {#each trail as crumb, i (crumb.node.id)}
+            {#if i}<Icon name="chevron-right" class="size-4 text-fg-faint" />{/if}
+            {#if i === trail.length - 1}
+              <h1 class="truncate px-1 text-xl font-semibold tracking-tight">{crumb.meta.name}</h1>
+            {:else}
+              <button type="button" class="cursor-pointer rounded px-1 text-fg-muted hover:text-fg" onclick={() => ((rows = []), (trail = trail.slice(0, i + 1)))}>{crumb.meta.name}</button>
+            {/if}
+          {/each}
+        </nav>
+        {#if rows.length}
+          <button type="button" class="btn btn-secondary" onclick={downloadAll}><Icon name="download" /> Download all</button>
+        {/if}
+      </div>
       <div class="card mt-6 overflow-hidden">
         {#if listing && !rows.length}
           <div class="grid h-48 place-items-center text-fg-muted"><Icon name="loader-circle" class="spinner size-5" /></div>

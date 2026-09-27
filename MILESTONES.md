@@ -60,7 +60,8 @@ Bigger pieces:
 - [x] **Per-file-type icons**: choose Minimal (Lucide), Seti, Material or vscode-icons in Settings; served locally, and only the chosen pack's tables and the icons on screen are downloaded
 - [ ] More icon packs (Catppuccin: its icons are on npm but its file-name mapping isn't), and optionally per-name folder icons
 - [x] **Multi-select** with bulk move, download and delete (checkboxes, shift-click ranges, `x`, select all, a floating action bar; one Undo for a bulk trash)
-- [ ] **Folder uploads** (drag a whole folder in) and zip download of folders
+- [x] **Folder uploads** (drag a whole folder in, or Upload > Folder) and **zip downloads** of folders, selections and public folder links, zipped in the browser
+- [ ] Streamed zips for very large folders (today a zip is built in memory, up to 4 GB)
 - [x] **Search and sort** within a folder (search is client-side over decrypted names; sort by name, size or date)
 - [x] **Keyboard shortcuts** (`/` search, `j`/`k` or arrows through rows, Backspace up a folder, `n` new folder, `u` upload, Delete to trash) plus a `?` cheat sheet
 - [ ] Search across all folders (needs a client-side index of decrypted names, built as you browse or on demand)
