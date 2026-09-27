@@ -354,6 +354,30 @@ pub fn wrap_master_key_app(kek: &[u8], mk: &[u8], app_password_id: &str) -> R<Ve
     ))
 }
 
+/// The input for the WebAuthn PRF extension.
+#[wasm_bindgen]
+pub fn passkey_prf_salt() -> Vec<u8> {
+    c::passkey_prf_salt().to_vec()
+}
+
+#[wasm_bindgen]
+pub fn wrap_master_key_passkey(prf_output: &[u8], mk: &[u8], credential_id: &[u8]) -> R<Vec<u8>> {
+    let kek = c::derive_passkey_kek(prf_output)?;
+    Ok(c::wrap_master_key_passkey(&kek, &key(mk)?, credential_id))
+}
+
+#[wasm_bindgen]
+pub fn unwrap_master_key_passkey(
+    prf_output: &[u8],
+    wrapped: &[u8],
+    credential_id: &[u8],
+) -> R<Vec<u8>> {
+    let kek = c::derive_passkey_kek(prf_output)?;
+    Ok(c::unwrap_master_key_passkey(&kek, wrapped, credential_id)?
+        .as_bytes()
+        .to_vec())
+}
+
 #[wasm_bindgen]
 pub fn encrypt_avatar(key_bytes: &[u8], owner: &str, image: &[u8]) -> R<Vec<u8>> {
     Ok(c::encrypt_avatar(&key(key_bytes)?, owner, image))

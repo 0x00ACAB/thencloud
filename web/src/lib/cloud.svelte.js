@@ -12,6 +12,7 @@ import {
 import { sortEntries } from './format.js';
 import { rememberSession, rememberedSession, forgetSession } from './remember.js';
 import { streamsAvailable, streamDownload } from './stream.js';
+import { createPasskey, usePasskey, passkeysSupported } from './passkeys.js';
 
 export const session = $state({
   token: null,
@@ -94,14 +95,66 @@ export async function register(username, password, invite = null, remember = fal
   if (remember) await keepSignedIn(s.token);
 }
 
+/**
+ * Sign in with a password. Returns null when that's done, or, when the
+ * account asks for a second factor, `{ totp, passkey, withCode, withPasskey }`
+ * to finish with one.
+ */
 export async function login(username, password, remember = false) {
   const pre = await request('POST', '/api/auth/prelogin', { body: { username } });
   const ak = await deriveAccountKeys(password, unb64(pre.kdf_salt), pre.kdf_params);
   const s = await request('POST', '/api/auth/login', {
     body: { username, auth_key: b64(ak.authKey), device_name: deviceName() },
   });
-  start(s, ak.kek);
-  if (remember) await keepSignedIn(s.token);
+  if (!s.second_factor) {
+    start(s, ak.kek);
+    if (remember) await keepSignedIn(s.token);
+    return null;
+  }
+  const sf = s.second_factor;
+  const finish = async (body) => {
+    const r = await request('POST', '/api/auth/login/second-factor', { body: { ticket: sf.ticket, ...body } });
+    start(r, ak.kek);
+    if (remember) await keepSignedIn(r.token);
+  };
+  return {
+    totp: sf.totp,
+    passkey: !!sf.passkey && passkeysSupported(),
+    withCode: (code) => finish({ totp_code: code }),
+    withPasskey: async () => {
+      const a = await usePasskey({ challenge: unb64(sf.passkey.challenge), allow: sf.passkey.allow_credentials.map(unb64) });
+      await finish({ passkey: assertionBody(a) });
+    },
+  };
+}
+
+const assertionBody = (a) => ({
+  credential_id: b64(a.id),
+  client_data_json: b64(a.clientDataJSON),
+  authenticator_data: b64(a.authenticatorData),
+  signature: b64(a.signature),
+  user_handle: a.userHandle ? b64(a.userHandle) : undefined,
+});
+
+/**
+ * Sign in with a passkey alone. Its PRF output unwraps the master key; the
+ * server hands out the wrapped key only after checking the passkey.
+ */
+export async function loginWithPasskey(remember = false) {
+  const o = await request('POST', '/api/auth/passkey/options');
+  const a = await usePasskey({ challenge: unb64(o.challenge), prfSalt: tc.passkey_prf_salt(), verify: 'required' });
+  if (!a.prf) {
+    throw new Error("This browser or passkey can't unlock your files on its own. Sign in with your password.");
+  }
+  try {
+    const s = await request('POST', '/api/auth/passkey/login', {
+      body: { challenge: o.challenge, assertion: assertionBody(a), device_name: deviceName() },
+    });
+    startWithMasterKey(s, tc.unwrap_master_key_passkey(a.prf, unb64(s.enc_master_key), unb64(s.credential_id)));
+    if (remember) await keepSignedIn(s.token);
+  } finally {
+    a.prf.fill(0);
+  }
 }
 
 function start(s, kek) {
@@ -315,6 +368,69 @@ export async function createAppPassword(password, name, scope) {
     d.free();
     secret.fill(0);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Two-step sign-in: an authenticator app (TOTP) and passkeys. Either one is
+// then asked for after the password. A passkey whose authenticator supports
+// PRF also gets its own wrapped copy of the master key, so it can sign in
+// without the password.
+// ---------------------------------------------------------------------------
+
+/** A new TOTP secret to show, confirmed with `enableTotp`. */
+export async function startTotp(password) {
+  return api('POST', '/api/auth/totp/setup', { body: { current_auth_key: await authKeyFor(password) } });
+}
+
+export async function enableTotp(setupId, code) {
+  session.me = await api('POST', '/api/auth/totp', { body: { setup_id: setupId, code } });
+}
+
+export async function disableTotp(password) {
+  session.me = await api('DELETE', '/api/auth/totp', { body: { current_auth_key: await authKeyFor(password) } });
+}
+
+export const listPasskeys = () => api('GET', '/api/passkeys');
+
+export async function removePasskey(id, password) {
+  await api('DELETE', `/api/passkeys/${encodeURIComponent(id)}`, { body: { current_auth_key: await authKeyFor(password) } });
+}
+
+/**
+ * Make a passkey and register it. The browser prompt comes first, while the
+ * click still counts as one; the password is checked after.
+ */
+export async function addPasskey(name, password) {
+  const o = await api('POST', '/api/passkeys/options');
+  const prfSalt = tc.passkey_prf_salt();
+  const c = await createPasskey({
+    challenge: unb64(o.challenge),
+    userHandle: unb64(o.user_handle),
+    exclude: o.exclude_credentials.map(unb64),
+    username: session.me.username,
+    prfSalt,
+  });
+  let prf = c.prf;
+  if (!prf && c.prfEnabled) {
+    // Most authenticators only give the PRF output when signing in.
+    try {
+      prf = (await usePasskey({ challenge: tc.random_key(), allow: [c.id], prfSalt })).prf;
+    } catch {
+      prf = null; // then it's a second step only
+    }
+  }
+  const body = {
+    registration_id: o.registration_id,
+    name,
+    current_auth_key: await authKeyFor(password),
+    client_data_json: b64(c.clientDataJSON),
+    attestation_object: b64(c.attestationObject),
+  };
+  if (prf) {
+    body.enc_master_key = b64(tc.wrap_master_key_passkey(prf, mk, c.id));
+    prf.fill(0);
+  }
+  return api('POST', '/api/passkeys', { body });
 }
 
 export async function changePassword(current, next) {

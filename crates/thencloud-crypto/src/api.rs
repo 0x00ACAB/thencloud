@@ -149,12 +149,138 @@ pub struct Me {
     /// When a recovery key was set up, if there is one.
     #[serde(default)]
     pub recovery_created_at: Option<i64>,
+    /// When an authenticator app (TOTP) was set up, if there is one.
+    #[serde(default)]
+    pub totp_created_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionResponse {
     pub token: String,
     pub me: Me,
+}
+
+/// What signing in with a password returns: a session, or, when the account
+/// has two-factor sign-in, a ticket to finish it with a second factor.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum LoginResponse {
+    Session(SessionResponse),
+    SecondFactor {
+        second_factor: SecondFactorChallenge,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecondFactorChallenge {
+    /// Pass back with the second factor. Valid for a few minutes.
+    pub ticket: String,
+    /// An authenticator app code is accepted.
+    pub totp: bool,
+    /// Set when the account has passkeys.
+    #[serde(default)]
+    pub passkey: Option<PasskeyRequest>,
+}
+
+/// What `navigator.credentials.get` needs.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PasskeyRequest {
+    pub challenge: B64,
+    /// The account's credentials (empty for a sign-in with a passkey alone).
+    #[serde(default)]
+    pub allow_credentials: Vec<B64>,
+}
+
+/// A WebAuthn assertion, as the browser returns it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PasskeyAssertion {
+    pub credential_id: B64,
+    pub client_data_json: B64,
+    pub authenticator_data: B64,
+    pub signature: B64,
+    #[serde(default)]
+    pub user_handle: Option<B64>,
+}
+
+/// Finish a password sign-in with a TOTP code or a passkey.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SecondFactorRequest {
+    pub ticket: String,
+    #[serde(default)]
+    pub totp_code: Option<String>,
+    #[serde(default)]
+    pub passkey: Option<PasskeyAssertion>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CurrentPassword {
+    pub current_auth_key: B64,
+}
+
+/// A new TOTP secret, waiting to be confirmed with a code from the app.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TotpSetup {
+    pub setup_id: String,
+    /// Base32, as authenticator apps take it.
+    pub secret: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnableTotpRequest {
+    pub setup_id: String,
+    pub code: String,
+}
+
+/// What `navigator.credentials.create` needs to make a passkey.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PasskeyCreationOptions {
+    pub registration_id: String,
+    pub challenge: B64,
+    pub user_handle: B64,
+    pub exclude_credentials: Vec<B64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegisterPasskeyRequest {
+    pub registration_id: String,
+    pub name: String,
+    pub current_auth_key: B64,
+    pub client_data_json: B64,
+    pub attestation_object: B64,
+    /// The master key wrapped under a key from the passkey's PRF output (see
+    /// `wrap_master_key_passkey`), when the authenticator supports PRF.
+    #[serde(default)]
+    pub enc_master_key: Option<B64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Passkey {
+    pub id: String,
+    pub name: String,
+    pub credential_id: B64,
+    /// It can unlock the account on its own (PRF), not just confirm a sign-in.
+    pub unlock: bool,
+    pub created_at: i64,
+    pub last_used_at: Option<i64>,
+}
+
+/// Sign in with a passkey alone. The challenge comes from
+/// `/api/auth/passkey/options`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PasskeyLoginRequest {
+    pub challenge: B64,
+    pub assertion: PasskeyAssertion,
+    #[serde(default)]
+    pub device_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PasskeyLoginResponse {
+    pub token: String,
+    pub me: Me,
+    pub credential_id: B64,
+    /// Unwrapped with the key from the passkey's PRF output.
+    pub enc_master_key: B64,
 }
 
 /// A signed-in device, as listed in Settings. No IP addresses are kept.

@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
-  import { login, register, authOptions, recoverAccount } from '../lib/cloud.svelte.js';
+  import { login, loginWithPasskey, register, authOptions, recoverAccount } from '../lib/cloud.svelte.js';
+  import { passkeysSupported, cancelled } from '../lib/passkeys.js';
   import { errorMessage } from '../lib/ui.svelte.js';
   import Icon from './Icon.svelte';
 
@@ -13,6 +14,10 @@
   let showPassword = $state(false);
   let busy = $state(false);
   let error = $state('');
+  // A password sign-in waiting for its second step (see `login`).
+  let pending = $state(null);
+  let code = $state('');
+  const canPasskey = passkeysSupported();
   // Set by cloud.svelte.js when a session ends from elsewhere.
   let endedElsewhere = $state(false);
   try {
@@ -52,34 +57,57 @@
 
   function switchMode(m) {
     mode = m;
+    pending = null;
+    code = '';
     error = '';
     password = '';
     confirm = '';
   }
 
-  async function submit(e) {
-    e.preventDefault();
+  function explain(err, overrides) {
+    if (err?.code === 'sign_in_expired') pending = null;
+    if (cancelled(err)) return '';
+    return (
+      {
+        invalid_credentials: recover ? "That recovery key doesn't match this account." : 'Wrong username or password.',
+        invalid_second_factor: "That didn't work. Codes change every 30 seconds; try the newest one.",
+        sign_in_expired: 'That took too long. Sign in again.',
+        account_disabled: 'This account has been disabled. Ask the person who runs this server.',
+        invalid_invite: 'This invite link has already been used or has expired. Ask for a new one.',
+        registration_closed: 'New accounts are not being accepted on this server right now.',
+        ...overrides,
+      }[err?.code] ?? errorMessage(err)
+    );
+  }
+
+  async function run(task, overrides = {}) {
     error = '';
+    busy = true;
+    try {
+      await task();
+    } catch (err) {
+      error = explain(err, overrides);
+    } finally {
+      busy = false;
+    }
+  }
+
+  function submit(e) {
+    e.preventDefault();
     if (choosing && password !== confirm) {
       error = "The passwords don't match.";
       return;
     }
-    busy = true;
-    try {
+    run(async () => {
       if (signup) await register(username, password, invite, remember);
       else if (recover) await recoverAccount(username.trim(), recoveryKey, password, remember);
-      else await login(username, password, remember);
-    } catch (err) {
-      error =
-        {
-          invalid_credentials: recover ? "That recovery key doesn't match this account." : 'Wrong username or password.',
-          account_disabled: 'This account has been disabled. Ask the person who runs this server.',
-          invalid_invite: 'This invite link has already been used or has expired. Ask for a new one.',
-          registration_closed: 'New accounts are not being accepted on this server right now.',
-        }[err?.code] ?? errorMessage(err);
-    } finally {
-      busy = false;
-    }
+      else pending = await login(username, password, remember);
+    });
+  }
+
+  function submitCode(e) {
+    e.preventDefault();
+    run(() => pending.withCode(code));
   }
 </script>
 
@@ -87,6 +115,50 @@
   <img src="/img/logo.webp" alt="thencloud" width="715" height="349" class="h-auto w-56 select-none" draggable="false" />
 
   <div class="mt-8 w-full max-w-sm">
+    {#if pending}
+      <div class="grid gap-1">
+        <button type="button" class="flex w-fit cursor-pointer items-center gap-1 text-[13px] text-fg-muted hover:text-fg" onclick={() => switchMode('signin')}>
+          <Icon name="arrow-left" class="size-3.5" /> Back
+        </button>
+        <h1 class="mt-2 text-base font-semibold tracking-tight">Confirm it's you</h1>
+        <p class="text-[13px] text-fg-muted">
+          Your password was right. This account also asks for {pending.totp && pending.passkey ? 'a passkey or a code from your authenticator app' : pending.passkey ? 'a passkey' : 'a code from your authenticator app'}.
+        </p>
+      </div>
+      <div class="mt-6 grid gap-4">
+        {#if pending.passkey}
+          <button type="button" class="btn {pending.totp ? 'btn-secondary' : 'btn-primary'} btn-lg w-full" disabled={busy} onclick={() => run(pending.withPasskey)}>
+            <Icon name="fingerprint" />Use a passkey
+          </button>
+        {/if}
+        {#if pending.totp}
+          <form class="grid gap-4" onsubmit={submitCode}>
+            <div class="field">
+              <label class="label" for="totp-code">Code from your authenticator app</label>
+              <!-- svelte-ignore a11y_autofocus -->
+              <input
+                id="totp-code"
+                class="input font-mono tracking-widest"
+                bind:value={code}
+                inputmode="numeric"
+                autocomplete="one-time-code"
+                pattern="[0-9 ]*"
+                maxlength="7"
+                placeholder="123456"
+                autofocus
+                required />
+            </div>
+            <button class="btn btn-primary btn-lg w-full" disabled={busy || code.replace(/\s/g, '').length !== 6}>
+              {#if busy}<Icon name="loader-circle" class="spinner" />Unlocking your files{:else}Continue{/if}
+            </button>
+          </form>
+        {/if}
+        {#if error}
+          <p class="flex items-center gap-2 text-[13px] text-danger" role="alert"><Icon name="circle-alert" />{error}</p>
+        {/if}
+        <p class="text-xs leading-5 text-fg-muted">Lost them? A recovery key still resets your password without the second step.</p>
+      </div>
+    {:else}
     {#if recover}
       <div class="grid gap-1">
         <button type="button" class="flex w-fit cursor-pointer items-center gap-1 text-[13px] text-fg-muted hover:text-fg" onclick={() => switchMode('signin')}>
@@ -209,7 +281,13 @@
           {signup ? 'Create account' : recover ? 'Set new password' : 'Sign in'}
         {/if}
       </button>
+      {#if mode === 'signin' && canPasskey}
+        <button type="button" class="btn btn-secondary btn-lg -mt-1 w-full" disabled={busy} onclick={() => run(() => loginWithPasskey(remember), { invalid_credentials: "That passkey isn't set up on this account." })}>
+          <Icon name="fingerprint" />Sign in with a passkey
+        </button>
+      {/if}
     </form>
+    {/if}
 
     <p class="mt-8 flex items-start gap-2 text-[13px] leading-5 text-fg-muted">
       <Icon name="shield-check" class="mt-0.5 size-4 shrink-0" />

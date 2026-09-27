@@ -1,6 +1,9 @@
 <script>
   import { onMount } from 'svelte';
-  import { session, changePassword, listSessions, revokeSession, revokeOtherSessions, removeRecoveryKey, listAppPasswords, deleteAppPassword, avatar, loadMyAvatar, setAvatar, removeAvatar, listContacts, forgetContact, forgetThisBrowser } from '../../lib/cloud.svelte.js';
+  import { session, changePassword, listSessions, revokeSession, revokeOtherSessions, removeRecoveryKey, listAppPasswords, deleteAppPassword, avatar, loadMyAvatar, setAvatar, removeAvatar, listContacts, forgetContact, forgetThisBrowser, listPasskeys, removePasskey, disableTotp } from '../../lib/cloud.svelte.js';
+  import { passkeysSupported } from '../../lib/passkeys.js';
+  import TotpDialog from '../dialogs/TotpDialog.svelte';
+  import PasskeyDialog from '../dialogs/PasskeyDialog.svelte';
   import RecoveryKeyDialog from '../dialogs/RecoveryKeyDialog.svelte';
   import ConfirmDialog from '../dialogs/ConfirmDialog.svelte';
   import AppPasswordDialog from '../dialogs/AppPasswordDialog.svelte';
@@ -91,6 +94,19 @@
 
   let recoveryDialog = $state(null); // 'create' | 'remove'
   let removePassword = $state('');
+
+  // Two-step sign-in.
+  let passkeys = $state(null);
+  let twoStepDialog = $state(null); // 'totp' | 'totp-off' | 'passkey' | { passkey }
+  let twoStepPassword = $state('');
+  const twoStepOn = $derived(!!session.me.totp_created_at || !!passkeys?.length);
+  onMount(() => {
+    listPasskeys()
+      .then((p) => (passkeys = p))
+      .catch(() => (passkeys = []));
+  });
+  const openTwoStep = (d) => ((twoStepPassword = ''), (twoStepDialog = d));
+  const wrongPassword = (e) => (e?.code === 'invalid_credentials' ? new Error('That password is wrong.') : e);
 
   // Signed-in devices.
   let devices = $state(null);
@@ -295,6 +311,67 @@
     'A printable key that lets you set a new password if you forget yours, without losing your files. Keep it somewhere safe, away from this device.',
     recoveryBody,
     recoveryFooter,
+  )}
+
+  {#snippet twoStepBody()}
+    <div class="grid gap-4">
+      <div class="flex flex-wrap items-center gap-3">
+        <Icon name="smartphone" class="size-4 shrink-0 text-fg-muted" />
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-medium">Authenticator app</p>
+          <p class="text-xs text-fg-muted">
+            {#if session.me.totp_created_at}On since <Time ms={session.me.totp_created_at * 1000} />{:else}Six-digit codes from an app on your phone{/if}
+          </p>
+        </div>
+        {#if session.me.totp_created_at}
+          <button type="button" class="btn btn-secondary h-7 px-2.5 text-[13px]" onclick={() => openTwoStep('totp-off')}>Turn off</button>
+        {:else}
+          <button type="button" class="btn btn-secondary h-7 px-2.5 text-[13px]" onclick={() => openTwoStep('totp')}>Set up</button>
+        {/if}
+      </div>
+      {#if passkeys === null}
+        <div class="skeleton h-12 w-full" aria-hidden="true"></div>
+      {:else if passkeys.length}
+        <ul class="divide-y divide-line rounded-md border border-line">
+          {#each passkeys as p (p.id)}
+            <li class="flex items-center gap-3 px-3 py-2.5" out:slide>
+              <Icon name="fingerprint" class="size-4 shrink-0 text-fg-muted" />
+              <div class="min-w-0 flex-1">
+                <p class="flex items-center gap-2 text-sm">
+                  <span class="truncate font-medium">{p.name}</span>
+                  <span class="badge" title={p.unlock ? 'Signs you in without your password' : 'Its authenticator has no PRF support, so it only confirms a password sign-in'}>
+                    {p.unlock ? 'Signs in on its own' : 'Second step only'}
+                  </span>
+                </p>
+                <p class="truncate text-xs text-fg-muted">
+                  Added <span title={fullDate(p.created_at * 1000)}>{formatDate(p.created_at * 1000)}</span>
+                  · {#if p.last_used_at}last used <span title={fullDate(p.last_used_at * 1000)}>{formatWhen(p.last_used_at * 1000)}</span>{:else}never used{/if}
+                </p>
+              </div>
+              <button type="button" class="btn btn-secondary h-7 px-2.5 text-[13px]" onclick={() => openTwoStep({ passkey: p })}>Remove</button>
+            </li>
+          {/each}
+        </ul>
+      {/if}
+      {#if twoStepOn && !session.me.recovery_created_at}
+        <p class="flex items-start gap-2 text-[13px] text-fg-muted">
+          <Icon name="circle-alert" class="mt-0.5 size-4 shrink-0" />
+          Create a recovery key too. If you lose your phone and passkeys, it's the only way back in.
+        </p>
+      {/if}
+    </div>
+  {/snippet}
+  {#snippet twoStepFooter()}
+    <p class="mr-auto hidden text-xs text-fg-muted sm:block">App passwords and your recovery key skip this step.</p>
+    {#if passkeysSupported()}
+      <button type="button" class="btn btn-secondary" onclick={() => openTwoStep('passkey')}><Icon name="plus" />Add a passkey</button>
+    {/if}
+  {/snippet}
+  {@render section(
+    'Two-step sign-in',
+    'With an authenticator app or a passkey set up, signing in with your password also asks for one of them, so a leaked password alone isn\'t enough.',
+    twoStepBody,
+    twoStepFooter,
   )}
 
   {#snippet devicesBody()}
@@ -528,6 +605,44 @@
       toast('App password revoked');
     }}
     onclose={() => (revokingApp = null)} />
+{/if}
+
+{#if twoStepDialog === 'totp'}
+  <TotpDialog onclose={() => (twoStepDialog = null)} ondone={() => toast('Authenticator app turned on', { kind: 'success' })} />
+{:else if twoStepDialog === 'passkey'}
+  <PasskeyDialog
+    onclose={() => (twoStepDialog = null)}
+    onadded={(p) => {
+      passkeys = [...(passkeys ?? []), p];
+      toast(p.unlock ? 'Passkey added. It can sign you in on its own.' : 'Passkey added as a second step.', { kind: 'success' });
+    }} />
+{:else if twoStepDialog}
+  {@const passkey = twoStepDialog.passkey}
+  <ConfirmDialog
+    title={passkey ? `Remove ${passkey.name}?` : 'Turn off the authenticator app?'}
+    description={passkey ? 'It stops working for this account straight away.' : 'Signing in will no longer ask for its codes.'}
+    confirmLabel={passkey ? 'Remove' : 'Turn off'}
+    danger
+    disabled={!twoStepPassword}
+    onconfirm={async () => {
+      try {
+        if (passkey) {
+          await removePasskey(passkey.id, twoStepPassword);
+          passkeys = passkeys.filter((x) => x.id !== passkey.id);
+        } else {
+          await disableTotp(twoStepPassword);
+        }
+      } catch (e) {
+        throw wrongPassword(e);
+      }
+      toast(passkey ? 'Passkey removed' : 'Authenticator app turned off');
+    }}
+    onclose={() => (twoStepDialog = null)}>
+    <div class="field">
+      <label class="label" for="two-step-password">Your password</label>
+      <input id="two-step-password" class="input" type="password" bind:value={twoStepPassword} autocomplete="current-password" />
+    </div>
+  </ConfirmDialog>
 {/if}
 
 {#if recoveryDialog === 'create'}
