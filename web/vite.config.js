@@ -1,19 +1,26 @@
-import { defineConfig } from 'vite';
+import { defineConfig, minifySync } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import tailwindcss from '@tailwindcss/vite';
 import { readdirSync, readFileSync, writeFileSync, statSync } from 'node:fs';
-import { gzipSync } from 'node:zlib';
+import zlib from 'node:zlib';
+import { promisify } from 'node:util';
+import { optimize } from 'svgo';
 import { join } from 'node:path';
-import fileIcons from './scripts/file-icons-plugin.mjs';
+import fileIcons, { SVGO } from './scripts/file-icons-plugin.mjs';
+
+const gzip = promisify(zlib.gzip);
+const brotli = promisify(zlib.brotliCompress);
 
 // pdf.js loads fonts, CMaps and image decoders at runtime from these folders.
 // They are copied to /pdfjs/ so the CSP's same-origin rule covers them.
-// quickjs is only for running JavaScript inside PDFs, which we never do.
+// quickjs is only for running JavaScript inside PDFs, which we never do, and
+// the _nowasm_fallback decoders only for browsers without WebAssembly, which
+// can't run our crypto anyway.
 const PDFJS = 'node_modules/pdfjs-dist';
 const pdfjsAssets = () =>
   ['cmaps', 'standard_fonts', 'wasm', 'iccs'].flatMap((dir) =>
     readdirSync(join(PDFJS, dir))
-      .filter((f) => !f.startsWith('quickjs'))
+      .filter((f) => !f.startsWith('quickjs') && !f.includes('_nowasm_fallback'))
       .map((f) => `${dir}/${f}`),
   );
 
@@ -26,18 +33,40 @@ export default defineConfig({
     svelte(),
     fileIcons(),
     {
-      // Write foo.js.gz next to every compressible file; the server sends
-      // those to browsers that accept gzip (ffmpeg's 32 MB core becomes 10).
-      name: 'thencloud-precompress',
+      // Files in public/ are copied as they are: minify the scripts and the
+      // favicon. Then write foo.js.gz and foo.js.br next to every
+      // compressible file; the server sends the smallest one the browser
+      // accepts (ffmpeg's 32 MB core becomes 10 gzipped, 8 with brotli).
+      name: 'thencloud-optimise',
       apply: 'build',
-      closeBundle() {
+      async closeBundle() {
+        for (const f of ['sw.js', 'theme-init.js']) {
+          const path = join('dist', f);
+          writeFileSync(path, minifySync(f, readFileSync(path, 'utf8'), { module: false }).code);
+        }
+        writeFileSync('dist/favicon.svg', optimize(readFileSync('dist/favicon.svg', 'utf8'), SVGO).data);
+
         const walk = (dir) =>
           readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]));
-        for (const f of walk('dist')) {
-          if (!/\.(js|mjs|css|html|wasm|svg|json|bcmap|ttf|pfb|icc)$/.test(f) || statSync(f).size < 1024) continue;
-          const gz = gzipSync(readFileSync(f), { level: 9 });
-          if (gz.length < statSync(f).size * 0.9) writeFileSync(`${f}.gz`, gz);
-        }
+        const files = walk('dist').filter((f) => /\.(js|mjs|css|html|wasm|svg|json|bcmap|ttf|pfb|icc)$/.test(f) && statSync(f).size >= 1024);
+        await Promise.all(
+          files.map(async (f) => {
+            const raw = readFileSync(f);
+            const keep = (ext, out) => out.length < raw.length * 0.9 && writeFileSync(`${f}.${ext}`, out);
+            keep('gz', await gzip(raw, { level: 9 }));
+            keep(
+              'br',
+              await brotli(raw, {
+                params: {
+                  [zlib.constants.BROTLI_PARAM_SIZE_HINT]: raw.length,
+                  // Level 11 on the 32 MB ffmpeg core takes minutes.
+                  [zlib.constants.BROTLI_PARAM_QUALITY]: raw.length > 4 << 20 ? 9 : 11,
+                  [zlib.constants.BROTLI_PARAM_LGWIN]: 24,
+                },
+              }),
+            );
+          }),
+        );
       },
     },
     {

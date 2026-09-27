@@ -1156,7 +1156,7 @@ async fn security_headers_are_set() {
             .unwrap()
             .contains("immutable")
     );
-    // Precompressed copies are used when the browser accepts gzip.
+    // Precompressed copies are used when the browser accepts them.
     std::fs::write(
         web.join("assets/app-abc123.css.gz"),
         b"\x1f\x8bnot-really-gzip",
@@ -1174,6 +1174,21 @@ async fn security_headers_are_set() {
         .await;
     assert_eq!(gz.headers.get("content-encoding").unwrap(), "gzip");
     assert_eq!(&gz.body[..2], b"\x1f\x8b");
+    // Brotli wins when both are there and accepted.
+    std::fs::write(web.join("assets/app-abc123.css.br"), b"not-really-brotli").unwrap();
+    let br = h
+        .raw(
+            Method::GET,
+            "/assets/app-abc123.css",
+            None,
+            &[("accept-encoding", "gzip, br")],
+            Body::empty(),
+            None,
+        )
+        .await;
+    assert_eq!(br.headers.get("content-encoding").unwrap(), "br");
+    assert_eq!(br.headers.get("vary").unwrap(), "accept-encoding");
+    assert_eq!(&br.body[..], b"not-really-brotli");
     let missing = get("/assets/app-gone.css").await;
     assert_eq!(missing.status, StatusCode::NOT_FOUND);
     assert_eq!(missing.headers.get("cache-control").unwrap(), "no-cache");

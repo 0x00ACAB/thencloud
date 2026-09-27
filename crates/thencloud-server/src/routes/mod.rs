@@ -157,13 +157,15 @@ pub fn router(state: AppState) -> Router {
     let web = state.config.web_dir.clone();
     Router::new()
         .nest("/api", api)
-        // The web build writes .gz copies of static files; send those when
-        // the browser accepts gzip.
+        // The web build writes .br and .gz copies of static files; send one
+        // of those when the browser accepts it.
         .route_service(
             "/s/{token}",
-            ServeFile::new(web.join("share.html")).precompressed_gzip(),
+            ServeFile::new(web.join("share.html"))
+                .precompressed_br()
+                .precompressed_gzip(),
         )
-        .fallback_service(ServeDir::new(web).precompressed_gzip())
+        .fallback_service(ServeDir::new(web).precompressed_br().precompressed_gzip())
         .layer(SetResponseHeaderLayer::if_not_present(
             header::CONTENT_SECURITY_POLICY,
             HeaderValue::from_static(CSP),
@@ -204,5 +206,11 @@ async fn cache_control(req: Request, next: Next) -> Response {
     res.headers_mut()
         .entry(header::CACHE_CONTROL)
         .or_insert(HeaderValue::from_static(value));
+    // Static files may be sent brotli- or gzip-compressed.
+    if !path.starts_with("/api/") {
+        res.headers_mut()
+            .entry(header::VARY)
+            .or_insert(HeaderValue::from_static("accept-encoding"));
+    }
     res
 }

@@ -33,7 +33,7 @@
   <section
     in:fly={{ y: 16 }}
     out:fly={{ y: 16, duration: 140 }}
-    class="fixed right-4 bottom-[calc(var(--bottom-bar)+5rem)] z-40 md:bottom-4 w-[calc(100%-2rem)] max-w-sm overflow-hidden rounded-lg border border-line bg-bg shadow-lg shadow-black/5 dark:shadow-black/40">
+    class="fixed right-4 bottom-[calc(var(--bottom-bar)+5rem)] z-40 md:bottom-[calc(var(--bottom-bar)+1rem)] w-[calc(100%-2rem)] max-w-sm overflow-hidden rounded-lg border border-line bg-bg shadow-lg shadow-black/5 dark:shadow-black/40">
     <header class="flex h-10 items-center gap-2 border-b border-line bg-subtle pr-1.5 pl-3.5">
       {#if active}<Icon name="loader-circle" class="spinner text-fg-muted" />{/if}
       <h2 class="flex-1 truncate text-[13px] font-medium">{heading}</h2>

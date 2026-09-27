@@ -13,12 +13,15 @@
   import SettingsView from './views/SettingsView.svelte';
   import TrashView from './views/TrashView.svelte';
   import AdminView from './views/AdminView.svelte';
+  import MusicView from './views/MusicView.svelte';
+  import PlayerBar from './PlayerBar.svelte';
 
   const rootId = session.me.keys.root_node_id;
   loadMyAvatar().catch(() => {});
 
   // Phones get a bottom tab bar; fixed things (toasts, the transfer tray,
-  // the selection bar, the + button) sit above it using --bottom-bar.
+  // the selection bar, the + button) sit above it, and the music player,
+  // using --bottom-bar.
   $effect(() => {
     document.documentElement.classList.add('has-bottom-bar');
     return () => document.documentElement.classList.remove('has-bottom-bar');
@@ -46,6 +49,7 @@
     { name: 'shared-with-me', label: 'Shared with me', short: 'Shared', icon: 'inbox', to: () => ({ name: 'shared-with-me' }) },
     { name: 'shared-by-me', label: 'Shared by me', icon: 'users', to: () => ({ name: 'shared-by-me' }) },
     { name: 'links', label: 'Public links', icon: 'link', to: () => ({ name: 'links' }) },
+    { name: 'music', label: 'Music', icon: 'music', to: () => ({ name: 'music' }) },
     { name: 'trash', label: 'Trash', icon: 'trash-2', to: () => ({ name: 'trash' }) },
     { name: 'settings', label: 'Settings', icon: 'settings', to: () => ({ name: 'settings' }) },
     ...(session.me.is_admin ? [{ name: 'admin', label: 'Admin', icon: 'shield-check', to: () => ({ name: 'admin' }) }] : []),
@@ -111,7 +115,7 @@
   </header>
 
   <div class="flex flex-1">
-    <aside class="sticky top-14 hidden h-[calc(100dvh-3.5rem)] w-60 shrink-0 flex-col border-r border-line px-3 py-4 md:flex">
+    <aside class="sticky top-14 hidden h-[calc(100dvh-3.5rem-var(--player-bar))] w-60 shrink-0 flex-col border-r border-line px-3 py-4 md:flex">
       <nav class="grid gap-0.5" aria-label="Sections">
         {#each nav as item (item.name)}
           <button type="button" class="nav-item" aria-current={current === item.name ? 'page' : undefined} onclick={() => go(item.to())}>
@@ -132,7 +136,7 @@
       </div>
     </aside>
 
-    <main class="min-w-0 flex-1 px-4 pt-6 pb-[calc(var(--bottom-bar)+1.5rem)] md:px-8 md:py-8">
+    <main class="min-w-0 flex-1 px-4 pt-6 pb-[calc(var(--bottom-bar)+1.5rem)] md:px-8 md:pt-8 md:pb-[calc(var(--bottom-bar)+2rem)]">
       {#key view.name}
       <div class="mx-auto max-w-5xl animate-enter">
         {#if view.name === 'files'}
@@ -143,6 +147,8 @@
           <SharedByMe {go} />
         {:else if view.name === 'links'}
           <LinksView {go} />
+        {:else if view.name === 'music'}
+          <MusicView album={view.album} {go} />
         {:else if view.name === 'trash'}
           <TrashView {go} />
         {:else if view.name === 'settings'}
@@ -180,4 +186,5 @@
   </Menu>
 </nav>
 
+<PlayerBar {go} />
 <TransferTray />

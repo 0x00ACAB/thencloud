@@ -1,16 +1,19 @@
-// Applies the saved theme and accent colour before first paint (a separate
-// file because the CSP forbids inline scripts). Only these display
+// Applies the saved theme, accent colour and tint before first paint (a
+// separate file because the CSP forbids inline scripts). Only these display
 // preferences are stored locally; never keys or tokens.
 (function () {
   var pref = 'system';
   var accent = null;
+  var tint = false;
   try {
     pref = localStorage.getItem('theme') || 'system';
     accent = localStorage.getItem('accent');
+    tint = localStorage.getItem('tint') === '1';
   } catch (e) {}
   var root = document.documentElement;
   var dark = pref === 'dark' || (pref === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);
   root.classList.toggle('dark', dark);
+  root.classList.toggle('tinted', tint);
   if (accent && /^#[0-9a-f]{6}$/i.test(accent)) {
     // Same rule as accentForeground() in src/lib/ui.svelte.js.
     var lum = function (hex) {
