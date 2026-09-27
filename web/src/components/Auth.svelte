@@ -10,6 +10,14 @@
   let showPassword = $state(false);
   let busy = $state(false);
   let error = $state('');
+  // Set by cloud.svelte.js when a session ends from elsewhere.
+  let endedElsewhere = $state(false);
+  try {
+    endedElsewhere = sessionStorage.getItem('signedOut') === '1';
+    sessionStorage.removeItem('signedOut');
+  } catch {
+    /* private mode */
+  }
 
   const signup = $derived(mode === 'signup');
 
@@ -96,6 +104,9 @@
         </div>
       {/if}
 
+      {#if endedElsewhere && !error}
+        <p class="flex items-center gap-2 text-[13px] text-fg-muted" role="status"><Icon name="log-out" />You were signed out, maybe from another device. Sign in again to continue.</p>
+      {/if}
       {#if error}
         <p class="flex items-center gap-2 text-[13px] text-danger" role="alert"><Icon name="circle-alert" />{error}</p>
       {/if}

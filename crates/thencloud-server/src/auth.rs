@@ -95,10 +95,11 @@ pub async fn create_session(
     let t = now();
     let device: String = device.unwrap_or("unknown").chars().take(100).collect();
     sqlx::query(
-        "INSERT INTO sessions (token_hash, user_id, device_name, created_at, last_seen, expires_at) \
-         VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO sessions (token_hash, id, user_id, device_name, created_at, last_seen, expires_at) \
+         VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(sha256(token.as_bytes()))
+    .bind(random_token(16))
     .bind(user_id)
     .bind(device)
     .bind(t)

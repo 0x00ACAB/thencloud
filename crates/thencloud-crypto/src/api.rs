@@ -136,6 +136,17 @@ pub struct SessionResponse {
     pub me: Me,
 }
 
+/// A signed-in device, as listed in Settings. No IP addresses are kept.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeviceSession {
+    pub id: String,
+    pub device_name: String,
+    pub created_at: i64,
+    pub last_seen: i64,
+    /// The session making this request.
+    pub current: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChangePasswordRequest {
     pub current_auth_key: B64,

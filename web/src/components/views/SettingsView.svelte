@@ -1,7 +1,9 @@
 <script>
-  import { session, changePassword } from '../../lib/cloud.svelte.js';
-  import { theme, setTheme, toast, errorMessage, copyText, accent, setAccent, ACCENT_PRESETS, DEFAULT_ACCENT, contrast, accentForeground, iconPack, setIconPack } from '../../lib/ui.svelte.js';
-  import { formatSize } from '../../lib/format.js';
+  import { onMount } from 'svelte';
+  import { session, changePassword, listSessions, revokeSession, revokeOtherSessions } from '../../lib/cloud.svelte.js';
+  import { theme, setTheme, toast, toastError, errorMessage, copyText, accent, setAccent, ACCENT_PRESETS, DEFAULT_ACCENT, contrast, accentForeground, iconPack, setIconPack } from '../../lib/ui.svelte.js';
+  import { formatSize, formatWhen, formatDate, fullDate } from '../../lib/format.js';
+  import { slide } from '../../lib/motion.js';
   import Icon from '../Icon.svelte';
   import FileIcon from '../FileIcon.svelte';
   import { ICON_PACKS } from '../../lib/file-icons.svelte.js';
@@ -30,6 +32,36 @@
       busy = false;
     }
   }
+
+  // Signed-in devices.
+  let devices = $state(null);
+  let revoking = $state(null); // session id, or 'others'
+
+  async function loadDevices() {
+    try {
+      devices = await listSessions();
+    } catch (e) {
+      toastError(e);
+      devices = [];
+    }
+  }
+  onMount(loadDevices);
+
+  async function signOut(id) {
+    revoking = id;
+    try {
+      if (id === 'others') await revokeOtherSessions();
+      else await revokeSession(id);
+      devices = devices.filter((d) => d.current || (id !== 'others' && d.id !== id));
+      toast(id === 'others' ? 'Signed out your other devices' : 'Signed out', { kind: 'success' });
+    } catch (e) {
+      toastError(e);
+    } finally {
+      revoking = null;
+    }
+  }
+
+  const deviceIcon = (name) => (/Android|iOS/.test(name) ? 'smartphone' : 'laptop');
 
   const themes = [
     ['system', 'monitor', 'System'],
@@ -117,6 +149,51 @@
     </button>
   {/snippet}
   {@render section('Password', 'Changing it signs out your other devices. There is still no way to reset it if you forget it.', passwordBody, passwordFooter)}
+
+  {#snippet devicesBody()}
+    {#if devices === null}
+      <div class="grid gap-2" aria-hidden="true">
+        {#each [0, 1] as i (i)}<div class="skeleton h-12 w-full"></div>{/each}
+      </div>
+    {:else}
+      <ul class="divide-y divide-line rounded-md border border-line">
+        {#each devices as d (d.id)}
+          <li class="flex items-center gap-3 px-3 py-2.5" out:slide>
+            <Icon name={deviceIcon(d.device_name)} class="size-4 shrink-0 text-fg-muted" />
+            <div class="min-w-0 flex-1">
+              <p class="flex items-center gap-2 text-sm">
+                <span class="truncate font-medium">{d.device_name}</span>
+                {#if d.current}<span class="badge badge-accent">This device</span>{/if}
+              </p>
+              <p class="truncate text-xs text-fg-muted">
+                Signed in <span title={fullDate(d.created_at * 1000)}>{formatDate(d.created_at * 1000)}</span>
+                {#if !d.current}· active <span title={fullDate(d.last_seen * 1000)}>{formatWhen(d.last_seen * 1000)}</span>{/if}
+              </p>
+            </div>
+            {#if !d.current}
+              <button type="button" class="btn btn-secondary h-7 px-2.5 text-[13px]" disabled={revoking !== null} onclick={() => signOut(d.id)}>
+                {#if revoking === d.id}<Icon name="loader-circle" class="spinner" />{/if}
+                Sign out
+              </button>
+            {/if}
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  {/snippet}
+  {#snippet devicesFooter()}
+    <p class="mr-auto hidden text-xs text-fg-muted sm:block">Only the device name and times are kept, not IP addresses.</p>
+    <button type="button" class="btn btn-secondary" disabled={revoking !== null || !devices || devices.length < 2} onclick={() => signOut('others')}>
+      {#if revoking === 'others'}<Icon name="loader-circle" class="spinner" />{/if}
+      Sign out other devices
+    </button>
+  {/snippet}
+  {@render section(
+    'Devices',
+    'Where you are signed in. Signing a device out ends its session, and its keys are gone from memory the next time it tries to do anything.',
+    devicesBody,
+    devicesFooter,
+  )}
 
   {#snippet themeBody()}
     <div class="grid max-w-md grid-cols-3 gap-2" role="radiogroup" aria-label="Theme">
