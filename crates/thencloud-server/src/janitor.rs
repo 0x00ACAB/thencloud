@@ -45,6 +45,10 @@ pub async fn run_once(state: &AppState) -> Result<()> {
             .bind(t)
             .execute(&state.db)
             .await?;
+    sqlx::query("DELETE FROM auth_challenges WHERE expires_at <= ?")
+        .bind(t)
+        .execute(&state.db)
+        .await?;
     let trashed = trash::purge_expired(state, state.config.trash_days).await?;
     let thinned = if state.config.version_thinning {
         versions::thin_all(state).await?

@@ -7,12 +7,13 @@ use thencloud_crypto::{KEY_LEN, KdfParams, SALT_LEN};
 use crate::AppState;
 use crate::auth::{AuthUser, ClientIp, create_session};
 use crate::error::{AppError, Result, is_unique_violation};
+use crate::routes::two_factor;
 use crate::settings;
 use crate::util::*;
 
 #[derive(sqlx::FromRow)]
 pub(crate) struct UserRow {
-    id: String,
+    pub(crate) id: String,
     username: String,
     auth_hash: String,
     kdf_salt: Vec<u8>,
@@ -28,6 +29,9 @@ pub(crate) struct UserRow {
     recovery_hash: Option<String>,
     enc_master_key_recovery: Option<Vec<u8>>,
     recovery_created_at: Option<i64>,
+    pub(crate) totp_secret: Option<Vec<u8>>,
+    totp_created_at: Option<i64>,
+    pub(crate) totp_last_step: Option<i64>,
 }
 
 impl UserRow {
@@ -51,13 +55,14 @@ impl UserRow {
             max_versions: cfg.max_versions,
             trash_days: cfg.trash_days,
             recovery_created_at: self.recovery_created_at,
+            totp_created_at: self.totp_created_at,
         })
     }
 }
 
 const USER_SELECT: &str = "SELECT id, username, auth_hash, kdf_salt, kdf_params, enc_master_key, public_key, \
      enc_private_key, root_node_id, quota_bytes, used_bytes, is_admin, disabled_at, recovery_hash, \
-     enc_master_key_recovery, recovery_created_at FROM users";
+     enc_master_key_recovery, recovery_created_at, totp_secret, totp_created_at, totp_last_step FROM users";
 
 async fn user_by_name(state: &AppState, username: &str) -> Result<Option<UserRow>> {
     let sql = format!("{USER_SELECT} WHERE username = ?");
@@ -213,7 +218,7 @@ pub async fn login(
     State(state): State<AppState>,
     ip: ClientIp,
     Json(req): Json<LoginRequest>,
-) -> Result<Json<SessionResponse>> {
+) -> Result<Json<LoginResponse>> {
     let username = req.username.trim().to_lowercase();
     let (ukey, ikey) = (
         format!("login-user:{username}"),
@@ -241,11 +246,16 @@ pub async fn login(
     if user.disabled_at.is_some() {
         return Err(AppError::AccountDisabled);
     }
+    if let Some(second_factor) =
+        two_factor::login_challenge(&state, &user, req.device_name.as_deref()).await?
+    {
+        return Ok(Json(LoginResponse::SecondFactor { second_factor }));
+    }
     let token = create_session(&state, &user.id, req.device_name.as_deref(), None).await?;
-    Ok(Json(SessionResponse {
+    Ok(Json(LoginResponse::Session(SessionResponse {
         token,
         me: user.into_me(&state.config)?,
-    }))
+    })))
 }
 
 pub async fn logout(State(state): State<AppState>, user: AuthUser) -> Result<StatusCode> {

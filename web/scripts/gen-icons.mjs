@@ -7,7 +7,7 @@ const ICONS = [
   'cloud', 'folder', 'folder-open', 'folder-plus', 'file', 'file-text', 'file-image', 'file-video',
   'file-audio', 'file-archive', 'file-code', 'upload', 'download', 'pencil', 'move', 'share-2', 'link',
   'trash-2', 'ellipsis', 'chevron-right', 'log-out', 'settings', 'users', 'user', 'lock', 'key-round',
-  'shield-check', 'copy', 'check', 'x', 'sun', 'moon', 'monitor', 'hard-drive', 'inbox', 'globe',
+  'shield-check', 'fingerprint', 'copy', 'check', 'x', 'sun', 'moon', 'monitor', 'hard-drive', 'inbox', 'globe',
   'refresh-cw', 'circle-alert', 'loader-circle', 'arrow-left', 'house', 'plus', 'file-up', 'eye', 'eye-off',
   'user-round-plus', 'door-open', 'chevron-left', 'zoom-in', 'zoom-out', 'code', 'book-open', 'wrap-text',
   'undo-2', 'redo-2', 'heading-1', 'heading-2', 'heading-3', 'bold', 'italic', 'strikethrough', 'list', 'list-ordered',

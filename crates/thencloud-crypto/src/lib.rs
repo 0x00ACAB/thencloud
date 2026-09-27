@@ -384,6 +384,47 @@ pub fn unwrap_master_key_app(kek: &Key, wrapped: &[u8], app_password_id: &str) -
 }
 
 // ---------------------------------------------------------------------------
+// Passkeys: with the WebAuthn PRF extension an authenticator returns a
+// secret it computes from its own key and an input we choose. That secret
+// never leaves the browser; HKDF turns it into a KEK that wraps a copy of
+// the master key, bound to the credential id. The server only verifies the
+// passkey's signature before handing out the wrapped copy.
+// ---------------------------------------------------------------------------
+
+/// The input passed to the PRF extension. Fixed, so a passkey can be used
+/// before we know which one it is.
+pub fn passkey_prf_salt() -> [u8; 32] {
+    Sha256::digest(b"thencloud/v1/passkey-prf").into()
+}
+
+pub fn derive_passkey_kek(prf_output: &[u8]) -> Result<Key> {
+    if prf_output.len() < KEY_LEN {
+        return Err(Error::KeyLength);
+    }
+    let hk = Hkdf::<Sha256>::new(Some(b"thencloud/v1/passkey"), prf_output);
+    let mut kek = [0u8; KEY_LEN];
+    hk.expand(b"thencloud/v1/passkey-kek", &mut kek)
+        .expect("valid length");
+    Ok(Key(kek))
+}
+
+pub fn wrap_master_key_passkey(kek: &Key, mk: &Key, credential_id: &[u8]) -> Vec<u8> {
+    seal(
+        kek,
+        mk.as_bytes(),
+        &aad("master-key-passkey", &[&b64_encode(credential_id)]),
+    )
+}
+
+pub fn unwrap_master_key_passkey(kek: &Key, wrapped: &[u8], credential_id: &[u8]) -> Result<Key> {
+    open_key(
+        kek,
+        wrapped,
+        &aad("master-key-passkey", &[&b64_encode(credential_id)]),
+    )
+}
+
+// ---------------------------------------------------------------------------
 // Private account data (e.g. verified contacts): sealed under the master key
 // and bound to the user and a label, so the server can store it but not read
 // it, change it, or swap it with another user's or another kind of data.
@@ -957,6 +998,18 @@ mod tests {
         assert!(unwrap_master_key(&rk.kek, &wrapped).is_err());
         let other = derive_recovery_keys(&Key::generate());
         assert!(unwrap_master_key_recovery(&other.kek, &wrapped).is_err());
+    }
+
+    #[test]
+    fn passkey_wrap_is_bound_to_credential() {
+        let kek = derive_passkey_kek(&[7u8; 32]).unwrap();
+        assert!(kek != derive_passkey_kek(&[8u8; 32]).unwrap());
+        assert!(derive_passkey_kek(&[7u8; 16]).is_err());
+        let mk = Key::generate();
+        let w = wrap_master_key_passkey(&kek, &mk, b"cred-a");
+        assert!(unwrap_master_key_passkey(&kek, &w, b"cred-a").unwrap() == mk);
+        assert!(unwrap_master_key_passkey(&kek, &w, b"cred-b").is_err());
+        assert!(unwrap_master_key(&kek, &w).is_err());
     }
 
     #[test]

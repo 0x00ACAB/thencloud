@@ -45,6 +45,13 @@ pub fn hmac_verify(secret: &[u8], msg: &[u8], tag: &[u8]) -> bool {
     m.verify_slice(tag).is_ok()
 }
 
+/// Check a tag cut down to its first `tag.len()` bytes.
+pub fn hmac_verify_prefix(secret: &[u8], msg: &[u8], tag: &[u8]) -> bool {
+    let mut m = Hmac::<Sha256>::new_from_slice(secret).expect("any key length");
+    m.update(msg);
+    m.verify_truncated_left(tag).is_ok()
+}
+
 /// Client-supplied ids must be canonical lowercase hyphenated UUIDs. They
 /// end up in file paths and AEAD associated data.
 pub fn check_id(id: &str, what: &str) -> Result<()> {
