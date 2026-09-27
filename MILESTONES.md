@@ -17,7 +17,7 @@
 - [x] Brute-force throttling on login, password change and link unlock
 - [x] Janitor for expired uploads, sessions and links
 - [x] Strict CSP, `Referrer-Policy: no-referrer`, and no third-party scripts
-- [x] Proof-of-concept web client with no CSS; all crypto runs in WASM
+- [x] Web client (Svelte + Tailwind): file browser, drag-and-drop uploads, transfer tray, move/rename dialogs, dark mode; all crypto runs in WASM, Argon2 in a Web Worker
 
 ## ✅ Milestone 2: Sharing
 
@@ -45,6 +45,27 @@
 - [ ] App passwords or per-device credentials for sync clients (scoped, revocable, never the account password)
 - [ ] Server stats for admins, without revealing anything encrypted: user count, storage used, blob count
 
+## UI
+
+Bigger pieces:
+- [ ] **Motion**: subtle, fast animations for dialogs, menus, row insert/remove, folder navigation and upload progress. Respect `prefers-reduced-motion`
+- [ ] **Custom accent colour**: pick from a few presets or any colour in Settings, with contrast checked for light and dark
+- [ ] **File previews**: images, video, audio, PDF and text, decrypted in the browser
+- [ ] **Syntax highlighting** in text and code previews
+- [ ] **Per-file-type icons** from an IDE-style icon pack (Rust, JS, Markdown, archives and so on), served locally like the Lucide set
+- [ ] **Multi-select** with bulk move, download and delete
+- [ ] **Folder uploads** (drag a whole folder in) and zip download of folders
+- [ ] **Search and sort** within a folder (search is client-side over decrypted names)
+- [ ] **Keyboard shortcuts** (`/` search, `n` new folder, `u` upload, arrow keys through rows) plus a `?` cheat sheet
+
+Smaller things:
+- [ ] Inline rename on the row instead of a dialog
+- [ ] Remember sort order and the transfer tray's collapsed state per device
+- [ ] Better empty states with the sticker logo
+- [ ] Full timestamps on hover everywhere dates are shown
+- [ ] Skeleton rows instead of a spinner while a folder loads
+- [ ] Mobile pass: bottom action bar, larger touch targets
+
 ## Later
 
 - [ ] **Recovery key**: an optional printable key that also wraps the master key, since today a forgotten password means lost data
@@ -56,5 +77,4 @@
 - [ ] **Native CLI and desktop sync client** reusing `thencloud-crypto`
 - [ ] **Encrypted name index**: HMAC of name under the folder key, so the server can reject duplicate names without learning them
 - [ ] **Metadata padding**: pad sizes and chunk counts to hide exact file sizes
-- [ ] **A real web UI**
 - [ ] **Calendar and contacts**, end-to-end encrypted

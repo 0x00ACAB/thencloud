@@ -18,7 +18,9 @@ thencloud is an open-source, end-to-end encrypted alternative to Nextcloud. Read
 ## Commands
 
 ```sh
-./build.sh                  # WASM (web/pkg) + server; puts ~/.cargo/bin first because the Gentoo rustc lacks the wasm target
+./build.sh                  # WASM (web/src/wasm) + web client (web/dist) + server; puts ~/.cargo/bin first because the Gentoo rustc lacks the wasm target
+cd web && npm run dev       # Vite dev server with hot reload; proxies /api to a server on 127.0.0.1:8080
+cd web && npm run check     # svelte-check; keep at zero warnings
 cargo test --workspace      # crypto unit tests + in-process end-to-end server tests
 cargo clippy --workspace --all-targets   # keep at zero warnings
 cargo fmt --all
@@ -31,19 +33,24 @@ cargo run -p thencloud-server -- --bind 127.0.0.1:8080 --data-dir ./data
 - `crates/thencloud-wasm`: thin `wasm-bindgen` wrappers. JS does networking only, never crypto.
 - `crates/thencloud-server`: axum + SQLite (sqlx, migrations in `migrations/`) and a local blob store.
   - `access.rs` is the single place authorisation is decided (owner, or a share on any ancestor). Every route goes through it.
-- `web/`: the browser client. `common.js` has shared helpers, `app.js` is the logged-in app, `share.js` is the public-link viewer.
+- `web/`: the browser client, Svelte 5 + Vite + Tailwind CSS v4. The server serves the build output in `web/dist`.
+  - `src/lib/`: `cloud.svelte.js` holds the session and every server operation (the only place keys are handled), `crypto.js` wraps the WASM module, `kdf.worker.js` runs Argon2 off the main thread, `ui.svelte.js` holds toasts, transfers and the theme.
+  - `src/components/`: `Shell.svelte` (logged-in layout), `views/` (one per sidebar section), `dialogs/`, plus shared `Modal`, `Menu`, `Icon`.
+  - `src/SharePage.svelte`: the public-link viewer (`share.html`).
+  - `src/lib/icons.js` is generated from Lucide by `npm run icons`; add names to `scripts/gen-icons.mjs`.
+  - Fonts (Geist, OFL) and the logo live in `web/public/`.
 - `assets/`: branding. The logo mark is `thencloud-logo-mark.png`; `branding.txt` has the name, the katakana ゼンクラウド and the accent colour `#3B47F9`.
 
 ## Web UI direction
 
-The current `web/` client is a deliberately unstyled proof of concept. The next step is a real UI, and there's an important constraint on how it should feel.
+The web client follows this direction; keep it that way when changing it.
 
 **People have recently taken a strong dislike to AI-generated software.** thencloud is built with AI assistance and we are open about that: commits carry a `Co-Authored-By` trailer, and we don't hide or deny it. But the product itself must not *look* AI-generated. The UI should feel like a small team of people with taste designed it by hand.
 
-**Stack:** Tailwind CSS, compiled at build time with the standalone Tailwind CLI (or npm), into a static CSS file served from `web/`.
-- Do **not** use the Tailwind Play CDN script. The server's CSP (`routes/mod.rs`) forbids third-party scripts, and it's also what keeps the `#key` fragment safe from outside code.
-- When adding the stylesheet, change `style-src 'none'` to `style-src 'self'` in the CSP. Don't loosen anything else.
-- Self-host fonts too; no Google Fonts or other CDNs.
+**Stack:** Svelte 5 (runes) + Vite + Tailwind CSS v4, all compiled at build time into static files in `web/dist`.
+- Never load anything from a CDN (no Tailwind Play script, no Google Fonts). The server's CSP (`routes/mod.rs`) allows only same-origin scripts and stylesheets, and that is also what keeps the `#key` fragment safe from outside code. Don't loosen it.
+- No inline `<script>` or `style="..."` attributes in markup: the CSP blocks them. Svelte's `style:prop={...}` directive is fine (it sets styles through the CSSOM).
+- Colours come from the semantic tokens in `web/src/app.css` (`bg`, `fg`, `line`, `accent`...), which switch for dark mode. Don't use raw palette colours in components.
 
 **Look:** in the spirit of vercel.com / the Vercel dashboard, Linear and similar developer tools:
 - A neutral black/white/zinc palette with a proper dark mode. The brand accent `#3B47F9` is used sparingly: primary buttons, focus rings, links and the selected state.
@@ -57,6 +64,7 @@ The current `web/` client is a deliberately unstyled proof of concept. The next 
 - Oversized hero sections with vague marketing copy ("Unleash the power of…").
 - Everything centred in cards, and uniform `rounded-2xl shadow-xl` on every element.
 - Generic stock-illustration vibes and filler text.
+- Unicode characters not often used in websites, `—`, `…`, `½`, `⅓`, etc. A middle dot (`·`) is fine.
 
 **Copy:** short, specific and human. Say what's encrypted and what the server can see in plain words, not buzzwords.
 

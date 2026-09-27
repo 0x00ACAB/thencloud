@@ -4,13 +4,14 @@ An open-source, **end-to-end encrypted** alternative to Nextcloud.
 
 Files, folder names and keys are encrypted and decrypted **in your browser**. The server stores ciphertext and wrapped keys. It never receives your password, your keys, your file names or your file contents.
 
-> **Status:** early. The backend is a complete file cloud: accounts, folders, chunked uploads, quotas, sharing and public links. The web client is a deliberately unstyled proof of concept. See [MILESTONES.md](MILESTONES.md).
+> **Status:** early. The backend is a complete file cloud: accounts, folders, chunked uploads, quotas, sharing and public links, with a web client for all of it. See [MILESTONES.md](MILESTONES.md).
 
 ## Quick start
 
 Requirements:
 - A [rustup](https://rustup.rs) toolchain with the `wasm32-unknown-unknown` target. `build.sh` adds the target if it's missing.
 - `wasm-pack`, installed with `cargo install wasm-pack`.
+- Node.js with npm, for building the web client.
 
 ```sh
 ./build.sh --release
@@ -28,7 +29,7 @@ Every flag can also be set as an environment variable.
 |---|---|---|
 | `--bind` | `THENCLOUD_BIND` | `127.0.0.1:8080` |
 | `--data-dir` | `THENCLOUD_DATA_DIR` | `./data` (SQLite DB + encrypted blobs) |
-| `--web-dir` | `THENCLOUD_WEB_DIR` | `./web` |
+| `--web-dir` | `THENCLOUD_WEB_DIR` | `./web/dist` (the built web client) |
 | `--allow-registration` | `THENCLOUD_ALLOW_REGISTRATION` | `true` (the first user can always register) |
 | `--default-quota` | `THENCLOUD_DEFAULT_QUOTA` | 10 GiB |
 | `--session-days` | `THENCLOUD_SESSION_DAYS` | `30` |
@@ -42,7 +43,7 @@ Every flag can also be set as an environment variable.
 crates/thencloud-crypto   All cryptography + shared JSON wire types (native & WASM)
 crates/thencloud-wasm     wasm-bindgen bindings used by the web client
 crates/thencloud-server   axum + SQLite server, local blob store
-web/                      proof-of-concept client (plain HTML + JS, no CSS)
+web/                      browser client: Svelte 5 + Vite + Tailwind CSS
 ```
 
 ## How the encryption works
@@ -101,10 +102,16 @@ As a result, a malicious server cannot swap files, move ciphertexts between node
 ## Development
 
 ```sh
-cargo test --workspace   # crypto unit tests + end-to-end server tests
+cargo test --workspace          # crypto unit tests + end-to-end server tests
+cd web && npm run dev           # hot-reloading client; proxies /api to a server on :8080
+cd web && npm run check         # svelte-check
 ```
 
 `crates/thencloud-server/tests/e2e.rs` drives a real server in-process with a native client built on `thencloud-crypto`. It covers register, upload, move, share, public link, revoke and delete. It then scans the SQLite database and blob store to check that no plaintext names, contents, passwords or keys were stored.
+
+## AI assistance
+
+Parts of thencloud are written with the help of AI (commits say so in a `Co-Authored-By` trailer). The code is public so anyone can check what it does.
 
 ## License
 

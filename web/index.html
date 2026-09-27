@@ -1,83 +1,16 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="referrer" content="no-referrer">
-  <title>thencloud</title>
-  <script type="module" src="/app.js"></script>
-</head>
-<body>
-  <h1>thencloud</h1>
-  <p><i>Proof-of-concept client. Everything is encrypted and decrypted in this browser; the server only sees ciphertext.</i></p>
-  <p><b>Status:</b> <span id="status">loading crypto…</span></p>
-
-  <section id="auth" hidden>
-    <h2>Log in</h2>
-    <form id="login-form">
-      <p><label>Username <input name="username" autocomplete="username" required></label></p>
-      <p><label>Password <input name="password" type="password" autocomplete="current-password" required></label></p>
-      <p><button>Log in</button></p>
-    </form>
-
-    <h2>Register</h2>
-    <form id="register-form">
-      <p><label>Username <input name="username" autocomplete="username" required></label></p>
-      <p><label>Password <input name="password" type="password" autocomplete="new-password" required minlength="8"></label></p>
-      <p><label>Repeat password <input name="password2" type="password" autocomplete="new-password" required></label></p>
-      <p><small>There is no password recovery: if you forget your password, your files are gone. The server never has your keys.</small></p>
-      <p><button>Register</button></p>
-    </form>
-  </section>
-
-  <section id="app" hidden>
-    <p>
-      Logged in as <b id="me-name"></b> · storage used: <span id="me-usage"></span>
-      · <button id="logout">Log out</button>
-    </p>
-    <p>Your key fingerprint: <code id="me-fp"></code></p>
-
-    <hr>
-    <h2>Files</h2>
-    <p id="breadcrumbs"></p>
-    <p id="cwd-info"></p>
-    <p>
-      <button id="go-home">My files</button>
-      <button id="refresh">Refresh</button>
-      <button id="mkdir">New folder</button>
-    </p>
-    <p>
-      <input type="file" id="upload-input" multiple>
-      <button id="upload-btn">Upload</button>
-    </p>
-    <p id="clipboard" hidden>
-      Moving <b id="clipboard-name"></b>: <button id="paste">Move here</button> <button id="paste-cancel">Cancel</button>
-    </p>
-    <p id="progress"></p>
-    <table id="listing">
-      <thead><tr><th>Name</th><th>Size</th><th>Modified</th><th>Actions</th></tr></thead>
-      <tbody></tbody>
-    </table>
-
-    <hr>
-    <h2>Shared with me</h2>
-    <ul id="incoming"></ul>
-
-    <h2>Shared by me</h2>
-    <ul id="outgoing"></ul>
-
-    <h2>Public links</h2>
-    <p><small>The decryption key is the part after <code>#</code>. Browsers never send it to the server.</small></p>
-    <ul id="links"></ul>
-
-    <hr>
-    <h2>Change password</h2>
-    <form id="password-form">
-      <p><label>Current password <input name="current" type="password" autocomplete="current-password" required></label></p>
-      <p><label>New password <input name="new1" type="password" autocomplete="new-password" required minlength="8"></label></p>
-      <p><label>Repeat new password <input name="new2" type="password" autocomplete="new-password" required></label></p>
-      <p><button>Change password</button></p>
-    </form>
-  </section>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="description" content="thencloud: end-to-end encrypted file storage" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>thencloud</title>
+    <script src="/theme-init.js"></script>
+    <script type="module" src="/src/main.js"></script>
+  </head>
+  <body>
+    <div id="app"></div>
+  </body>
 </html>

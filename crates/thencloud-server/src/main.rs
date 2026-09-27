@@ -14,10 +14,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .init();
 
     let config = Config::parse();
-    if !config.web_dir.join("pkg/thencloud_wasm.js").exists() {
+    if !config.web_dir.join("index.html").exists() {
         tracing::warn!(
             web_dir = %config.web_dir.display(),
-            "web client WASM not found; run ./build.sh to build it"
+            "web client not built; run ./build.sh to build it"
         );
     }
 
