@@ -1,15 +1,18 @@
 <script>
   import { onMount } from 'svelte';
-  import { session, changePassword, listSessions, revokeSession, revokeOtherSessions, removeRecoveryKey, listContacts, forgetContact, forgetThisBrowser } from '../../lib/cloud.svelte.js';
+  import { session, changePassword, listSessions, revokeSession, revokeOtherSessions, removeRecoveryKey, listAppPasswords, deleteAppPassword, avatar, loadMyAvatar, setAvatar, removeAvatar, listContacts, forgetContact, forgetThisBrowser } from '../../lib/cloud.svelte.js';
   import RecoveryKeyDialog from '../dialogs/RecoveryKeyDialog.svelte';
   import ConfirmDialog from '../dialogs/ConfirmDialog.svelte';
-  import { theme, setTheme, toast, toastError, errorMessage, copyText, accent, setAccent, ACCENT_PRESETS, DEFAULT_ACCENT, contrast, accentForeground, iconPack, setIconPack } from '../../lib/ui.svelte.js';
+  import AppPasswordDialog from '../dialogs/AppPasswordDialog.svelte';
+  import { theme, setTheme, toast, toastError, errorMessage, copyText, accent, setAccent, ACCENT_PRESETS, DEFAULT_ACCENT, contrast, accentForeground, iconPack, setIconPack, folderIcons, setFolderIcons } from '../../lib/ui.svelte.js';
   import { formatSize, formatWhen, formatDate, fullDate } from '../../lib/format.js';
   import { slide } from '../../lib/motion.js';
   import Icon from '../Icon.svelte';
+  import Avatar from '../Avatar.svelte';
   import Time from '../Time.svelte';
   import FileIcon from '../FileIcon.svelte';
-  import { ICON_PACKS } from '../../lib/file-icons.svelte.js';
+  import FolderIcon from '../FolderIcon.svelte';
+  import { ICON_PACKS, hasFolderIcons } from '../../lib/file-icons.svelte.js';
 
   let current = $state('');
   let next = $state('');
@@ -33,6 +36,37 @@
       error = err?.code === 'invalid_credentials' ? 'Your current password is wrong.' : errorMessage(err);
     } finally {
       busy = false;
+    }
+  }
+
+  // Profile picture.
+  let avatarBusy = $state(false);
+  onMount(() => loadMyAvatar().catch(() => {}));
+
+  async function pickAvatar(e) {
+    const file = e.currentTarget.files?.[0];
+    e.currentTarget.value = '';
+    if (!file) return;
+    avatarBusy = true;
+    try {
+      await setAvatar(file);
+      toast('Profile picture updated', { kind: 'success' });
+    } catch (err) {
+      toastError(err?.name === 'InvalidStateError' || err?.name === 'EncodingError' ? new Error("That image couldn't be read.") : err);
+    } finally {
+      avatarBusy = false;
+    }
+  }
+
+  async function dropAvatar() {
+    avatarBusy = true;
+    try {
+      await removeAvatar();
+      toast('Profile picture removed');
+    } catch (err) {
+      toastError(err);
+    } finally {
+      avatarBusy = false;
     }
   }
 
@@ -86,6 +120,21 @@
     }
   }
 
+  // App passwords.
+  let appPasswords = $state(null);
+  let appDialog = $state(false);
+  let revokingApp = $state(null);
+
+  async function loadAppPasswords() {
+    try {
+      appPasswords = await listAppPasswords();
+    } catch (e) {
+      toastError(e);
+      appPasswords = [];
+    }
+  }
+  onMount(loadAppPasswords);
+
   const deviceIcon = (name) => (/Android|iOS/.test(name) ? 'smartphone' : 'laptop');
 
   const themes = [
@@ -123,6 +172,24 @@
 
 <div class="mt-6 grid grid-cols-1 gap-6">
   {#snippet accountBody()}
+    <div class="flex flex-wrap items-center gap-4">
+      {#if avatar.url}
+        <img src={avatar.url} alt="You" class="size-16 rounded-full object-cover" />
+      {:else}
+        <span class="grid size-16 place-items-center rounded-full bg-muted text-xl font-semibold uppercase" aria-hidden="true">{session.me.username.slice(0, 1)}</span>
+      {/if}
+      <div class="grid gap-2">
+        <div class="flex flex-wrap gap-2">
+          <label class="btn btn-secondary {avatarBusy ? 'pointer-events-none opacity-60' : ''}">
+            {#if avatarBusy}<Icon name="loader-circle" class="spinner" />{:else}<Icon name="upload" />{/if}
+            {avatar.url ? 'Change picture' : 'Add a picture'}
+            <input type="file" accept="image/*" class="sr-only" onchange={pickAvatar} />
+          </label>
+          {#if avatar.url}<button type="button" class="btn btn-ghost" disabled={avatarBusy} onclick={dropAvatar}>Remove</button>{/if}
+        </div>
+        <p class="max-w-md text-xs text-fg-muted">Encrypted in this browser. Only people you share with, or who share with you, can see it; the server can't.</p>
+      </div>
+    </div>
     <dl class="grid gap-3 text-sm sm:grid-cols-[10rem_1fr]">
       <dt class="text-fg-muted">Username</dt>
       <dd class="font-medium">{session.me.username}{#if session.me.is_admin}<span class="badge ml-2">Admin</span>{/if}</dd>
@@ -160,7 +227,7 @@
       <ul class="divide-y divide-line rounded-md border border-line">
         {#each contacts as c (c.username)}
           <li class="flex items-center gap-3 px-3 py-2.5" out:slide>
-            <span class="grid size-7 shrink-0 place-items-center rounded-full bg-muted text-xs font-semibold uppercase">{c.username.slice(0, 1)}</span>
+            <Avatar username={c.username} class="size-7 text-xs" />
             <div class="min-w-0 flex-1">
               <p class="truncate text-sm font-medium">{c.username}</p>
               <p class="fingerprint truncate text-xs text-fg-muted">{c.fingerprint}</p>
@@ -244,6 +311,7 @@
               <p class="flex items-center gap-2 text-sm">
                 <span class="truncate font-medium">{d.device_name}</span>
                 {#if d.current}<span class="badge badge-accent">This device</span>{/if}
+                {#if d.app_password}<span class="badge"><Icon name="key-round" />{d.app_password}</span>{/if}
                 {#if d.current && session.remembered}<span class="badge">Kept signed in</span>{/if}
               </p>
               <p class="truncate text-xs text-fg-muted">
@@ -284,6 +352,43 @@
     'Where you are signed in. Signing a device out ends its session, and its keys are gone from memory the next time it tries to do anything.',
     devicesBody,
     devicesFooter,
+  )}
+
+  {#snippet appBody()}
+    {#if appPasswords === null}
+      <div class="skeleton h-12 w-full" aria-hidden="true"></div>
+    {:else if !appPasswords.length}
+      <p class="text-[13px] text-fg-muted">None yet.</p>
+    {:else}
+      <ul class="divide-y divide-line rounded-md border border-line">
+        {#each appPasswords as a (a.id)}
+          <li class="flex items-center gap-3 px-3 py-2.5" out:slide>
+            <Icon name="key-round" class="size-4 shrink-0 text-fg-muted" />
+            <div class="min-w-0 flex-1">
+              <p class="flex items-center gap-2 text-sm">
+                <span class="truncate font-medium">{a.name}</span>
+                <span class="badge">{a.scope === 'read' ? 'Read only' : 'Full access'}</span>
+              </p>
+              <p class="truncate text-xs text-fg-muted">
+                Created <span title={fullDate(a.created_at * 1000)}>{formatDate(a.created_at * 1000)}</span>
+                · {#if a.last_used_at}last used <span title={fullDate(a.last_used_at * 1000)}>{formatWhen(a.last_used_at * 1000)}</span>{:else}never used{/if}
+              </p>
+            </div>
+            <button type="button" class="btn btn-secondary h-7 px-2.5 text-[13px]" onclick={() => (revokingApp = a)}>Revoke</button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  {/snippet}
+  {#snippet appFooter()}
+    <p class="mr-auto hidden text-xs text-fg-muted sm:block">Your password changing doesn't affect them.</p>
+    <button type="button" class="btn btn-secondary" onclick={() => (appDialog = true)}><Icon name="plus" />New app password</button>
+  {/snippet}
+  {@render section(
+    'App passwords',
+    'Sign in sync clients and other devices without giving them your account password. Each one can be read only, and revoking it signs that device out.',
+    appBody,
+    appFooter,
   )}
 
   {#snippet themeBody()}
@@ -372,8 +477,21 @@
         </button>
       {/each}
     </div>
+    <label class="flex cursor-pointer items-center gap-3 text-sm {hasFolderIcons(iconPack.value) ? '' : 'pointer-events-none opacity-50'}">
+      <input
+        type="checkbox"
+        class="size-4 accent-accent"
+        checked={folderIcons.named}
+        disabled={!hasFolderIcons(iconPack.value)}
+        onchange={(e) => setFolderIcons(e.currentTarget.checked)} />
+      <span>Folder icons by name</span>
+      <span class="flex gap-2" aria-hidden="true">
+        {#each ['src', 'images', 'docs', 'music'] as name (name)}<FolderIcon {name} named={hasFolderIcons(iconPack.value)} class="size-5" />{/each}
+      </span>
+    </label>
+    {#if !hasFolderIcons(iconPack.value)}<p class="-mt-2 text-xs text-fg-muted">Material and Symbols have icons for common folder names.</p>{/if}
   {/snippet}
-  {@render section('File icons', 'Icons for files by type. Folders keep the same icon either way.', iconsBody)}
+  {@render section('File icons', 'Icons for files by type, and optionally for folders by name.', iconsBody)}
 
   {#snippet aboutBody()}
     <div class="grid gap-2 text-[13px] text-fg-muted">
@@ -386,6 +504,25 @@
   {/snippet}
   {@render section('About', null, aboutBody)}
 </div>
+
+{#if appDialog}
+  <AppPasswordDialog onclose={() => (appDialog = false)} oncreated={loadAppPasswords} />
+{/if}
+
+{#if revokingApp}
+  <ConfirmDialog
+    title="Revoke {revokingApp.name}?"
+    description="It stops working straight away, and anything signed in with it is signed out."
+    confirmLabel="Revoke"
+    danger
+    onconfirm={async () => {
+      await deleteAppPassword(revokingApp.id);
+      appPasswords = appPasswords.filter((x) => x.id !== revokingApp.id);
+      loadDevices();
+      toast('App password revoked');
+    }}
+    onclose={() => (revokingApp = null)} />
+{/if}
 
 {#if recoveryDialog === 'create'}
   <RecoveryKeyDialog onclose={() => (recoveryDialog = null)} />

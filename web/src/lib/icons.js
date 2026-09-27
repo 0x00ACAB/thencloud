@@ -80,5 +80,11 @@ export const ICONS = {
   "laptop": "<path d=\"M18 5a2 2 0 0 1 2 2v8.526a2 2 0 0 0 .212.897l1.068 2.127a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45l1.068-2.127A2 2 0 0 0 4 15.526V7a2 2 0 0 1 2-2z\" /><path d=\"M20.054 15.987H3.946\" />",
   "smartphone": "<rect width=\"14\" height=\"20\" x=\"5\" y=\"2\" rx=\"2\" ry=\"2\" /><path d=\"M12 18h.01\" />",
   "file-cog": "<path d=\"M15 8a1 1 0 0 1-1-1V2a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8z\" /><path d=\"M20 8v12a2 2 0 0 1-2 2h-4.182\" /><path d=\"m3.305 19.53.923-.382\" /><path d=\"M4 10.592V4a2 2 0 0 1 2-2h8\" /><path d=\"m4.228 16.852-.924-.383\" /><path d=\"m5.852 15.228-.383-.923\" /><path d=\"m5.852 20.772-.383.924\" /><path d=\"m8.148 15.228.383-.923\" /><path d=\"m8.53 21.696-.382-.924\" /><path d=\"m9.773 16.852.922-.383\" /><path d=\"m9.773 19.148.922.383\" /><circle cx=\"7\" cy=\"18\" r=\"3\" />",
-  "lock-open": "<rect width=\"18\" height=\"11\" x=\"3\" y=\"11\" rx=\"2\" ry=\"2\" /><path d=\"M7 11V7a5 5 0 0 1 9.9-1\" />"
+  "lock-open": "<rect width=\"18\" height=\"11\" x=\"3\" y=\"11\" rx=\"2\" ry=\"2\" /><path d=\"M7 11V7a5 5 0 0 1 9.9-1\" />",
+  "list-checks": "<path d=\"M13 5h8\" /><path d=\"M13 12h8\" /><path d=\"M13 19h8\" /><path d=\"m3 17 2 2 4-4\" /><path d=\"m3 7 2 2 4-4\" />",
+  "table": "<path d=\"M12 3v18\" /><rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" /><path d=\"M3 9h18\" /><path d=\"M3 15h18\" />",
+  "between-horizontal-end": "<rect width=\"13\" height=\"7\" x=\"3\" y=\"3\" rx=\"1\" /><path d=\"m22 15-3-3 3-3\" /><rect width=\"13\" height=\"7\" x=\"3\" y=\"14\" rx=\"1\" />",
+  "between-vertical-end": "<rect width=\"7\" height=\"13\" x=\"3\" y=\"3\" rx=\"1\" /><path d=\"m9 22 3-3 3 3\" /><rect width=\"7\" height=\"13\" x=\"14\" y=\"3\" rx=\"1\" />",
+  "grid-2x2-x": "<path d=\"M12 3v17a1 1 0 0 1-1 1H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v6a1 1 0 0 1-1 1H3\" /><path d=\"m16.5 16.5 5 5\" /><path d=\"m16.5 21.5 5-5\" />",
+  "columns-2": "<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" /><path d=\"M12 3v18\" />"
 };

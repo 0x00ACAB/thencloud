@@ -2,8 +2,10 @@
   import { outgoingShares, setSharePermission, deleteShare } from '../../lib/cloud.svelte.js';
   import { toast, toastError } from '../../lib/ui.svelte.js';
   import Icon from '../Icon.svelte';
+  import Avatar from '../Avatar.svelte';
   import Time from '../Time.svelte';
   import FileIcon from '../FileIcon.svelte';
+  import FolderIcon from '../FolderIcon.svelte';
   import ConfirmDialog from '../dialogs/ConfirmDialog.svelte';
 
   let { go } = $props();
@@ -68,13 +70,13 @@
           <tr class="group">
             <td class="max-w-0">
               <button type="button" class="flex max-w-full cursor-pointer items-center gap-3 text-left" onclick={() => open(s)}>
-                {#if folder}<Icon name="folder" class="size-4 shrink-0 text-accent-text" />{:else if s.entry}<FileIcon meta={s.entry.meta} />{:else}<Icon name="file" class="size-4 shrink-0 text-fg-muted" />{/if}
+                {#if folder}<FolderIcon name={s.entry?.meta.name} />{:else if s.entry}<FileIcon meta={s.entry.meta} />{:else}<Icon name="file" class="size-4 shrink-0 text-fg-muted" />{/if}
                 <span class="truncate font-medium group-hover:underline group-hover:decoration-line-strong group-hover:underline-offset-4">{s.entry?.meta.name ?? 'Unavailable'}</span>
               </button>
             </td>
             <td>
               <span class="flex items-center gap-2">
-                <span class="grid size-6 shrink-0 place-items-center rounded-full bg-muted text-[11px] font-semibold uppercase">{s.recipient.slice(0, 1)}</span>
+                <Avatar username={s.recipient} class="size-6 text-[11px]" />
                 <span class="truncate">{s.recipient}</span>
               </span>
             </td>

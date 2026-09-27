@@ -209,14 +209,19 @@ pub async fn delete(
     user: AuthUser,
     Path(id): Path<String>,
 ) -> Result<StatusCode> {
-    let res = sqlx::query("DELETE FROM shares WHERE id = ? AND (owner_id = ? OR recipient_id = ?)")
+    let pair: Option<(String, String)> = sqlx::query_as(
+        "SELECT owner_id, recipient_id FROM shares WHERE id = ? AND (owner_id = ? OR recipient_id = ?)",
+    )
+    .bind(&id)
+    .bind(&user.id)
+    .bind(&user.id)
+    .fetch_optional(&state.db)
+    .await?;
+    let (owner, recipient) = pair.ok_or(AppError::NotFound)?;
+    sqlx::query("DELETE FROM shares WHERE id = ?")
         .bind(&id)
-        .bind(&user.id)
-        .bind(&user.id)
         .execute(&state.db)
         .await?;
-    if res.rows_affected() == 0 {
-        return Err(AppError::NotFound);
-    }
+    crate::routes::avatars::drop_unrelated_grants(&state, &owner, &recipient).await?;
     Ok(StatusCode::NO_CONTENT)
 }

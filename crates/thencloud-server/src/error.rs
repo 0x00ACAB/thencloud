@@ -21,6 +21,8 @@ pub enum AppError {
     Conflict(String),
     #[error("the original folder is in the trash or was deleted")]
     ParentUnavailable,
+    #[error("there's already something with that name here")]
+    NameTaken,
     #[error("storage quota exceeded")]
     QuotaExceeded,
     #[error("too many failed attempts, try again later")]
@@ -61,6 +63,7 @@ impl AppError {
             NotFound => (StatusCode::NOT_FOUND, "not_found"),
             Conflict(_) => (StatusCode::CONFLICT, "conflict"),
             ParentUnavailable => (StatusCode::CONFLICT, "parent_unavailable"),
+            NameTaken => (StatusCode::CONFLICT, "name_taken"),
             QuotaExceeded => (StatusCode::INSUFFICIENT_STORAGE, "quota_exceeded"),
             RateLimited => (StatusCode::TOO_MANY_REQUESTS, "rate_limited"),
             RegistrationClosed => (StatusCode::FORBIDDEN, "registration_closed"),
@@ -88,6 +91,16 @@ impl IntoResponse for AppError {
             message: self.to_string(),
         };
         (status, Json(body)).into_response()
+    }
+}
+
+/// A duplicate name tag becomes `NameTaken`; anything else stays a database error.
+pub fn name_conflict(e: sqlx::Error) -> AppError {
+    match &e {
+        sqlx::Error::Database(d) if d.is_unique_violation() && d.message().contains("name_tag") => {
+            AppError::NameTaken
+        }
+        _ => AppError::Db(e),
     }
 }
 

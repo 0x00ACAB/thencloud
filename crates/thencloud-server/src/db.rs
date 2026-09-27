@@ -40,7 +40,7 @@ pub async fn server_secret(db: &SqlitePool) -> Result<[u8; 32]> {
 
 /// Columns needed to build an [`api::Node`](Node).
 pub const NODE_SELECT: &str = "SELECT n.id, n.parent_id, n.kind, n.owner_id, u.username AS owner, \
-     n.enc_key, n.enc_metadata, n.revision, n.created_at, n.updated_at, \
+     n.enc_key, n.enc_metadata, n.revision, n.created_at, n.updated_at, n.name_tag IS NOT NULL AS name_tagged, \
      v.id AS v_id, v.enc_content_key AS v_key, v.chunk_count AS v_chunks, v.size AS v_size, v.created_at AS v_created \
      FROM nodes n JOIN users u ON u.id = n.owner_id \
      LEFT JOIN file_versions v ON v.id = n.current_version_id";
@@ -57,6 +57,7 @@ pub struct NodeRow {
     pub revision: i64,
     pub created_at: i64,
     pub updated_at: i64,
+    pub name_tagged: bool,
     pub v_id: Option<String>,
     pub v_key: Option<Vec<u8>>,
     pub v_chunks: Option<i64>,
@@ -103,6 +104,7 @@ impl NodeRow {
             created_at: self.created_at,
             updated_at: self.updated_at,
             version,
+            name_tagged: self.name_tagged,
         }
     }
 }
@@ -117,7 +119,7 @@ pub async fn get_node<'e, E: sqlx::SqliteExecutor<'e>>(e: E, id: &str) -> Result
 
 pub async fn get_children(db: &SqlitePool, parent_id: &str) -> Result<Vec<NodeRow>> {
     let sql = format!(
-        "{NODE_SELECT} WHERE n.parent_id = ? AND n.trashed_at IS NULL ORDER BY n.kind DESC, n.created_at"
+        "{NODE_SELECT} WHERE n.parent_id = ? AND n.trashed_at IS NULL AND n.dropped = 0 ORDER BY n.kind DESC, n.created_at"
     );
     Ok(sqlx::query_as::<_, NodeRow>(&sql)
         .bind(parent_id)

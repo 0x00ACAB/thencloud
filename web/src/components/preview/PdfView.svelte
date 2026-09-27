@@ -1,13 +1,14 @@
 <script>
   // PDF pages drawn with pdf.js, fitted to the window width (up to a
-  // readable maximum) and rendered only as they scroll into view.
+  // readable maximum) and rendered only as they scroll into view, with
+  // selectable text and clickable links over each.
   import { onMount } from 'svelte';
   import Icon from '../Icon.svelte';
 
   let { blob } = $props();
 
   let scroller;
-  let pages = $state([]); // [{ n, ratio }] height / width of each page
+  let pages = $state([]); // [{ n, ratio, w }]: height / width, and width at scale 1
   let width = $state(0);
   let error = $state('');
   let zoom = $state(1);
@@ -34,7 +35,7 @@
         const list = [];
         for (let n = 1; n <= doc.numPages; n++) {
           const vp = (await doc.getPage(n)).getViewport({ scale: 1 });
-          list.push({ n, ratio: vp.height / vp.width });
+          list.push({ n, ratio: vp.height / vp.width, w: vp.width });
         }
         if (live) pages = list;
       } catch (e) {
@@ -84,6 +85,51 @@
       },
     };
   }
+
+  // Svelte action: the text and links over a page, made once when it first
+  // comes near the viewport (they scale with the page through CSS).
+  function layers(node, n) {
+    const io = new IntersectionObserver(
+      async ([e]) => {
+        if (!e.isIntersecting || !doc) return;
+        io.disconnect();
+        try {
+          const { drawText, pageLinks } = await import('../../lib/pdf.js');
+          const page = await doc.getPage(n);
+          const text = document.createElement('div');
+          text.className = 'pdf-text';
+          node.append(text);
+          await drawText(page, text);
+          const links = document.createElement('div');
+          links.className = 'pdf-links';
+          for (const l of await pageLinks(doc, page)) {
+            const a = document.createElement('a');
+            Object.assign(a.style, { left: `${l.left}%`, top: `${l.top}%`, width: `${l.width}%`, height: `${l.height}%` });
+            if (l.url) {
+              a.href = l.url;
+              a.target = '_blank';
+              a.rel = 'noopener noreferrer';
+              a.title = l.url;
+            } else {
+              a.href = '#';
+              a.title = `Go to page ${l.page}`;
+              a.onclick = (ev) => {
+                ev.preventDefault();
+                scroller.querySelector(`[data-page="${l.page}"]`)?.scrollIntoView({ block: 'start' });
+              };
+            }
+            links.append(a);
+          }
+          node.append(links);
+        } catch {
+          /* the page still shows; it just can't be selected */
+        }
+      },
+      { root: scroller, rootMargin: '600px 0px' },
+    );
+    io.observe(node);
+    return { destroy: () => io.disconnect() };
+  }
 </script>
 
 <div bind:this={scroller} class="h-full overflow-auto bg-subtle">
@@ -94,12 +140,15 @@
   {:else}
     <div class="grid justify-items-center gap-4 px-6 pt-6 pb-2">
       {#each pages as p (p.n)}
-        <canvas
-          use:page={{ n: p.n, w: pageWidth }}
-          class="rounded-sm bg-muted shadow-sm ring-1 ring-line"
+        <div
+          use:layers={p.n}
+          data-page={p.n}
+          class="relative scroll-mt-6 overflow-hidden rounded-sm bg-muted shadow-sm ring-1 ring-line"
           style:width="{pageWidth}px"
           style:height="{Math.round(pageWidth * p.ratio)}px"
-          aria-label="Page {p.n} of {pages.length}"></canvas>
+          style:--total-scale-factor={pageWidth / p.w}>
+          <canvas use:page={{ n: p.n, w: pageWidth }} class="block size-full" aria-label="Page {p.n} of {pages.length}"></canvas>
+        </div>
       {/each}
     </div>
     <div class="sticky bottom-4 flex justify-center">

@@ -166,6 +166,61 @@ pub struct DeviceSession {
     pub last_seen: i64,
     /// The session making this request.
     pub current: bool,
+    /// Name of the app password it signed in with, if any.
+    #[serde(default)]
+    pub app_password: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// App passwords (per-device credentials for sync clients)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AppScope {
+    /// Everything the account can do, except managing credentials.
+    Full,
+    /// Reading and downloading only.
+    Read,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateAppPasswordRequest {
+    /// Client-chosen id, bound into `enc_master_key`.
+    pub id: String,
+    pub name: String,
+    pub scope: AppScope,
+    /// Proves the account password.
+    pub current_auth_key: B64,
+    /// The auth half of the app password (see `derive_app_password_keys`).
+    pub auth_key: B64,
+    /// The master key wrapped under the app password's KEK.
+    pub enc_master_key: B64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppPassword {
+    pub id: String,
+    pub name: String,
+    pub scope: AppScope,
+    pub created_at: i64,
+    pub last_used_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppLoginRequest {
+    pub auth_key: B64,
+    #[serde(default)]
+    pub device_name: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppLoginResponse {
+    pub token: String,
+    pub me: Me,
+    pub app_password_id: String,
+    pub scope: AppScope,
+    pub enc_master_key: B64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -205,6 +260,9 @@ pub struct Node {
     pub created_at: i64,
     pub updated_at: i64,
     pub version: Option<VersionInfo>,
+    /// Whether the node has a name tag (older ones may not).
+    #[serde(default)]
+    pub name_tagged: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -213,6 +271,9 @@ pub struct CreateFolderRequest {
     pub parent_id: String,
     pub enc_key: B64,
     pub enc_metadata: B64,
+    /// `name_tag(parent key, name)`: lets the server refuse a duplicate name.
+    #[serde(default)]
+    pub name_tag: Option<B64>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -229,6 +290,22 @@ pub struct UpdateNodeRequest {
     /// Optimistic concurrency: fail with 409 if the node changed.
     #[serde(default)]
     pub if_revision: Option<i64>,
+    /// The name tag for the new name or parent. Renaming or moving without
+    /// one leaves the node untagged.
+    #[serde(default)]
+    pub name_tag: Option<B64>,
+}
+
+/// Name tags for existing children that don't have one yet.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NameTags {
+    pub tags: Vec<NameTagEntry>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NameTagEntry {
+    pub id: String,
+    pub name_tag: B64,
 }
 
 /// The chain of nodes from the top-most node the caller can access down to
@@ -297,6 +374,11 @@ pub struct RestoreTrashRequest {
     pub parent_id: Option<String>,
     #[serde(default)]
     pub enc_key: Option<B64>,
+    /// A new name (when the old one is taken) and its tag.
+    #[serde(default)]
+    pub enc_metadata: Option<B64>,
+    #[serde(default)]
+    pub name_tag: Option<B64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -321,6 +403,9 @@ pub struct CreateUploadRequest {
     /// For new versions: fail with 409 if the node changed meanwhile.
     #[serde(default)]
     pub if_revision: Option<i64>,
+    /// For a new file: its name tag (see `name_tag`).
+    #[serde(default)]
+    pub name_tag: Option<B64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -389,6 +474,11 @@ pub struct CreateLinkRequest {
     /// Unix seconds.
     #[serde(default)]
     pub expires_at: Option<i64>,
+    /// A file drop: visitors can add files to the folder but see nothing
+    /// in it. The link carries the owner's public key after `#` instead of
+    /// the folder key.
+    #[serde(default)]
+    pub upload_only: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -399,6 +489,8 @@ pub struct Link {
     pub has_password: bool,
     pub expires_at: Option<i64>,
     pub created_at: i64,
+    #[serde(default)]
+    pub upload_only: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -415,8 +507,52 @@ pub struct UnlockLinkResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PublicLinkInfo {
-    pub node: Node,
+    /// Absent for upload-only links.
+    pub node: Option<Node>,
     pub expires_at: Option<i64>,
+    #[serde(default)]
+    pub upload_only: bool,
+    /// Who files dropped through an upload-only link go to, and the folder
+    /// id to bind into their sealed keys.
+    #[serde(default)]
+    pub owner: Option<String>,
+    #[serde(default)]
+    pub folder_id: Option<String>,
+}
+
+/// A file added through an upload-only link, waiting for the folder owner
+/// to open its sealed key and wrap it under the folder key.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DroppedFile {
+    pub node: Node,
+    /// The node key sealed to the owner's public key (see `seal_drop_key`).
+    pub sealed_key: B64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdoptDropRequest {
+    /// The node key wrapped under the folder's key.
+    pub enc_key: B64,
+    /// The metadata under the new key (with a new name, if the dropped one
+    /// is taken), and the name tag.
+    #[serde(default)]
+    pub enc_metadata: Option<B64>,
+    #[serde(default)]
+    pub name_tag: Option<B64>,
+    /// The file's content key re-wrapped under the new node key, so the
+    /// key the visitor chose stops mattering. Requires `enc_metadata`.
+    #[serde(default)]
+    pub enc_content_key: Option<B64>,
+}
+
+/// Optional body for finishing an upload of a new file: a new name (and
+/// its tag) if the one it started with was taken meanwhile.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct FinishUploadRequest {
+    #[serde(default)]
+    pub enc_metadata: Option<B64>,
+    #[serde(default)]
+    pub name_tag: Option<B64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -585,6 +721,51 @@ pub struct PutPrivateData {
     pub if_revision: i64,
 }
 
+/// Unsaved edits to a text file, encrypted under the editor's master key
+/// (see `encrypt_private_data`, labelled with the node id).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Draft {
+    pub data: B64,
+    /// The file's revision the draft started from.
+    pub base_revision: i64,
+    #[serde(default)]
+    pub updated_at: i64,
+}
+
+// ---------------------------------------------------------------------------
+// Profile pictures (encrypted; see `encrypt_avatar`)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetAvatar {
+    /// The picture, encrypted under the avatar key.
+    pub data: B64,
+    /// The avatar key, encrypted under the master key.
+    pub enc_key: B64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct MyAvatar {
+    pub data: Option<B64>,
+    pub enc_key: Option<B64>,
+    /// Who has been given the avatar key.
+    pub grantees: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AvatarGrant {
+    /// The avatar key sealed to the grantee (see `seal_avatar_key`).
+    pub sealed_key: B64,
+}
+
+/// Someone else's picture, for a user they gave their avatar key to.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserAvatar {
+    pub data: B64,
+    pub sealed_key: B64,
+    pub updated_at: i64,
+}
+
 // ---------------------------------------------------------------------------
 // Tools
 // ---------------------------------------------------------------------------
@@ -606,11 +787,49 @@ pub enum VideoKind {
     Audio,
 }
 
+/// Highest resolution to fetch. Up to 1080p, H.264 is preferred (it plays
+/// everywhere); `Best` takes the tallest there is, whatever the codec.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum VideoQuality {
+    #[serde(rename = "480")]
+    P480,
+    #[serde(rename = "720")]
+    P720,
+    #[serde(rename = "1080")]
+    P1080,
+    #[serde(rename = "best")]
+    Best,
+}
+
+impl VideoQuality {
+    pub const ALL: [VideoQuality; 4] = [Self::P480, Self::P720, Self::P1080, Self::Best];
+
+    pub fn max_height(self) -> Option<u64> {
+        match self {
+            Self::P480 => Some(480),
+            Self::P720 => Some(720),
+            Self::P1080 => Some(1080),
+            Self::Best => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VideoLinkRequest {
     pub url: String,
     #[serde(default)]
     pub kind: Option<VideoKind>,
+    /// Defaults to 1080p.
+    #[serde(default)]
+    pub quality: Option<VideoQuality>,
+}
+
+/// One video in a playlist.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlaylistEntry {
+    pub url: String,
+    pub title: String,
+    pub duration: Option<f64>,
 }
 
 /// What a link points at, and what the downloader would fetch for it.
@@ -625,6 +844,13 @@ pub struct VideoInfo {
     /// audio-only downloads, when the site offers them as one file.
     pub video: Option<VideoOption>,
     pub audio: Option<VideoOption>,
+    /// The video at each quality that gives a different result, lowest
+    /// first.
+    #[serde(default)]
+    pub qualities: Vec<VideoOption>,
+    /// For a playlist link: its videos (and no `video` or `audio`).
+    #[serde(default)]
+    pub entries: Vec<PlaylistEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -633,4 +859,7 @@ pub struct VideoOption {
     pub size: Option<u64>,
     /// Video height in pixels, for video.
     pub height: Option<u32>,
+    /// The quality to ask for to get this, for video.
+    #[serde(default)]
+    pub quality: Option<VideoQuality>,
 }

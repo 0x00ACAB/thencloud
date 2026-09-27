@@ -37,14 +37,14 @@
 - [x] Trash bin: deleting marks a node trashed in place, hiding its whole subtree from every route, including shares and public links. Keys stay wrapped under the original parent, so a restore needs no re-wrapping
 - [x] Restore to the original folder, or into My files (with the key re-wrapped) if that folder is in the trash too; delete permanently, empty trash, auto-purge after `--trash-days` (default 30)
 - [x] Deletes inside a shared folder go to the tree owner's trash; the recipient sees a note that the owner can restore it
-- [ ] Age-based version retention (e.g. thin out old versions: hourly, then daily, then weekly)
+- [x] Age-based version thinning: all versions from the last hour, then one per hour for a day, one per day for 30 days and one per week after that (`--version-thinning`, on by default), on top of `--max-versions`
 
 ## Milestone 4: Admin and devices (mostly done)
 
 - [x] Admin UI and API: list users, set quotas, make or remove admins, disable (signs out everywhere) or delete users, registration open / invite-only / closed at runtime, single-use invite links (only a hash is stored; the link carries the token after `#`)
 - [x] Session and device list: see active sessions (device name, last seen; no IPs kept) and sign them out, one at a time or all others. A signed-out browser drops its keys on its next request
 - [x] "Keep me signed in on this browser" (opt-in): token and master key saved in IndexedDB under a non-extractable WebCrypto key, removed on sign-out, "Stop keeping signed in", or when the server ends the session
-- [ ] App passwords or per-device credentials for sync clients (scoped, revocable, never the account password)
+- [x] App passwords for sync clients: made in the browser and shown once, each wrapping its own copy of the master key; full or read-only; revoking one signs out its sessions; never the account password
 - [x] Server stats for admins, without revealing anything encrypted: accounts, sessions, storage, file/folder/version counts, shares and links
 
 ## Tools
@@ -53,15 +53,15 @@
   - Images (PNG, JPEG, WebP, AVIF, BMP) with the browser's own encoders, with a quality setting
   - Video and audio (MP4, WebM, AVI, MKV, MOV, MP3, M4A, Ogg, Opus, FLAC, WAV, GIF from video) with ffmpeg compiled to WASM: 32 MB (10 MB gzipped), self-hosted, loaded only on first use, single-threaded, with progress and Stop. Container-only changes (MOV/MKV/MP4) copy the streams instead of re-encoding
   - Only for signed-in users, not on public links
-  - [ ] For several selected files at once
+  - [x] For several selected files at once (Convert in the selection bar): one format for all, images optionally scaled to a longest side, converted one after another; files already in that format are skipped
   - [x] Crop (free or a fixed shape, dragged on the image) and resize for images; trim for video and audio. The same format can be kept, to just edit
 - [x] **Video downloader (yt-dlp)**, the one deliberate exception to "no plaintext on the server", so it's explicit and opt-in:
   - **Off by default**; an admin turns it on in the Admin view, and yt-dlp must be installed on the server. Admins only by default, optionally everyone
   - **Streamed, never stored**: the server runs yt-dlp and pipes the video straight to the browser, which encrypts it and uploads it like any other file (or just downloads it). Nothing is written to the server's disk
   - The UI says plainly that the server sees the link and the video while downloading it, and doesn't keep either
   - Limits: one download at a time per user, a size cap, and public addresses only (no fetching from the server's own network)
-  - With ffmpeg installed, separate video and audio (most YouTube videos) are fetched at full speed by two yt-dlp processes into FIFOs and copied by ffmpeg into a fragmented MP4 as they stream, up to 1080p, H.264 + AAC preferred; without it, only single-file formats work
-  - [ ] A quality choice (720p/1080p/best), and playlists
+  - With ffmpeg installed, separate video and audio (most YouTube videos) are fetched at full speed by two yt-dlp processes into FIFOs and copied by ffmpeg into a fragmented MP4 as they stream, H.264 + AAC preferred up to 1080p; without it, only single-file formats work
+  - [x] A quality choice (each distinct resolution the site offers, 1080p by default, "best" beyond it), and playlists: listed flat, picked with checkboxes, fetched one video at a time
 
 ## UI
 
@@ -72,18 +72,20 @@ Bigger pieces:
 - [x] **Syntax highlighting** in text and code previews
 - [x] **Markdown preview**: rendered and sanitised, with a Source toggle
 - [x] **Markdown editor**: WYSIWYG (Milkdown), toolbar and shortcuts, Ctrl+S, saves each change as a new encrypted version with conflict detection; "New note" creates a file and opens it in the editor
-- [ ] Editor: clickable task-list checkboxes, tables toolbar, autosave drafts, and editing plain-text/code files
-- [ ] Previews: streamed video (today the whole file is decrypted into memory first, up to 256 MB), images referenced from Markdown by relative path, PDF text selection and links
+- [x] Editor: task lists (tick them in the editor or the rendered view), a table toolbar, plain-text and code files (a monospace editor), and drafts: unsaved edits are kept on the server as you type, encrypted under your master key, and offered back when you edit the file again
+- [x] PDF previews: selectable text (pdf.js's text layer) and links (web and mail links open on click; links within the document jump to the page)
+- [x] Images in Markdown previews by relative path (`![](img/photo.png)`): found by decrypted name from the file's folder and shown from a blob: URL; nothing is requested by path, and web images still aren't loaded
+- [x] Streamed video and audio previews: decrypted piece by piece as they play (and seek), through the stream service worker, with no size limit
 - [x] **Per-file-type icons**: choose Minimal (Lucide), Material, Symbols or Documents (document-shaped icons, like a drive) in Settings; served locally, and only the chosen pack's tables and the icons on screen are downloaded
-- [ ] Optionally per-name folder icons
+- [x] Optionally per-name folder icons ("Folder icons by name" in Settings, for Material and Symbols: src, images, docs...)
 - [x] **Multi-select** with bulk move, download and delete (checkboxes, shift-click ranges, `x`, select all, a floating action bar; one Undo for a bulk trash)
 - [x] **Folder uploads** (drag a whole folder in, or Upload > Folder) and **zip downloads** of folders, selections and public folder links, zipped in the browser
+- [x] Streamed zips for very large folders: written piece by piece straight to disk, with ZIP64 so there is no 4 GB limit
 - [x] **Search and sort** within a folder (search is client-side over decrypted names; sort by name, size or date)
 - [x] **Keyboard shortcuts** (`/` search, `j`/`k` or arrows through rows, Backspace up a folder, `n` new folder, `u` upload, Delete to trash) plus a `?` cheat sheet
-- [ ] Streamed zips for very large folders (today a zip is built in memory, up to 4 GB)
-- [ ] Search across all folders (needs a client-side index of decrypted names, built as you browse or on demand)
+- [x] Search across all folders ("Everywhere" next to the search box): names are decrypted in the browser, from an in-memory index built as you browse and filled in by walking the tree when you search; results show where each one is and open in place
 - [ ] Music player (ability to select a folder as the music root) with a spotify-eqsue UI (we'd possibly have no cover art)
-- [ ] **Profile pictures**: shown in the top bar, share dialogs and shared-with lists. Decide who can see them: encrypted to people you share with (server can't see) vs. plain on the server (simpler, but visible to it)
+- [x] **Profile pictures**: shown in the top bar, share dialogs, shared-with lists and verified contacts. Encrypted in the browser under a per-user avatar key that is sealed to each person you share with, either way round; the server can't see them
 - [ ] Material UI-type user accent on the entire theme, derived from their picked accent colour.
 
 Smaller things:
@@ -103,11 +105,11 @@ Smaller things:
 - [ ] **Key rotation on revocation**: re-key a folder subtree when a share is revoked, so former recipients can't decrypt future content
 - [x] **Verified contacts**: keys checked by fingerprint are pinned in an encrypted contact list; a changed key blocks sharing until it's checked again
 - [ ] **Key transparency**: a signed or auditable key directory, so even a first share doesn't depend on comparing fingerprints
-- [ ] **Upload-only "file drop" links**
-- [ ] **Streaming downloads** through a service worker, so large files aren't buffered in memory
+- [x] **Upload-only "file drop" links**: the link carries the owner's public key after `#`; visitors encrypt each file and seal its key to the owner (bound to the file and folder ids), and see nothing in the folder. Dropped files stay hidden until the owner's client wraps their keys under the folder key
+- [x] **Streaming downloads** through a service worker, so large files aren't buffered in memory. The page decrypts; the worker only relays pieces and never sees a key
 - [ ] **Native CLI and desktop sync client** reusing `thencloud-crypto`
-- [ ] **Encrypted name index**: HMAC of name under the folder key, so the server can reject duplicate names without learning them
-- [ ] **Metadata padding**: pad sizes and chunk counts to hide exact file sizes
+- [x] **Encrypted name index**: each node carries a keyed hash of its (lower-cased) name under its folder's key, and the server refuses a second one in the same folder (409 `name_taken`) without learning the names. Uploads keep both as "name (2)", restores and dropped files pick a free name, and older items are tagged the first time their folder is listed
+- [x] **Metadata padding**: file contents are padded with zeros to a Padmé bucket (at most about 12% more) before encryption, and encrypted metadata to 128-byte steps, so the server sees only rough sizes. The real size lives in the encrypted metadata
 - [ ] **Calendar and contacts**, end-to-end encrypted
 - [ ] **Linux mount**: Mount the disk (or a subdirectory) as a linux drive
 - [ ] **S3-compatible blob store** behind the existing `BlobStore` interface
