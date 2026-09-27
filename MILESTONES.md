@@ -101,6 +101,86 @@ Smaller things:
 - [x] Minify at build: besides the bundles, `sw.js`, `theme-init.js` and every SVG (svgo)
 - [x] Optimize assets at build: brotli copies next to the gzip ones (the server prefers them), and pdf.js's no-WebAssembly decoders left out
 
+## Milestone 5: Trust and accounts
+
+- [ ] **Verifiable web client**: reproducible builds with a signed hash list per release, and a way to check that the served files match (the CLI, a small browser extension, or both), so a compromised server can't quietly swap the JavaScript
+- [ ] **Passkeys**: WebAuthn as a second factor, and with the PRF extension as a way to unlock the master key without typing the password
+- [ ] **Two-factor codes (TOTP)** as a server-side gate on login, for people without passkeys. Only the TOTP secret is stored, never a key
+- [ ] **Post-quantum sealing**: hybrid X25519 + ML-KEM for keys sealed to other users, so recorded shares can't be opened later by a quantum computer
+- [ ] **Link passwords in the key**: optionally derive part of a public link's key from its password, so the server can't skip the password check
+- [ ] **One-time and counted links**: a download limit on public links, and "expires after first open"
+- [ ] **Delete my account** from Settings, with the password and a typed confirmation
+- [ ] **Account export**: everything decrypted into a zip in the browser (streamed), plus an encrypted backup the CLI can restore to another server
+
+## Milestone 6: Everyday files
+
+- [ ] **Encrypted thumbnails**: made in the browser on upload (images, video frames, PDF first pages), encrypted under the file's key and stored as a small side blob; a grid view that uses them
+- [ ] **Photos**: a timeline of a chosen folder by date taken (EXIF read in the browser, like music tags), with albums and a lightbox
+- [ ] **Strip location on share**: offer to remove GPS and camera details from photos before they're uploaded or shared
+- [ ] **Favourites and Recent**: kept as node ids in the encrypted app data, shown in the sidebar
+- [ ] **Full-text search**: an encrypted index of text, Markdown and PDF contents built in the browser and saved as app data, so search can look inside files without the server learning the words
+- [ ] **Groups**: share with a group whose key is sealed to each member; adding someone doesn't mean re-sharing everything
+- [ ] **Expiry on user shares**, like links have
+- [ ] **Comments on files**, encrypted under the node key so everyone with access (and only them) can read them
+- [ ] **Activity in shared folders**: who added, changed or deleted what, with names decrypted in the browser. The server already sees these events; it doesn't learn the names
+- [ ] Drag rows onto a folder (or the breadcrumb) to move them
+- [ ] Paste to upload (Ctrl+V a screenshot or copied files)
+
+## Milestone 7: Clients and self-hosting
+
+- [ ] **Installable app (PWA)**: a manifest and icons, and on Android a share target, so "Share to thencloud" encrypts and uploads from any app
+- [ ] **Local WebDAV bridge** in the CLI (`thencloud serve`): serves your files decrypted on 127.0.0.1 only, so macOS Finder, Windows Explorer and iOS Files apps can use them while the server still sees only ciphertext
+- [ ] **Import from Nextcloud**: the CLI reads a Nextcloud account over WebDAV, encrypts locally and uploads, keeping folders and dates
+- [ ] **Container image and release binaries**: a Dockerfile, a compose example with a reverse proxy, and binaries built in CI for each release
+- [ ] **Backup and restore**: a server command that takes a consistent snapshot of SQLite and the blob store, and a documented restore
+- [ ] **Health and metrics**: a health check and Prometheus metrics with the same counts the admin view shows, nothing more
+- [ ] **Integrity check**: the server checks every blob it expects exists with the right size; the client can verify that everything decrypts and flags what doesn't
+- [ ] **Translations**: move UI strings into message files and pick the language from the browser
+- [ ] **Accessibility pass**: screen reader labels, focus handling in dialogs and menus, and colour contrast checked in both themes and with the tint on
+
+## Milestone 8: Hardening
+
+- [ ] **Format spec**: a written description of every ciphertext format, key derivation and wire type, with test vectors that the Rust tests, the WASM build and any other client check against
+- [ ] **Format versions**: a version byte on every ciphertext and a tested path for moving old data to a new format
+- [ ] **Fuzzing**: `cargo-fuzz` targets for the crypto decoders and the server's request parsing, and fuzz tests for the untrusted parsers in the browser (`tags.js`, `videotags.js`, the zip and PDF link handling)
+- [ ] **Browser tests**: Playwright in CI for sign-up, upload, share, public links and previews, including a check that no request carries a name, key or plaintext
+- [ ] **Dependency checks**: `cargo-deny` (advisories and licences) and `npm audit` in CI
+- [ ] **Master key rotation**: after a suspected leak, re-wrap every key under a new master key and keypair, and re-seal shares
+- [ ] **Independent security audit** of the crypto crate, the web client and the server, with the report published
+
+## Milestone 9: Less metadata
+
+- [ ] **Coarse timestamps**: the server records created and changed times rounded to the hour (the exact times stay in the encrypted metadata)
+- [ ] **Hide file vs folder**: store the node type in the encrypted metadata, so the server sees only nodes that have children or content
+- [ ] **Onion service**: document and test running thencloud as a Tor onion service, so the server doesn't learn clients' IP addresses
+- [ ] **Uniform upload sizes**: small files uploaded in batches padded to fixed sizes, so upload timing and count give away less
+
+## Milestone 10: More ways to open files
+
+- [ ] **Subtitles**: `.srt` and `.vtt` next to a video are decrypted and shown in the player, with a picker
+- [ ] **Books**: an EPUB and comic (CBZ) reader, with reading progress kept in the encrypted app data
+- [ ] **Audiobooks and podcasts**: remember the position per file, chapters from MP4/M4B, and playback speed
+- [ ] **Tables**: CSV and TSV shown as a sortable table instead of plain text
+- [ ] **Office previews**: DOCX, XLSX, ODT and PPTX rendered in the browser, loaded only when needed and sanitised like Markdown
+- [ ] **PDF tools**: merge, split, rotate and reorder pages in the browser, saved as a new encrypted file
+- [ ] **Notes view**: a folder of Markdown files as a notebook, with a list, search and pinned notes
+
+## Milestone 11: People and organisations
+
+- [ ] **Share with someone who hasn't signed up yet**: an invite link carrying a one-time key; once they register and their fingerprint is checked, the share is re-sealed to their real key
+- [ ] **Team spaces**: folders owned by a group rather than a person, with their own quota, so work doesn't disappear when someone leaves
+- [ ] **Single sign-on (OIDC)** as a gate on login for organisations; the encryption password or passkey stays separate, since the identity provider must never hold keys
+- [ ] **Federation**: share with `user@other-server`, with public keys fetched and pinned like local ones (and checked against key transparency once that exists)
+- [ ] **Per-user limits** on bandwidth and upload rate, set by admins
+
+## Milestone 12: Sync and scale
+
+- [ ] **Change feed**: `GET /api/changes?since=<cursor>` returns what changed in your trees and shares, so sync clients and the mount don't have to walk the whole tree
+- [ ] **Live updates**: open views refresh when something changes in a shared folder (Server-Sent Events carrying only node ids)
+- [ ] **Large folders**: paginated listings on the server and a virtualised file table, so a folder with 100,000 items stays fast
+- [ ] **PostgreSQL** as an alternative to SQLite for bigger installs
+- [ ] **Several server instances** behind a load balancer, sharing PostgreSQL and the S3 blob store
+
 ## Later
 
 - [x] **Recovery key**: an optional printable key that also wraps the master key; "Forgot your password?" uses it to set a new one without losing data
@@ -117,3 +197,6 @@ Smaller things:
 - [x] **Linux mount**: `thencloud mount` shows My files (or a folder) as a drive through FUSE, for Dolphin, Nautilus and the shell. Reads are fetched and decrypted a chunk at a time; writes are uploaded as a new version on close; deletes go to the trash; an editor's save-and-rename becomes a new version of the original; conflicting edits are kept as a copy
 - [ ] **S3-compatible blob store** behind the existing `BlobStore` interface
 - [ ] Store the current path after the `#` so that it can persist through reloads
+- [ ] **Collaborative editing**: live Markdown editing with others in a shared folder, with every update encrypted under the file's key and the server only relaying them
+- [ ] **Mount on macOS and Windows** (FUSE-T, WinFsp), reusing the Linux mount's code
+- [ ] **Mobile apps** reusing `thencloud-crypto`, with camera upload
