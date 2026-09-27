@@ -139,6 +139,29 @@ export function setAccent(hex) {
   }
 }
 
+// Tint the neutrals (backgrounds, borders, grey text) with the accent's hue,
+// Material-style. The shades are derived in app.css.
+function readTint() {
+  try {
+    return localStorage.getItem('tint') === '1';
+  } catch {
+    return false;
+  }
+}
+
+export const tint = $state({ on: readTint() });
+
+export function setTint(on) {
+  tint.on = on;
+  document.documentElement.classList.toggle('tinted', on);
+  try {
+    if (on) localStorage.setItem('tint', '1');
+    else localStorage.removeItem('tint');
+  } catch {
+    /* private mode */
+  }
+}
+
 export async function copyText(text, what = 'Copied to clipboard') {
   try {
     await navigator.clipboard.writeText(text);
