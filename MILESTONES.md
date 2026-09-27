@@ -114,3 +114,4 @@ Smaller things:
 - [ ] **Calendar and contacts**, end-to-end encrypted
 - [x] **Linux mount**: `thencloud mount` shows My files (or a folder) as a drive through FUSE, for Dolphin, Nautilus and the shell. Reads are fetched and decrypted a chunk at a time; writes are uploaded as a new version on close; deletes go to the trash; an editor's save-and-rename becomes a new version of the original; conflicting edits are kept as a copy
 - [ ] **S3-compatible blob store** behind the existing `BlobStore` interface
+- [ ] Store the current path after the `#` so that it can persist through reloads

@@ -30,7 +30,8 @@ wasm-pack build crates/thencloud-wasm --release --target web --out-dir ../../web
 
 (
   cd web
-  [ -d node_modules ] || npm ci --no-audit --no-fund
+  # Reinstall when the lockfile changed since the last install (or there was none).
+  [ package-lock.json -nt node_modules/.package-lock.json ] && npm ci --no-audit --no-fund
   npm run build
 )
 
