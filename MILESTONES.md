@@ -84,9 +84,9 @@ Bigger pieces:
 - [x] **Search and sort** within a folder (search is client-side over decrypted names; sort by name, size or date)
 - [x] **Keyboard shortcuts** (`/` search, `j`/`k` or arrows through rows, Backspace up a folder, `n` new folder, `u` upload, Delete to trash) plus a `?` cheat sheet
 - [x] Search across all folders ("Everywhere" next to the search box): names are decrypted in the browser, from an in-memory index built as you browse and filled in by walking the tree when you search; results show where each one is and open in place
-- [ ] Music player (ability to select a folder as the music root) with a spotify-eqsue UI (we'd possibly have no cover art)
+- [x] **Music player**: pick a folder as the music root; its tree becomes albums by folder (Artist/Album/01 Track.mp3, CD1/CD2 folded in), with cover.jpg-style images as covers. A bar along the bottom with shuffle, repeat, seek, volume and a queue (play next, add to queue), a full-screen player on phones, and media keys through the Media Session API. Tracks stream decrypted through the service worker, and title, artist and cover art are read from ID3, FLAC and MP4 tags in the first piece as it plays. Audio files in My files can be played or queued from their menu
 - [x] **Profile pictures**: shown in the top bar, share dialogs, shared-with lists and verified contacts. Encrypted in the browser under a per-user avatar key that is sealed to each person you share with, either way round; the server can't see them
-- [ ] Material UI-type user accent on the entire theme, derived from their picked accent colour.
+- [x] Material-style tint: optionally, backgrounds, borders and grey text take the accent's hue at a low chroma (Settings > Accent colour), in light and dark
 
 Smaller things:
 - [x] Inline rename on the row instead of a dialog (menu or F2; Enter or clicking away saves, Esc cancels)
@@ -96,8 +96,8 @@ Smaller things:
 - [x] Full timestamps on hover everywhere dates are shown
 - [x] Skeleton rows instead of a spinner while a folder loads
 - [x] Mobile pass: a bottom tab bar, an add button, long-press to select, larger touch targets
-- [ ] Minify at build +
-- [ ] Optimize assets at build
+- [x] Minify at build: besides the bundles, `sw.js`, `theme-init.js` and every SVG (svgo)
+- [x] Optimize assets at build: brotli copies next to the gzip ones (the server prefers them), and pdf.js's no-WebAssembly decoders left out
 
 ## Later
 
