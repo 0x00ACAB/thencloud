@@ -15,6 +15,7 @@
   import Preview from '../Preview.svelte';
   import ShortcutsDialog from '../dialogs/ShortcutsDialog.svelte';
   import ConvertDialog from '../dialogs/ConvertDialog.svelte';
+  import BatchConvertDialog from '../dialogs/BatchConvertDialog.svelte';
   import VideoDownloadDialog from '../dialogs/VideoDownloadDialog.svelte';
   import { onMount } from 'svelte';
   import { sourceKind } from '../../lib/convert.js';
@@ -748,6 +749,11 @@
       <button type="button" class="btn btn-ghost" onclick={downloadChosen} disabled={!chosen.some((r) => r.node.kind === 'file')}>
         <Icon name="download" /><span class="hidden sm:inline">Download</span>
       </button>
+      {#if chosen.length > 1 && chosen.every((r) => r.node.kind === 'file' && sourceKind(r.meta))}
+        <button type="button" class="btn btn-ghost" onclick={() => (dialog = { type: 'convert-many', entries: [...chosen] })}>
+          <Icon name="file-cog" /><span class="hidden sm:inline">Convert</span>
+        </button>
+      {/if}
       {#if canWrite}
         <button type="button" class="btn btn-ghost" onclick={() => (dialog = { type: 'move', entries: [...chosen] })}>
           <Icon name="move" /><span class="hidden sm:inline">Move</span>
@@ -779,6 +785,8 @@
     fetch={fetchEntry}
     save={canWrite ? saveNewFile : null}
     onclose={close} />
+{:else if dialog?.type === 'convert-many'}
+  <BatchConvertDialog entries={dialog.entries} fetch={fetchEntry} save={canWrite ? saveNewFile : null} onclose={close} />
 {:else if dialog?.type === 'video'}
   <VideoDownloadDialog
     save={canWrite ? saveNewFile : null}
