@@ -8,7 +8,7 @@ exclude = ["crates/thencloud-cli"]
 version = "0.1.0"
 edition = "2024"
 license = "AGPL-3.0-or-later"
-repository = "https://github.com/thencloud/thencloud"
+repository = "https://github.com/0x00ACAB/thencloud"
 
 [workspace.dependencies]
 thencloud-crypto = { path = "crates/thencloud-crypto" }

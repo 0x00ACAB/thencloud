@@ -348,6 +348,37 @@
     anchor = id;
   }
 
+  // Touch: long-press a row to select it; while something is selected, a
+  // tap toggles a row instead of opening it (there's no hover to reveal the
+  // checkboxes).
+  const touch = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+  let press = null; // { timer, x, y, fired }
+
+  function pressStart(e, entry) {
+    if (e.pointerType === 'mouse') return;
+    const p = { x: e.clientX, y: e.clientY, fired: false };
+    p.timer = setTimeout(() => {
+      p.fired = true;
+      toggle(entry);
+      navigator.vibrate?.(10);
+    }, 450);
+    press = p;
+  }
+  function pressMove(e) {
+    if (press && Math.hypot(e.clientX - press.x, e.clientY - press.y) > 10) pressEnd();
+  }
+  function pressEnd() {
+    if (press) clearTimeout(press.timer);
+  }
+
+  function rowTap(entry) {
+    const long = press?.fired;
+    press = null;
+    if (long) return; // the long press already selected it
+    if (touch && selected.size) return toggle(entry);
+    activate(entry);
+  }
+
   function toggleAll() {
     if (allVisibleSelected) for (const r of visible) selected.delete(r.node.id);
     else for (const r of visible) selected.add(r.node.id);
@@ -608,16 +639,16 @@
       </p>
     {/if}
   </div>
-  <div class="flex flex-wrap gap-2">
+  <div class="flex w-full flex-wrap gap-2 md:w-auto">
     {#if rows.length}
-      <label class="relative block">
+      <label class="relative block flex-1 md:flex-none">
         <span class="sr-only">Search this folder</span>
         <Icon name="search" class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-fg-faint" />
         <input
           bind:this={searchInput}
           bind:value={query}
           type="search"
-          class="input h-8 w-44 pr-8 pl-8 sm:w-56"
+          class="input h-8 w-full pr-8 pl-8 md:w-56"
           placeholder="Search"
           autocomplete="off"
           spellcheck="false" />
@@ -637,22 +668,25 @@
       {/if}
     {/if}
     {#if canWrite}
-      <button type="button" class="btn btn-secondary" disabled={!here} onclick={() => (dialog = { type: 'note' })}>
-        <Icon name="file-plus" /> New note
-      </button>
-      <button type="button" class="btn btn-secondary" disabled={!here} onclick={() => (dialog = { type: 'mkdir' })}>
-        <Icon name="folder-plus" /> New folder
-      </button>
-      <Menu
-        label="Upload"
-        buttonClass="btn btn-primary"
-        items={[
-          { label: 'Files', icon: 'file-up', onclick: () => fileInput.click() },
-          { label: 'Folder', icon: 'folder-up', onclick: () => folderInput.click() },
-          ...(tools.video_downloader ? ['sep', { label: 'From a video link', icon: 'link', onclick: () => (dialog = { type: 'video' }) }] : []),
-        ]}>
-        {#snippet trigger()}<Icon name="upload" /> Upload<Icon name="chevron-down" class="-mr-1 size-3.5 opacity-70" />{/snippet}
-      </Menu>
+      <!-- On phones these live in the + button instead. -->
+      <div class="hidden gap-2 md:flex">
+        <button type="button" class="btn btn-secondary" disabled={!here} onclick={() => (dialog = { type: 'note' })}>
+          <Icon name="file-plus" /> New note
+        </button>
+        <button type="button" class="btn btn-secondary" disabled={!here} onclick={() => (dialog = { type: 'mkdir' })}>
+          <Icon name="folder-plus" /> New folder
+        </button>
+        <Menu
+          label="Upload"
+          buttonClass="btn btn-primary"
+          items={[
+            { label: 'Files', icon: 'file-up', onclick: () => fileInput.click() },
+            { label: 'Folder', icon: 'folder-up', onclick: () => folderInput.click() },
+            ...(tools.video_downloader ? ['sep', { label: 'From a video link', icon: 'link', onclick: () => (dialog = { type: 'video' }) }] : []),
+          ]}>
+          {#snippet trigger()}<Icon name="upload" /> Upload<Icon name="chevron-down" class="-mr-1 size-3.5 opacity-70" />{/snippet}
+        </Menu>
+      </div>
     {/if}
   </div>
 </div>
@@ -736,7 +770,8 @@
     <table class="table animate-enter">
       <thead>
         <tr>
-          <th class="w-10 !pr-0">
+          <!-- On phones the checkboxes only appear while selecting (long press). -->
+          <th class="w-10 !pr-0 {selected.size ? '' : 'max-md:hidden'}">
             <input
               type="checkbox"
               class="size-4 cursor-pointer align-middle accent-accent"
@@ -771,7 +806,7 @@
           {@const folder = entry.node.kind === 'folder'}
           {@const isSelected = selected.has(entry.node.id)}
           <tr class="group {isSelected ? 'bg-accent-soft/60 hover:bg-accent-soft/60' : ''}" aria-selected={isSelected} in:fade out:fade={{ duration: 120 }} animate:flip={flipParams()}>
-            <td class="w-10 !pr-0">
+            <td class="w-10 !pr-0 {selected.size ? '' : 'max-md:hidden'}">
               <input
                 type="checkbox"
                 class="size-4 cursor-pointer align-middle accent-accent transition-opacity focus-visible:opacity-100 {selected.size ? '' : 'opacity-0 group-hover:opacity-100'}"
@@ -801,9 +836,22 @@
                     onblur={() => finishRename(entry)} />
                 </form>
               {:else}
-                <button type="button" class="row-open flex max-w-full cursor-pointer items-center gap-3 text-left" onclick={() => activate(entry)}>
+                <button
+                  type="button"
+                  class="row-open flex max-w-full cursor-pointer items-center gap-3 text-left select-none md:select-auto"
+                  onclick={() => rowTap(entry)}
+                  onpointerdown={(e) => pressStart(e, entry)}
+                  onpointerup={pressEnd}
+                  onpointercancel={pressEnd}
+                  onpointermove={pressMove}
+                  oncontextmenu={(e) => e.pointerType !== 'mouse' && touch && e.preventDefault()}>
                   {#if folder}<FolderIcon name={entry.meta.name} />{:else}<FileIcon meta={entry.meta} />{/if}
-                  <span class="truncate font-medium group-hover:underline group-hover:underline-offset-4 group-hover:decoration-line-strong">{entry.meta.name}</span>
+                  <span class="grid min-w-0">
+                    <span class="truncate font-medium group-hover:underline group-hover:underline-offset-4 group-hover:decoration-line-strong">{entry.meta.name}</span>
+                    <span class="truncate text-xs text-fg-muted md:hidden">
+                      {#if !folder}<span class="sm:hidden">{formatSize(entry.meta.size)}{' · '}</span>{/if}{formatWhen(entry.node.updated_at * 1000)}
+                    </span>
+                  </span>
                 </button>
               {/if}
             </td>
@@ -836,7 +884,7 @@
 {/if}
 
 {#if selected.size && chosen.length}
-  <div class="fixed inset-x-0 bottom-6 z-40 flex justify-center px-4" transition:fly={{ y: 12 }}>
+  <div class="fixed inset-x-0 bottom-[calc(var(--bottom-bar)+1rem)] z-40 flex justify-center px-4 md:bottom-6" transition:fly={{ y: 12 }}>
     <div class="flex items-center gap-1 rounded-lg border border-line bg-bg p-1.5 pl-3 shadow-lg shadow-black/5 dark:shadow-black/40" role="toolbar" aria-label="Selection">
       <span class="mr-2 text-sm font-medium tabular-nums">{chosen.length} selected</span>
       <button type="button" class="btn btn-ghost" onclick={downloadChosen} disabled={!chosen.some((r) => r.node.kind === 'file')}>
@@ -860,6 +908,25 @@
         <Icon name="x" />
       </button>
     </div>
+  </div>
+{/if}
+
+<!-- Phones: one + button for everything that adds files. -->
+{#if canWrite && here && !selected.size}
+  <div class="fixed right-4 bottom-[calc(var(--bottom-bar)+1rem)] z-30 md:hidden" transition:fly={{ y: 12 }}>
+    <Menu
+      label="Add"
+      buttonClass="grid size-14 cursor-pointer place-items-center rounded-full bg-accent text-accent-fg shadow-lg shadow-black/25 transition-transform active:scale-95"
+      items={[
+        { label: 'Upload files', icon: 'file-up', onclick: () => fileInput.click() },
+        { label: 'Upload a folder', icon: 'folder-up', onclick: () => folderInput.click() },
+        ...(tools.video_downloader ? [{ label: 'From a video link', icon: 'link', onclick: () => (dialog = { type: 'video' }) }] : []),
+        'sep',
+        { label: 'New folder', icon: 'folder-plus', onclick: () => (dialog = { type: 'mkdir' }) },
+        { label: 'New note', icon: 'file-plus', onclick: () => (dialog = { type: 'note' }) },
+      ]}>
+      {#snippet trigger()}<Icon name="plus" class="size-6" />{/snippet}
+    </Menu>
   </div>
 {/if}
 
