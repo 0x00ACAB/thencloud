@@ -6,6 +6,7 @@
 
   let mode = $state('signin'); // signin | signup | recover
   let recoveryKey = $state('');
+  let remember = $state(false);
   let username = $state('');
   let password = $state('');
   let confirm = $state('');
@@ -65,9 +66,9 @@
     }
     busy = true;
     try {
-      if (signup) await register(username, password, invite);
-      else if (recover) await recoverAccount(username.trim(), recoveryKey, password);
-      else await login(username, password);
+      if (signup) await register(username, password, invite, remember);
+      else if (recover) await recoverAccount(username.trim(), recoveryKey, password, remember);
+      else await login(username, password, remember);
     } catch (err) {
       error =
         {
@@ -180,6 +181,18 @@
           </p>
         </div>
       {/if}
+
+      <div class="grid gap-1.5">
+        <label class="flex w-fit cursor-pointer items-center gap-2 text-[13px]">
+          <input type="checkbox" class="size-4 accent-accent" bind:checked={remember} />
+          Keep me signed in on this browser
+        </label>
+        {#if remember}
+          <p class="text-xs leading-5 text-fg-muted">
+            Your keys are saved in this browser, locked with a key it won't give to any website, so you won't need your password again here. Anyone who can use this computer account can open your files, so only tick this on your own device, ideally with an encrypted disk. Signing out removes them.
+          </p>
+        {/if}
+      </div>
 
       {#if endedElsewhere && !error}
         <p class="flex items-center gap-2 text-[13px] text-fg-muted" role="status"><Icon name="log-out" />You were signed out, maybe from another device. Sign in again to continue.</p>

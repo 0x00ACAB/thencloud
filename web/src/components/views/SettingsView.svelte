@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { session, changePassword, listSessions, revokeSession, revokeOtherSessions, removeRecoveryKey, listContacts, forgetContact } from '../../lib/cloud.svelte.js';
+  import { session, changePassword, listSessions, revokeSession, revokeOtherSessions, removeRecoveryKey, listContacts, forgetContact, forgetThisBrowser } from '../../lib/cloud.svelte.js';
   import RecoveryKeyDialog from '../dialogs/RecoveryKeyDialog.svelte';
   import ConfirmDialog from '../dialogs/ConfirmDialog.svelte';
   import { theme, setTheme, toast, toastError, errorMessage, copyText, accent, setAccent, ACCENT_PRESETS, DEFAULT_ACCENT, contrast, accentForeground, iconPack, setIconPack } from '../../lib/ui.svelte.js';
@@ -244,12 +244,23 @@
               <p class="flex items-center gap-2 text-sm">
                 <span class="truncate font-medium">{d.device_name}</span>
                 {#if d.current}<span class="badge badge-accent">This device</span>{/if}
+                {#if d.current && session.remembered}<span class="badge">Kept signed in</span>{/if}
               </p>
               <p class="truncate text-xs text-fg-muted">
                 Signed in <span title={fullDate(d.created_at * 1000)}>{formatDate(d.created_at * 1000)}</span>
                 {#if !d.current}· active <span title={fullDate(d.last_seen * 1000)}>{formatWhen(d.last_seen * 1000)}</span>{/if}
               </p>
             </div>
+            {#if d.current && session.remembered}
+              <button
+                type="button"
+                class="btn btn-secondary h-7 px-2.5 text-[13px]"
+                title="Remove the saved keys from this browser; you'll need your password next time"
+                onclick={async () => {
+                  await forgetThisBrowser();
+                  toast("This browser won't keep you signed in any more", { kind: 'success' });
+                }}>Stop keeping signed in</button>
+            {/if}
             {#if !d.current}
               <button type="button" class="btn btn-secondary h-7 px-2.5 text-[13px]" disabled={revoking !== null} onclick={() => signOut(d.id)}>
                 {#if revoking === d.id}<Icon name="loader-circle" class="spinner" />{/if}
