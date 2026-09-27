@@ -1187,6 +1187,7 @@ async fn security_headers_are_set() {
         )
         .await;
     assert_eq!(br.headers.get("content-encoding").unwrap(), "br");
+    assert_eq!(br.headers.get("vary").unwrap(), "accept-encoding");
     assert_eq!(&br.body[..], b"not-really-brotli");
     let missing = get("/assets/app-gone.css").await;
     assert_eq!(missing.status, StatusCode::NOT_FOUND);

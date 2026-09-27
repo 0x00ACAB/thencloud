@@ -206,5 +206,11 @@ async fn cache_control(req: Request, next: Next) -> Response {
     res.headers_mut()
         .entry(header::CACHE_CONTROL)
         .or_insert(HeaderValue::from_static(value));
+    // Static files may be sent brotli- or gzip-compressed.
+    if !path.starts_with("/api/") {
+        res.headers_mut()
+            .entry(header::VARY)
+            .or_insert(HeaderValue::from_static("accept-encoding"));
+    }
     res
 }
