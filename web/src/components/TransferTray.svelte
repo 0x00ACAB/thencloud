@@ -4,7 +4,24 @@
   import { formatSize } from '../lib/format.js';
   import Icon from './Icon.svelte';
 
-  let collapsed = $state(false);
+  // Remembered per device, like the theme.
+  let collapsed = $state(
+    (() => {
+      try {
+        return localStorage.getItem('trayCollapsed') === '1';
+      } catch {
+        return false;
+      }
+    })(),
+  );
+  function toggle() {
+    collapsed = !collapsed;
+    try {
+      localStorage.setItem('trayCollapsed', collapsed ? '1' : '0');
+    } catch {
+      /* private mode */
+    }
+  }
   const active = $derived(transfers.filter((t) => t.status === 'active').length);
   const failed = $derived(transfers.filter((t) => t.status === 'error').length);
   const heading = $derived(
@@ -20,7 +37,7 @@
     <header class="flex h-10 items-center gap-2 border-b border-line bg-subtle pr-1.5 pl-3.5">
       {#if active}<Icon name="loader-circle" class="spinner text-fg-muted" />{/if}
       <h2 class="flex-1 truncate text-[13px] font-medium">{heading}</h2>
-      <button type="button" class="btn btn-ghost btn-icon h-7 w-7" aria-label={collapsed ? 'Expand' : 'Collapse'} onclick={() => (collapsed = !collapsed)}>
+      <button type="button" class="btn btn-ghost btn-icon h-7 w-7" aria-label={collapsed ? 'Expand' : 'Collapse'} onclick={toggle}>
         <Icon name="chevron-right" class="size-4 transition-transform {collapsed ? '-rotate-90' : 'rotate-90'}" />
       </button>
       {#if !active}

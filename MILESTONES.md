@@ -69,11 +69,11 @@ Bigger pieces:
 - [ ] **Profile pictures**: shown in the top bar, share dialogs and shared-with lists. Decide who can see them: encrypted to people you share with (server can't see) vs. plain on the server (simpler, but visible to it)
 
 Smaller things:
-- [ ] Inline rename on the row instead of a dialog
+- [x] Inline rename on the row instead of a dialog (menu or F2; Enter or clicking away saves, Esc cancels)
 - [x] Remember sort order per device
-- [ ] Remember the transfer tray's collapsed state per device
-- [ ] Better empty states with the sticker logo
-- [ ] Full timestamps on hover everywhere dates are shown
+- [x] Remember the transfer tray's collapsed state per device
+- [x] Better empty states with the sticker logo (an empty My files and Shared with me)
+- [x] Full timestamps on hover everywhere dates are shown
 - [x] Skeleton rows instead of a spinner while a folder loads
 - [ ] Mobile pass: bottom action bar, larger touch targets
 

@@ -1,8 +1,8 @@
 <script>
   import { outgoingShares, setSharePermission, deleteShare } from '../../lib/cloud.svelte.js';
   import { toast, toastError } from '../../lib/ui.svelte.js';
-  import { formatDate } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
+  import Time from '../Time.svelte';
   import FileIcon from '../FileIcon.svelte';
   import ConfirmDialog from '../dialogs/ConfirmDialog.svelte';
 
@@ -84,7 +84,7 @@
                 <option value="write">Can edit</option>
               </select>
             </td>
-            <td class="hidden text-fg-muted md:table-cell">{formatDate(s.created_at * 1000)}</td>
+            <td class="hidden text-fg-muted md:table-cell"><Time ms={s.created_at * 1000} /></td>
             <td class="text-right">
               <button type="button" class="btn btn-ghost btn-icon" aria-label="Revoke access for {s.recipient}" title="Revoke access" onclick={() => (revoking = s)}>
                 <Icon name="x" />

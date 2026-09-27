@@ -1,9 +1,10 @@
 <script>
-  // Used for "New folder" and "Rename".
+  // Asks for a name: "New folder" and "New note". (Renaming happens in place.)
   import { untrack } from 'svelte';
   import Modal from '../Modal.svelte';
   import Icon from '../Icon.svelte';
   import { errorMessage } from '../../lib/ui.svelte.js';
+  import { nameError } from '../../lib/format.js';
 
   // `initial` is a suggestion when `create` is set; otherwise keeping it unchanged just closes.
   let { title, label = 'Name', initial = '', confirmLabel = 'Save', create = false, onsave, onclose } = $props();
@@ -20,16 +21,9 @@
     input.setSelectionRange(0, dot > 0 ? dot : initial.length);
   });
 
-  function validate(n) {
-    if (!n) return 'Enter a name.';
-    if (n === '.' || n === '..' || n.includes('/')) return 'Names cannot contain "/" or be "." or "..".';
-    if (n.length > 255) return 'That name is too long.';
-    return '';
-  }
-
   async function submit() {
     const n = name.trim();
-    error = validate(n);
+    error = nameError(n);
     if (error) return;
     if (n === initial && !create) return onclose();
     busy = true;

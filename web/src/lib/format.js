@@ -73,3 +73,11 @@ export function sortEntries(rows, { key = 'name', dir = 'asc' } = {}) {
 export function plural(n, word) {
   return `${n} ${word}${n === 1 ? '' : 's'}`;
 }
+
+/** Why a file or folder name isn't allowed, or '' if it's fine. */
+export function nameError(n) {
+  if (!n) return 'Enter a name.';
+  if (n === '.' || n === '..' || n.includes('/')) return 'Names cannot contain "/" or be "." or "..".';
+  if (n.length > 255) return 'That name is too long.';
+  return '';
+}

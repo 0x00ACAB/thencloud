@@ -6,9 +6,10 @@
   // appears in any request URL, header or body.
   import { request } from './lib/api.js';
   import { unb64, decryptMeta, decryptChildren, fetchFile, saveBlob } from './lib/crypto.js';
-  import { formatSize, formatDate, sortEntries } from './lib/format.js';
+  import { formatSize, sortEntries } from './lib/format.js';
   import { errorMessage, trackTransfer } from './lib/ui.svelte.js';
   import Icon from './components/Icon.svelte';
+  import Time from './components/Time.svelte';
   import FileIcon from './components/FileIcon.svelte';
   import Toasts from './components/Toasts.svelte';
   import TransferTray from './components/TransferTray.svelte';
@@ -179,7 +180,7 @@
           <FileIcon meta={here.meta} class="size-6" strokeWidth={1.5} />
         </div>
         <h1 class="max-w-full truncate text-base font-semibold">{here.meta.name}</h1>
-        <p class="text-[13px] text-fg-muted">{formatSize(here.meta.size)}{here.meta.mtime ? `, modified ${formatDate(here.meta.mtime)}` : ''}</p>
+        <p class="text-[13px] text-fg-muted">{formatSize(here.meta.size)}{#if here.meta.mtime}, <Time ms={here.meta.mtime} prefix="modified " />{/if}</p>
         <div class="mt-5 grid w-full gap-2">
           <button type="button" class="btn btn-accent btn-lg w-full" onclick={() => downloadEntry(here)}>
             <Icon name="download" /> Download
@@ -257,7 +258,7 @@
         <Icon name="shield-check" class="size-3.5" />
         Decrypted in your browser. The key is never sent to the server.
       </p>
-      {#if expiresAt}<p>Link expires {formatDate(expiresAt * 1000)}</p>{/if}
+      {#if expiresAt}<p><Time ms={expiresAt * 1000} prefix="Link expires " /></p>{/if}
     </div>
   </footer>
 </div>

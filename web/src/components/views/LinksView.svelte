@@ -1,8 +1,8 @@
 <script>
   import { links, deleteLink } from '../../lib/cloud.svelte.js';
   import { toast, toastError, copyText } from '../../lib/ui.svelte.js';
-  import { formatDate } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
+  import Time from '../Time.svelte';
   import FileIcon from '../FileIcon.svelte';
   import ConfirmDialog from '../dialogs/ConfirmDialog.svelte';
 
@@ -66,11 +66,11 @@
             <td class="hidden sm:table-cell">
               <span class="flex flex-wrap gap-1.5">
                 {#if l.has_password}<span class="badge"><Icon name="lock" />Password</span>{/if}
-                {#if l.expires_at}<span class="badge">Expires {formatDate(l.expires_at * 1000)}</span>{/if}
+                {#if l.expires_at}<span class="badge"><Time ms={l.expires_at * 1000} prefix="Expires " /></span>{/if}
                 {#if !l.has_password && !l.expires_at}<span class="text-[13px] text-fg-faint">None</span>{/if}
               </span>
             </td>
-            <td class="hidden text-fg-muted md:table-cell">{formatDate(l.created_at * 1000)}</td>
+            <td class="hidden text-fg-muted md:table-cell"><Time ms={l.created_at * 1000} /></td>
             <td class="text-right whitespace-nowrap">
               <button type="button" class="btn btn-ghost btn-icon" aria-label="Copy link" title="Copy link" disabled={!l.url} onclick={() => copyText(l.url, 'Link copied')}>
                 <Icon name="copy" />
