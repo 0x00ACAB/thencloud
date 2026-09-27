@@ -1,6 +1,7 @@
 pub mod admin;
 pub mod auth;
 pub mod contacts;
+pub mod drops;
 pub mod links;
 pub mod nodes;
 pub mod public;
@@ -104,6 +105,9 @@ pub fn router(state: AppState) -> Router {
         .route("/shares/incoming", get(shares::incoming))
         .route("/shares/outgoing", get(shares::outgoing))
         .route("/shares/{id}", patch(shares::update).delete(shares::delete))
+        .route("/drops", get(drops::list))
+        .route("/drops/{id}", delete(drops::discard))
+        .route("/drops/{id}/adopt", post(drops::adopt))
         .route("/links", post(links::create).get(links::list))
         .route("/links/{id}", delete(links::delete))
         .route("/public/{token}", get(public::info))
@@ -112,6 +116,15 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/public/{token}/nodes/{id}/chunks/{idx}",
             get(public::chunk),
+        )
+        .route("/public/{token}/uploads", post(public::upload_create))
+        .route(
+            "/public/{token}/uploads/{id}/chunks/{idx}",
+            put(public::upload_chunk).layer(DefaultBodyLimit::max(MAX_ENCRYPTED_CHUNK + 1024)),
+        )
+        .route(
+            "/public/{token}/uploads/{id}/finish",
+            post(public::upload_finish),
         )
         .fallback(|| async { AppError::NotFound });
 

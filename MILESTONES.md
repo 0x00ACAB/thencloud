@@ -100,7 +100,7 @@ Smaller things:
 - [ ] **Key rotation on revocation**: re-key a folder subtree when a share is revoked, so former recipients can't decrypt future content
 - [x] **Verified contacts**: keys checked by fingerprint are pinned in an encrypted contact list; a changed key blocks sharing until it's checked again
 - [ ] **Key transparency**: a signed or auditable key directory, so even a first share doesn't depend on comparing fingerprints
-- [ ] **Upload-only "file drop" links**
+- [x] **Upload-only "file drop" links**: the link carries the owner's public key after `#`; visitors encrypt each file and seal its key to the owner (bound to the file and folder ids), and see nothing in the folder. Dropped files stay hidden until the owner's client wraps their keys under the folder key
 - [ ] **Streaming downloads** through a service worker, so large files aren't buffered in memory
 - [ ] **Native CLI and desktop sync client** reusing `thencloud-crypto`
 - [ ] **Encrypted name index**: HMAC of name under the folder key, so the server can reject duplicate names without learning them

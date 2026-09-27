@@ -464,6 +464,28 @@ pub fn open_share_key(kp: &KeyPair, sealed: &[u8], node_id: &str) -> Result<Key>
     k
 }
 
+/// Seal a new file's key to a folder owner, for a file dropped through an
+/// upload-only link. Bound to the file and the folder it was dropped into.
+pub fn seal_drop_key(
+    owner_pub: &[u8],
+    node_key: &Key,
+    node_id: &str,
+    folder_id: &str,
+) -> Result<Vec<u8>> {
+    seal_to_public(
+        owner_pub,
+        node_key.as_bytes(),
+        &aad("drop", &[node_id, folder_id]),
+    )
+}
+
+pub fn open_drop_key(kp: &KeyPair, sealed: &[u8], node_id: &str, folder_id: &str) -> Result<Key> {
+    let mut pt = open_sealed(kp, sealed, &aad("drop", &[node_id, folder_id]))?;
+    let k = Key::from_slice(&pt);
+    pt.zeroize();
+    k
+}
+
 // ---------------------------------------------------------------------------
 // Node keys and metadata
 // ---------------------------------------------------------------------------
@@ -671,6 +693,12 @@ mod tests {
         assert!(open_share_key(&kp, &s, &id).unwrap() == nk);
         assert!(open_share_key(&other, &s, &id).is_err());
         assert!(open_share_key(&kp, &s, &new_id()).is_err());
+
+        let folder = new_id();
+        let d = seal_drop_key(&kp.public, &nk, &id, &folder).unwrap();
+        assert!(open_drop_key(&kp, &d, &id, &folder).unwrap() == nk);
+        assert!(open_drop_key(&kp, &d, &id, &new_id()).is_err());
+        assert!(open_share_key(&kp, &d, &id).is_err());
 
         let mk = Key::generate();
         let w = wrap_private_key(&mk, &kp.secret);

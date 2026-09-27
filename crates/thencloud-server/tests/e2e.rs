@@ -710,6 +710,7 @@ async fn full_lifecycle_is_zero_knowledge() {
                 node_id: other.clone(),
                 password: Some("letmein".into()),
                 expires_at: None,
+                upload_only: false,
             }),
         )
         .await;
@@ -749,8 +750,9 @@ async fn full_lifecycle_is_zero_knowledge() {
         .await
         .json();
     let lk = Key::from_b64(&fragment_key).unwrap();
+    let info_node = info.node.unwrap();
     assert_eq!(
-        c::decrypt_metadata(&lk, &info.node.id, &info.node.enc_metadata)
+        c::decrypt_metadata(&lk, &info_node.id, &info_node.enc_metadata)
             .unwrap()
             .name,
         "Holiday Photos"
@@ -1345,6 +1347,237 @@ async fn version_history_restore_and_limits() {
     assert_eq!(r.status, StatusCode::BAD_REQUEST);
 }
 
+/// Upload a file through an upload-only link the way the share page does:
+/// the node key is sealed to the owner's public key from the fragment.
+async fn drop_file(
+    h: &Harness,
+    token: &str,
+    owner_pub: &[u8],
+    folder: &str,
+    name: &str,
+    data: &[u8],
+) -> (String, Key, StatusCode) {
+    let id = c::new_id();
+    let k = Key::generate();
+    let version_id = c::new_id();
+    let ck = Key::generate();
+    let chunks = c::encrypt_content(&ck, &version_id, data);
+    let req = CreateUploadRequest {
+        node_id: id.clone(),
+        parent_id: Some(folder.into()),
+        enc_key: Some(B64(c::seal_drop_key(owner_pub, &k, &id, folder).unwrap())),
+        enc_metadata: B64(c::encrypt_metadata(&k, &id, &meta(name, data.len() as u64)).unwrap()),
+        version_id: version_id.clone(),
+        enc_content_key: B64(c::wrap_content_key(&k, &ck, &id, &version_id)),
+        chunk_count: chunks.len() as u32,
+        if_revision: None,
+    };
+    let base = format!("/api/public/{token}/uploads");
+    let r = h.call(Method::POST, &base, None, Some(&req)).await;
+    if r.status != StatusCode::CREATED {
+        return (id, k, r.status);
+    }
+    let up: UploadResponse = r.json();
+    for (i, chunk) in chunks.iter().enumerate() {
+        let r = h
+            .raw(
+                Method::PUT,
+                &format!("{base}/{}/chunks/{i}", up.upload_id),
+                None,
+                &[],
+                Body::from(chunk.clone()),
+                Some("application/octet-stream"),
+            )
+            .await;
+        assert_eq!(r.status, StatusCode::NO_CONTENT, "{r:?}");
+    }
+    let r = h
+        .call(
+            Method::POST,
+            &format!("{base}/{}/finish", up.upload_id),
+            None,
+            None::<()>,
+        )
+        .await;
+    (id, k, r.status)
+}
+
+#[tokio::test]
+async fn file_drop_links_are_upload_only_and_zero_knowledge() {
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "pw").await;
+    let bob = register(&h, "bob", "pw").await;
+    let (inbox, inbox_key) = alice.mkdir(&h, &alice.root, "Inbox").await;
+    let file = alice
+        .upload(&h, &inbox, None, "existing.txt", b"already here")
+        .await
+        .unwrap();
+    let mk_link = |node_id: String, upload_only: bool| CreateLinkRequest {
+        node_id,
+        password: None,
+        expires_at: None,
+        upload_only,
+    };
+    let r = h
+        .call(
+            Method::POST,
+            "/api/links",
+            Some(&alice.token),
+            Some(mk_link(file.id.clone(), true)),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST, "only folders take drops");
+    let r = h
+        .call(
+            Method::POST,
+            "/api/links",
+            Some(&alice.token),
+            Some(mk_link(inbox.clone(), true)),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED);
+    let link: Link = r.json();
+    assert!(link.upload_only);
+    let listed: Vec<Link> = h.get("/api/links", &alice.token).await.json();
+    assert!(listed[0].upload_only);
+
+    // The visitor learns who it goes to, and nothing about the folder.
+    let base = format!("/api/public/{}", link.token);
+    let info: PublicLinkInfo = h
+        .raw(Method::GET, &base, None, &[], Body::empty(), None)
+        .await
+        .json();
+    assert!(info.upload_only && info.node.is_none());
+    assert_eq!(info.owner.as_deref(), Some("alice"));
+    assert_eq!(info.folder_id.as_deref(), Some(inbox.as_str()));
+    for uri in [
+        format!("{base}/nodes/{inbox}/children"),
+        format!("{base}/nodes/{}/chunks/0", file.id),
+    ] {
+        let r = h
+            .raw(Method::GET, &uri, None, &[], Body::empty(), None)
+            .await;
+        assert_eq!(r.status, StatusCode::FORBIDDEN, "{uri}");
+    }
+
+    // Drop a file. The fragment carries alice's public key.
+    let alice_pub = alice.kp.public.to_vec();
+    let secret: Vec<u8> = [MARKER, b"dropped content"].concat();
+    let (dropped, dk, st) = drop_file(
+        &h,
+        &link.token,
+        &alice_pub,
+        &inbox,
+        "drop-secret-name.pdf",
+        &secret,
+    )
+    .await;
+    assert_eq!(st, StatusCode::NO_CONTENT);
+    // Only into the linked folder itself.
+    let (_, _, st) = drop_file(&h, &link.token, &alice_pub, &alice.root, "x", b"x").await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+    // Not through a normal link.
+    let plain: Link = h
+        .call(
+            Method::POST,
+            "/api/links",
+            Some(&alice.token),
+            Some(mk_link(inbox.clone(), false)),
+        )
+        .await
+        .json();
+    let (_, _, st) = drop_file(&h, &plain.token, &alice_pub, &inbox, "x", b"x").await;
+    assert_eq!(st, StatusCode::FORBIDDEN);
+
+    // Until alice takes it in, it's hidden everywhere.
+    let kids: Vec<Node> = h
+        .get(&format!("/api/nodes/{inbox}/children"), &alice.token)
+        .await
+        .json();
+    assert_eq!(kids.len(), 1);
+    let r = h.get(&format!("/api/nodes/{dropped}"), &alice.token).await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+    let none: Vec<DroppedFile> = h.get("/api/drops", &bob.token).await.json();
+    assert!(none.is_empty());
+
+    let drops: Vec<DroppedFile> = h.get("/api/drops", &alice.token).await.json();
+    assert_eq!(drops.len(), 1);
+    let d = &drops[0];
+    assert_eq!(d.node.id, dropped);
+    let parent = d.node.parent_id.clone().unwrap();
+    assert_eq!(parent, inbox);
+    let k = c::open_drop_key(&alice.kp, &d.sealed_key, &d.node.id, &parent).unwrap();
+    assert!(k == dk);
+    let wrapped = B64(c::wrap_node_key(&inbox_key, &k, &d.node.id));
+    let r = h
+        .call(
+            Method::POST,
+            &format!("/api/drops/{dropped}/adopt"),
+            Some(&bob.token),
+            Some(AdoptDropRequest {
+                enc_key: wrapped.clone(),
+            }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+    let r = h
+        .call(
+            Method::POST,
+            &format!("/api/drops/{dropped}/adopt"),
+            Some(&alice.token),
+            Some(AdoptDropRequest { enc_key: wrapped }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{r:?}");
+    let kids: Vec<Node> = h
+        .get(&format!("/api/nodes/{inbox}/children"), &alice.token)
+        .await
+        .json();
+    let node = find_by_name(&kids, &inbox_key, "drop-secret-name.pdf");
+    let key = alice.key_of(&h, &node.id).await;
+    assert_eq!(alice.download(&h, node, &key).await.1, secret);
+    let drops: Vec<DroppedFile> = h.get("/api/drops", &alice.token).await.json();
+    assert!(drops.is_empty());
+
+    // A drop can also be thrown away, releasing its space.
+    let used = alice.me(&h).await.used_bytes;
+    let (junk, _, st) = drop_file(&h, &link.token, &alice_pub, &inbox, "junk", &[7; 500]).await;
+    assert_eq!(st, StatusCode::NO_CONTENT);
+    assert!(alice.me(&h).await.used_bytes > used);
+    let r = h
+        .call(
+            Method::DELETE,
+            &format!("/api/drops/{junk}"),
+            Some(&alice.token),
+            None::<()>,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    assert_eq!(alice.me(&h).await.used_bytes, used);
+
+    // --- zero-knowledge check ----------------------------------------------
+    let mut files = Vec::new();
+    all_files(&h.dir.path().join("data"), &mut files);
+    let needles: Vec<&[u8]> = vec![
+        MARKER,
+        b"drop-secret-name",
+        b"dropped content",
+        dk.as_bytes(),
+        inbox_key.as_bytes(),
+    ];
+    for p in &files {
+        let bytes = std::fs::read(p).unwrap();
+        for n in &needles {
+            assert!(
+                !contains(&bytes, n),
+                "plaintext {:?} found in {}",
+                String::from_utf8_lossy(n),
+                p.display()
+            );
+        }
+    }
+}
+
 #[tokio::test]
 async fn janitor_thins_old_versions_by_age() {
     let h = Harness::new().await;
@@ -1463,6 +1696,7 @@ async fn trash_hides_restores_and_purges() {
                 node_id: folder.clone(),
                 password: None,
                 expires_at: None,
+                upload_only: false,
             }),
         )
         .await

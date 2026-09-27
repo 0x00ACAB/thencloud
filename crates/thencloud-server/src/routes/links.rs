@@ -22,6 +22,13 @@ pub async fn create(
 ) -> Result<(StatusCode, Json<Link>)> {
     check_id(&req.node_id, "node_id")?;
     access::require(&state.db, &user.id, &req.node_id, Access::Owner).await?;
+    if req.upload_only
+        && !crate::db::get_node(&state.db, &req.node_id)
+            .await?
+            .is_some_and(|n| n.is_folder())
+    {
+        return Err(AppError::bad("upload-only links are for folders"));
+    }
     let t = now();
     if req.expires_at.is_some_and(|e| e <= t) {
         return Err(AppError::bad("expires_at must be in the future"));
@@ -38,10 +45,11 @@ pub async fn create(
         has_password: password_hash.is_some(),
         expires_at: req.expires_at,
         created_at: t,
+        upload_only: req.upload_only,
     };
     sqlx::query(
-        "INSERT INTO public_links (id, token, node_id, owner_id, password_hash, expires_at, created_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO public_links (id, token, node_id, owner_id, password_hash, expires_at, created_at, \
+         upload_only) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&link.id)
     .bind(&link.token)
@@ -50,18 +58,22 @@ pub async fn create(
     .bind(password_hash)
     .bind(link.expires_at)
     .bind(t)
+    .bind(link.upload_only)
     .execute(&state.db)
     .await?;
     Ok((StatusCode::CREATED, Json(link)))
 }
+
+/// `(id, token, node_id, has_password, expires_at, created_at, upload_only)`
+type LinkRow = (String, String, String, bool, Option<i64>, i64, bool);
 
 pub async fn list(
     State(state): State<AppState>,
     user: AuthUser,
     Query(f): Query<NodeFilter>,
 ) -> Result<Json<Vec<Link>>> {
-    let rows: Vec<(String, String, String, bool, Option<i64>, i64)> = sqlx::query_as(
-        "SELECT id, token, node_id, password_hash IS NOT NULL, expires_at, created_at FROM public_links \
+    let rows: Vec<LinkRow> = sqlx::query_as(
+        "SELECT id, token, node_id, password_hash IS NOT NULL, expires_at, created_at, upload_only FROM public_links \
          WHERE owner_id = ? AND (? IS NULL OR node_id = ?) ORDER BY created_at",
     )
     .bind(&user.id)
@@ -79,13 +91,14 @@ pub async fn list(
         visible
             .into_iter()
             .map(
-                |(id, token, node_id, has_password, expires_at, created_at)| Link {
+                |(id, token, node_id, has_password, expires_at, created_at, upload_only)| Link {
                     id,
                     token,
                     node_id,
                     has_password,
                     expires_at,
                     created_at,
+                    upload_only,
                 },
             )
             .collect(),

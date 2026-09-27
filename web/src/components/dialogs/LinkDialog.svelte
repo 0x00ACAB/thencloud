@@ -13,6 +13,13 @@
   let busy = $state(false);
   let error = $state('');
   let created = $state(null);
+  let kind = $state('view');
+  const folder = $derived(entry.node.kind === 'folder');
+
+  const kinds = [
+    ['view', 'View and download', 'Visitors can open everything in the folder.'],
+    ['drop', 'File drop', "Visitors can add files but can't see what's in it."],
+  ];
 
   const expiries = [
     ['never', 'Never'],
@@ -39,7 +46,7 @@
     error = '';
     try {
       const expiresAt = expiry === 'never' ? null : Math.floor(Date.now() / 1000) + Number(expiry) * 86400;
-      created = await createLink(entry, { password, expiresAt });
+      created = await createLink(entry, { password, expiresAt, uploadOnly: folder && kind === 'drop' });
       password = '';
       await load();
       copyText(created.url, 'Link created and copied');
@@ -61,13 +68,20 @@
   }
 </script>
 
-<Modal title="Public link" description="Anyone with the link can open {entry.meta.name}, no account needed." {onclose} onsubmit={submit} class="max-w-lg">
+<Modal title="Public link" description="Anyone with the link can use {entry.meta.name}, no account needed." {onclose} onsubmit={submit} class="max-w-lg">
   <div class="flex gap-2.5 rounded-md border border-line bg-subtle p-3 text-[13px] text-fg-muted">
     <Icon name="key-round" class="mt-0.5 size-4 shrink-0 text-fg" />
-    <p>
-      The decryption key is the part of the link after <code class="font-mono text-fg">#</code>. Browsers never send that part to the server, so thencloud
-      can't read what you share. Treat the whole link like a password.
-    </p>
+    {#if kind === 'drop'}
+      <p>
+        A file drop link carries your public key after the <code class="font-mono text-fg">#</code>. Files are encrypted to you in the visitor's browser,
+        and only you can open them. Anyone with the link can add files, so they count toward your storage.
+      </p>
+    {:else}
+      <p>
+        The decryption key is the part of the link after <code class="font-mono text-fg">#</code>. Browsers never send that part to the server, so thencloud
+        can't read what you share. Treat the whole link like a password.
+      </p>
+    {/if}
   </div>
 
   {#if existing?.length}
@@ -80,6 +94,7 @@
               <p class="truncate font-mono text-[13px] {created?.id === l.id ? 'text-accent-text' : ''}">{l.url}</p>
               <p class="mt-0.5 flex flex-wrap gap-x-3 text-xs text-fg-muted">
                 <span><Time ms={l.created_at * 1000} prefix="Created " /></span>
+                {#if l.upload_only}<span class="inline-flex items-center gap-1"><Icon name="inbox" class="size-3" />File drop</span>{/if}
                 {#if l.has_password}<span class="inline-flex items-center gap-1"><Icon name="lock" class="size-3" />Password</span>{/if}
                 <span>{#if l.expires_at}<Time ms={l.expires_at * 1000} prefix="Expires " />{:else}No expiry{/if}</span>
               </p>
@@ -93,6 +108,22 @@
           </li>
         {/each}
       </ul>
+    </div>
+  {/if}
+
+  {#if folder}
+    <div class="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Link type">
+      {#each kinds as [value, label, text] (value)}
+        <button
+          type="button"
+          role="radio"
+          aria-checked={kind === value}
+          class="grid cursor-pointer gap-1 rounded-md border p-3 text-left transition-colors {kind === value ? 'border-accent bg-accent-soft' : 'border-line hover:bg-subtle'}"
+          onclick={() => (kind = value)}>
+          <span class="text-sm font-medium {kind === value ? 'text-accent-text' : ''}">{label}</span>
+          <span class="text-xs text-fg-muted">{text}</span>
+        </button>
+      {/each}
     </div>
   {/if}
 

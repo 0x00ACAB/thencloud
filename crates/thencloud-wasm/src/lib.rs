@@ -305,3 +305,27 @@ pub fn open_share_key(secret: &[u8], sealed: &[u8], node_id: &str) -> R<Vec<u8>>
         .as_bytes()
         .to_vec())
 }
+
+#[wasm_bindgen]
+pub fn seal_drop_key(
+    owner_public: &[u8],
+    node_key: &[u8],
+    node_id: &str,
+    folder_id: &str,
+) -> R<Vec<u8>> {
+    Ok(c::seal_drop_key(
+        owner_public,
+        &key(node_key)?,
+        node_id,
+        folder_id,
+    )?)
+}
+
+#[wasm_bindgen]
+pub fn open_drop_key(secret: &[u8], sealed: &[u8], node_id: &str, folder_id: &str) -> R<Vec<u8>> {
+    Ok(
+        c::open_drop_key(&keypair(secret)?, sealed, node_id, folder_id)?
+            .as_bytes()
+            .to_vec(),
+    )
+}
