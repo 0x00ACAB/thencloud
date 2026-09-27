@@ -601,9 +601,15 @@ impl Metadata {
     }
 }
 
+/// Encrypted metadata is padded to a multiple of this, so its length says
+/// little about the name.
+const METADATA_PAD: usize = 128;
+
 pub fn encrypt_metadata(node_key: &Key, node_id: &str, meta: &Metadata) -> Result<Vec<u8>> {
     meta.validate()?;
-    let json = serde_json::to_vec(meta).map_err(|e| Error::Metadata(e.to_string()))?;
+    let mut json = serde_json::to_vec(meta).map_err(|e| Error::Metadata(e.to_string()))?;
+    // Trailing spaces are valid JSON whitespace.
+    json.resize(json.len().next_multiple_of(METADATA_PAD), b' ');
     Ok(seal(node_key, &json, &aad("metadata", &[node_id])))
 }
 
@@ -640,6 +646,20 @@ pub fn unwrap_content_key(
         wrapped,
         &aad("content-key", &[node_id, version_id]),
     )
+}
+
+/// Smallest padded file size.
+const MIN_PADDED: u64 = 256;
+
+/// The size a file is padded to before encryption (Padmé: at most about
+/// 12% more), so the stored size gives away only a rough bucket. The real
+/// size is in the encrypted metadata; readers drop the zeros after it.
+pub fn padded_size(size: u64) -> u64 {
+    let l = size.max(MIN_PADDED);
+    let e = 63 - l.leading_zeros() as u64; // floor(log2 l)
+    let s = 64 - e.leading_zeros() as u64; // floor(log2 e) + 1
+    let mask = (1u64 << (e - s)) - 1;
+    (l + mask) & !mask
 }
 
 /// Number of chunks for a plaintext of `size` bytes. An empty file is one
@@ -680,14 +700,20 @@ pub fn decrypt_chunk(
     open(content_key, sealed, &chunk_aad(version_id, index, is_last))
 }
 
-/// Encrypt a whole in-memory buffer into chunks.
+/// Encrypt a whole in-memory buffer into chunks, padded with zeros to
+/// `padded_size`.
 pub fn encrypt_content(content_key: &Key, version_id: &str, data: &[u8]) -> Vec<Vec<u8>> {
-    let n = chunk_count(data.len() as u64);
+    let total = padded_size(data.len() as u64) as usize;
+    let n = chunk_count(total as u64);
     (0..n)
         .map(|i| {
             let start = i as usize * CHUNK_SIZE;
+            let mut piece = vec![0u8; CHUNK_SIZE.min(total - start)];
             let end = (start + CHUNK_SIZE).min(data.len());
-            encrypt_chunk(content_key, version_id, i, i + 1 == n, &data[start..end])
+            if start < end {
+                piece[..end - start].copy_from_slice(&data[start..end]);
+            }
+            encrypt_chunk(content_key, version_id, i, i + 1 == n, &piece)
         })
         .collect()
 }
@@ -695,6 +721,23 @@ pub fn encrypt_content(content_key: &Key, version_id: &str, data: &[u8]) -> Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn padding() {
+        assert_eq!(padded_size(0), 256);
+        assert_eq!(padded_size(1000), 1024);
+        for size in [1u64, 300, 5000, 123_456, 9_999_999, 3_000_000_000] {
+            let p = padded_size(size);
+            let l = size.max(256);
+            assert!(p >= l && (p - l) as f64 <= l as f64 * 0.12, "{size} -> {p}");
+        }
+        let k = Key::generate();
+        let id = new_id();
+        let short = encrypt_metadata(&k, &id, &Metadata { name: "a".into(), mime: None, size: 1, mtime: 0 }).unwrap();
+        let long = encrypt_metadata(&k, &id, &Metadata { name: "a".repeat(60), mime: None, size: 1, mtime: 0 }).unwrap();
+        assert_eq!(short.len(), long.len());
+        assert_eq!(decrypt_metadata(&k, &id, &long).unwrap().name.len(), 60);
+    }
 
     fn fast() -> KdfParams {
         KdfParams {
@@ -793,6 +836,10 @@ mod tests {
         for (i, c) in chunks.iter().enumerate() {
             out.extend(decrypt_chunk(&ck, &v, i as u32, i == 2, c).unwrap());
         }
+        // Padded with zeros after the data.
+        assert_eq!(out.len() as u64, padded_size(data.len() as u64));
+        assert!(out[data.len()..].iter().all(|&b| b == 0));
+        out.truncate(data.len());
         assert_eq!(out, data);
 
         // reorder
@@ -816,7 +863,7 @@ mod tests {
         let v = new_id();
         let c = encrypt_content(&ck, &v, &[]);
         assert_eq!(c.len(), 1);
-        assert!(decrypt_chunk(&ck, &v, 0, true, &c[0]).unwrap().is_empty());
+        assert_eq!(decrypt_chunk(&ck, &v, 0, true, &c[0]).unwrap(), vec![0; 256]);
     }
 
     #[test]

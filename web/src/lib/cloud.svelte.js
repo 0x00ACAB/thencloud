@@ -7,7 +7,7 @@
 import { request } from './api.js';
 import {
   tc, b64, unb64, decryptMeta, encryptMeta, unwrapChild, decryptChildren,
-  deriveAccountKeys, fetchFile, openFile, saveBlob,
+  deriveAccountKeys, fetchFile, openFile, encryptPiece, saveBlob,
 } from './crypto.js';
 import { sortEntries } from './format.js';
 import { rememberSession, rememberedSession, forgetSession } from './remember.js';
@@ -619,8 +619,8 @@ export async function upload(file, { parentId, parentKey, existing }, onProgress
   const nodeKey = existing ? existing.key : tc.random_key();
   const versionId = tc.new_id();
   const contentKey = tc.random_key();
-  const chunkCount = tc.chunk_count(file.size);
-  const chunkSize = tc.chunk_size();
+  const padded = tc.padded_size(file.size);
+  const chunkCount = tc.chunk_count(padded);
   const meta = {
     name: existing ? existing.meta.name : file.name,
     mime: file.type || null,
@@ -643,8 +643,7 @@ export async function upload(file, { parentId, parentKey, existing }, onProgress
   let node;
   try {
     for (let i = 0; i < chunkCount; i++) {
-      const plain = new Uint8Array(await file.slice(i * chunkSize, (i + 1) * chunkSize).arrayBuffer());
-      const enc = tc.encrypt_chunk(contentKey, versionId, i, i === chunkCount - 1, plain);
+      const enc = await encryptPiece(file, i, padded, contentKey, versionId, chunkCount);
       await api('PUT', `/api/uploads/${up.upload_id}/chunks/${i}`, { raw: enc });
       onProgress?.((i + 1) / chunkCount);
     }

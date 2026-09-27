@@ -432,7 +432,9 @@ async fn download_via(
         assert_eq!(r.headers.get("x-version-id").unwrap(), v.id.as_str());
         out.extend(c::decrypt_chunk(&ck, &v.id, i, i + 1 == v.chunk_count, &r.body).unwrap());
     }
-    assert_eq!(out.len() as u64, m.size);
+    // Padding after the real size is dropped.
+    assert!(out.len() as u64 >= m.size);
+    out.truncate(m.size as usize);
     (m, out)
 }
 
@@ -2054,7 +2056,7 @@ async fn janitor_thins_old_versions_by_age() {
 
 #[tokio::test]
 async fn full_quota_prunes_old_versions_first() {
-    // Each 1000-byte upload is 1040 bytes of ciphertext.
+    // Each 1000-byte upload is padded to 1024 bytes, 1064 of ciphertext.
     let h = Harness::with_config(|c| c.default_quota = 3000).await;
     let a = register(&h, "alice", "pw").await;
     let f = a

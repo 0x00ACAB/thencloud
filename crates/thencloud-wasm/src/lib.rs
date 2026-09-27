@@ -21,6 +21,12 @@ pub fn chunk_size() -> usize {
     c::CHUNK_SIZE
 }
 
+/// The size a file is padded to before encryption.
+#[wasm_bindgen]
+pub fn padded_size(size: f64) -> f64 {
+    c::padded_size(size as u64) as f64
+}
+
 #[wasm_bindgen]
 pub fn chunk_count(size: f64) -> u32 {
     c::chunk_count(size as u64)

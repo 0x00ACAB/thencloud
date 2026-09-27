@@ -66,9 +66,19 @@ export async function fetchFile(node, nodeKey, getChunk, onProgress) {
     parts.push(tc.decrypt_chunk(ck, v.id, i, i === v.chunk_count - 1, enc));
     onProgress?.((i + 1) / v.chunk_count);
   }
-  const blob = new Blob(parts, { type: meta.mime || 'application/octet-stream' });
-  if (blob.size !== meta.size) throw new Error('Decrypted size does not match the file metadata.');
+  // Contents are padded with zeros past the real size (see padded_size).
+  const all = new Blob(parts);
+  if (all.size < meta.size) throw new Error('Decrypted size does not match the file metadata.');
+  const blob = all.slice(0, meta.size, meta.mime || 'application/octet-stream');
   return { blob, meta };
+}
+
+/** Encrypt piece `i` of `file`, padded with zeros up to `padded` bytes in all. */
+export async function encryptPiece(file, i, padded, contentKey, versionId, count) {
+  const size = tc.chunk_size();
+  const plain = new Uint8Array(Math.min(size, padded - i * size));
+  plain.set(new Uint8Array(await file.slice(i * size, (i + 1) * size).arrayBuffer()));
+  return tc.encrypt_chunk(contentKey, versionId, i, i === count - 1, plain);
 }
 
 /**
@@ -91,9 +101,11 @@ export function openFile(node, nodeKey, getChunk) {
     async read(i) {
       const last = i === v.chunk_count - 1;
       const plain = tc.decrypt_chunk(ck, v.id, i, last, await getChunk(i));
-      const expected = last ? size - i * chunkSize : chunkSize;
-      if (plain.length !== expected) throw new Error('Decrypted size does not match the file metadata.');
-      return plain;
+      // Every piece but the last is full; the file ends inside the padding.
+      if ((!last && plain.length !== chunkSize) || (last && i * chunkSize + plain.length < size)) {
+        throw new Error('Decrypted size does not match the file metadata.');
+      }
+      return plain.subarray(0, Math.max(0, Math.min(plain.length, size - i * chunkSize)));
     },
   };
 }

@@ -95,7 +95,7 @@ As a result, a malicious server cannot swap files, move ciphertexts between node
 **The server can see:**
 - Usernames and public keys.
 - The shape of the folder tree: which node is inside which, and file vs folder.
-- Ciphertext sizes and chunk counts, which approximate file sizes.
+- Ciphertext sizes and chunk counts. File contents are padded (Padmé, at most about 12% extra) and metadata to 128-byte steps, so these give only rough sizes.
 - Timestamps.
 - Who shares with whom, with what permission, and which nodes have public links.
 - IP addresses and access patterns.
