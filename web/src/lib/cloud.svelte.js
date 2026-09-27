@@ -119,6 +119,7 @@ function startWithMasterKey(s, masterKey) {
   sk = secret;
   keyCache.clear();
   contacts = null;
+  appData.clear();
   session.token = s.token;
   session.me = s.me;
   session.fingerprint = tc.fingerprint(pub);
@@ -864,6 +865,54 @@ async function saveContacts(change) {
       else throw e;
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// App data: the music and video libraries' playlists, edits and progress.
+// One JSON blob per name, encrypted under the master key like the contacts.
+// ---------------------------------------------------------------------------
+
+const appData = new Map(); // name -> { data, revision }
+const appSaves = new Map(); // name -> the last save, so saves run one at a time
+
+export async function loadAppData(name) {
+  if (appData.has(name)) return appData.get(name).data;
+  const r = await api('GET', `/api/me/data/${name}`);
+  let data = {};
+  if (r.data) {
+    try {
+      data = JSON.parse(dec.decode(tc.decrypt_private_data(mk, session.me.user_id, name, unb64(r.data))));
+    } catch {
+      throw new Error(`Your ${name} library data couldn't be decrypted. It may have been tampered with.`);
+    }
+  }
+  appData.set(name, { data, revision: r.revision });
+  return data;
+}
+
+/** Apply `change` to a copy of the data and save it. Resolves to the new data. */
+export function saveAppData(name, change) {
+  const run = async () => {
+    for (let attempt = 0; ; attempt++) {
+      await loadAppData(name);
+      const current = appData.get(name);
+      const next = structuredClone(current.data);
+      change(next);
+      const sealed = tc.encrypt_private_data(mk, session.me.user_id, name, enc.encode(JSON.stringify(next)));
+      try {
+        const r = await api('PUT', `/api/me/data/${name}`, { body: { data: b64(sealed), if_revision: current.revision } });
+        appData.set(name, { data: next, revision: r.revision });
+        return next;
+      } catch (e) {
+        // Changed on another device meanwhile: reload and apply again, once.
+        if (e?.status === 409 && attempt === 0) appData.delete(name);
+        else throw e;
+      }
+    }
+  };
+  const p = (appSaves.get(name) ?? Promise.resolve()).catch(() => {}).then(run);
+  appSaves.set(name, p);
+  return p;
 }
 
 /**
