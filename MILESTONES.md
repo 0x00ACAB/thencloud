@@ -29,14 +29,15 @@
 - [x] Optional link password (a server-side gate, independent of the key) and optional expiry
 - [x] Anonymous link viewer: browse folders, decrypt and download
 
-## Milestone 3: Versions and trash
+## ✅ Milestone 3: Versions and trash
 
-- [ ] Keep previous file versions (the `file_versions` table is ready for this), with a configurable retention count and age
-- [ ] List, download and restore old versions
-- [ ] Count versions toward the quota, with automatic expiry when space runs low
-- [ ] Trash bin: deleted nodes are moved there instead of being purged. Keys stay wrapped under the original parent so a restore needs no re-wrapping
-- [ ] Restore from trash (to the original location or a chosen folder), empty trash, and auto-purge after N days
-- [ ] Decide how deletes inside shared folders interact with the owner's and recipient's trash
+- [x] Keep previous file versions, up to `--max-versions` per file (default 10). Each version keeps its own encrypted metadata
+- [x] List, download, restore and delete old versions. Restoring keeps the newer version in the history, so it can be undone
+- [x] Versions count toward the quota; when it's full, the owner's oldest old versions are pruned first (never current files or the trash)
+- [x] Trash bin: deleting marks a node trashed in place, hiding its whole subtree from every route, including shares and public links. Keys stay wrapped under the original parent, so a restore needs no re-wrapping
+- [x] Restore to the original folder, or into My files (with the key re-wrapped) if that folder is in the trash too; delete permanently, empty trash, auto-purge after `--trash-days` (default 30)
+- [x] Deletes inside a shared folder go to the tree owner's trash; the recipient sees a note that the owner can restore it
+- [ ] Age-based version retention (e.g. thin out old versions: hourly, then daily, then weekly)
 
 ## Milestone 4: Admin and devices
 
@@ -48,22 +49,25 @@
 ## UI
 
 Bigger pieces:
-- [ ] **Motion**: subtle, fast animations for dialogs, menus, row insert/remove, folder navigation and upload progress. Respect `prefers-reduced-motion`
-- [ ] **Custom accent colour**: pick from a few presets or any colour in Settings, with contrast checked for light and dark
+- [x] **Motion**: subtle, fast animations for dialogs, menus, toasts, row insert/remove, view changes and transfers. Respects `prefers-reduced-motion`
+- [x] **Custom accent colour**: presets or any colour in Settings; shades derived per theme, black or white text picked for contrast
 - [ ] **File previews**: images, video, audio, PDF and text, decrypted in the browser
 - [ ] **Syntax highlighting** in text and code previews
+- [ ] **Markdown**: rendered preview for `.md` files, then a WYSIWYG editor that saves back as a new encrypted version
 - [ ] **Per-file-type icons** from an IDE-style icon pack (Rust, JS, Markdown, archives and so on), served locally like the Lucide set
 - [ ] **Multi-select** with bulk move, download and delete
 - [ ] **Folder uploads** (drag a whole folder in) and zip download of folders
 - [ ] **Search and sort** within a folder (search is client-side over decrypted names)
 - [ ] **Keyboard shortcuts** (`/` search, `n` new folder, `u` upload, arrow keys through rows) plus a `?` cheat sheet
 
+- [ ] **Profile pictures**: shown in the top bar, share dialogs and shared-with lists. Decide who can see them: encrypted to people you share with (server can't see) vs. plain on the server (simpler, but visible to it)
+
 Smaller things:
 - [ ] Inline rename on the row instead of a dialog
 - [ ] Remember sort order and the transfer tray's collapsed state per device
 - [ ] Better empty states with the sticker logo
 - [ ] Full timestamps on hover everywhere dates are shown
-- [ ] Skeleton rows instead of a spinner while a folder loads
+- [x] Skeleton rows instead of a spinner while a folder loads
 - [ ] Mobile pass: bottom action bar, larger touch targets
 
 ## Later

@@ -19,8 +19,15 @@
   font-display: swap;
 }
 
-/* Semantic colour tokens; components only ever use these. */
+/* Semantic colour tokens; components only ever use these.
+ *
+ * The accent is one user-chosen colour (--accent-base, set from Settings via
+ * lib/ui.svelte.js, default brand blue) and --accent-fg (black or white text
+ * on it, picked for contrast). Every other accent shade is derived from it
+ * here, separately for light and dark. */
 :root {
+  --accent-base: #3b47f9;
+  --accent-fg: #ffffff;
   --bg: #ffffff;
   --subtle: #fafafa;
   --muted: #f2f2f2;
@@ -29,14 +36,14 @@
   --fg: #171717;
   --fg-muted: #666666;
   --fg-faint: #8f8f8f;
-  --accent: #3b47f9;
-  --accent-hover: #2e39e0;
-  --accent-soft: #eef0ff;
-  --accent-text: #3b47f9;
+  --accent: var(--accent-base);
+  --accent-hover: color-mix(in oklab, var(--accent-base) 86%, black);
+  --accent-soft: color-mix(in oklab, var(--accent-base) 9%, white);
+  --accent-text: color-mix(in oklab, var(--accent-base) 82%, black);
   --danger: #d93036;
   --danger-soft: #fff0f0;
   --success: #1a7f37;
-  --ring: rgb(59 71 249 / 0.35);
+  --ring: color-mix(in srgb, var(--accent-base) 35%, transparent);
   color-scheme: light;
 }
 
@@ -49,14 +56,14 @@
   --fg: #ededed;
   --fg-muted: #a1a1a1;
   --fg-faint: #707070;
-  --accent: #3b47f9;
-  --accent-hover: #525cff;
-  --accent-soft: #151a45;
-  --accent-text: #8a91ff;
+  --accent: var(--accent-base);
+  --accent-hover: color-mix(in oklab, var(--accent-base) 85%, white);
+  --accent-soft: color-mix(in oklab, var(--accent-base) 20%, #0a0a0a);
+  --accent-text: color-mix(in oklab, var(--accent-base) 55%, white);
   --danger: #ff6166;
   --danger-soft: #2a1113;
   --success: #3fb950;
-  --ring: rgb(138 145 255 / 0.4);
+  --ring: color-mix(in srgb, var(--accent-base) 45%, transparent);
   color-scheme: dark;
 }
 
@@ -72,6 +79,7 @@
   --color-fg-muted: var(--fg-muted);
   --color-fg-faint: var(--fg-faint);
   --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
   --color-accent-hover: var(--accent-hover);
   --color-accent-soft: var(--accent-soft);
   --color-accent-text: var(--accent-text);
@@ -98,11 +106,44 @@
   [hidden] {
     display: none !important;
   }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after,
+    ::backdrop {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@keyframes enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+/* Fill backwards only: a transform left behind after the animation would
+ * make the element the containing block for position: fixed descendants. */
+@utility animate-enter {
+  animation: enter 180ms cubic-bezier(0.215, 0.61, 0.355, 1) backwards;
 }
 
 @layer components {
   .btn {
-    @apply inline-flex h-8 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-md px-3 text-sm font-medium whitespace-nowrap transition-colors select-none disabled:cursor-not-allowed disabled:opacity-50 [&_svg]:size-4;
+    @apply inline-flex h-8 shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-md px-3 text-sm font-medium whitespace-nowrap transition-[color,background-color,border-color,opacity,scale] duration-150 select-none active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 disabled:active:scale-100 [&_svg]:size-4;
   }
   .btn-lg {
     @apply h-10 px-4;
@@ -111,7 +152,7 @@
     @apply bg-fg text-bg hover:bg-fg/85;
   }
   .btn-accent {
-    @apply bg-accent text-white hover:bg-accent-hover;
+    @apply bg-accent text-accent-fg hover:bg-accent-hover;
   }
   .btn-secondary {
     @apply border border-line bg-bg text-fg hover:bg-muted;
@@ -196,12 +237,36 @@
 
   .modal {
     @apply m-auto w-[calc(100%-2rem)] max-w-md rounded-xl border border-line bg-bg p-0 text-fg shadow-2xl shadow-black/10 backdrop:bg-black/40 dark:backdrop:bg-black/70;
+    transition:
+      opacity 160ms ease-out,
+      scale 180ms cubic-bezier(0.215, 0.61, 0.355, 1),
+      translate 180ms cubic-bezier(0.215, 0.61, 0.355, 1);
+  }
+  .modal::backdrop {
+    transition: opacity 160ms ease-out;
+  }
+  @starting-style {
+    .modal[open] {
+      opacity: 0;
+      scale: 0.97;
+      translate: 0 6px;
+    }
+    .modal[open]::backdrop {
+      opacity: 0;
+    }
   }
   .modal-body {
     @apply grid grid-cols-[minmax(0,1fr)] gap-4 p-6;
   }
   .modal-footer {
     @apply flex items-center justify-end gap-2 rounded-b-xl border-t border-line bg-subtle px-6 py-3;
+  }
+
+  .skeleton {
+    @apply rounded bg-muted;
+    background-image: linear-gradient(90deg, transparent 0%, var(--line) 50%, transparent 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.4s ease-in-out infinite;
   }
 
   .spinner {

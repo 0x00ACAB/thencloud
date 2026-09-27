@@ -3,7 +3,9 @@ pub mod links;
 pub mod nodes;
 pub mod public;
 pub mod shares;
+pub mod trash;
 pub mod uploads;
+pub mod versions;
 
 use axum::Router;
 use axum::extract::DefaultBodyLimit;
@@ -40,6 +42,19 @@ pub fn router(state: AppState) -> Router {
         .route("/nodes/{id}/children", get(nodes::children))
         .route("/nodes/{id}/path", get(nodes::path))
         .route("/nodes/{id}/chunks/{idx}", get(nodes::chunk))
+        .route("/nodes/{id}/versions", get(versions::list))
+        .route("/nodes/{id}/versions/{vid}", delete(versions::delete))
+        .route(
+            "/nodes/{id}/versions/{vid}/restore",
+            post(versions::restore),
+        )
+        .route(
+            "/nodes/{id}/versions/{vid}/chunks/{idx}",
+            get(versions::chunk),
+        )
+        .route("/trash", get(trash::list).delete(trash::empty))
+        .route("/trash/{id}", delete(trash::purge))
+        .route("/trash/{id}/restore", post(trash::restore))
         .route("/uploads", post(uploads::create))
         .route("/uploads/{id}", delete(uploads::abort))
         .route(

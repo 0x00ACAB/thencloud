@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use crate::AppState;
 use crate::error::Result;
-use crate::routes::uploads;
+use crate::routes::{trash, uploads};
 use crate::util::now;
 
 pub fn spawn(state: AppState) {
@@ -37,12 +37,18 @@ pub async fn run_once(state: &AppState) -> Result<()> {
             .bind(t)
             .execute(&state.db)
             .await?;
+    let trashed = trash::purge_expired(state, state.config.trash_days).await?;
     state.limiter.prune();
-    if !expired.is_empty() || sessions.rows_affected() > 0 || links.rows_affected() > 0 {
+    if !expired.is_empty()
+        || sessions.rows_affected() > 0
+        || links.rows_affected() > 0
+        || trashed > 0
+    {
         tracing::info!(
             uploads = expired.len(),
             sessions = sessions.rows_affected(),
             links = links.rows_affected(),
+            trashed,
             "janitor cleaned up"
         );
     }

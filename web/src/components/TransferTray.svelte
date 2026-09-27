@@ -1,5 +1,5 @@
 <script>
-  import { fly } from 'svelte/transition';
+  import { fly, pop, slide } from '../lib/motion.js';
   import { transfers, clearFinishedTransfers } from '../lib/ui.svelte.js';
   import { formatSize } from '../lib/format.js';
   import Icon from './Icon.svelte';
@@ -14,7 +14,8 @@
 
 {#if transfers.length}
   <section
-    transition:fly={{ y: 16, duration: 150 }}
+    in:fly={{ y: 16 }}
+    out:fly={{ y: 16, duration: 140 }}
     class="fixed right-4 bottom-4 z-40 w-[calc(100%-2rem)] max-w-sm overflow-hidden rounded-lg border border-line bg-bg shadow-lg shadow-black/5 dark:shadow-black/40">
     <header class="flex h-10 items-center gap-2 border-b border-line bg-subtle pr-1.5 pl-3.5">
       {#if active}<Icon name="loader-circle" class="spinner text-fg-muted" />{/if}
@@ -31,12 +32,12 @@
     {#if !collapsed}
       <ul class="max-h-64 divide-y divide-line overflow-y-auto">
         {#each transfers as t (t.id)}
-          <li class="grid gap-1.5 px-3.5 py-2.5">
+          <li class="grid gap-1.5 px-3.5 py-2.5" in:slide out:slide>
             <div class="flex items-center gap-2 text-[13px]">
               <Icon name={t.kind === 'upload' ? 'upload' : 'download'} class="size-3.5 shrink-0 text-fg-faint" />
               <span class="min-w-0 flex-1 truncate">{t.name}</span>
               {#if t.status === 'done'}
-                <Icon name="check" class="size-4 text-success" />
+                <span in:pop={{ start: 0.6, duration: 200 }}><Icon name="check" class="size-4 text-success" /></span>
               {:else if t.status === 'error'}
                 <span class="text-xs text-danger">Failed</span>
               {:else}

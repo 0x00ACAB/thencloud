@@ -208,6 +208,9 @@ pub async fn update(
     ))
 }
 
+/// Move a node (and, implicitly, everything below it) to the owner's trash.
+/// It stays in place in the tree, so its key still unwraps under its parent
+/// and restoring needs no re-encryption. See `routes/trash.rs`.
 pub async fn delete(
     State(state): State<AppState>,
     user: AuthUser,
@@ -216,7 +219,14 @@ pub async fn delete(
     access::require(&state.db, &user.id, &id, Access::Read).await?;
     let node = get_node(&state.db, &id).await?.ok_or(AppError::NotFound)?;
     require_parent_write(&state, &user, &node).await?;
-    delete_subtree(&state, &id, &node.owner_id).await?;
+    sqlx::query(
+        "UPDATE nodes SET trashed_at = ?, trashed_by = ?, revision = revision + 1 WHERE id = ?",
+    )
+    .bind(now())
+    .bind(&user.id)
+    .bind(&id)
+    .execute(&state.db)
+    .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -275,25 +285,35 @@ pub async fn chunk(
 ) -> Result<Response> {
     access::require(&state.db, &user.id, &id, Access::Read).await?;
     let node = get_node(&state.db, &id).await?.ok_or(AppError::NotFound)?;
-    chunk_response(&state, node, idx).await
+    current_chunk(&state, node, idx).await
 }
 
-/// Serve one encrypted chunk of a file's current version. The version id is
-/// returned in `X-Version-Id` so the client can detect a concurrent update
-/// (decryption would fail anyway, since chunks are bound to their version).
-pub async fn chunk_response(state: &AppState, node: NodeRow, idx: u32) -> Result<Response> {
+/// Serve one chunk of a file's current version.
+pub async fn current_chunk(state: &AppState, node: NodeRow, idx: u32) -> Result<Response> {
     if node.is_folder() {
         return Err(AppError::bad("not a file"));
     }
     let (Some(vid), Some(count)) = (node.v_id, node.v_chunks) else {
         return Err(AppError::NotFound);
     };
-    if i64::from(idx) >= count {
+    chunk_response(state, &vid, count, idx).await
+}
+
+/// Serve one encrypted chunk of a version. The version id is returned in
+/// `X-Version-Id` so the client can detect a concurrent update (decryption
+/// would fail anyway, since chunks are bound to their version).
+pub async fn chunk_response(
+    state: &AppState,
+    version_id: &str,
+    chunk_count: i64,
+    idx: u32,
+) -> Result<Response> {
+    if i64::from(idx) >= chunk_count {
         return Err(AppError::NotFound);
     }
-    let data = state.blobs.get_chunk(&vid, idx).await.map_err(|e| {
+    let data = state.blobs.get_chunk(version_id, idx).await.map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
-            AppError::Internal(format!("blob missing for version {vid} chunk {idx}"))
+            AppError::Internal(format!("blob missing for version {version_id} chunk {idx}"))
         } else {
             AppError::Io(e)
         }
@@ -306,7 +326,7 @@ pub async fn chunk_response(state: &AppState, node: NodeRow, idx: u32) -> Result
     h.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
     h.insert(
         "x-version-id",
-        HeaderValue::from_str(&vid).map_err(|e| AppError::Internal(e.to_string()))?,
+        HeaderValue::from_str(version_id).map_err(|e| AppError::Internal(e.to_string()))?,
     );
     Ok((h, data).into_response())
 }
