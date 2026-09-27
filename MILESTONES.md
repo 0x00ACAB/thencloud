@@ -103,10 +103,12 @@ Smaller things:
 
 ## Milestone 5: Trust and accounts
 
-- [ ] **Verifiable web client**: reproducible builds with a signed hash list per release, and a way to check that the served files match (the CLI, a small browser extension, or both), so a compromised server can't quietly swap the JavaScript
-- [ ] **Passkeys**: WebAuthn as a second factor, and with the PRF extension as a way to unlock the master key without typing the password
-- [ ] **Two-factor codes (TOTP)** as a server-side gate on login, for people without passkeys. Only the TOTP secret is stored, never a key
-- [ ] **Post-quantum sealing**: hybrid X25519 + ML-KEM for keys sealed to other users, so recorded shares can't be opened later by a quantum computer
+- [x] **Verifiable web client**: the web client builds reproducibly (`scripts/release-web.sh`: pinned Rust toolchain, lockfiles, paths mapped out of the WASM), each release gets a manifest of every file's SHA-256 for maintainers to sign with minisign, and `thencloud verify-web` fetches every file in every encoding the server offers (plus `/`, a share link and the CSP) and compares. A release workflow builds on two runner images and fails unless they match byte for byte
+  - [ ] A small browser extension that checks what the browser itself was sent
+- [x] **Passkeys**: WebAuthn as a second step after the password, and with the PRF extension a way to sign in without it: the browser wraps a copy of the master key under a key from the passkey's PRF output, and the server hands that copy out only after checking the passkey. Settings shows which passkeys can sign in on their own
+- [x] **Two-factor codes (TOTP)** as a server-side gate on login, for people without passkeys. Set up with a QR code; only the TOTP secret is stored, never a key, and each code works once. App passwords and the recovery key skip the second step
+- [x] **Post-quantum sealing**: every account has an ML-KEM-768 key next to its X25519 one (older accounts get one on their next sign-in), and keys sealed to other users (shares, profile picture keys, file drops) use both, so recorded shares can't be opened later by a quantum computer. Fingerprints and verified contacts cover both keys
+  - [ ] Re-seal existing shares made before the recipient had an ML-KEM key
 - [ ] **Link passwords in the key**: optionally derive part of a public link's key from its password, so the server can't skip the password check
 - [ ] **One-time and counted links**: a download limit on public links, and "expires after first open"
 - [ ] **Delete my account** from Settings, with the password and a typed confirmation

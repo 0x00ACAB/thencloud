@@ -583,6 +583,10 @@
         thencloud is free software under the AGPL-3.0. Your files are encrypted in this browser with keys derived from your password; the server stores
         ciphertext and can see only sizes, dates and who shares with whom.
       </p>
+      <p>
+        This page is code the server sends you. Each release is built reproducibly with a signed list of every file's hash, and
+        <code class="font-mono text-fg">thencloud verify-web</code> checks that a server sends exactly that.
+      </p>
     </div>
   {/snippet}
   {@render section('About', null, aboutBody)}

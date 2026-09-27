@@ -63,3 +63,18 @@ WantedBy=default.target
 ```sh
 systemctl --user enable --now thencloud
 ```
+
+## Checking the web client a server sends
+
+The browser runs whatever JavaScript the server sends, so a compromised server could quietly send a version that leaks keys. Each release of the web client is built reproducibly and comes with a manifest of every file's SHA-256, signed with minisign. `verify-web` fetches every file from the server (plain, gzip and brotli, plus `/` and a share link) and compares:
+
+```sh
+# from the release page: thencloud-web-v1.2.0.json and thencloud-web-v1.2.0.json.minisig
+thencloud verify-web https://cloud.example.com --manifest thencloud-web-v1.2.0.json --key RWQ...
+
+# or build that release yourself and compare with your own build
+git checkout v1.2.0 && scripts/release-web.sh v1.2.0
+thencloud verify-web https://cloud.example.com --manifest thencloud-web-v1.2.0.json --unsigned
+```
+
+It also checks that the Content-Security-Policy only lets in scripts and connections from the server itself. It needs no account. It shows what the server sends to anyone who asks, so run it from the network you use; it can't catch a server that sends a different page only to your browser.

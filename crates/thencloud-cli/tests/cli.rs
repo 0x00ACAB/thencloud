@@ -462,3 +462,100 @@ fn nix_statvfs(p: &Path) -> u64 {
     assert_eq!(unsafe { libc::statvfs(path.as_ptr(), &mut st) }, 0);
     st.f_blocks * st.f_frsize
 }
+
+#[test]
+fn verify_web_checks_signature_and_every_encoding() {
+    use base64::Engine as _;
+    use base64::engine::general_purpose::STANDARD;
+    use blake2::{Blake2b512, Digest as _};
+    use ring::signature::{Ed25519KeyPair, KeyPair as _};
+    use sha2::Sha256;
+    use thencloud_cli::verify::{Manifest, verify_minisign, verify_web};
+
+    let s = start();
+    let web = s.dir.path().join("web");
+    let app = "console.log('the real client');".repeat(100);
+    let files = [
+        (
+            "index.html",
+            "<!doctype html><script type=module src=/assets/app.js></script>".to_string(),
+        ),
+        (
+            "share.html",
+            "<!doctype html><title>share</title>".to_string(),
+        ),
+        ("assets/app.js", app.clone()),
+        ("sw.js", "self.onfetch = () => {};".to_string()),
+    ];
+    let gz = |text: &str| {
+        let mut e = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
+        e.write_all(text.as_bytes()).unwrap();
+        e.finish().unwrap()
+    };
+    let mut hashes = serde_json::Map::new();
+    for (path, body) in &files {
+        let p = web.join(path);
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        fs::write(&p, body).unwrap();
+        let h: String = Sha256::digest(body.as_bytes())
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        hashes.insert(path.to_string(), h.into());
+    }
+    fs::write(web.join("assets/app.js.gz"), gz(&app)).unwrap();
+    let manifest = serde_json::to_vec_pretty(
+        &serde_json::json!({"name": "thencloud-web", "version": "test", "files": hashes}),
+    )
+    .unwrap();
+
+    // Signed the way `minisign -S` does (prehashed with BLAKE2b-512).
+    let rng = ring::rand::SystemRandom::new();
+    let kp =
+        Ed25519KeyPair::from_pkcs8(Ed25519KeyPair::generate_pkcs8(&rng).unwrap().as_ref()).unwrap();
+    let key_id = [7u8, 1, 2, 3, 4, 5, 6, 8];
+    let public = STANDARD.encode([b"Ed".as_slice(), &key_id, kp.public_key().as_ref()].concat());
+    let sign = |msg: &[u8], comment: &str| {
+        let sig = kp.sign(&Blake2b512::digest(msg));
+        let global = kp.sign(&[sig.as_ref(), comment.as_bytes()].concat());
+        format!(
+            "untrusted comment: signature from minisign secret key\n{}\ntrusted comment: {comment}\n{}\n",
+            STANDARD.encode([b"ED".as_slice(), &key_id, sig.as_ref()].concat()),
+            STANDARD.encode(global.as_ref()),
+        )
+    };
+    let sig = sign(&manifest, "thencloud-web test");
+    let pub_file = format!("untrusted comment: minisign public key\n{public}\n");
+    assert_eq!(
+        verify_minisign(&manifest, &sig, &pub_file).unwrap(),
+        "thencloud-web test"
+    );
+    let mut changed = manifest.clone();
+    changed[20] ^= 1;
+    assert!(verify_minisign(&changed, &sig, &public).is_err());
+    let forged_comment = sig.replace(
+        "trusted comment: thencloud-web test",
+        "trusted comment: v9.9",
+    );
+    assert!(verify_minisign(&manifest, &forged_comment, &public).is_err());
+    let other = STANDARD.encode([b"Ed".as_slice(), &key_id, &[9u8; 32]].concat());
+    assert!(verify_minisign(&manifest, &sig, &other).is_err());
+
+    // The real files pass, in every encoding, and so do `/` and share links.
+    let m = Manifest::parse(&manifest).unwrap();
+    let r = verify_web(&s.url, &m).unwrap();
+    assert!(r.problems.is_empty(), "{:?}", r.problems);
+    assert_eq!(r.checked, (files.len() + 2) * 3);
+
+    // A swapped gzip copy is caught, though the plain file is untouched.
+    fs::write(web.join("assets/app.js.gz"), gz("steal(location.hash)")).unwrap();
+    fs::remove_file(web.join("sw.js")).unwrap();
+    let r = verify_web(&s.url, &m).unwrap();
+    assert_eq!(r.problems.len(), 4, "{:?}", r.problems);
+    assert!(r.problems[0].starts_with("/assets/app.js (gzip): different content"));
+    assert!(
+        r.problems[1..]
+            .iter()
+            .all(|p| p.starts_with("/sw.js") && p.ends_with("HTTP 404"))
+    );
+}
