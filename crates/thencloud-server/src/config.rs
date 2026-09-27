@@ -40,6 +40,11 @@ pub struct Config {
     #[arg(long, env = "THENCLOUD_MAX_VERSIONS", default_value_t = 10)]
     pub max_versions: i64,
 
+    /// Thin out old versions by age: keep all from the last hour, then one
+    /// per hour for a day, one per day for 30 days and one per week after.
+    #[arg(long, env = "THENCLOUD_VERSION_THINNING", default_value_t = true, action = ArgAction::Set)]
+    pub version_thinning: bool,
+
     /// Days before items in the trash are deleted permanently.
     #[arg(long, env = "THENCLOUD_TRASH_DAYS", default_value_t = 30)]
     pub trash_days: i64,
@@ -80,6 +85,7 @@ impl Config {
             default_quota: 1024 * 1024 * 1024,
             session_days: 30,
             max_versions: 10,
+            version_thinning: true,
             trash_days: 30,
             upload_ttl_hours: 24,
             yt_dlp: "yt-dlp".into(),

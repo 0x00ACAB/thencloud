@@ -34,6 +34,7 @@ Every flag can also be set as an environment variable.
 | `--default-quota` | `THENCLOUD_DEFAULT_QUOTA` | 10 GiB |
 | `--session-days` | `THENCLOUD_SESSION_DAYS` | `30` |
 | `--max-versions` | `THENCLOUD_MAX_VERSIONS` | `10` (versions kept per file, including the current one) |
+| `--version-thinning` | `THENCLOUD_VERSION_THINNING` | `true` (thin out old versions by age: all from the last hour, then one per hour for a day, one per day for 30 days, one per week after that) |
 | `--trash-days` | `THENCLOUD_TRASH_DAYS` | `30` (days before trashed items are purged) |
 | `--upload-ttl-hours` | `THENCLOUD_UPLOAD_TTL_HOURS` | `24` |
 | `--yt-dlp` | `THENCLOUD_YT_DLP` | `yt-dlp` (for the optional video downloader; it stays off until an admin enables it) |

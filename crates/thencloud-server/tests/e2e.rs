@@ -1346,6 +1346,47 @@ async fn version_history_restore_and_limits() {
 }
 
 #[tokio::test]
+async fn janitor_thins_old_versions_by_age() {
+    let h = Harness::new().await;
+    let a = register(&h, "alice", "pw").await;
+    let mut f = a.upload(&h, &a.root, None, "log.txt", b"v0").await.unwrap();
+    for i in 1..5 {
+        f = a
+            .upload(&h, "", Some(&f), "log.txt", format!("v{i}").as_bytes())
+            .await
+            .unwrap();
+    }
+    // Backdate the four old versions: two in the same day a week ago, two
+    // from the last few minutes.
+    let old: Vec<FileVersion> = a
+        .versions(&h, &f.id)
+        .await
+        .into_iter()
+        .filter(|v| !v.current)
+        .collect();
+    let day = 24 * 3600;
+    let base = (thencloud_server::util::now() - 7 * day).div_euclid(day) * day;
+    for (v, at) in old.iter().zip([0, 0, base + 10, base + 20]) {
+        if at > 0 {
+            sqlx::query("UPDATE file_versions SET created_at = ? WHERE id = ?")
+                .bind(at)
+                .bind(&v.id)
+                .execute(&h.state.db)
+                .await
+                .unwrap();
+        }
+    }
+    let used = a.me(&h).await.used_bytes;
+    thencloud_server::janitor::run_once(&h.state).await.unwrap();
+    let vs = a.versions(&h, &f.id).await;
+    assert_eq!(vs.len(), 4, "one of the two from the same day is dropped");
+    assert!(vs.iter().any(|v| v.id == old[3].id), "the newer one stays");
+    assert!(!vs.iter().any(|v| v.id == old[2].id));
+    assert!(!blob_exists(&h, &old[2].id));
+    assert_eq!(a.me(&h).await.used_bytes, used - old[2].size);
+}
+
+#[tokio::test]
 async fn full_quota_prunes_old_versions_first() {
     // Each 1000-byte upload is 1040 bytes of ciphertext.
     let h = Harness::with_config(|c| c.default_quota = 3000).await;
