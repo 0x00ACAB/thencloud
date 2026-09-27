@@ -88,6 +88,6 @@ The web client follows this direction; keep it that way when changing it.
 - Fingerprint display and the fingerprint confirmation before sharing, and the verified-contact pin: a changed key must block sharing until it's re-checked.
 - The "no password reset" warning at registration (it may point to the optional recovery key, which only the user holds).
 - The explanation that the link key is after `#`.
-- Keys held only in memory: no `localStorage` for keys or tokens.
+- Keys held only in memory: no `localStorage` for keys or tokens. The one exception is the opt-in "Keep me signed in on this browser" (`lib/remember.js`): the token and master key go in IndexedDB, encrypted with a non-extractable WebCrypto key, and are deleted on sign-out and whenever the server says the session is gone. Keep it opt-in, keep the plain warning next to the checkbox, and never store anything else there.
 
 Replace native `prompt()`/`confirm()` dialogs with real modals.

@@ -10,11 +10,14 @@ import {
   deriveAccountKeys, fetchFile, saveBlob,
 } from './crypto.js';
 import { sortEntries } from './format.js';
+import { rememberSession, rememberedSession, forgetSession } from './remember.js';
 
 export const session = $state({
   token: null,
   me: null,
   fingerprint: '',
+  /** Signed in with "Keep me signed in on this browser". */
+  remembered: false,
 });
 
 let mk = null; // master key
@@ -34,6 +37,7 @@ async function api(method, path, opts = {}) {
     // the session is fine; only `unauthorized` means it's gone.
     if (e?.status === 401 && e.code === 'unauthorized' && session.token) {
       session.token = null;
+      await forgetSession();
       try {
         sessionStorage.setItem('signedOut', '1');
       } catch {
@@ -46,6 +50,7 @@ async function api(method, path, opts = {}) {
   }
 }
 
+/** "Chrome on Linux". */
 const deviceName = () => {
   const ua = navigator.userAgent;
   const browser = /Firefox\//.test(ua) ? 'Firefox' : /Edg\//.test(ua) ? 'Edge' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'Browser';
@@ -57,7 +62,7 @@ const deviceName = () => {
 // Account
 // ---------------------------------------------------------------------------
 
-export async function register(username, password, invite = null) {
+export async function register(username, password, invite = null, remember = false) {
   const salt = tc.random_salt();
   const params = JSON.parse(tc.default_kdf_params());
   const ak = await deriveAccountKeys(password, salt, params);
@@ -85,20 +90,25 @@ export async function register(username, password, invite = null) {
   });
   kp.free();
   start(s, ak.kek);
+  if (remember) await keepSignedIn(s.token);
 }
 
-export async function login(username, password) {
+export async function login(username, password, remember = false) {
   const pre = await request('POST', '/api/auth/prelogin', { body: { username } });
   const ak = await deriveAccountKeys(password, unb64(pre.kdf_salt), pre.kdf_params);
   const s = await request('POST', '/api/auth/login', {
     body: { username, auth_key: b64(ak.authKey), device_name: deviceName() },
   });
   start(s, ak.kek);
+  if (remember) await keepSignedIn(s.token);
 }
 
 function start(s, kek) {
+  startWithMasterKey(s, tc.unwrap_master_key(kek, unb64(s.me.keys.enc_master_key)));
+}
+
+function startWithMasterKey(s, masterKey) {
   const keys = s.me.keys;
-  const masterKey = tc.unwrap_master_key(kek, unb64(keys.enc_master_key));
   const secret = tc.unwrap_private_key(masterKey, unb64(keys.enc_private_key));
   const pub = tc.public_key_from_secret(secret);
   if (b64(pub) !== keys.public_key) {
@@ -117,7 +127,67 @@ export async function refreshMe() {
   session.me = await api('GET', '/api/me');
 }
 
+// ---------------------------------------------------------------------------
+// "Keep me signed in on this browser" (see lib/remember.js)
+// ---------------------------------------------------------------------------
+
+async function keepSignedIn(token) {
+  try {
+    await rememberSession({ userId: session.me.user_id, token, masterKey: mk });
+    session.remembered = true;
+  } catch {
+    // Storage blocked (private window, strict settings): just don't remember.
+    session.remembered = false;
+  }
+}
+
+/**
+ * Sign back in from a saved session, if there is one. Returns true if that
+ * worked. A session the server no longer knows is forgotten.
+ */
+export async function resume() {
+  const saved = await rememberedSession();
+  if (!saved) return false;
+  let me;
+  try {
+    me = await request('GET', '/api/me', { token: saved.token });
+  } catch (e) {
+    saved.masterKey.fill(0);
+    if (e?.status === 401 || e?.status === 403) {
+      await forgetSession();
+      try {
+        sessionStorage.setItem('signedOut', '1');
+      } catch {
+        /* just no message */
+      }
+    }
+    return false;
+  }
+  if (me.user_id !== saved.userId) {
+    saved.masterKey.fill(0);
+    await forgetSession();
+    return false;
+  }
+  try {
+    // On success this array *is* the master key in memory; don't zero it.
+    startWithMasterKey({ token: saved.token, me }, saved.masterKey);
+  } catch (e) {
+    saved.masterKey.fill(0);
+    await forgetSession();
+    throw e;
+  }
+  session.remembered = true;
+  return true;
+}
+
+/** Stop keeping this browser signed in (the current session carries on). */
+export async function forgetThisBrowser() {
+  await forgetSession();
+  session.remembered = false;
+}
+
 export async function logout() {
+  await forgetSession();
   try {
     await api('POST', '/api/auth/logout');
   } catch {
@@ -177,7 +247,7 @@ export async function removeRecoveryKey(password) {
 }
 
 /** Set a new password with a recovery key, then sign in. */
-export async function recoverAccount(username, recoveryKey, newPassword) {
+export async function recoverAccount(username, recoveryKey, newPassword, remember = false) {
   let rk;
   try {
     rk = tc.decode_recovery_key(recoveryKey);
@@ -206,6 +276,7 @@ export async function recoverAccount(username, recoveryKey, newPassword) {
     });
     master.fill(0);
     start(s, nk.kek);
+    if (remember) await keepSignedIn(s.token);
   } finally {
     d.free();
   }
