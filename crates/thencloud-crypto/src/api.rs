@@ -146,6 +146,9 @@ pub struct Me {
     pub max_versions: i64,
     /// Days before trashed items are purged.
     pub trash_days: i64,
+    /// When a recovery key was set up, if there is one.
+    #[serde(default)]
+    pub recovery_created_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -497,4 +500,47 @@ pub struct ServerStats {
     pub versions: i64,
     pub shares: i64,
     pub public_links: i64,
+}
+
+// ---------------------------------------------------------------------------
+// Recovery keys
+// ---------------------------------------------------------------------------
+
+/// Set up (or replace) a recovery key. Needs the current password.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetRecoveryRequest {
+    pub current_auth_key: B64,
+    pub recovery_auth_key: B64,
+    pub enc_master_key_recovery: B64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoveRecoveryRequest {
+    pub current_auth_key: B64,
+}
+
+/// Step one of a password reset: prove the recovery key, get the master key
+/// wrapped under it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecoveryUnlockRequest {
+    pub username: String,
+    pub recovery_auth_key: B64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecoveryUnlockResponse {
+    pub enc_master_key_recovery: B64,
+}
+
+/// Step two: a new password, with the master key re-wrapped under it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecoveryResetRequest {
+    pub username: String,
+    pub recovery_auth_key: B64,
+    pub new_auth_key: B64,
+    pub new_kdf_salt: B64,
+    pub new_kdf_params: KdfParams,
+    pub new_enc_master_key: B64,
+    #[serde(default)]
+    pub device_name: Option<String>,
 }

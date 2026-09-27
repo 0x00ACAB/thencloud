@@ -79,7 +79,7 @@ Smaller things:
 
 ## Later
 
-- [ ] **Recovery key**: an optional printable key that also wraps the master key, since today a forgotten password means lost data
+- [x] **Recovery key**: an optional printable key that also wraps the master key; "Forgot your password?" uses it to set a new one without losing data
 - [ ] **Key rotation on revocation**: re-key a folder subtree when a share is revoked, so former recipients can't decrypt future content
 - [ ] **Contact verification / key transparency**: signed key directory or verified-contact store, so a malicious server can't substitute public keys when a user doesn't compare fingerprints
 - [ ] **Upload-only "file drop" links**

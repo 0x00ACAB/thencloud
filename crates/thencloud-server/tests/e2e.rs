@@ -1847,3 +1847,143 @@ async fn admin_users_registration_and_invites() {
     let stats: ServerStats = h.get("/api/admin/stats", &admin.token).await.json();
     assert_eq!((stats.files, stats.users), (0, 2));
 }
+
+#[tokio::test]
+async fn recovery_key_resets_a_forgotten_password() {
+    let h = Harness::new().await;
+    let gina = register(&h, "gina", "gina's old password").await;
+    // The current password's auth key, as the client would derive it.
+    let auth_for = |password: &str| {
+        let h = &h;
+        let password = password.to_string();
+        async move {
+            let pre: PreloginResponse = h
+                .call(
+                    Method::POST,
+                    "/api/auth/prelogin",
+                    None,
+                    Some(json!({"username": "gina"})),
+                )
+                .await
+                .json();
+            let ak = c::derive_account_keys(&password, &pre.kdf_salt, pre.kdf_params).unwrap();
+            B64(ak.auth_key.as_bytes().to_vec())
+        }
+    };
+
+    // Set up a recovery key (needs the current password).
+    let rk = Key::generate();
+    let rk_text = c::encode_recovery_key(&rk);
+    let derived = c::derive_recovery_keys(&rk);
+    let set = |auth: B64| SetRecoveryRequest {
+        current_auth_key: auth,
+        recovery_auth_key: B64(derived.auth_key.as_bytes().to_vec()),
+        enc_master_key_recovery: B64(c::wrap_master_key_recovery(&derived.kek, &gina.mk)),
+    };
+    let r = h
+        .call(
+            Method::POST,
+            "/api/auth/recovery",
+            Some(&gina.token),
+            Some(set(auth_for("wrong").await)),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::UNAUTHORIZED);
+    let me: Me = h
+        .call(
+            Method::POST,
+            "/api/auth/recovery",
+            Some(&gina.token),
+            Some(set(auth_for("gina's old password").await)),
+        )
+        .await
+        .json();
+    assert!(me.recovery_created_at.is_some());
+
+    // Unlock: wrong keys and unknown users look the same.
+    let unlock = |user: &str, auth: &[u8]| {
+        let body = json!({"username": user, "recovery_auth_key": B64(auth.to_vec())});
+        let h = &h;
+        async move {
+            h.call(Method::POST, "/api/auth/recovery/unlock", None, Some(body))
+                .await
+        }
+    };
+    let wrong = c::derive_recovery_keys(&Key::generate());
+    let r1 = unlock("gina", wrong.auth_key.as_bytes()).await;
+    let r2 = unlock("nobody", derived.auth_key.as_bytes()).await;
+    assert_eq!(r1.status, StatusCode::UNAUTHORIZED);
+    assert_eq!((r2.status, r2.body.clone()), (r1.status, r1.body.clone()));
+    let r: RecoveryUnlockResponse = unlock("gina", derived.auth_key.as_bytes()).await.json();
+    let typed = c::decode_recovery_key(&rk_text.to_lowercase()).unwrap();
+    let mk = c::unwrap_master_key_recovery(
+        &c::derive_recovery_keys(&typed).kek,
+        &r.enc_master_key_recovery.0,
+    )
+    .unwrap();
+    assert!(mk == gina.mk);
+
+    // Reset to a new password; old sessions end, the master key is the same.
+    let salt = c::random_bytes(c::SALT_LEN);
+    let ak = c::derive_account_keys("gina's new password", &salt, FAST_KDF).unwrap();
+    let reset = RecoveryResetRequest {
+        username: "gina".into(),
+        recovery_auth_key: B64(derived.auth_key.as_bytes().to_vec()),
+        new_auth_key: B64(ak.auth_key.as_bytes().to_vec()),
+        new_kdf_salt: B64(salt),
+        new_kdf_params: FAST_KDF,
+        new_enc_master_key: B64(c::wrap_master_key(&ak.kek, &mk)),
+        device_name: None,
+    };
+    let s: SessionResponse = h
+        .call(Method::POST, "/api/auth/recovery/reset", None, Some(&reset))
+        .await
+        .json();
+    assert_eq!(
+        h.get("/api/me", &gina.token).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(h.get("/api/me", &s.token).await.status, StatusCode::OK);
+    assert!(login(&h, "gina", "gina's old password").await.is_err());
+    let again = login(&h, "gina", "gina's new password").await.ok().unwrap();
+    assert!(again.mk == gina.mk);
+
+    // Nothing that could unwrap the master key is stored.
+    let mut files = Vec::new();
+    all_files(&h.dir.path().join("data"), &mut files);
+    let needles: Vec<&[u8]> = vec![
+        rk.as_bytes(),
+        derived.kek.as_bytes(),
+        derived.auth_key.as_bytes(),
+        rk_text.as_bytes(),
+        gina.mk.as_bytes(),
+        b"gina's old password",
+        b"gina's new password",
+    ];
+    for p in &files {
+        let bytes = std::fs::read(p).unwrap();
+        for n in &needles {
+            assert!(!contains(&bytes, n), "secret found in {}", p.display());
+        }
+    }
+
+    // The recovery key keeps working until it's removed (with the password).
+    assert_eq!(
+        unlock("gina", derived.auth_key.as_bytes()).await.status,
+        StatusCode::OK
+    );
+    let me: Me = h
+        .call(
+            Method::DELETE,
+            "/api/auth/recovery",
+            Some(&again.token),
+            Some(json!({"current_auth_key": auth_for("gina's new password").await})),
+        )
+        .await
+        .json();
+    assert!(me.recovery_created_at.is_none());
+    assert_eq!(
+        unlock("gina", derived.auth_key.as_bytes()).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+}

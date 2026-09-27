@@ -91,6 +91,39 @@ pub fn wrap_master_key(kek: &[u8], mk: &[u8]) -> R<Vec<u8>> {
     Ok(c::wrap_master_key(&key(kek)?, &key(mk)?))
 }
 
+/// A recovery key as text for writing down ("ABCDE-FGHJK-...").
+#[wasm_bindgen]
+pub fn encode_recovery_key(k: &[u8]) -> R<String> {
+    Ok(c::encode_recovery_key(&key(k)?))
+}
+
+/// Parse a typed recovery key; errors if it's malformed or has a typo.
+#[wasm_bindgen]
+pub fn decode_recovery_key(text: &str) -> R<Vec<u8>> {
+    Ok(c::decode_recovery_key(text)?.as_bytes().to_vec())
+}
+
+#[wasm_bindgen]
+pub fn derive_recovery_keys(k: &[u8]) -> R<AccountKeys> {
+    let r = c::derive_recovery_keys(&key(k)?);
+    Ok(AccountKeys {
+        auth_key: r.auth_key.as_bytes().to_vec(),
+        kek: r.kek.as_bytes().to_vec(),
+    })
+}
+
+#[wasm_bindgen]
+pub fn wrap_master_key_recovery(kek: &[u8], mk: &[u8]) -> R<Vec<u8>> {
+    Ok(c::wrap_master_key_recovery(&key(kek)?, &key(mk)?))
+}
+
+#[wasm_bindgen]
+pub fn unwrap_master_key_recovery(kek: &[u8], wrapped: &[u8]) -> R<Vec<u8>> {
+    Ok(c::unwrap_master_key_recovery(&key(kek)?, wrapped)?
+        .as_bytes()
+        .to_vec())
+}
+
 #[wasm_bindgen]
 pub fn unwrap_master_key(kek: &[u8], wrapped: &[u8]) -> R<Vec<u8>> {
     Ok(c::unwrap_master_key(&key(kek)?, wrapped)?

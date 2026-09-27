@@ -25,6 +25,9 @@ struct UserRow {
     used_bytes: i64,
     is_admin: bool,
     disabled_at: Option<i64>,
+    recovery_hash: Option<String>,
+    enc_master_key_recovery: Option<Vec<u8>>,
+    recovery_created_at: Option<i64>,
 }
 
 impl UserRow {
@@ -47,12 +50,14 @@ impl UserRow {
             },
             max_versions: cfg.max_versions,
             trash_days: cfg.trash_days,
+            recovery_created_at: self.recovery_created_at,
         })
     }
 }
 
 const USER_SELECT: &str = "SELECT id, username, auth_hash, kdf_salt, kdf_params, enc_master_key, public_key, \
-     enc_private_key, root_node_id, quota_bytes, used_bytes, is_admin, disabled_at FROM users";
+     enc_private_key, root_node_id, quota_bytes, used_bytes, is_admin, disabled_at, recovery_hash, \
+     enc_master_key_recovery, recovery_created_at FROM users";
 
 async fn user_by_name(state: &AppState, username: &str) -> Result<Option<UserRow>> {
     let sql = format!("{USER_SELECT} WHERE username = ?");
@@ -310,4 +315,154 @@ pub async fn options(State(state): State<AppState>) -> Result<Json<AuthOptions>>
         settings::registration(&state).await?
     };
     Ok(Json(AuthOptions { registration }))
+}
+
+// ---------------------------------------------------------------------------
+// Recovery keys. The server stores an Argon2 hash of the key's auth part and
+// the master key wrapped under its KEK; it never sees the key or the KEK.
+// ---------------------------------------------------------------------------
+
+/// Check the current password for a change to the recovery key.
+async fn verify_current(state: &AppState, user: &AuthUser, auth_key: &B64) -> Result<UserRow> {
+    let key = format!("password-user:{}", user.id);
+    if state.limiter.blocked(&key) {
+        return Err(AppError::RateLimited);
+    }
+    let row = user_by_id(state, &user.id).await?;
+    if !verify_secret(auth_key.0.clone(), row.auth_hash.clone()).await? {
+        state.limiter.fail(&key);
+        return Err(AppError::InvalidCredentials);
+    }
+    Ok(row)
+}
+
+pub async fn set_recovery(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(req): Json<SetRecoveryRequest>,
+) -> Result<Json<Me>> {
+    check_len(&req.recovery_auth_key, KEY_LEN, "recovery_auth_key")?;
+    check_len(
+        &req.enc_master_key_recovery,
+        WRAPPED_KEY_LEN,
+        "enc_master_key_recovery",
+    )?;
+    verify_current(&state, &user, &req.current_auth_key).await?;
+    let hash = hash_secret(req.recovery_auth_key.0.clone()).await?;
+    sqlx::query(
+        "UPDATE users SET recovery_hash = ?, enc_master_key_recovery = ?, recovery_created_at = ? WHERE id = ?",
+    )
+    .bind(hash)
+    .bind(&req.enc_master_key_recovery.0)
+    .bind(now())
+    .bind(&user.id)
+    .execute(&state.db)
+    .await?;
+    Ok(Json(
+        user_by_id(&state, &user.id).await?.into_me(&state.config)?,
+    ))
+}
+
+pub async fn remove_recovery(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(req): Json<RemoveRecoveryRequest>,
+) -> Result<Json<Me>> {
+    verify_current(&state, &user, &req.current_auth_key).await?;
+    sqlx::query(
+        "UPDATE users SET recovery_hash = NULL, enc_master_key_recovery = NULL, recovery_created_at = NULL WHERE id = ?",
+    )
+    .bind(&user.id)
+    .execute(&state.db)
+    .await?;
+    Ok(Json(
+        user_by_id(&state, &user.id).await?.into_me(&state.config)?,
+    ))
+}
+
+/// Verify a recovery auth key. Unknown users and users without a recovery
+/// key take the same time and give the same answer as a wrong key.
+async fn verify_recovery(
+    state: &AppState,
+    ip: &ClientIp,
+    username: &str,
+    auth_key: &B64,
+) -> Result<UserRow> {
+    let username = username.trim().to_lowercase();
+    let (ukey, ikey) = (
+        format!("recovery-user:{username}"),
+        format!("recovery-ip:{}", ip.key()),
+    );
+    if state.limiter.blocked(&ukey) || state.limiter.blocked(&ikey) {
+        return Err(AppError::RateLimited);
+    }
+    let user = user_by_name(state, &username).await?;
+    let hash = user
+        .as_ref()
+        .and_then(|u| u.recovery_hash.clone())
+        .unwrap_or_else(|| (*state.dummy_hash).clone());
+    let ok = verify_secret(auth_key.0.clone(), hash).await?;
+    match user {
+        Some(u) if ok && u.enc_master_key_recovery.is_some() => {
+            state.limiter.clear(&ukey);
+            if u.disabled_at.is_some() {
+                return Err(AppError::AccountDisabled);
+            }
+            Ok(u)
+        }
+        _ => {
+            state.limiter.fail(&ukey);
+            state.limiter.fail(&ikey);
+            Err(AppError::InvalidCredentials)
+        }
+    }
+}
+
+pub async fn recovery_unlock(
+    State(state): State<AppState>,
+    ip: ClientIp,
+    Json(req): Json<RecoveryUnlockRequest>,
+) -> Result<Json<RecoveryUnlockResponse>> {
+    let u = verify_recovery(&state, &ip, &req.username, &req.recovery_auth_key).await?;
+    Ok(Json(RecoveryUnlockResponse {
+        enc_master_key_recovery: B64(u.enc_master_key_recovery.unwrap_or_default()),
+    }))
+}
+
+/// Set a new password using the recovery key. Every other session is signed
+/// out; the recovery key stays valid.
+pub async fn recovery_reset(
+    State(state): State<AppState>,
+    ip: ClientIp,
+    Json(req): Json<RecoveryResetRequest>,
+) -> Result<Json<SessionResponse>> {
+    check_len(&req.new_auth_key, KEY_LEN, "new_auth_key")?;
+    check_kdf(&req.new_kdf_salt, &req.new_kdf_params)?;
+    check_len(
+        &req.new_enc_master_key,
+        WRAPPED_KEY_LEN,
+        "new_enc_master_key",
+    )?;
+    let u = verify_recovery(&state, &ip, &req.username, &req.recovery_auth_key).await?;
+    let new_hash = hash_secret(req.new_auth_key.0.clone()).await?;
+    let mut tx = state.db.begin().await?;
+    sqlx::query("UPDATE users SET auth_hash = ?, kdf_salt = ?, kdf_params = ?, enc_master_key = ? WHERE id = ?")
+        .bind(new_hash)
+        .bind(&req.new_kdf_salt.0)
+        .bind(serde_json::to_string(&req.new_kdf_params).unwrap())
+        .bind(&req.new_enc_master_key.0)
+        .bind(&u.id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM sessions WHERE user_id = ?")
+        .bind(&u.id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    tracing::info!(username = %u.username, "password reset with a recovery key");
+    let token = create_session(&state, &u.id, req.device_name.as_deref()).await?;
+    Ok(Json(SessionResponse {
+        token,
+        me: user_by_id(&state, &u.id).await?.into_me(&state.config)?,
+    }))
 }
