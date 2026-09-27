@@ -230,3 +230,87 @@ pub async fn prune_for_space(state: &AppState, owner_id: &str, needed: i64) -> R
     );
     Ok(freed)
 }
+
+/// Old versions to drop under age-based thinning: all are kept for the
+/// first hour, then one per hour for a day, one per day for 30 days and one
+/// per week after that (the newest in each slot). `versions` is
+/// `(id, created_at)` of one file's non-current versions.
+pub fn thin(versions: &[(String, i64)], t: i64) -> Vec<String> {
+    const HOUR: i64 = 3600;
+    const DAY: i64 = 24 * HOUR;
+    let mut sorted: Vec<&(String, i64)> = versions.iter().collect();
+    sorted.sort_by_key(|v| std::cmp::Reverse(v.1));
+    let mut seen = std::collections::HashSet::new();
+    let mut drop = Vec::new();
+    for (id, at) in sorted {
+        let age = t - at;
+        let slot = match age {
+            a if a < HOUR => continue,
+            a if a < DAY => (1, at.div_euclid(HOUR)),
+            a if a < 30 * DAY => (2, at.div_euclid(DAY)),
+            _ => (3, at.div_euclid(7 * DAY)),
+        };
+        if !seen.insert(slot) {
+            drop.push(id.clone());
+        }
+    }
+    drop
+}
+
+/// Apply `thin` to every file's history. Returns how many versions went.
+pub async fn thin_all(state: &AppState) -> Result<usize> {
+    let rows: Vec<(String, String, String, i64, i64)> = sqlx::query_as(
+        "SELECT v.id, v.node_id, n.owner_id, v.created_at, v.size FROM file_versions v \
+         JOIN nodes n ON n.id = v.node_id WHERE v.id IS NOT n.current_version_id \
+         ORDER BY v.node_id",
+    )
+    .fetch_all(&state.db)
+    .await?;
+    let t = now();
+    let mut removed = 0;
+    for file in rows.chunk_by(|a, b| a.1 == b.1) {
+        let list: Vec<(String, i64)> = file.iter().map(|r| (r.0.clone(), r.3)).collect();
+        let drop = thin(&list, t);
+        if drop.is_empty() {
+            continue;
+        }
+        let picked: Vec<(String, i64)> = file
+            .iter()
+            .filter(|r| drop.contains(&r.0))
+            .map(|r| (r.0.clone(), r.4))
+            .collect();
+        let mut tx = state.db.begin().await?;
+        remove_versions(&mut tx, &file[0].2, &picked).await?;
+        tx.commit().await?;
+        for (id, _) in &picked {
+            state.blobs.delete_version(id).await;
+        }
+        removed += picked.len();
+    }
+    Ok(removed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::thin;
+
+    #[test]
+    fn thinning_keeps_one_per_slot() {
+        let h = 3600;
+        let t = 1_000 * 24 * h;
+        let v = |id: &str, age: i64| (id.to_string(), t - age);
+        let list = vec![
+            v("fresh1", 60),
+            v("fresh2", 120),
+            v("hour_a", 3 * h + 10),
+            v("hour_b", 3 * h + 20),
+            v("day_a", 3 * 24 * h + 10),
+            v("day_b", 3 * 24 * h + 20),
+            v("week_a", 60 * 24 * h + 10),
+            v("week_b", 60 * 24 * h + 20),
+        ];
+        let mut d = thin(&list, t);
+        d.sort();
+        assert_eq!(d, ["day_b", "hour_b", "week_b"]);
+    }
+}

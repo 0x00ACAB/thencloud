@@ -1,10 +1,11 @@
-//! Periodic cleanup of expired uploads, sessions and links.
+//! Periodic cleanup of expired uploads, sessions and links, and thinning
+//! of old file versions.
 
 use std::time::Duration;
 
 use crate::AppState;
 use crate::error::Result;
-use crate::routes::{trash, uploads};
+use crate::routes::{trash, uploads, versions};
 use crate::util::now;
 
 pub fn spawn(state: AppState) {
@@ -38,17 +39,24 @@ pub async fn run_once(state: &AppState) -> Result<()> {
             .execute(&state.db)
             .await?;
     let trashed = trash::purge_expired(state, state.config.trash_days).await?;
+    let thinned = if state.config.version_thinning {
+        versions::thin_all(state).await?
+    } else {
+        0
+    };
     state.limiter.prune();
     if !expired.is_empty()
         || sessions.rows_affected() > 0
         || links.rows_affected() > 0
         || trashed > 0
+        || thinned > 0
     {
         tracing::info!(
             uploads = expired.len(),
             sessions = sessions.rows_affected(),
             links = links.rows_affected(),
             trashed,
+            thinned,
             "janitor cleaned up"
         );
     }

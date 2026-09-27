@@ -37,7 +37,7 @@
 - [x] Trash bin: deleting marks a node trashed in place, hiding its whole subtree from every route, including shares and public links. Keys stay wrapped under the original parent, so a restore needs no re-wrapping
 - [x] Restore to the original folder, or into My files (with the key re-wrapped) if that folder is in the trash too; delete permanently, empty trash, auto-purge after `--trash-days` (default 30)
 - [x] Deletes inside a shared folder go to the tree owner's trash; the recipient sees a note that the owner can restore it
-- [ ] Age-based version retention (e.g. thin out old versions: hourly, then daily, then weekly)
+- [x] Age-based version thinning: all versions from the last hour, then one per hour for a day, one per day for 30 days and one per week after that (`--version-thinning`, on by default), on top of `--max-versions`
 
 ## Milestone 4: Admin and devices (mostly done)
 
