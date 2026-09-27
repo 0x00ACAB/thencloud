@@ -12,6 +12,9 @@ use crate::error::{AppError, Result};
 pub const WRAPPED_KEY_LEN: usize = NONCE_LEN + KEY_LEN + TAG_LEN;
 /// A key sealed to an X25519 public key (ephemeral pubkey + wrapped key).
 pub const SEALED_KEY_LEN: usize = 32 + WRAPPED_KEY_LEN;
+/// A key sealed with X25519 and ML-KEM-768 together.
+pub const HYBRID_SEALED_KEY_LEN: usize =
+    1 + 32 + thencloud_crypto::PQ_CIPHERTEXT_LEN + WRAPPED_KEY_LEN;
 pub const MAX_METADATA_LEN: usize = 16 * 1024;
 
 pub fn now() -> i64 {
@@ -45,6 +48,13 @@ pub fn hmac_verify(secret: &[u8], msg: &[u8], tag: &[u8]) -> bool {
     m.verify_slice(tag).is_ok()
 }
 
+/// Check a tag cut down to its first `tag.len()` bytes.
+pub fn hmac_verify_prefix(secret: &[u8], msg: &[u8], tag: &[u8]) -> bool {
+    let mut m = Hmac::<Sha256>::new_from_slice(secret).expect("any key length");
+    m.update(msg);
+    m.verify_truncated_left(tag).is_ok()
+}
+
 /// Client-supplied ids must be canonical lowercase hyphenated UUIDs. They
 /// end up in file paths and AEAD associated data.
 pub fn check_id(id: &str, what: &str) -> Result<()> {
@@ -68,6 +78,31 @@ pub fn check_len(b: &[u8], len: usize, what: &str) -> Result<()> {
         return Err(AppError::bad(format!("{what} must be {len} bytes")));
     }
     Ok(())
+}
+
+pub fn check_sealed(b: &[u8], what: &str) -> Result<()> {
+    if b.len() != SEALED_KEY_LEN && b.len() != HYBRID_SEALED_KEY_LEN {
+        return Err(AppError::bad(format!("{what} has an invalid size")));
+    }
+    Ok(())
+}
+
+/// An ML-KEM public key and its wrapped seed, both or neither.
+pub fn check_pq_key(public: &Option<B64>, wrapped: &Option<B64>) -> Result<()> {
+    match (public, wrapped) {
+        (None, None) => Ok(()),
+        (Some(p), Some(w)) => {
+            check_len(p, thencloud_crypto::PQ_PUBLIC_LEN, "pq_public_key")?;
+            check_len(
+                w,
+                NONCE_LEN + thencloud_crypto::PQ_SEED_LEN + TAG_LEN,
+                "enc_pq_private_key",
+            )
+        }
+        _ => Err(AppError::bad(
+            "pq_public_key and enc_pq_private_key go together",
+        )),
+    }
 }
 
 pub fn check_metadata(b: &[u8]) -> Result<()> {

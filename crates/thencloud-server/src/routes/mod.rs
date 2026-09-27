@@ -8,11 +8,13 @@ pub mod drafts;
 pub mod drops;
 pub mod links;
 pub mod nodes;
+pub mod passkeys;
 pub mod public;
 pub mod sessions;
 pub mod shares;
 pub mod tools;
 pub mod trash;
+pub mod two_factor;
 pub mod uploads;
 pub mod versions;
 
@@ -42,6 +44,17 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/prelogin", post(auth::prelogin))
         .route("/auth/register", post(auth::register))
         .route("/auth/login", post(auth::login))
+        .route("/auth/login/second-factor", post(two_factor::verify))
+        .route("/auth/passkey/options", post(passkeys::login_options))
+        .route("/auth/passkey/login", post(passkeys::login))
+        .route("/auth/totp/setup", post(two_factor::totp_setup))
+        .route(
+            "/auth/totp",
+            post(two_factor::totp_enable).delete(two_factor::totp_disable),
+        )
+        .route("/passkeys", get(passkeys::list).post(passkeys::register))
+        .route("/passkeys/options", post(passkeys::creation_options))
+        .route("/passkeys/{id}", delete(passkeys::delete))
         .route("/auth/options", get(auth::options))
         .route(
             "/auth/recovery",
@@ -58,6 +71,7 @@ pub fn router(state: AppState) -> Router {
         .route("/app-passwords/{id}", delete(app_passwords::delete))
         .route("/auth/password", post(auth::change_password))
         .route("/me", get(auth::me))
+        .route("/me/pq-key", put(auth::set_pq_key))
         .route("/me/contacts", get(contacts::get).put(contacts::put))
         .route(
             "/me/data/{name}",

@@ -15,7 +15,11 @@
 //! node key ──seals──► node metadata (name, mime, size, mtime)
 //! file node key ──wraps──► per-version content key ──seals──► content chunks
 //! recipient public key ──sealed box──► shared node key
+//! MK  ──wraps──► ML-KEM-768 seed (the post-quantum half of the keypair)
 //! ```
+//!
+//! Sealed boxes to a user with an ML-KEM key are hybrid: X25519 and ML-KEM
+//! together, so a recording of them stays closed unless both are broken.
 //!
 //! Every ciphertext is bound to its context through AEAD associated data
 //! (node id, version id, chunk index, ...), so the server cannot swap, move,
@@ -28,6 +32,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chacha20poly1305::aead::{Aead, KeyInit, Payload};
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use hkdf::Hkdf;
+use ml_kem::{Decapsulate as _, KeyExport as _};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -384,6 +389,47 @@ pub fn unwrap_master_key_app(kek: &Key, wrapped: &[u8], app_password_id: &str) -
 }
 
 // ---------------------------------------------------------------------------
+// Passkeys: with the WebAuthn PRF extension an authenticator returns a
+// secret it computes from its own key and an input we choose. That secret
+// never leaves the browser; HKDF turns it into a KEK that wraps a copy of
+// the master key, bound to the credential id. The server only verifies the
+// passkey's signature before handing out the wrapped copy.
+// ---------------------------------------------------------------------------
+
+/// The input passed to the PRF extension. Fixed, so a passkey can be used
+/// before we know which one it is.
+pub fn passkey_prf_salt() -> [u8; 32] {
+    Sha256::digest(b"thencloud/v1/passkey-prf").into()
+}
+
+pub fn derive_passkey_kek(prf_output: &[u8]) -> Result<Key> {
+    if prf_output.len() < KEY_LEN {
+        return Err(Error::KeyLength);
+    }
+    let hk = Hkdf::<Sha256>::new(Some(b"thencloud/v1/passkey"), prf_output);
+    let mut kek = [0u8; KEY_LEN];
+    hk.expand(b"thencloud/v1/passkey-kek", &mut kek)
+        .expect("valid length");
+    Ok(Key(kek))
+}
+
+pub fn wrap_master_key_passkey(kek: &Key, mk: &Key, credential_id: &[u8]) -> Vec<u8> {
+    seal(
+        kek,
+        mk.as_bytes(),
+        &aad("master-key-passkey", &[&b64_encode(credential_id)]),
+    )
+}
+
+pub fn unwrap_master_key_passkey(kek: &Key, wrapped: &[u8], credential_id: &[u8]) -> Result<Key> {
+    open_key(
+        kek,
+        wrapped,
+        &aad("master-key-passkey", &[&b64_encode(credential_id)]),
+    )
+}
+
+// ---------------------------------------------------------------------------
 // Private account data (e.g. verified contacts): sealed under the master key
 // and bound to the user and a label, so the server can store it but not read
 // it, change it, or swap it with another user's or another kind of data.
@@ -409,6 +455,8 @@ pub fn decrypt_private_data(
 pub struct KeyPair {
     pub secret: Key,
     pub public: [u8; 32],
+    /// The post-quantum half, for users who have one.
+    pub pq: Option<PqKeyPair>,
 }
 
 impl KeyPair {
@@ -419,8 +467,90 @@ impl KeyPair {
     pub fn from_secret(secret: Key) -> Self {
         let sk = x25519_dalek::StaticSecret::from(*secret.as_bytes());
         let public = x25519_dalek::PublicKey::from(&sk).to_bytes();
-        KeyPair { secret, public }
+        KeyPair {
+            secret,
+            public,
+            pq: None,
+        }
     }
+
+    pub fn with_pq(mut self, pq: PqKeyPair) -> Self {
+        self.pq = Some(pq);
+        self
+    }
+
+    /// What others seal to: the X25519 key, followed by the ML-KEM key if
+    /// there is one.
+    pub fn sealing_key(&self) -> Vec<u8> {
+        let mut k = self.public.to_vec();
+        if let Some(pq) = &self.pq {
+            k.extend_from_slice(&pq.public);
+        }
+        k
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Post-quantum keys: ML-KEM-768 (FIPS 203). The secret is the 64-byte seed.
+// ---------------------------------------------------------------------------
+
+type MlKemDk = ml_kem::DecapsulationKey<ml_kem::MlKem768>;
+type MlKemEk = ml_kem::EncapsulationKey<ml_kem::MlKem768>;
+
+pub const PQ_SEED_LEN: usize = 64;
+pub const PQ_PUBLIC_LEN: usize = 1184;
+pub const PQ_CIPHERTEXT_LEN: usize = 1088;
+
+#[derive(Zeroize, ZeroizeOnDrop)]
+pub struct PqKeyPair {
+    seed: [u8; PQ_SEED_LEN],
+    #[zeroize(skip)]
+    pub public: Vec<u8>,
+}
+
+impl PqKeyPair {
+    pub fn generate() -> Self {
+        let mut seed = [0u8; PQ_SEED_LEN];
+        fill_random(&mut seed);
+        let kp = Self::from_seed(&seed).expect("64 bytes");
+        seed.zeroize();
+        kp
+    }
+
+    pub fn from_seed(seed: &[u8]) -> Result<Self> {
+        let seed: [u8; PQ_SEED_LEN] = seed.try_into().map_err(|_| Error::KeyLength)?;
+        let public = dk(&seed).encapsulation_key().to_bytes().to_vec();
+        Ok(PqKeyPair { seed, public })
+    }
+
+    pub fn seed(&self) -> &[u8; PQ_SEED_LEN] {
+        &self.seed
+    }
+}
+
+fn dk(seed: &[u8; PQ_SEED_LEN]) -> MlKemDk {
+    MlKemDk::from_seed((*seed).into())
+}
+
+pub fn wrap_pq_private_key(mk: &Key, pq: &PqKeyPair) -> Vec<u8> {
+    seal(mk, &pq.seed, &aad("pq-private-key", &[]))
+}
+
+pub fn unwrap_pq_private_key(mk: &Key, wrapped: &[u8]) -> Result<PqKeyPair> {
+    let mut seed = open(mk, wrapped, &aad("pq-private-key", &[]))?;
+    let kp = PqKeyPair::from_seed(&seed);
+    seed.zeroize();
+    kp
+}
+
+/// The bytes a fingerprint is taken over: the X25519 key, and with an
+/// ML-KEM key, its SHA-256 too. Short enough to put in a link.
+pub fn identity(x25519_public: &[u8], pq_public: Option<&[u8]>) -> Vec<u8> {
+    let mut id = x25519_public.to_vec();
+    if let Some(pq) = pq_public {
+        id.extend_from_slice(&Sha256::digest(pq));
+    }
+    id
 }
 
 pub fn wrap_private_key(mk: &Key, secret: &Key) -> Vec<u8> {
@@ -457,27 +587,103 @@ fn seal_box_key(shared: &[u8; 32], eph_pub: &[u8], recipient_pub: &[u8]) -> Key 
     Key(k)
 }
 
-/// Anonymous public-key encryption: `eph_pub || seal(k, plaintext)`.
+/// Both shared secrets feed the key, and the salt binds every public value,
+/// so the box stays closed while either X25519 or ML-KEM holds.
+fn hybrid_box_key(
+    x_shared: &[u8; 32],
+    pq_shared: &[u8],
+    eph_pub: &[u8],
+    x_pub: &[u8],
+    pq_ct: &[u8],
+    pq_pub: &[u8],
+) -> Key {
+    let mut salt = Vec::with_capacity(128);
+    salt.extend_from_slice(eph_pub);
+    salt.extend_from_slice(x_pub);
+    salt.extend_from_slice(&Sha256::digest(pq_ct));
+    salt.extend_from_slice(&Sha256::digest(pq_pub));
+    let mut ikm = [0u8; 64];
+    ikm[..32].copy_from_slice(x_shared);
+    ikm[32..].copy_from_slice(pq_shared);
+    let hk = Hkdf::<Sha256>::new(Some(&salt), &ikm);
+    ikm.zeroize();
+    let mut k = [0u8; KEY_LEN];
+    hk.expand(b"thencloud/v2/sealed-box-hybrid", &mut k)
+        .expect("valid length");
+    Key(k)
+}
+
+/// Marks a hybrid sealed box. Classic ones start with a random X25519 key,
+/// so they're told apart by length too: every sealed payload is a 32-byte
+/// key, far shorter than an ML-KEM ciphertext.
+const HYBRID_TAG: u8 = 2;
+const HYBRID_HEADER: usize = 1 + 32 + PQ_CIPHERTEXT_LEN;
+
+fn is_hybrid(sealed: &[u8]) -> bool {
+    sealed.len() >= HYBRID_HEADER + NONCE_LEN + TAG_LEN && sealed[0] == HYBRID_TAG
+}
+
+/// Anonymous public-key encryption. To a plain X25519 key (32 bytes):
+/// `eph_pub || seal(k, plaintext)`. To an X25519 + ML-KEM-768 key (see
+/// `KeyPair::sealing_key`): `2 || eph_pub || ml_kem_ct || seal(k, plaintext)`.
 pub fn seal_to_public(recipient_pub: &[u8], plaintext: &[u8], aad: &[u8]) -> Result<Vec<u8>> {
-    let rp: [u8; 32] = recipient_pub.try_into().map_err(|_| Error::KeyLength)?;
+    let (x, pq) = match recipient_pub.len() {
+        32 => (recipient_pub, None),
+        n if n == 32 + PQ_PUBLIC_LEN => (&recipient_pub[..32], Some(&recipient_pub[32..])),
+        _ => return Err(Error::KeyLength),
+    };
+    let rp: [u8; 32] = x.try_into().unwrap();
     let eph = x25519_dalek::StaticSecret::from(*Key::generate().as_bytes());
     let eph_pub = x25519_dalek::PublicKey::from(&eph).to_bytes();
     let shared = eph.diffie_hellman(&x25519_dalek::PublicKey::from(rp));
-    let k = seal_box_key(shared.as_bytes(), &eph_pub, &rp);
-    let mut out = eph_pub.to_vec();
+    let Some(pq) = pq else {
+        let k = seal_box_key(shared.as_bytes(), &eph_pub, &rp);
+        let mut out = eph_pub.to_vec();
+        out.extend(seal(&k, plaintext, aad));
+        return Ok(out);
+    };
+    let ek =
+        MlKemEk::new(pq.try_into().map_err(|_| Error::KeyLength)?).map_err(|_| Error::KeyLength)?;
+    let mut m = [0u8; 32];
+    fill_random(&mut m);
+    let (ct, pq_shared) = ek.encapsulate_deterministic(&m.into());
+    m.zeroize();
+    let k = hybrid_box_key(shared.as_bytes(), &pq_shared, &eph_pub, &rp, &ct, pq);
+    let mut out = vec![HYBRID_TAG];
+    out.extend_from_slice(&eph_pub);
+    out.extend_from_slice(&ct);
     out.extend(seal(&k, plaintext, aad));
     Ok(out)
 }
 
 pub fn open_sealed(kp: &KeyPair, sealed: &[u8], aad: &[u8]) -> Result<Vec<u8>> {
+    let x_shared = |eph_pub: &[u8]| {
+        let eph: [u8; 32] = eph_pub.try_into().unwrap();
+        let sk = x25519_dalek::StaticSecret::from(*kp.secret.as_bytes());
+        sk.diffie_hellman(&x25519_dalek::PublicKey::from(eph))
+    };
+    if is_hybrid(sealed) {
+        let pq = kp.pq.as_ref().ok_or(Error::Decrypt)?;
+        let (eph_pub, rest) = sealed[1..].split_at(32);
+        let (ct, rest) = rest.split_at(PQ_CIPHERTEXT_LEN);
+        let pq_shared = dk(&pq.seed)
+            .decapsulate_slice(ct)
+            .map_err(|_| Error::Decrypt)?;
+        let k = hybrid_box_key(
+            x_shared(eph_pub).as_bytes(),
+            &pq_shared,
+            eph_pub,
+            &kp.public,
+            ct,
+            &pq.public,
+        );
+        return open(&k, rest, aad);
+    }
     if sealed.len() < 32 {
         return Err(Error::Decrypt);
     }
     let (eph_pub, rest) = sealed.split_at(32);
-    let eph: [u8; 32] = eph_pub.try_into().unwrap();
-    let sk = x25519_dalek::StaticSecret::from(*kp.secret.as_bytes());
-    let shared = sk.diffie_hellman(&x25519_dalek::PublicKey::from(eph));
-    let k = seal_box_key(shared.as_bytes(), eph_pub, &kp.public);
+    let k = seal_box_key(x_shared(eph_pub).as_bytes(), eph_pub, &kp.public);
     open(&k, rest, aad)
 }
 
@@ -865,6 +1071,46 @@ mod tests {
     }
 
     #[test]
+    fn hybrid_sealed_box() {
+        let kp = KeyPair::generate().with_pq(PqKeyPair::generate());
+        assert_eq!(kp.sealing_key().len(), 32 + PQ_PUBLIC_LEN);
+        let nk = Key::generate();
+        let id = new_id();
+        let s = seal_share_key(&kp.sealing_key(), &nk, &id).unwrap();
+        assert_eq!(
+            s.len(),
+            1 + 32 + PQ_CIPHERTEXT_LEN + NONCE_LEN + KEY_LEN + TAG_LEN
+        );
+        assert!(open_share_key(&kp, &s, &id).unwrap() == nk);
+        assert!(open_share_key(&kp, &s, &new_id()).is_err());
+        // Classic boxes to the same person still open.
+        let classic = seal_share_key(&kp.public, &nk, &id).unwrap();
+        assert!(open_share_key(&kp, &classic, &id).unwrap() == nk);
+        // Without the ML-KEM secret, or with only the X25519 one, it stays shut.
+        let x_only = KeyPair::from_secret(kp.secret.clone());
+        assert!(open_share_key(&x_only, &s, &id).is_err());
+        let other_pq = KeyPair::from_secret(kp.secret.clone()).with_pq(PqKeyPair::generate());
+        assert!(open_share_key(&other_pq, &s, &id).is_err());
+        // Tampering with the ML-KEM ciphertext breaks it.
+        let mut t = s.clone();
+        t[100] ^= 1;
+        assert!(open_share_key(&kp, &t, &id).is_err());
+
+        // The seed round-trips under the master key.
+        let mk = Key::generate();
+        let pq = kp.pq.as_ref().unwrap();
+        let back = unwrap_pq_private_key(&mk, &wrap_pq_private_key(&mk, pq)).unwrap();
+        assert_eq!(back.public, pq.public);
+        assert!(unwrap_pq_private_key(&Key::generate(), &wrap_pq_private_key(&mk, pq)).is_err());
+
+        // The identity covers both keys, and without one is the old key.
+        assert_eq!(identity(&kp.public, None), kp.public.to_vec());
+        let id2 = identity(&kp.public, Some(&pq.public));
+        assert_eq!(id2.len(), 64);
+        assert_ne!(fingerprint(&id2), fingerprint(&kp.public));
+    }
+
+    #[test]
     fn chunks_detect_reorder_truncation_and_swap() {
         let ck = Key::generate();
         let v = new_id();
@@ -957,6 +1203,18 @@ mod tests {
         assert!(unwrap_master_key(&rk.kek, &wrapped).is_err());
         let other = derive_recovery_keys(&Key::generate());
         assert!(unwrap_master_key_recovery(&other.kek, &wrapped).is_err());
+    }
+
+    #[test]
+    fn passkey_wrap_is_bound_to_credential() {
+        let kek = derive_passkey_kek(&[7u8; 32]).unwrap();
+        assert!(kek != derive_passkey_kek(&[8u8; 32]).unwrap());
+        assert!(derive_passkey_kek(&[7u8; 16]).is_err());
+        let mk = Key::generate();
+        let w = wrap_master_key_passkey(&kek, &mk, b"cred-a");
+        assert!(unwrap_master_key_passkey(&kek, &w, b"cred-a").unwrap() == mk);
+        assert!(unwrap_master_key_passkey(&kek, &w, b"cred-b").is_err());
+        assert!(unwrap_master_key(&kek, &w).is_err());
     }
 
     #[test]

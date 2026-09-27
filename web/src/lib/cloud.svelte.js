@@ -12,6 +12,7 @@ import {
 import { sortEntries } from './format.js';
 import { rememberSession, rememberedSession, forgetSession } from './remember.js';
 import { streamsAvailable, streamDownload } from './stream.js';
+import { createPasskey, usePasskey, passkeysSupported } from './passkeys.js';
 
 export const session = $state({
   token: null,
@@ -22,7 +23,7 @@ export const session = $state({
 });
 
 let mk = null; // master key
-let sk = null; // X25519 secret key
+let sk = null; // X25519 secret key, followed by the ML-KEM seed when there is one
 const keyCache = new Map(); // node id -> node key
 
 /**
@@ -69,6 +70,7 @@ export async function register(username, password, invite = null, remember = fal
   const ak = await deriveAccountKeys(password, salt, params);
   const masterKey = tc.random_key();
   const kp = tc.generate_keypair();
+  const pq = tc.generate_pq_keypair();
   const rootId = tc.new_id();
   const rootKey = tc.random_key();
   const s = await request('POST', '/api/auth/register', {
@@ -80,6 +82,8 @@ export async function register(username, password, invite = null, remember = fal
       enc_master_key: b64(tc.wrap_master_key(ak.kek, masterKey)),
       public_key: b64(kp.public),
       enc_private_key: b64(tc.wrap_private_key(masterKey, kp.secret)),
+      pq_public_key: b64(pq.public),
+      enc_pq_private_key: b64(tc.wrap_pq_private_key(masterKey, pq.secret)),
       root: {
         id: rootId,
         enc_key: b64(tc.wrap_node_key(masterKey, rootKey, rootId)),
@@ -90,39 +94,128 @@ export async function register(username, password, invite = null, remember = fal
     },
   });
   kp.free();
+  pq.free();
   start(s, ak.kek);
   if (remember) await keepSignedIn(s.token);
 }
 
+/**
+ * Sign in with a password. Returns null when that's done, or, when the
+ * account asks for a second factor, `{ totp, passkey, withCode, withPasskey }`
+ * to finish with one.
+ */
 export async function login(username, password, remember = false) {
   const pre = await request('POST', '/api/auth/prelogin', { body: { username } });
   const ak = await deriveAccountKeys(password, unb64(pre.kdf_salt), pre.kdf_params);
   const s = await request('POST', '/api/auth/login', {
     body: { username, auth_key: b64(ak.authKey), device_name: deviceName() },
   });
-  start(s, ak.kek);
-  if (remember) await keepSignedIn(s.token);
+  if (!s.second_factor) {
+    start(s, ak.kek);
+    if (remember) await keepSignedIn(s.token);
+    return null;
+  }
+  const sf = s.second_factor;
+  const finish = async (body) => {
+    const r = await request('POST', '/api/auth/login/second-factor', { body: { ticket: sf.ticket, ...body } });
+    start(r, ak.kek);
+    if (remember) await keepSignedIn(r.token);
+  };
+  return {
+    totp: sf.totp,
+    passkey: !!sf.passkey && passkeysSupported(),
+    withCode: (code) => finish({ totp_code: code }),
+    withPasskey: async () => {
+      const a = await usePasskey({ challenge: unb64(sf.passkey.challenge), allow: sf.passkey.allow_credentials.map(unb64) });
+      await finish({ passkey: assertionBody(a) });
+    },
+  };
+}
+
+const assertionBody = (a) => ({
+  credential_id: b64(a.id),
+  client_data_json: b64(a.clientDataJSON),
+  authenticator_data: b64(a.authenticatorData),
+  signature: b64(a.signature),
+  user_handle: a.userHandle ? b64(a.userHandle) : undefined,
+});
+
+/**
+ * Sign in with a passkey alone. Its PRF output unwraps the master key; the
+ * server hands out the wrapped key only after checking the passkey.
+ */
+export async function loginWithPasskey(remember = false) {
+  const o = await request('POST', '/api/auth/passkey/options');
+  const a = await usePasskey({ challenge: unb64(o.challenge), prfSalt: tc.passkey_prf_salt(), verify: 'required' });
+  if (!a.prf) {
+    throw new Error("This browser or passkey can't unlock your files on its own. Sign in with your password.");
+  }
+  try {
+    const s = await request('POST', '/api/auth/passkey/login', {
+      body: { challenge: o.challenge, assertion: assertionBody(a), device_name: deviceName() },
+    });
+    startWithMasterKey(s, tc.unwrap_master_key_passkey(a.prf, unb64(s.enc_master_key), unb64(s.credential_id)));
+    if (remember) await keepSignedIn(s.token);
+  } finally {
+    a.prf.fill(0);
+  }
 }
 
 function start(s, kek) {
   startWithMasterKey(s, tc.unwrap_master_key(kek, unb64(s.me.keys.enc_master_key)));
 }
 
+const concat = (a, b) => {
+  const out = new Uint8Array(a.length + b.length);
+  out.set(a);
+  out.set(b, a.length);
+  return out;
+};
+
 function startWithMasterKey(s, masterKey) {
   const keys = s.me.keys;
   const secret = tc.unwrap_private_key(masterKey, unb64(keys.enc_private_key));
   const pub = tc.public_key_from_secret(secret);
-  if (b64(pub) !== keys.public_key) {
-    throw new Error('The public key stored on the server does not match your private key. Refusing to continue.');
+  const mismatch = () => new Error('The public key stored on the server does not match your private key. Refusing to continue.');
+  if (b64(pub) !== keys.public_key) throw mismatch();
+  let seed = null;
+  if (keys.enc_pq_private_key) {
+    seed = tc.unwrap_pq_private_key(masterKey, unb64(keys.enc_pq_private_key));
+    if (b64(tc.pq_public_key_from_seed(seed)) !== keys.pq_public_key) throw mismatch();
   }
   mk = masterKey;
-  sk = secret;
+  sk = seed ? concat(secret, seed) : secret;
   keyCache.clear();
   contacts = null;
   appData.clear();
   session.token = s.token;
   session.me = s.me;
-  session.fingerprint = tc.fingerprint(pub);
+  session.fingerprint = tc.fingerprint(myIdentity());
+  if (!seed) addPqKey().catch(() => {});
+}
+
+/** What our fingerprint covers (see `identity` in the crypto crate). */
+const myIdentity = () => {
+  const k = session.me.keys;
+  return tc.identity(unb64(k.public_key), k.pq_public_key ? unb64(k.pq_public_key) : new Uint8Array());
+};
+
+/**
+ * Accounts made before post-quantum keys get an ML-KEM key on their first
+ * sign-in; shares to them are then sealed with both. Once set, the server
+ * never replaces it.
+ */
+async function addPqKey() {
+  const pq = tc.generate_pq_keypair();
+  try {
+    session.me = await api('PUT', '/api/me/pq-key', {
+      body: { pq_public_key: b64(pq.public), enc_pq_private_key: b64(tc.wrap_pq_private_key(mk, pq.secret)) },
+    });
+    sk = concat(sk, pq.secret);
+    session.fingerprint = tc.fingerprint(myIdentity());
+  } finally {
+    pq.free();
+  }
 }
 
 export async function refreshMe() {
@@ -315,6 +408,69 @@ export async function createAppPassword(password, name, scope) {
     d.free();
     secret.fill(0);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Two-step sign-in: an authenticator app (TOTP) and passkeys. Either one is
+// then asked for after the password. A passkey whose authenticator supports
+// PRF also gets its own wrapped copy of the master key, so it can sign in
+// without the password.
+// ---------------------------------------------------------------------------
+
+/** A new TOTP secret to show, confirmed with `enableTotp`. */
+export async function startTotp(password) {
+  return api('POST', '/api/auth/totp/setup', { body: { current_auth_key: await authKeyFor(password) } });
+}
+
+export async function enableTotp(setupId, code) {
+  session.me = await api('POST', '/api/auth/totp', { body: { setup_id: setupId, code } });
+}
+
+export async function disableTotp(password) {
+  session.me = await api('DELETE', '/api/auth/totp', { body: { current_auth_key: await authKeyFor(password) } });
+}
+
+export const listPasskeys = () => api('GET', '/api/passkeys');
+
+export async function removePasskey(id, password) {
+  await api('DELETE', `/api/passkeys/${encodeURIComponent(id)}`, { body: { current_auth_key: await authKeyFor(password) } });
+}
+
+/**
+ * Make a passkey and register it. The browser prompt comes first, while the
+ * click still counts as one; the password is checked after.
+ */
+export async function addPasskey(name, password) {
+  const o = await api('POST', '/api/passkeys/options');
+  const prfSalt = tc.passkey_prf_salt();
+  const c = await createPasskey({
+    challenge: unb64(o.challenge),
+    userHandle: unb64(o.user_handle),
+    exclude: o.exclude_credentials.map(unb64),
+    username: session.me.username,
+    prfSalt,
+  });
+  let prf = c.prf;
+  if (!prf && c.prfEnabled) {
+    // Most authenticators only give the PRF output when signing in.
+    try {
+      prf = (await usePasskey({ challenge: tc.random_key(), allow: [c.id], prfSalt })).prf;
+    } catch {
+      prf = null; // then it's a second step only
+    }
+  }
+  const body = {
+    registration_id: o.registration_id,
+    name,
+    current_auth_key: await authKeyFor(password),
+    client_data_json: b64(c.clientDataJSON),
+    attestation_object: b64(c.attestationObject),
+  };
+  if (prf) {
+    body.enc_master_key = b64(tc.wrap_master_key_passkey(prf, mk, c.id));
+    prf.fill(0);
+  }
+  return api('POST', '/api/passkeys', { body });
 }
 
 export async function changePassword(current, next) {
@@ -916,13 +1072,40 @@ export function saveAppData(name, change) {
 }
 
 /**
+ * A user's keys as the server gives them: `publicKey` is what to seal to
+ * (X25519, then ML-KEM when they have one), `identity` what the fingerprint
+ * and a verified contact's pin cover.
+ */
+function userKeys(username, publicKey, pqPublicKey) {
+  const x = unb64(publicKey);
+  const pq = pqPublicKey ? unb64(pqPublicKey) : null;
+  const identity = tc.identity(x, pq ?? new Uint8Array());
+  return { username, publicKey: pq ? concat(x, pq) : x, identity, fingerprint: tc.fingerprint(identity) };
+}
+
+/**
+ * Whether `user`'s keys are the ones pinned for them. A pin from before
+ * post-quantum keys covers only X25519: when that half still matches, the
+ * new ML-KEM half is pinned the first time it's seen.
+ */
+async function pinMatches(user) {
+  const c = (await loadContacts()).data[user.username];
+  if (!c) return null;
+  const id = b64(user.identity);
+  if (c.public_key === id) return true;
+  const upgraded = user.identity.length === 64 && c.public_key === b64(user.identity.slice(0, 32));
+  if (upgraded) await saveContacts((d) => (d[user.username] = { ...d[user.username], public_key: id }));
+  return upgraded;
+}
+
+/**
  * How `user` (from lookupUser) compares with what you verified:
  * { state: 'new' | 'verified' | 'changed', verifiedAt, pinnedFingerprint }.
  */
 export async function contactStatus(user) {
-  const c = (await loadContacts()).data[user.username];
-  if (!c) return { state: 'new' };
-  const same = c.public_key === b64(user.publicKey);
+  const same = await pinMatches(user);
+  if (same === null) return { state: 'new' };
+  const c = contacts.data[user.username];
   return {
     state: same ? 'verified' : 'changed',
     verifiedAt: c.verified_at,
@@ -932,7 +1115,7 @@ export async function contactStatus(user) {
 
 /** Remember `user`'s current key as checked. */
 export const verifyContact = (user) =>
-  saveContacts((d) => (d[user.username] = { public_key: b64(user.publicKey), verified_at: Date.now() }));
+  saveContacts((d) => (d[user.username] = { public_key: b64(user.identity), verified_at: Date.now() }));
 
 export const forgetContact = (username) => saveContacts((d) => delete d[username]);
 
@@ -946,8 +1129,7 @@ export async function listContacts() {
 
 export async function lookupUser(username) {
   const u = await api('GET', `/api/users/${encodeURIComponent(username.trim())}/public-key`);
-  const publicKey = unb64(u.public_key);
-  return { username: u.username, publicKey, fingerprint: tc.fingerprint(publicKey) };
+  return userKeys(u.username, u.public_key, u.pq_public_key);
 }
 
 export async function share(entry, user, permission) {
@@ -959,18 +1141,19 @@ export async function share(entry, user, permission) {
       permission,
     },
   });
-  grantAvatar(user.username, user.publicKey).catch(() => {});
+  grantAvatar(user).catch(() => {});
 }
 
 export async function incomingShares() {
   const shares = await api('GET', '/api/shares/incoming');
   // People who share with us see our picture too.
-  for (const s of shares) grantAvatar(s.owner, unb64(s.owner_public_key)).catch(() => {});
-  return shares.map((s) => {
+  const owners = shares.map((s) => userKeys(s.owner, s.owner_public_key, s.owner_pq_public_key));
+  for (const o of owners) grantAvatar(o).catch(() => {});
+  return shares.map((s, i) => {
     try {
       const key = tc.open_share_key(sk, unb64(s.wrapped_key), s.node.id);
       keyCache.set(s.node.id, key);
-      return { ...s, entry: { node: s.node, key, meta: decryptMeta(key, s.node) }, ownerFingerprint: tc.fingerprint(unb64(s.owner_public_key)) };
+      return { ...s, entry: { node: s.node, key, meta: decryptMeta(key, s.node) }, ownerFingerprint: owners[i].fingerprint };
     } catch (e) {
       return { ...s, error: String(e?.message || e) };
     }
@@ -1006,9 +1189,11 @@ export function linkUrl(token, nodeKey) {
 
 /**
  * An upload-only link carries our public key instead of the folder key, so
- * visitors can seal files to us without being able to read anything.
+ * visitors can seal files to us without being able to read anything. With
+ * an ML-KEM key that's too long for a link, so it carries its hash: the
+ * page gets the key from the server and checks it.
  */
-const urlFor = (link, entry) => (link.upload_only ? linkUrl(link.token, unb64(session.me.keys.public_key)) : linkUrl(link.token, entry.key));
+const urlFor = (link, entry) => (link.upload_only ? linkUrl(link.token, myIdentity()) : linkUrl(link.token, entry.key));
 
 export async function createLink(entry, { password, expiresAt, uploadOnly = false }) {
   const link = await api('POST', '/api/links', {
@@ -1065,14 +1250,14 @@ export async function loadMyAvatar() {
  * Only to a verified contact whose key still matches: the same rule as
  * sharing, so a key the server swapped in never gets it.
  */
-async function grantAvatar(username, publicKey) {
+async function grantAvatar(user) {
+  const { username } = user;
   const a = await loadMyAvatar();
   if (!a.key || a.grantees.has(username) || username === session.me.username) return;
-  const pinned = (await loadContacts()).data[username];
-  if (!pinned || pinned.public_key !== b64(publicKey)) return;
+  if (!(await pinMatches(user))) return;
   a.grantees.add(username);
   await api('PUT', `/api/avatar-grants/${encodeURIComponent(username)}`, {
-    body: { sealed_key: b64(tc.seal_avatar_key(publicKey, a.key, session.me.username, username)) },
+    body: { sealed_key: b64(tc.seal_avatar_key(user.publicKey, a.key, session.me.username, username)) },
   });
 }
 
@@ -1111,7 +1296,7 @@ export async function setAvatar(file) {
   avatar.url = avatarBlobUrl(bytes);
   const pinned = (await loadContacts()).data;
   for (const username of await sharePartners()) {
-    if (pinned[username]) await grantAvatar(username, unb64(pinned[username].public_key)).catch(() => {});
+    if (pinned[username]) await grantAvatar(await lookupUser(username)).catch(() => {});
   }
 }
 

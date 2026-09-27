@@ -141,6 +141,15 @@ struct Client {
     root: String,
 }
 
+/// What to seal to: both halves of their key when they have both.
+fn sealing_key(u: &UserPublicKey) -> Vec<u8> {
+    let mut k = u.public_key.0.clone();
+    if let Some(pq) = &u.pq_public_key {
+        k.extend_from_slice(pq);
+    }
+    k
+}
+
 fn meta(name: &str, size: u64) -> Metadata {
     Metadata {
         name: name.into(),
@@ -170,7 +179,8 @@ async fn try_register(
     let salt = c::random_bytes(c::SALT_LEN);
     let ak = c::derive_account_keys(password, &salt, FAST_KDF).unwrap();
     let mk = Key::generate();
-    let kp = KeyPair::generate();
+    let kp = KeyPair::generate().with_pq(c::PqKeyPair::generate());
+    let pq = kp.pq.as_ref().unwrap();
     let root_id = c::new_id();
     let root_key = Key::generate();
     let req = RegisterRequest {
@@ -181,6 +191,8 @@ async fn try_register(
         enc_master_key: B64(c::wrap_master_key(&ak.kek, &mk)),
         public_key: B64(kp.public.to_vec()),
         enc_private_key: B64(c::wrap_private_key(&mk, &kp.secret)),
+        pq_public_key: Some(B64(pq.public.clone())),
+        enc_pq_private_key: Some(B64(c::wrap_pq_private_key(&mk, pq))),
         root: NewRootFolder {
             id: root_id.clone(),
             enc_key: B64(c::wrap_node_key(&mk, &root_key, &root_id)),
@@ -229,7 +241,10 @@ async fn login(h: &Harness, username: &str, password: &str) -> Result<Client, Bo
     }
     let s: SessionResponse = r.json();
     let mk = c::unwrap_master_key(&ak.kek, &s.me.keys.enc_master_key).unwrap();
-    let kp = c::unwrap_private_key(&mk, &s.me.keys.enc_private_key).unwrap();
+    let mut kp = c::unwrap_private_key(&mk, &s.me.keys.enc_private_key).unwrap();
+    if let Some(w) = &s.me.keys.enc_pq_private_key {
+        kp = kp.with_pq(c::unwrap_pq_private_key(&mk, w).unwrap());
+    }
     Ok(Client {
         username: username.into(),
         token: s.token,
@@ -602,7 +617,7 @@ async fn full_lifecycle_is_zero_knowledge() {
     let share_req = CreateShareRequest {
         node_id: other.clone(),
         recipient: "bob".into(),
-        wrapped_key: B64(c::seal_share_key(&pk.public_key, &other_key, &other).unwrap()),
+        wrapped_key: B64(c::seal_share_key(&sealing_key(&pk), &other_key, &other).unwrap()),
         permission: Permission::Read,
     };
     let r = h
@@ -1316,7 +1331,7 @@ async fn version_history_restore_and_limits() {
             Some(CreateShareRequest {
                 node_id: f.id.clone(),
                 recipient: "bob".into(),
-                wrapped_key: B64(c::seal_share_key(&pk.public_key, &key, &f.id).unwrap()),
+                wrapped_key: B64(c::seal_share_key(&sealing_key(&pk), &key, &f.id).unwrap()),
                 permission: Permission::Read,
             }),
         )
@@ -1939,7 +1954,7 @@ async fn drafts_are_per_user_writers_only_and_opaque() {
     let share = |permission| CreateShareRequest {
         node_id: folder.clone(),
         recipient: "bob".into(),
-        wrapped_key: B64(c::seal_share_key(&pk.public_key, &folder_key, &folder).unwrap()),
+        wrapped_key: B64(c::seal_share_key(&sealing_key(&pk), &folder_key, &folder).unwrap()),
         permission,
     };
     let r = h
@@ -2069,7 +2084,7 @@ async fn profile_pictures_are_encrypted_and_only_for_share_partners() {
         .await
         .json();
     let grant = AvatarGrant {
-        sealed_key: B64(c::seal_avatar_key(&bob_pk.public_key, &ak, "alice", "bob").unwrap()),
+        sealed_key: B64(c::seal_avatar_key(&sealing_key(&bob_pk), &ak, "alice", "bob").unwrap()),
     };
     // Only between people who share with each other.
     let r = h
@@ -2089,7 +2104,9 @@ async fn profile_pictures_are_encrypted_and_only_for_share_partners() {
         Some(CreateShareRequest {
             node_id: folder.clone(),
             recipient: "bob".into(),
-            wrapped_key: B64(c::seal_share_key(&bob_pk.public_key, &folder_key, &folder).unwrap()),
+            wrapped_key: B64(
+                c::seal_share_key(&sealing_key(&bob_pk), &folder_key, &folder).unwrap(),
+            ),
             permission: Permission::Read,
         }),
     )
@@ -2514,7 +2531,7 @@ async fn trash_hides_restores_and_purges() {
         Some(CreateShareRequest {
             node_id: folder.clone(),
             recipient: "bob".into(),
-            wrapped_key: B64(c::seal_share_key(&pk.public_key, &folder_key, &folder).unwrap()),
+            wrapped_key: B64(c::seal_share_key(&sealing_key(&pk), &folder_key, &folder).unwrap()),
             permission: Permission::Write,
         }),
     )
@@ -3642,4 +3659,704 @@ prev=""; for a in "$@"; do [ "$prev" = "-i" ] && { printf ':'; cat "$a"; }; prev
     let mut files = Vec::new();
     all_files(&h.dir.path().join("data/downloads"), &mut files);
     assert!(files.is_empty(), "left behind: {files:?}");
+}
+
+// ---------------------------------------------------------------------------
+// Two-factor sign-in: TOTP and passkeys (a software authenticator)
+// ---------------------------------------------------------------------------
+
+const ORIGIN: &str = "https://cloud.test";
+
+fn base32_decode(s: &str) -> Vec<u8> {
+    let (mut out, mut acc, mut bits) = (Vec::new(), 0u32, 0u32);
+    for ch in s.bytes() {
+        let v = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
+            .iter()
+            .position(|&x| x == ch)
+            .unwrap() as u32;
+        acc = (acc << 5) | v;
+        bits += 5;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((acc >> bits) as u8);
+        }
+    }
+    out
+}
+
+enum Signer {
+    P256(ring::signature::EcdsaKeyPair),
+    Ed25519(ring::signature::Ed25519KeyPair),
+}
+
+/// A passkey held in memory, standing in for a browser and authenticator.
+struct SoftPasskey {
+    id: Vec<u8>,
+    signer: Signer,
+    counter: u32,
+}
+
+fn cbor(v: &ciborium::Value) -> Vec<u8> {
+    let mut out = Vec::new();
+    ciborium::into_writer(v, &mut out).unwrap();
+    out
+}
+
+fn client_data(kind: &str, challenge: &[u8], origin: &str) -> Vec<u8> {
+    json!({"type": kind, "challenge": c::b64_encode(challenge), "origin": origin, "crossOrigin": false})
+        .to_string()
+        .into_bytes()
+}
+
+impl SoftPasskey {
+    fn new(ed25519: bool) -> Self {
+        use ring::signature::*;
+        let rng = ring::rand::SystemRandom::new();
+        let signer = if ed25519 {
+            let pkcs8 = Ed25519KeyPair::generate_pkcs8(&rng).unwrap();
+            Signer::Ed25519(Ed25519KeyPair::from_pkcs8(pkcs8.as_ref()).unwrap())
+        } else {
+            let alg = &ECDSA_P256_SHA256_ASN1_SIGNING;
+            let pkcs8 = EcdsaKeyPair::generate_pkcs8(alg, &rng).unwrap();
+            Signer::P256(EcdsaKeyPair::from_pkcs8(alg, pkcs8.as_ref(), &rng).unwrap())
+        };
+        SoftPasskey {
+            id: c::random_bytes(16),
+            signer,
+            counter: 0,
+        }
+    }
+
+    fn cose_key(&self) -> Vec<u8> {
+        use ciborium::Value;
+        use ring::signature::KeyPair;
+        let i = |n: i64| Value::Integer(n.into());
+        let map = match &self.signer {
+            Signer::P256(k) => {
+                let p = k.public_key().as_ref();
+                vec![
+                    (i(1), i(2)),
+                    (i(3), i(-7)),
+                    (i(-1), i(1)),
+                    (i(-2), Value::Bytes(p[1..33].to_vec())),
+                    (i(-3), Value::Bytes(p[33..].to_vec())),
+                ]
+            }
+            Signer::Ed25519(k) => vec![
+                (i(1), i(1)),
+                (i(3), i(-8)),
+                (i(-1), i(6)),
+                (i(-2), Value::Bytes(k.public_key().as_ref().to_vec())),
+            ],
+        };
+        cbor(&Value::Map(map))
+    }
+
+    fn auth_data(&self, flags: u8, attested: bool) -> Vec<u8> {
+        let mut ad = thencloud_server::util::sha256(b"cloud.test");
+        ad.push(flags);
+        ad.extend(self.counter.to_be_bytes());
+        if attested {
+            ad.extend([0u8; 16]);
+            ad.extend((self.id.len() as u16).to_be_bytes());
+            ad.extend(&self.id);
+            ad.extend(self.cose_key());
+        }
+        ad
+    }
+
+    fn create(&self, o: &PasskeyCreationOptions) -> (Vec<u8>, Vec<u8>) {
+        use ciborium::Value;
+        let att = Value::Map(vec![
+            (Value::Text("fmt".into()), Value::Text("none".into())),
+            (Value::Text("attStmt".into()), Value::Map(vec![])),
+            (
+                Value::Text("authData".into()),
+                Value::Bytes(self.auth_data(0x45, true)),
+            ),
+        ]);
+        (
+            client_data("webauthn.create", &o.challenge, ORIGIN),
+            cbor(&att),
+        )
+    }
+
+    fn get(&mut self, challenge: &[u8], flags: u8, count: bool) -> PasskeyAssertion {
+        if count {
+            self.counter += 1;
+        }
+        let cd = client_data("webauthn.get", challenge, ORIGIN);
+        let ad = self.auth_data(flags, false);
+        let mut msg = ad.clone();
+        msg.extend(thencloud_server::util::sha256(&cd));
+        let signature = match &self.signer {
+            Signer::P256(k) => k
+                .sign(&ring::rand::SystemRandom::new(), &msg)
+                .unwrap()
+                .as_ref()
+                .to_vec(),
+            Signer::Ed25519(k) => k.sign(&msg).as_ref().to_vec(),
+        };
+        PasskeyAssertion {
+            credential_id: B64(self.id.clone()),
+            client_data_json: B64(cd),
+            authenticator_data: B64(ad),
+            signature: B64(signature),
+            user_handle: None,
+        }
+    }
+}
+
+async fn password_login(h: &Harness, username: &str, password: &str) -> LoginResponse {
+    let pre: PreloginResponse = h
+        .call(
+            Method::POST,
+            "/api/auth/prelogin",
+            None,
+            Some(json!({ "username": username })),
+        )
+        .await
+        .json();
+    let ak = c::derive_account_keys(password, &pre.kdf_salt, pre.kdf_params).unwrap();
+    let r = h
+        .call(
+            Method::POST,
+            "/api/auth/login",
+            None,
+            Some(LoginRequest {
+                username: username.into(),
+                auth_key: B64(ak.auth_key.as_bytes().to_vec()),
+                device_name: Some("laptop".into()),
+            }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{r:?}");
+    r.json()
+}
+
+fn ticket(r: LoginResponse) -> SecondFactorChallenge {
+    match r {
+        LoginResponse::SecondFactor { second_factor } => second_factor,
+        LoginResponse::Session(_) => panic!("expected a second factor request"),
+    }
+}
+
+#[tokio::test]
+async fn two_factor_sign_in_with_totp_and_passkeys() {
+    let h = Harness::new().await;
+    let password = "alice's long password";
+    let alice = register(&h, "alice", password).await;
+    let auth = || async { B64(current_auth(&h, password).await.as_bytes().to_vec()) };
+    assert!(matches!(
+        password_login(&h, "alice", password).await,
+        LoginResponse::Session(_)
+    ));
+
+    // --- TOTP ----------------------------------------------------------------
+    let r = h
+        .call(
+            Method::POST,
+            "/api/auth/totp/setup",
+            Some(&alice.token),
+            Some(CurrentPassword {
+                current_auth_key: B64(current_auth(&h, "wrong").await.as_bytes().to_vec()),
+            }),
+        )
+        .await;
+    assert_eq!(r.error(), "invalid_credentials");
+    let setup: TotpSetup = h
+        .call(
+            Method::POST,
+            "/api/auth/totp/setup",
+            Some(&alice.token),
+            Some(CurrentPassword {
+                current_auth_key: auth().await,
+            }),
+        )
+        .await
+        .json();
+    let secret = base32_decode(&setup.secret);
+    assert_eq!(secret.len(), 20);
+    let step = || thencloud_server::util::now() / thencloud_server::totp::STEP;
+    let code = |s: i64| format!("{:06}", thencloud_server::totp::code(&secret, s));
+    let enable = |code: String| EnableTotpRequest {
+        setup_id: setup.setup_id.clone(),
+        code,
+    };
+    let r = h
+        .call(
+            Method::POST,
+            "/api/auth/totp",
+            Some(&alice.token),
+            Some(enable(code(step() + 5))),
+        )
+        .await;
+    assert_eq!(r.error(), "invalid_second_factor");
+    let r = h
+        .call(
+            Method::POST,
+            "/api/auth/totp",
+            Some(&alice.token),
+            Some(enable(code(step()))),
+        )
+        .await;
+    assert!(r.json::<Me>().totp_created_at.is_some());
+
+    let t = ticket(password_login(&h, "alice", password).await);
+    assert!(t.totp && t.passkey.is_none());
+    let finish = |ticket: &str, totp_code: Option<String>, passkey: Option<PasskeyAssertion>| {
+        let body = SecondFactorRequest {
+            ticket: ticket.into(),
+            totp_code,
+            passkey,
+        };
+        let h = &h;
+        async move {
+            h.call(
+                Method::POST,
+                "/api/auth/login/second-factor",
+                None,
+                Some(body),
+            )
+            .await
+        }
+    };
+    // The code used to turn it on doesn't work again.
+    let r = finish(&t.ticket, Some(code(step())), None).await;
+    assert_eq!(r.error(), "invalid_second_factor");
+    let r = finish("made-up", Some(code(step() + 1)), None).await;
+    assert_eq!(r.error(), "sign_in_expired");
+    let next = code(step() + 1);
+    let r = finish(&t.ticket, Some(next.clone()), None).await;
+    assert_eq!(r.status, StatusCode::OK, "{r:?}");
+    let s: SessionResponse = r.json();
+    assert_eq!(h.get("/api/me", &s.token).await.status, StatusCode::OK);
+    // A ticket works once, and so does a code.
+    assert_eq!(
+        finish(&t.ticket, Some(next.clone()), None).await.error(),
+        "sign_in_expired"
+    );
+    let t2 = ticket(password_login(&h, "alice", password).await);
+    assert_eq!(
+        finish(&t2.ticket, Some(next), None).await.error(),
+        "invalid_second_factor"
+    );
+
+    // --- passkeys ------------------------------------------------------------
+    let mut key = SoftPasskey::new(false);
+    let prf = c::random_bytes(32);
+    let opts: PasskeyCreationOptions = h
+        .call(
+            Method::POST,
+            "/api/passkeys/options",
+            Some(&alice.token),
+            None::<()>,
+        )
+        .await
+        .json();
+    assert_eq!(opts.user_handle.0, alice.me(&h).await.user_id.as_bytes());
+    let (_, att) = key.create(&opts);
+    let add =
+        |registration_id: String, cd: Vec<u8>, att: Vec<u8>, auth: B64, wrap: Option<Vec<u8>>| {
+            RegisterPasskeyRequest {
+                registration_id,
+                name: "Phone".into(),
+                current_auth_key: auth,
+                client_data_json: B64(cd),
+                attestation_object: B64(att),
+                enc_master_key: wrap.map(B64),
+            }
+        };
+    let wrapped =
+        c::wrap_master_key_passkey(&c::derive_passkey_kek(&prf).unwrap(), &alice.mk, &key.id);
+    // Made on another site: refused.
+    let bad_cd = client_data("webauthn.create", &opts.challenge, "https://evil.test");
+    let r = h
+        .call(
+            Method::POST,
+            "/api/passkeys",
+            Some(&alice.token),
+            Some(add(
+                opts.registration_id.clone(),
+                bad_cd,
+                att.clone(),
+                auth().await,
+                None,
+            )),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST, "{r:?}");
+    // The registration was used up by that attempt.
+    let opts: PasskeyCreationOptions = h
+        .call(
+            Method::POST,
+            "/api/passkeys/options",
+            Some(&alice.token),
+            None::<()>,
+        )
+        .await
+        .json();
+    let (cd, att) = key.create(&opts);
+    let r = h
+        .call(
+            Method::POST,
+            "/api/passkeys",
+            Some(&alice.token),
+            Some(add(
+                opts.registration_id.clone(),
+                cd,
+                att,
+                auth().await,
+                Some(wrapped.clone()),
+            )),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{r:?}");
+    let pk: Passkey = r.json();
+    assert!(pk.unlock);
+
+    // A second passkey without PRF: only a second factor.
+    let mut plain = SoftPasskey::new(true);
+    let opts: PasskeyCreationOptions = h
+        .call(
+            Method::POST,
+            "/api/passkeys/options",
+            Some(&alice.token),
+            None::<()>,
+        )
+        .await
+        .json();
+    assert_eq!(opts.exclude_credentials, vec![B64(key.id.clone())]);
+    let (cd, att) = plain.create(&opts);
+    let r = h
+        .call(
+            Method::POST,
+            "/api/passkeys",
+            Some(&alice.token),
+            Some(add(opts.registration_id, cd, att, auth().await, None)),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{r:?}");
+    let listed: Vec<Passkey> = h.get("/api/passkeys", &alice.token).await.json();
+    assert_eq!(
+        listed.iter().map(|p| p.unlock).collect::<Vec<_>>(),
+        [true, false]
+    );
+
+    // As a second factor, after the password.
+    let t = ticket(password_login(&h, "alice", password).await);
+    let req = t.passkey.unwrap();
+    assert_eq!(req.allow_credentials.len(), 2);
+    let r = finish(&t.ticket, None, Some(key.get(&req.challenge, 0x01, true))).await;
+    assert_eq!(r.status, StatusCode::OK, "{r:?}");
+    // A signature over another challenge doesn't count.
+    let t = ticket(password_login(&h, "alice", password).await);
+    let r = finish(&t.ticket, None, Some(plain.get(b"other", 0x01, false))).await;
+    assert_eq!(r.error(), "invalid_second_factor");
+    let r = finish(
+        &t.ticket,
+        None,
+        Some(plain.get(&t.passkey.unwrap().challenge, 0x01, false)),
+    )
+    .await;
+    assert_eq!(r.status, StatusCode::OK, "{r:?}");
+
+    // On its own: the master key comes back wrapped under the PRF key.
+    let login_with = |a: PasskeyAssertion, challenge: B64| {
+        let h = &h;
+        async move {
+            h.call(
+                Method::POST,
+                "/api/auth/passkey/login",
+                None,
+                Some(PasskeyLoginRequest {
+                    challenge,
+                    assertion: a,
+                    device_name: None,
+                }),
+            )
+            .await
+        }
+    };
+    let opts = || async {
+        h.call(Method::POST, "/api/auth/passkey/options", None, None::<()>)
+            .await
+            .json::<PasskeyRequest>()
+    };
+    let o = opts().await;
+    // User verification (PIN or biometric) is required without a password.
+    let r = login_with(key.get(&o.challenge, 0x01, true), o.challenge.clone()).await;
+    assert_eq!(r.error(), "invalid_credentials");
+    let a = key.get(&o.challenge, 0x05, true);
+    let r = login_with(a.clone(), o.challenge.clone()).await;
+    assert_eq!(r.status, StatusCode::OK, "{r:?}");
+    let s: PasskeyLoginResponse = r.json();
+    let mk = c::unwrap_master_key_passkey(
+        &c::derive_passkey_kek(&prf).unwrap(),
+        &s.enc_master_key,
+        &s.credential_id,
+    )
+    .unwrap();
+    assert!(mk == alice.mk);
+    assert_eq!(h.get("/api/me", &s.token).await.status, StatusCode::OK);
+    // Replayed: the counter didn't move on.
+    assert_eq!(
+        login_with(a, o.challenge.clone()).await.error(),
+        "invalid_credentials"
+    );
+    // A challenge the server didn't make.
+    let mut forged = o.challenge.0.clone();
+    forged[30] ^= 1;
+    assert_eq!(
+        login_with(key.get(&forged, 0x05, true), B64(forged))
+            .await
+            .error(),
+        "sign_in_expired"
+    );
+    // One that has been used, by a passkey that always counts zero.
+    let o = opts().await;
+    let a = plain.get(&o.challenge, 0x05, false);
+    let r = login_with(a, o.challenge).await;
+    assert_eq!(
+        r.status,
+        StatusCode::BAD_REQUEST,
+        "no PRF, so no unlock: {r:?}"
+    );
+    let o = opts().await;
+    let a = key.get(&o.challenge, 0x05, true);
+    assert_eq!(
+        login_with(a.clone(), o.challenge.clone()).await.status,
+        StatusCode::OK
+    );
+    let again = key.get(&o.challenge, 0x05, true);
+    assert_eq!(
+        login_with(again, o.challenge).await.error(),
+        "sign_in_expired"
+    );
+
+    // Nothing that opens the account is stored.
+    let mut files = Vec::new();
+    all_files(&h.dir.path().join("data"), &mut files);
+    for p in &files {
+        let bytes = std::fs::read(p).unwrap();
+        for n in [&prf[..], alice.mk.as_bytes()] {
+            assert!(!contains(&bytes, n), "secret found in {}", p.display());
+        }
+    }
+
+    // Removing them needs the password; then a password is enough again.
+    for p in &listed {
+        let r = h
+            .call(
+                Method::DELETE,
+                &format!("/api/passkeys/{}", p.id),
+                Some(&alice.token),
+                Some(CurrentPassword {
+                    current_auth_key: auth().await,
+                }),
+            )
+            .await;
+        assert_eq!(r.status, StatusCode::NO_CONTENT);
+    }
+    let r = h
+        .call(
+            Method::DELETE,
+            "/api/auth/totp",
+            Some(&alice.token),
+            Some(CurrentPassword {
+                current_auth_key: auth().await,
+            }),
+        )
+        .await;
+    assert!(r.json::<Me>().totp_created_at.is_none());
+    assert!(matches!(
+        password_login(&h, "alice", password).await,
+        LoginResponse::Session(_)
+    ));
+}
+
+#[tokio::test]
+async fn post_quantum_keys_seal_shares_and_drops() {
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "pw").await;
+
+    // An account from before post-quantum keys gets one on its next sign-in.
+    let salt = c::random_bytes(c::SALT_LEN);
+    let ak = c::derive_account_keys("pw", &salt, FAST_KDF).unwrap();
+    let (mk, kp, root_id, root_key) = (
+        Key::generate(),
+        KeyPair::generate(),
+        c::new_id(),
+        Key::generate(),
+    );
+    let r = h
+        .call(
+            Method::POST,
+            "/api/auth/register",
+            None,
+            Some(RegisterRequest {
+                username: "old".into(),
+                auth_key: B64(ak.auth_key.as_bytes().to_vec()),
+                kdf_salt: B64(salt),
+                kdf_params: FAST_KDF,
+                enc_master_key: B64(c::wrap_master_key(&ak.kek, &mk)),
+                public_key: B64(kp.public.to_vec()),
+                enc_private_key: B64(c::wrap_private_key(&mk, &kp.secret)),
+                pq_public_key: None,
+                enc_pq_private_key: None,
+                root: NewRootFolder {
+                    id: root_id.clone(),
+                    enc_key: B64(c::wrap_node_key(&mk, &root_key, &root_id)),
+                    enc_metadata: B64(
+                        c::encrypt_metadata(&root_key, &root_id, &meta("root", 0)).unwrap()
+                    ),
+                },
+                device_name: None,
+                invite: None,
+            }),
+        )
+        .await;
+    let old: SessionResponse = r.json();
+    let pk: UserPublicKey = h
+        .get("/api/users/old/public-key", &alice.token)
+        .await
+        .json();
+    assert!(pk.pq_public_key.is_none());
+    // Shares to it are classic until then.
+    assert_eq!(sealing_key(&pk).len(), 32);
+
+    let pq = c::PqKeyPair::generate();
+    let set = |public: Vec<u8>, wrapped: Vec<u8>| SetPqKeyRequest {
+        pq_public_key: B64(public),
+        enc_pq_private_key: B64(wrapped),
+    };
+    let r = h
+        .call(
+            Method::PUT,
+            "/api/me/pq-key",
+            Some(&old.token),
+            Some(set(
+                pq.public[..100].to_vec(),
+                c::wrap_pq_private_key(&mk, &pq),
+            )),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    let r = h
+        .call(
+            Method::PUT,
+            "/api/me/pq-key",
+            Some(&old.token),
+            Some(set(pq.public.clone(), c::wrap_pq_private_key(&mk, &pq))),
+        )
+        .await;
+    let me: Me = r.json();
+    let kp =
+        kp.with_pq(c::unwrap_pq_private_key(&mk, &me.keys.enc_pq_private_key.unwrap()).unwrap());
+    // It is never replaced, so a server can't be asked to swap it.
+    let r = h
+        .call(
+            Method::PUT,
+            "/api/me/pq-key",
+            Some(&old.token),
+            Some(set(
+                c::PqKeyPair::generate().public.clone(),
+                c::wrap_pq_private_key(&mk, &pq),
+            )),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT);
+
+    // Now shares to it are hybrid and open with both halves.
+    let pk: UserPublicKey = h
+        .get("/api/users/old/public-key", &alice.token)
+        .await
+        .json();
+    assert_eq!(pk.pq_public_key.as_deref(), Some(&pq.public[..]));
+    let (folder, folder_key) = alice.mkdir(&h, &alice.root, "Quantum-safe").await;
+    let wrapped = c::seal_share_key(&sealing_key(&pk), &folder_key, &folder).unwrap();
+    assert_eq!(wrapped.len(), thencloud_server::util::HYBRID_SEALED_KEY_LEN);
+    let r = h
+        .call(
+            Method::POST,
+            "/api/shares",
+            Some(&alice.token),
+            Some(CreateShareRequest {
+                node_id: folder.clone(),
+                recipient: "old".into(),
+                wrapped_key: B64(wrapped),
+                permission: Permission::Read,
+            }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED, "{r:?}");
+    let shares: Vec<IncomingShare> = h.get("/api/shares/incoming", &old.token).await.json();
+    assert_eq!(
+        shares[0].owner_pq_public_key.as_deref(),
+        Some(&alice.kp.pq.as_ref().unwrap().public[..])
+    );
+    assert!(c::open_share_key(&kp, &shares[0].wrapped_key, &folder).unwrap() == folder_key);
+    // A wrong-sized sealed key is refused.
+    let r = h
+        .call(
+            Method::POST,
+            "/api/shares",
+            Some(&alice.token),
+            Some(CreateShareRequest {
+                node_id: folder.clone(),
+                recipient: "old".into(),
+                wrapped_key: B64(vec![2; 500]),
+                permission: Permission::Read,
+            }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+
+    // A drop link names the hash of the owner's ML-KEM key after `#`; the
+    // key itself comes from the server and must match it.
+    let (inbox, _) = alice.mkdir(&h, &alice.root, "Inbox").await;
+    let link: Link = h
+        .call(
+            Method::POST,
+            "/api/links",
+            Some(&alice.token),
+            Some(CreateLinkRequest {
+                node_id: inbox.clone(),
+                password: None,
+                expires_at: None,
+                upload_only: true,
+            }),
+        )
+        .await
+        .json();
+    let info: PublicLinkInfo = h
+        .call(
+            Method::GET,
+            &format!("/api/public/{}", link.token),
+            None,
+            None::<()>,
+        )
+        .await
+        .json();
+    let alice_pq = info.owner_pq_public_key.unwrap();
+    let fragment = c::identity(
+        &alice.kp.public,
+        Some(&alice.kp.pq.as_ref().unwrap().public),
+    );
+    assert_eq!(c::identity(&fragment[..32], Some(&alice_pq)), fragment);
+    let owner_key = [&fragment[..32], &alice_pq[..]].concat();
+    let (id, k, st) = drop_file(&h, &link.token, &owner_key, &inbox, "q.txt", b"quantum").await;
+    assert_eq!(st, StatusCode::NO_CONTENT);
+    let drops: Vec<DroppedFile> = h.get("/api/drops", &alice.token).await.json();
+    assert!(c::open_drop_key(&alice.kp, &drops[0].sealed_key, &id, &inbox).unwrap() == k);
+
+    // No ML-KEM seed is stored in the clear.
+    let mut files = Vec::new();
+    all_files(&h.dir.path().join("data"), &mut files);
+    for p in &files {
+        let bytes = std::fs::read(p).unwrap();
+        for seed in [pq.seed(), alice.kp.pq.as_ref().unwrap().seed()] {
+            assert!(!contains(&bytes, seed), "ML-KEM seed in {}", p.display());
+        }
+    }
 }

@@ -1,0 +1,59 @@
+name: Release
+
+# Builds the web client reproducibly on two different runner images and
+# fails unless both come out byte for byte the same. On a tag, the manifest
+# and the build go into a draft release; a maintainer rebuilds it locally,
+# signs the manifest with minisign and publishes.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    name: Web client (${{ matrix.os }})
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, ubuntu-22.04]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack
+      - run: scripts/release-web.sh "$VERSION"
+        env:
+          VERSION: ${{ github.ref_type == 'tag' && github.ref_name || github.sha }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-${{ matrix.os }}
+          path: thencloud-web-*
+
+  publish:
+    name: Compare and draft the release
+    needs: web
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+      - name: Both builds must be identical
+        run: |
+          cmp web-ubuntu-24.04/thencloud-web-*.json web-ubuntu-22.04/thencloud-web-*.json
+          cmp web-ubuntu-24.04/thencloud-web-*.tar.gz web-ubuntu-22.04/thencloud-web-*.tar.gz
+          sha256sum web-ubuntu-24.04/thencloud-web-*
+      - name: Draft the release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --draft --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" \
+            --notes "Check a server runs this web client: thencloud verify-web https://your.server --manifest thencloud-web-$GITHUB_REF_NAME.json" \
+            web-ubuntu-24.04/thencloud-web-*

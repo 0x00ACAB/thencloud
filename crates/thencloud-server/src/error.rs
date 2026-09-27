@@ -11,6 +11,10 @@ pub enum AppError {
     Unauthorized,
     #[error("invalid username or password")]
     InvalidCredentials,
+    #[error("that code or passkey didn't work")]
+    InvalidSecondFactor,
+    #[error("that took too long; start again")]
+    SignInExpired,
     #[error("this link is password protected")]
     PasswordRequired,
     #[error("you do not have permission to do that")]
@@ -58,6 +62,8 @@ impl AppError {
             BadRequest(_) => (StatusCode::BAD_REQUEST, "bad_request"),
             Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized"),
             InvalidCredentials => (StatusCode::UNAUTHORIZED, "invalid_credentials"),
+            InvalidSecondFactor => (StatusCode::UNAUTHORIZED, "invalid_second_factor"),
+            SignInExpired => (StatusCode::UNAUTHORIZED, "sign_in_expired"),
             PasswordRequired => (StatusCode::UNAUTHORIZED, "password_required"),
             Forbidden => (StatusCode::FORBIDDEN, "forbidden"),
             NotFound => (StatusCode::NOT_FOUND, "not_found"),
