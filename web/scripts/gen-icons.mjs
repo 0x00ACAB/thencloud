@@ -11,7 +11,7 @@ const ICONS = [
   'refresh-cw', 'circle-alert', 'loader-circle', 'arrow-left', 'house', 'plus', 'file-up', 'eye', 'eye-off',
   'user-round-plus', 'door-open', 'chevron-left', 'zoom-in', 'zoom-out', 'code', 'book-open', 'wrap-text',
   'undo-2', 'redo-2', 'heading-1', 'heading-2', 'heading-3', 'bold', 'italic', 'strikethrough', 'list', 'list-ordered',
-  'list-todo', 'text-quote', 'square-code', 'minus', 'file-plus', 'save',
+  'list-todo', 'text-quote', 'square-code', 'minus', 'file-plus', 'save', 'search', 'arrow-up', 'arrow-down', 'keyboard',
 ];
 
 const out = {};

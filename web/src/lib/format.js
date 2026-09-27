@@ -49,14 +49,24 @@ export function fileIcon(meta) {
   return 'file';
 }
 
-export function sortEntries(rows) {
-  return rows.sort((a, b) =>
-    a.node.kind === b.node.kind
-      ? a.meta.name.localeCompare(b.meta.name, undefined, { numeric: true, sensitivity: 'base' })
-      : a.node.kind === 'folder'
-        ? -1
-        : 1,
-  );
+const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+
+/**
+ * Sort folder rows in place: folders first, then by `key` ('name', 'size'
+ * or 'modified') in `dir` order, ties broken by name.
+ */
+export function sortEntries(rows, { key = 'name', dir = 'asc' } = {}) {
+  const sign = dir === 'desc' ? -1 : 1;
+  const value = {
+    size: (r) => (r.node.kind === 'folder' ? 0 : r.meta.size),
+    modified: (r) => r.node.updated_at,
+  }[key];
+  return rows.sort((a, b) => {
+    if (a.node.kind !== b.node.kind) return a.node.kind === 'folder' ? -1 : 1;
+    const byName = collator.compare(a.meta.name, b.meta.name);
+    // Ties stay A to Z whichever way the sort goes.
+    return value ? sign * (value(a) - value(b)) || byName : sign * byName;
+  });
 }
 
 /** "1 file", "3 files". */
