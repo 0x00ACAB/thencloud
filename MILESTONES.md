@@ -42,7 +42,7 @@
 ## Milestone 4: Admin and devices
 
 - [ ] Admin UI and API: list users, set quotas, disable or delete users, open or close registration at runtime, invite links
-- [ ] Session and device list: see active sessions (device name, last seen) and revoke them
+- [x] Session and device list: see active sessions (device name, last seen; no IPs kept) and sign them out, one at a time or all others. A signed-out browser drops its keys on its next request
 - [ ] App passwords or per-device credentials for sync clients (scoped, revocable, never the account password)
 - [ ] Server stats for admins, without revealing anything encrypted: user count, storage used, blob count
 

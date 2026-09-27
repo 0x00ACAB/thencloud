@@ -1531,3 +1531,75 @@ async fn trash_hides_restores_and_purges() {
     assert!(alice.trash(&h).await.is_empty());
     assert_eq!(alice.me(&h).await.used_bytes, 0);
 }
+
+#[tokio::test]
+async fn sessions_list_and_revoke() {
+    let h = Harness::new().await;
+    let laptop = register(&h, "dave", "dave's password").await;
+    let phone = login(&h, "dave", "dave's password").await.ok().unwrap();
+    let other = register(&h, "erin", "erin's password").await;
+
+    let r = h.get("/api/sessions", &laptop.token).await;
+    assert_eq!(r.status, StatusCode::OK);
+    let text = String::from_utf8(r.body.clone()).unwrap();
+    assert!(
+        !text.contains("token"),
+        "no token material in the list: {text}"
+    );
+    let list: Vec<DeviceSession> = r.json();
+    assert_eq!(list.len(), 2);
+    assert_eq!(list.iter().filter(|s| s.current).count(), 1);
+    let phone_id = {
+        let from_phone: Vec<DeviceSession> = h.get("/api/sessions", &phone.token).await.json();
+        from_phone.into_iter().find(|s| s.current).unwrap().id
+    };
+
+    // Someone else can't sign your devices out.
+    let r = h
+        .call(
+            Method::DELETE,
+            &format!("/api/sessions/{phone_id}"),
+            Some(&other.token),
+            None::<()>,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+    assert_eq!(h.get("/api/me", &phone.token).await.status, StatusCode::OK);
+
+    // Signing the phone out from the laptop ends its session.
+    let r = h
+        .call(
+            Method::DELETE,
+            &format!("/api/sessions/{phone_id}"),
+            Some(&laptop.token),
+            None::<()>,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    assert_eq!(
+        h.get("/api/me", &phone.token).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(h.get("/api/me", &laptop.token).await.status, StatusCode::OK);
+
+    // "Sign out everywhere else" keeps only the current session.
+    let tablet = login(&h, "dave", "dave's password").await.ok().unwrap();
+    let r = h
+        .call(
+            Method::DELETE,
+            "/api/sessions",
+            Some(&laptop.token),
+            None::<()>,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    assert_eq!(
+        h.get("/api/me", &tablet.token).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    let list: Vec<DeviceSession> = h.get("/api/sessions", &laptop.token).await.json();
+    assert_eq!(list.len(), 1);
+    assert!(list[0].current);
+    // Other users' sessions are untouched.
+    assert_eq!(h.get("/api/me", &other.token).await.status, StatusCode::OK);
+}

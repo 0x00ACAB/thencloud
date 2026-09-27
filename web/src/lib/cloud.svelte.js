@@ -21,7 +21,30 @@ let mk = null; // master key
 let sk = null; // X25519 secret key
 const keyCache = new Map(); // node id -> node key
 
-const api = (method, path, opts = {}) => request(method, path, { ...opts, token: session.token });
+/**
+ * Authenticated request. A 401 while signed in means this session was ended
+ * (signed out from another device, password changed, expired): reload to
+ * drop every key from memory, and let the sign-in screen say why.
+ */
+async function api(method, path, opts = {}) {
+  try {
+    return await request(method, path, { ...opts, token: session.token });
+  } catch (e) {
+    // `invalid_credentials` (a wrong current password) is also a 401, but
+    // the session is fine; only `unauthorized` means it's gone.
+    if (e?.status === 401 && e.code === 'unauthorized' && session.token) {
+      session.token = null;
+      try {
+        sessionStorage.setItem('signedOut', '1');
+      } catch {
+        /* the reload still happens */
+      }
+      location.reload();
+      await new Promise(() => {}); // nothing more happens on this page
+    }
+    throw e;
+  }
+}
 
 const deviceName = () => {
   const ua = navigator.userAgent;
@@ -101,6 +124,15 @@ export async function logout() {
   // A full reload is the most reliable way to drop every key from memory.
   location.reload();
 }
+
+// ---------------------------------------------------------------------------
+// Devices
+// ---------------------------------------------------------------------------
+
+/** Signed-in sessions, most recently active first. */
+export const listSessions = () => api('GET', '/api/sessions');
+export const revokeSession = (id) => api('DELETE', `/api/sessions/${encodeURIComponent(id)}`);
+export const revokeOtherSessions = () => api('DELETE', '/api/sessions');
 
 export async function changePassword(current, next) {
   const pre = await request('POST', '/api/auth/prelogin', { body: { username: session.me.username } });

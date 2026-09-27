@@ -2,6 +2,7 @@ pub mod auth;
 pub mod links;
 pub mod nodes;
 pub mod public;
+pub mod sessions;
 pub mod shares;
 pub mod trash;
 pub mod uploads;
@@ -34,6 +35,11 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/logout", post(auth::logout))
         .route("/auth/password", post(auth::change_password))
         .route("/me", get(auth::me))
+        .route(
+            "/sessions",
+            get(sessions::list).delete(sessions::revoke_others),
+        )
+        .route("/sessions/{id}", delete(sessions::revoke))
         .route("/nodes/folder", post(nodes::create_folder))
         .route(
             "/nodes/{id}",
