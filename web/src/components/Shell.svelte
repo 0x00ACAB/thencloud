@@ -13,11 +13,15 @@
   import SettingsView from './views/SettingsView.svelte';
   import TrashView from './views/TrashView.svelte';
   import AdminView from './views/AdminView.svelte';
+  import { onDestroy } from 'svelte';
   import MusicView from './views/MusicView.svelte';
+  import VideosView from './views/VideosView.svelte';
+  import { unloadVideos } from '../lib/videos.svelte.js';
   import PlayerBar from './PlayerBar.svelte';
 
   const rootId = session.me.keys.root_node_id;
   loadMyAvatar().catch(() => {});
+  onDestroy(unloadVideos);
 
   // Phones get a bottom tab bar; fixed things (toasts, the transfer tray,
   // the selection bar, the + button) sit above it, and the music player,
@@ -50,6 +54,7 @@
     { name: 'shared-by-me', label: 'Shared by me', icon: 'users', to: () => ({ name: 'shared-by-me' }) },
     { name: 'links', label: 'Public links', icon: 'link', to: () => ({ name: 'links' }) },
     { name: 'music', label: 'Music', icon: 'music', to: () => ({ name: 'music' }) },
+    { name: 'videos', label: 'Videos', icon: 'clapperboard', to: () => ({ name: 'videos' }) },
     { name: 'trash', label: 'Trash', icon: 'trash-2', to: () => ({ name: 'trash' }) },
     { name: 'settings', label: 'Settings', icon: 'settings', to: () => ({ name: 'settings' }) },
     ...(session.me.is_admin ? [{ name: 'admin', label: 'Admin', icon: 'shield-check', to: () => ({ name: 'admin' }) }] : []),
@@ -148,7 +153,9 @@
         {:else if view.name === 'links'}
           <LinksView {go} />
         {:else if view.name === 'music'}
-          <MusicView album={view.album} {go} />
+          <MusicView album={view.album} playlist={view.playlist} {go} />
+        {:else if view.name === 'videos'}
+          <VideosView series={view.series} play={view.play} {go} />
         {:else if view.name === 'trash'}
           <TrashView {go} />
         {:else if view.name === 'settings'}

@@ -4,9 +4,12 @@
 // Tracks stream through the service worker, decrypted piece by piece, and
 // the first piece is read for tags (title, artist, cover) as it plays.
 // Everything is in memory; only the root folder's id is remembered.
+// Playlists and edited titles are kept in the encrypted app data ('music');
+// an album cover picked here is uploaded as cover.jpg into its folder.
 
 import { SvelteMap } from 'svelte/reactivity';
-import { session, resolvePath, walkTree, openEntry, fetchEntry } from './cloud.svelte.js';
+import { session, resolvePath, walkTree, openEntry, fetchEntry, loadAppData, saveAppData } from './cloud.svelte.js';
+import { putFolderImage } from './cover.js';
 import { previewKind } from './preview.js';
 import { parseTags } from './tags.js';
 import { toast, errorMessage } from './ui.svelte.js';
@@ -22,7 +25,7 @@ function readRoot() {
   }
 }
 
-export const music = $state({ rootId: null, rootName: '', scanning: false, found: 0, error: '' });
+export const music = $state({ rootId: null, rootName: '', scanning: false, found: 0, error: '', dataError: '' });
 /** `value` is { albums: [album], tracks: [track] } once scanned. */
 export const library = new (class {
   value = $state.raw(null);
@@ -36,6 +39,7 @@ let scan = null;
 
 /** Called by the Music view: scan the saved folder the first time. */
 export function openLibrary() {
+  loadSaved();
   music.rootId ??= readRoot();
   if (music.rootId && !library.value && !music.scanning && !music.error) scanLibrary();
 }
@@ -54,6 +58,8 @@ export function setMusicRoot(id) {
 
 const DISC = /^(cd|dis[ck])\s*\d+$/i;
 const COVER = /^(cover|folder|front|album|albumart\w*|artwork)\.(jpe?g|png|webp|avif|gif)$/i;
+// Ours (see setAlbumCover) beats the others.
+const coverRank = (name) => (/^cover\.jpg$/i.test(name) ? 2 : COVER.test(name) ? 1 : 0);
 const COVER_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/gif']);
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
@@ -74,16 +80,150 @@ export function makeTrack(entry, { albumId = null, album, artist, disc = '' } = 
   return { id: entry.node.id, entry, albumId, album, disc, trackNo: n.trackNo, title: n.title, artist: artist ?? n.artist };
 }
 
-/** A track as shown: what the file's tags say, else what its name and folders say. */
-export function info(track) {
+/**
+ * A track as shown: your edits, else what the file's tags say, else what its
+ * name and folders say. `edited: false` leaves out the track's own edits.
+ */
+export function info(track, { edited = true } = {}) {
   const t = tags.get(track.id);
+  const e = edited ? saved.value.tracks[track.id] : null;
+  const a = saved.value.albums[track.albumId];
+  const folderCover = covers.get(track.albumId);
   return {
-    title: t?.title || track.title,
-    artist: t?.artist || track.artist || 'Unknown artist',
-    album: t?.album || track.album || '',
-    cover: t?.cover ?? covers.get(track.albumId) ?? null,
+    title: e?.title || t?.title || track.title,
+    artist: e?.artist || t?.artist || a?.artist || track.artist || 'Unknown artist',
+    album: e?.album || t?.album || a?.name || track.album || '',
+    trackNo: e?.trackNo ?? t?.track ?? track.trackNo,
+    cover: (a?.cover && folderCover) || t?.cover || folderCover || null,
   };
 }
+
+/** An album's name and artist, with your edits. */
+export function albumInfo(album) {
+  const e = saved.value.albums[album.id];
+  return { name: e?.name || album.name, artist: e?.artist || album.artist };
+}
+
+/** An album's tracks in order, by disc and (edited) track number. */
+export function albumTracks(album) {
+  const no = (t) => info(t).trackNo ?? 1e9;
+  return album.tracks.toSorted((a, b) => collator.compare(a.disc, b.disc) || no(a) - no(b) || collator.compare(a.entry.meta.name, b.entry.meta.name));
+}
+
+// ------------------------------------------------- playlists and edits
+
+const NO_DATA = { playlists: [], tracks: {}, albums: {} };
+/** `value` is { playlists: [{ id, name, tracks: [node id], at }], tracks: { id: edits }, albums: { id: edits } }. */
+export const saved = new (class {
+  value = $state.raw(NO_DATA);
+})();
+let savedLoad = null;
+
+function loadSaved() {
+  savedLoad ??= loadAppData('music')
+    .then((d) => ((saved.value = { ...NO_DATA, ...d }), (music.dataError = '')))
+    .catch((e) => ((savedLoad = null), (music.dataError = errorMessage(e))));
+  return savedLoad;
+}
+
+async function update(fn) {
+  await loadSaved();
+  if (music.dataError) throw new Error(music.dataError);
+  const d = await saveAppData('music', (d) => {
+    for (const k in NO_DATA) d[k] ??= structuredClone(NO_DATA[k]);
+    fn(d);
+  });
+  saved.value = { ...NO_DATA, ...d };
+}
+
+const TRACK_FIELDS = ['title', 'artist', 'album', 'trackNo'];
+
+/** Save `fields` ({ title, artist, album, trackNo }) as edits: only what differs from the file. */
+export function editTrack(track, fields) {
+  const base = info(track, { edited: false });
+  const e = {};
+  for (const k of TRACK_FIELDS) if (fields[k] !== '' && fields[k] != null && fields[k] !== base[k]) e[k] = fields[k];
+  return update((d) => (Object.keys(e).length ? (d.tracks[track.id] = e) : delete d.tracks[track.id]));
+}
+
+export const isEdited = (track) => !!saved.value.tracks[track.id];
+export const resetTrack = (track) => update((d) => delete d.tracks[track.id]);
+
+/** Save an album's name and artist; empty means the folder's. */
+export function editAlbum(album, { name, artist }) {
+  return update((d) => {
+    const e = { ...d.albums[album.id] };
+    for (const [k, v, base] of [['name', name, album.name], ['artist', artist, album.artist]]) {
+      if (v && v !== base) e[k] = v;
+      else delete e[k];
+    }
+    if (Object.keys(e).length) d.albums[album.id] = e;
+    else delete d.albums[album.id];
+  });
+}
+
+/** Upload `file` as the album's cover.jpg and show it over the tracks' own pictures. */
+export async function setAlbumCover(album, file) {
+  const { entry, blob } = await putFolderImage(album.id, 'cover.jpg', file, album.cover);
+  album.cover = entry;
+  const old = covers.get(album.id);
+  if (old) URL.revokeObjectURL(old);
+  covers.set(album.id, URL.createObjectURL(blob));
+  await update((d) => (d.albums[album.id] = { ...d.albums[album.id], cover: true }));
+}
+
+/** Library tracks by node id. */
+let byId = { lib: null, map: new Map() };
+function trackById(id) {
+  if (byId.lib !== library.value) byId = { lib: library.value, map: new Map(library.value?.tracks.map((t) => [t.id, t])) };
+  return byId.map.get(id);
+}
+
+/** A playlist's tracks that are in the library (others may have been moved or deleted). */
+export const playlistTracks = (p) => p.tracks.map(trackById).filter(Boolean);
+
+const findList = (d, id) => d.playlists.find((p) => p.id === id) ?? { tracks: [] };
+
+export async function createPlaylist(name, tracks = []) {
+  const id = crypto.randomUUID();
+  await update((d) => d.playlists.push({ id, name, tracks: [...new Set(tracks.map((t) => t.id))], at: Date.now() }));
+  return id;
+}
+
+export const renamePlaylist = (id, name) => update((d) => (findList(d, id).name = name));
+export const deletePlaylist = (id) => update((d) => (d.playlists = d.playlists.filter((p) => p.id !== id)));
+
+/** Add tracks not already in the playlist; resolves to how many were added. */
+export async function addToPlaylist(id, tracks) {
+  let added = 0;
+  await update((d) => {
+    const p = findList(d, id);
+    const have = new Set(p.tracks);
+    added = 0;
+    for (const t of tracks) {
+      if (have.has(t.id)) continue;
+      have.add(t.id);
+      p.tracks.push(t.id);
+      added++;
+    }
+    p.at = Date.now();
+  });
+  return added;
+}
+
+export const removeFromPlaylist = (id, track) =>
+  update((d) => {
+    const p = findList(d, id);
+    p.tracks = p.tracks.filter((t) => t !== track.id);
+  });
+
+/** Swap two tracks in the playlist (a track and its neighbour, to move it). */
+export const moveInPlaylist = (id, track, other) =>
+  update((d) => {
+    const p = findList(d, id);
+    const [i, j] = [p.tracks.indexOf(track.id), p.tracks.indexOf(other?.id)];
+    if (i >= 0 && j >= 0) [p.tracks[i], p.tracks[j]] = [p.tracks[j], p.tracks[i]];
+  });
 
 export async function scanLibrary() {
   if (!music.rootId) return;
@@ -109,7 +249,7 @@ export async function scanLibrary() {
         } else if (COVER_TYPES.has(kind?.type) && r.meta.size < 16 << 20) {
           // Any image in the folder, but cover.jpg and the like first.
           const best = images.get(r.parentId);
-          if (!best || (COVER.test(r.meta.name) && !COVER.test(best.meta.name))) images.set(r.parentId, r);
+          if (!best || coverRank(r.meta.name) > coverRank(best.meta.name)) images.set(r.parentId, r);
         }
       },
     });
@@ -462,7 +602,9 @@ export function unloadMusic() {
   for (const url of covers.values()) if (url) URL.revokeObjectURL(url);
   tags.clear();
   covers.clear();
-  Object.assign(music, { rootId: null, rootName: '', scanning: false, found: 0, error: '' });
+  saved.value = NO_DATA;
+  savedLoad = null;
+  Object.assign(music, { rootId: null, rootName: '', scanning: false, found: 0, error: '', dataError: '' });
 }
 
 function updateSession() {

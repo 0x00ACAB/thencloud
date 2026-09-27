@@ -102,5 +102,10 @@ export const ICONS = {
   "disc-3": "<circle cx=\"12\" cy=\"12\" r=\"10\" /><path d=\"M6 12c0-1.7.7-3.2 1.8-4.2\" /><circle cx=\"12\" cy=\"12\" r=\"2\" /><path d=\"M18 12c0 1.7-.7 3.2-1.8 4.2\" />",
   "audio-lines": "<path d=\"M2 10v3\" /><path d=\"M6 6v11\" /><path d=\"M10 3v18\" /><path d=\"M14 8v7\" /><path d=\"M18 5v13\" /><path d=\"M22 10v3\" />",
   "list-start": "<path d=\"M3 5h6\" /><path d=\"M3 12h13\" /><path d=\"M3 19h13\" /><path d=\"m16 8-3-3 3-3\" /><path d=\"M21 19V7a2 2 0 0 0-2-2h-6\" />",
-  "list-end": "<path d=\"M16 5H3\" /><path d=\"M16 12H3\" /><path d=\"M9 19H3\" /><path d=\"m16 16-3 3 3 3\" /><path d=\"M21 5v12a2 2 0 0 1-2 2h-6\" />"
+  "list-end": "<path d=\"M16 5H3\" /><path d=\"M16 12H3\" /><path d=\"M9 19H3\" /><path d=\"m16 16-3 3 3 3\" /><path d=\"M21 5v12a2 2 0 0 1-2 2h-6\" />",
+  "list-plus": "<path d=\"M16 5H3\" /><path d=\"M11 12H3\" /><path d=\"M16 19H3\" /><path d=\"M18 9v6\" /><path d=\"M21 12h-6\" />",
+  "image": "<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" ry=\"2\" /><circle cx=\"9\" cy=\"9\" r=\"2\" /><path d=\"m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21\" />",
+  "clapperboard": "<path d=\"m12.296 3.464 3.02 3.956\" /><path d=\"M20.2 6 3 11l-.9-2.4c-.3-1.1.3-2.2 1.3-2.5l13.5-4c1.1-.3 2.2.3 2.5 1.3z\" /><path d=\"M3 11h18v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z\" /><path d=\"m6.18 5.276 3.1 3.899\" />",
+  "tv": "<path d=\"m17 2-5 5-5-5\" /><rect width=\"20\" height=\"15\" x=\"2\" y=\"7\" rx=\"2\" />",
+  "film": "<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\" /><path d=\"M7 3v18\" /><path d=\"M3 7.5h4\" /><path d=\"M3 12h18\" /><path d=\"M3 16.5h4\" /><path d=\"M17 3v18\" /><path d=\"M17 7.5h4\" /><path d=\"M17 16.5h4\" />"
 };
