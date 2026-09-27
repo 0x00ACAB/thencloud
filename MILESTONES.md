@@ -51,8 +51,9 @@
 - [x] **Convert** (download as another format) (file menu): convert in the browser, then download or save the result as a new encrypted file. The server never sees the file
   - Images (PNG, JPEG, WebP, AVIF, BMP) with the browser's own encoders, with a quality setting
   - Video and audio (MP4, WebM, AVI, MKV, MOV, MP3, M4A, Ogg, Opus, FLAC, WAV, GIF from video) with ffmpeg compiled to WASM: 32 MB (10 MB gzipped), self-hosted, loaded only on first use, single-threaded, with progress and Stop. Container-only changes (MOV/MKV/MP4) copy the streams instead of re-encoding
-  - [ ] Also on public links, and for several selected files at once
-  - [ ] Resize and crop for images; trim for video
+  - Only for signed-in users, not on public links
+  - [ ] For several selected files at once
+  - [x] Crop (free or a fixed shape, dragged on the image) and resize for images; trim for video and audio. The same format can be kept, to just edit
 - [ ] **Video downloader (yt-dlp)**, the one deliberate exception to "no plaintext on the server", so it's explicit and opt-in:
   - **Off by default**; an admin turns it on in the Admin view, and yt-dlp must be installed on the server. Admins only by default, optionally everyone
   - **Streamed, never stored**: the server runs yt-dlp and pipes the video straight to the browser, which encrypts it and uploads it like any other file (or just downloads it). Nothing is written to the server's disk

@@ -63,7 +63,7 @@ function stop() {
  * `onStage('loading' | 'converting')`, `onProgress(0..1)`, and `signal`
  * to cancel. Resolves to a Blob of `target.type`.
  */
-export async function transcode(blob, inputExt, target, { onProgress, onStage, signal } = {}) {
+export async function transcode(blob, inputExt, target, { trim, onProgress, onStage, signal } = {}) {
   const f = await ffmpeg(onStage);
   if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
   const onAbort = () => stop();
@@ -77,9 +77,19 @@ export async function transcode(blob, inputExt, target, { onProgress, onStage, s
     onStage?.('converting');
     log = [];
     await f.writeFile(input, new Uint8Array(await blob.arrayBuffer()));
-    const run = (args) => f.exec(['-hide_banner', '-y', '-i', input, ...args, output]);
+    // Seek before -i (fast), and give a duration rather than an end time,
+    // since -to after a pre-input seek is measured from the new start.
+    const start = trim?.start ?? null;
+    const end = trim?.end ?? null;
+    const cut = start != null ? ['-ss', String(start)] : [];
+    const length = end != null ? ['-t', String(end - (start ?? 0))] : [];
+    const run = (args) => f.exec(['-hide_banner', '-y', ...cut, '-i', input, ...length, ...args, output]);
     let code = 1;
-    if (REMUX_FROM.has(inputExt) && REMUX_TO.has(target.id)) code = await run(['-c', 'copy', ...(target.id === 'mp4' ? ['-movflags', '+faststart'] : [])]);
+    // Copying streams can only cut at keyframes, so trims are re-encoded.
+    const trimmed = start != null || end != null;
+    if (!trimmed && REMUX_FROM.has(inputExt) && REMUX_TO.has(target.id)) {
+      code = await run(['-c', 'copy', ...(target.id === 'mp4' ? ['-movflags', '+faststart'] : [])]);
+    }
     if (code !== 0) code = await run(ARGS[target.id]);
     if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
     if (code !== 0) {
