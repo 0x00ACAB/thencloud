@@ -14,6 +14,8 @@
   import LinkDialog from '../dialogs/LinkDialog.svelte';
   import Preview from '../Preview.svelte';
   import ShortcutsDialog from '../dialogs/ShortcutsDialog.svelte';
+  import ConvertDialog from '../dialogs/ConvertDialog.svelte';
+  import { sourceKind } from '../../lib/convert.js';
 
   let { folderId, go, inShare = $bindable(false) } = $props();
 
@@ -401,6 +403,19 @@
   // The list is fixed when the preview opens, so a reload behind it doesn't shift ← and →.
   const preview = (entry, edit = false) => (dialog = { type: 'preview', entries: files, start: files.indexOf(entry), edit });
 
+  /** Upload a converted copy next to the original, under a name that's free. */
+  async function saveConverted(file, onProgress) {
+    const taken = new Set(rows.map((r) => r.meta.name.toLowerCase()));
+    let name = file.name;
+    const dot = name.lastIndexOf('.');
+    for (let i = 2; taken.has(name.toLowerCase()); i++) name = `${file.name.slice(0, dot)} (${i})${file.name.slice(dot)}`;
+    const named = name === file.name ? file : new File([file], name, { type: file.type, lastModified: file.lastModified });
+    const target = here;
+    await upload(named, { parentId: target.node.id, parentKey: target.key }, onProgress);
+    if (target.node.id === folderId) await load();
+    refreshMe().catch(() => {});
+  }
+
   function untitledName() {
     const taken = new Set(rows.map((r) => r.meta.name.toLowerCase()));
     for (let i = 1; ; i++) {
@@ -442,6 +457,7 @@
               : []),
           ]
         : []),
+      ...(!folder && sourceKind(entry.meta) ? [{ label: 'Convert', icon: 'file-cog', onclick: () => (dialog = { type: 'convert', entry }) }] : []),
       ...(!folder ? [{ label: 'Version history', icon: 'refresh-cw', onclick: () => (dialog = { type: 'versions', entry }) }] : []),
       ...(canWrite ? ['sep', { label: 'Move to trash', icon: 'trash-2', danger: true, onclick: () => moveToTrash(entry) }] : []),
     ];
@@ -749,6 +765,12 @@
       await createFolder(here.node.id, here.key, name);
       await load();
     }}
+    onclose={close} />
+{:else if dialog?.type === 'convert'}
+  <ConvertDialog
+    entry={dialog.entry}
+    fetch={fetchEntry}
+    save={canWrite ? saveConverted : null}
     onclose={close} />
 {:else if dialog?.type === 'shortcuts'}
   <ShortcutsDialog onclose={close} />
