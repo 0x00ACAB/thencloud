@@ -15,7 +15,7 @@ serde_json = "1"
 base64 = "0.23"
 thiserror = "2"
 sha2 = "0.10"
-hmac = "0.12"
+hmac = "0.13"
 getrandom = "0.4"
 
 # Argon2 is painfully slow unoptimised; keep dev builds (and tests) usable.
