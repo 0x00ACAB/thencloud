@@ -517,7 +517,7 @@
     @apply -ml-6 flex list-none items-baseline gap-2;
   }
   .editor li[data-item-type="task"]::before {
-    @apply inline-grid size-3.5 shrink-0 translate-y-0.5 place-items-center rounded-sm border border-line-strong text-[10px] leading-none text-accent-fg;
+    @apply mt-1.5 inline-grid size-3.5 shrink-0 place-items-center self-start rounded-sm border border-line-strong text-[10px] leading-none text-accent-fg;
     content: "";
   }
   .editor li[data-item-type="task"][data-checked="true"]::before {

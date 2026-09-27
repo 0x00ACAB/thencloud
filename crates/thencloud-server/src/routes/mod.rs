@@ -11,8 +11,10 @@ pub mod uploads;
 pub mod versions;
 
 use axum::Router;
-use axum::extract::DefaultBodyLimit;
+use axum::extract::{DefaultBodyLimit, Request};
 use axum::http::{HeaderName, HeaderValue, header};
+use axum::middleware::{self, Next};
+use axum::response::Response;
 use axum::routing::{delete, get, patch, post, put};
 use thencloud_crypto::MAX_ENCRYPTED_CHUNK;
 use tower_http::services::{ServeDir, ServeFile};
@@ -130,6 +132,29 @@ pub fn router(state: AppState) -> Router {
             HeaderName::from_static("cross-origin-opener-policy"),
             HeaderValue::from_static("same-origin"),
         ))
+        .layer(middleware::from_fn(cache_control))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
+}
+
+/// Caching, by path, unless a route set its own:
+/// - `/assets/*` files have content hashes in their names, so they can be
+///   cached for good (only when they were found);
+/// - API responses carry wrapped keys and ciphertext: never stored;
+/// - HTML pages are revalidated every time, so after an upgrade nobody keeps
+///   an old page that points at assets that no longer exist.
+async fn cache_control(req: Request, next: Next) -> Response {
+    let path = req.uri().path().to_owned();
+    let mut res = next.run(req).await;
+    let value = if path.starts_with("/api/") {
+        "no-store"
+    } else if path.starts_with("/assets/") && res.status().is_success() {
+        "public, max-age=31536000, immutable"
+    } else {
+        "no-cache"
+    };
+    res.headers_mut()
+        .entry(header::CACHE_CONTROL)
+        .or_insert(HeaderValue::from_static(value));
+    res
 }
