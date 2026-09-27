@@ -3206,6 +3206,72 @@ async fn verified_contacts_are_opaque_to_the_server() {
     }
 }
 
+#[tokio::test]
+async fn app_data_is_opaque_to_the_server() {
+    let h = Harness::new().await;
+    let lea = register(&h, "lea", "lea's password").await;
+    let me: Me = h.get("/api/me", &lea.token).await.json();
+
+    let empty: PrivateData = h.get("/api/me/data/music", &lea.token).await.json();
+    assert!(empty.data.is_none());
+    assert_eq!(empty.revision, 0);
+    let r = h
+        .call(
+            Method::GET,
+            "/api/me/data/other",
+            Some(&lea.token),
+            None::<()>,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+
+    let plain = br#"{"playlists":[{"name":"mira-marker-playlist"}]}"#;
+    let sealed = c::encrypt_private_data(&lea.mk, &me.user_id, "music", plain);
+    let put = |data: Vec<u8>, rev: i64| PutPrivateData {
+        data: B64(data),
+        if_revision: rev,
+    };
+    for (rev, status) in [
+        (0, StatusCode::OK),
+        (0, StatusCode::CONFLICT),
+        (1, StatusCode::OK),
+        (1, StatusCode::CONFLICT),
+    ] {
+        let r = h
+            .call(
+                Method::PUT,
+                "/api/me/data/music",
+                Some(&lea.token),
+                Some(put(sealed.clone(), rev)),
+            )
+            .await;
+        assert_eq!(r.status, status);
+    }
+
+    let got: PrivateData = h.get("/api/me/data/music", &lea.token).await.json();
+    assert_eq!(got.revision, 2);
+    let opened =
+        c::decrypt_private_data(&lea.mk, &me.user_id, "music", &got.data.unwrap().0).unwrap();
+    assert_eq!(opened, plain);
+    assert!(c::decrypt_private_data(&lea.mk, &me.user_id, "videos", &sealed).is_err());
+
+    // Each user has their own.
+    let other = register(&h, "max", "max's password").await;
+    let theirs: PrivateData = h.get("/api/me/data/music", &other.token).await.json();
+    assert!(theirs.data.is_none());
+
+    let mut files = Vec::new();
+    all_files(&h.dir.path().join("data"), &mut files);
+    for p in &files {
+        let bytes = std::fs::read(p).unwrap();
+        assert!(
+            !contains(&bytes, b"mira-marker-playlist"),
+            "app data plaintext in {}",
+            p.display()
+        );
+    }
+}
+
 /// A stand-in for yt-dlp: checks it was called with the safety flags,
 /// answers lookups with fixed JSON, streams fake bytes for downloads, and
 /// litters its working directory so we can check the server cleans up.

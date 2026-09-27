@@ -1,5 +1,5 @@
 <script>
-  // Pick the folder the music library is read from.
+  // Pick the folder a library (Music, Videos) is read from.
   import { untrack } from 'svelte';
   import Modal from '../Modal.svelte';
   import Icon from '../Icon.svelte';
@@ -7,7 +7,7 @@
   import { errorMessage } from '../../lib/ui.svelte.js';
 
   /** `onpick(id)` */
-  let { root, onpick, onclose } = $props();
+  let { root, title, description, onpick, onclose } = $props();
 
   let trail = $state(untrack(() => [{ id: root.node.id, key: root.key, name: root.meta.name }]));
   let folders = $state([]);
@@ -34,7 +34,7 @@
   }
 </script>
 
-<Modal title="Music folder" description="Everything under this folder shows up in Music, grouped into albums by folder." {onclose} onsubmit={submit}>
+<Modal {title} {description} {onclose} onsubmit={submit}>
   <div class="overflow-hidden rounded-md border border-line">
     <div class="flex h-9 items-center gap-1 overflow-x-auto border-b border-line bg-subtle px-2 text-[13px]">
       {#each trail as crumb, i (crumb.id)}
