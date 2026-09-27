@@ -117,7 +117,7 @@ Smaller things:
 
 - [ ] **Encrypted thumbnails**: made in the browser on upload (images, video frames, PDF first pages), encrypted under the file's key and stored as a small side blob; a grid view that uses them
 - [ ] **Photos**: a timeline of a chosen folder by date taken (EXIF read in the browser, like music tags), with albums and a lightbox
-- [ ] **Strip location on share**: offer to remove GPS and camera details from photos before they're uploaded or shared
+- [x] **Strip location on share**: offer to remove GPS and camera details from photos before they're uploaded or shared. JPEG, PNG and WebP; the orientation is kept. Uploads ask (or always remove, or keep: Settings), and sharing a photo that has a location offers to remove it, deleting the older versions too
 - [x] **Favourites and Recent**: kept as node ids in the encrypted app data, shown in the sidebar. Star from a file's menu; files count as recent when previewed or downloaded
 - [ ] **Full-text search**: an encrypted index of text, Markdown and PDF contents built in the browser and saved as app data, so search can look inside files without the server learning the words
 - [ ] **Groups**: share with a group whose key is sealed to each member; adding someone doesn't mean re-sharing everything
@@ -133,10 +133,10 @@ Smaller things:
 - [ ] **Installable app (PWA)**: a manifest and icons, and on Android a share target, so "Share to thencloud" encrypts and uploads from any app
 - [ ] **Local WebDAV bridge** in the CLI (`thencloud serve`): serves your files decrypted on 127.0.0.1 only, so macOS Finder, Windows Explorer and iOS Files apps can use them while the server still sees only ciphertext
 - [ ] **Import from Nextcloud**: the CLI reads a Nextcloud account over WebDAV, encrypts locally and uploads, keeping folders and dates
-- [ ] **Container image and release binaries**: a Dockerfile, a compose example with a reverse proxy, and binaries built in CI for each release
-- [ ] **Backup and restore**: a server command that takes a consistent snapshot of SQLite and the blob store, and a documented restore
+- [x] **Container image and release binaries**: a Dockerfile, a compose example with a reverse proxy, and binaries built in CI for each release. The image builds the web client like a release, so `verify-web` passes; `--trust-proxy` keeps rate limits per client behind the proxy
+- [x] **Backup and restore**: a server command that takes a consistent snapshot of SQLite and the blob store, and a documented restore (`thencloud-server backup DIR`, safe while running)
 - [x] **Health and metrics**: a health check and Prometheus metrics with the same counts the admin view shows, nothing more (`/api/health`; `/api/metrics` only with `--metrics-token`)
-- [ ] **Integrity check**: the server checks every blob it expects exists with the right size; the client can verify that everything decrypts and flags what doesn't
+- [x] **Integrity check**: the server checks every blob it expects exists with the right size; the client can verify that everything decrypts and flags what doesn't (`thencloud-server check`, and Settings > Check your files)
 - [ ] **Translations**: move UI strings into message files and pick the language from the browser
 - [ ] **Accessibility pass**: screen reader labels, focus handling in dialogs and menus, and colour contrast checked in both themes and with the tint on
 

@@ -1,6 +1,7 @@
 <script>
   import Modal from '../Modal.svelte';
   import Icon from '../Icon.svelte';
+  import PhotoLocationNotice from '../PhotoLocationNotice.svelte';
   import Time from '../Time.svelte';
   import { createLink, links, deleteLink } from '../../lib/cloud.svelte.js';
   import { copyText, errorMessage, toastError } from '../../lib/ui.svelte.js';
@@ -95,6 +96,8 @@
       </p>
     {/if}
   </div>
+
+  <PhotoLocationNotice {entry} />
 
   {#if existing?.length}
     <div class="space-y-2">

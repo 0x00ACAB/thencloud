@@ -1,0 +1,42 @@
+# thencloud behind Caddy, which gets a TLS certificate for your domain.
+#
+#   THENCLOUD_DOMAIN=cloud.example.com docker compose -f deploy/compose.yaml up -d
+#
+# Point the domain's DNS at this machine first, and keep ports 80 and 443
+# open for Caddy. Back up with:
+#   docker compose -f deploy/compose.yaml exec thencloud thencloud-server backup /data/backup-$(date +%F)
+# (the backup lands in the thencloud-data volume; copy it somewhere else).
+
+services:
+  thencloud:
+    build: ..
+    image: thencloud
+    restart: unless-stopped
+    environment:
+      # Caddy is the only way in, so its X-Forwarded-For can be trusted
+      # (it's used for rate-limiting sign-in attempts, never stored).
+      THENCLOUD_TRUST_PROXY: "true"
+      # THENCLOUD_ALLOW_REGISTRATION: "false"
+      # THENCLOUD_METRICS_TOKEN: "a long random string"
+    volumes:
+      - thencloud-data:/data
+    # No ports: only Caddy reaches it, over the compose network.
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      THENCLOUD_DOMAIN: ${THENCLOUD_DOMAIN:?set THENCLOUD_DOMAIN to your domain}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on:
+      - thencloud
+
+volumes:
+  thencloud-data:
+  caddy-data:

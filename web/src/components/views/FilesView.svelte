@@ -1,6 +1,8 @@
 <script>
   import { session, resolvePath, listFolder, createFolder, rename, move, trash, untrash, download, downloadZip, fetchEntry, upload, saveText, refreshMe, toolsInfo, loadDraft, storeDraft, dropDraft, searchTree, openEntry, strayDrops } from '../../lib/cloud.svelte.js';
-  import { toast, toastError, trackTransfer, errorMessage, sort, sortBy } from '../../lib/ui.svelte.js';
+  import { toast, toastError, trackTransfer, errorMessage, sort, sortBy, photoDetails } from '../../lib/ui.svelte.js';
+  import { fileInfo, hasDetails, stripFile } from '../../lib/exif.js';
+  import Modal from '../Modal.svelte';
   import { formatSize, formatWhen, fullDate, plural, sortEntries, nameError } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
   import FileIcon from '../FileIcon.svelte';
@@ -191,11 +193,41 @@
     await runUploads(jobs, target);
   }
 
+  /**
+   * Location and camera details in photos: removed, kept, or (by default)
+   * asked about when a photo has a location. Marks the jobs to clean; the
+   * cleaning happens as each one uploads. Resolves to false if cancelled.
+   */
+  async function checkPhotos(jobs) {
+    if (photoDetails.value === 'keep') return true;
+    const found = [];
+    for (const job of jobs) {
+      const info = await fileInfo(job.file).catch(() => null);
+      if (hasDetails(info)) found.push({ job, info });
+    }
+    if (!found.length) return true;
+    if (photoDetails.value === 'ask') {
+      const located = found.filter((f) => f.info.gps).length;
+      if (!located) return true;
+      const choice = await new Promise((resolve) => (dialog = { type: 'photo-details', located, resolve }));
+      dialog = null;
+      if (choice === 'cancel') return false;
+      if (choice === 'keep') return true;
+    }
+    for (const f of found) f.job.clean = true;
+    return true;
+  }
+
   async function runUploads(jobs, target) {
     if (!jobs.length) return;
-    const one = async ({ file, dest, label }) => {
+    if (!(await checkPhotos(jobs))) return;
+    const one = async ({ file, dest, label, clean }) => {
       const t = trackTransfer('upload', label, file.size);
       try {
+        if (clean) {
+          file = await stripFile(file);
+          t.size = file.size;
+        }
         await upload(file, dest, (p) => (t.progress = p));
         t.status = 'done';
       } catch (e) {
@@ -1068,7 +1100,21 @@
   </div>
 {/if}
 
-{#if dialog?.type === 'mkdir'}
+{#if dialog?.type === 'photo-details'}
+  {@const answer = dialog.resolve}
+  <Modal
+    title={dialog.located === 1 ? 'This photo has a location' : `${dialog.located} photos have a location`}
+    description="Photos from phones and cameras often record where they were taken, and on what. Anyone you share them with could read it."
+    onclose={() => answer('cancel')}
+    onsubmit={() => answer('remove')}>
+    <p class="text-[13px] text-fg-muted">Removing it also drops the camera details. The pictures themselves don't change. You can choose what happens every time in Settings.</p>
+    {#snippet footer()}
+      <button type="button" class="btn btn-secondary mr-auto" onclick={() => answer('cancel')}>Cancel</button>
+      <button type="button" class="btn btn-secondary" onclick={() => answer('keep')}>Keep it</button>
+      <button class="btn btn-primary">Remove location</button>
+    {/snippet}
+  </Modal>
+{:else if dialog?.type === 'mkdir'}
   <NameDialog
     title="New folder"
     confirmLabel="Create"
