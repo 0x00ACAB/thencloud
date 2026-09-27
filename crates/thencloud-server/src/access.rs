@@ -2,6 +2,10 @@
 //!
 //! A user has `Owner` access to every node in their own tree, and the best
 //! permission of any share on the node or one of its ancestors otherwise.
+//!
+//! Nodes in the trash (or below a trashed folder) are invisible to all of
+//! this: only the trash routes, which check ownership themselves, can reach
+//! them.
 
 use sqlx::SqlitePool;
 
@@ -44,6 +48,9 @@ pub async fn access(db: &SqlitePool, user_id: &str, node_id: &str) -> Result<Opt
         .fetch_optional(db)
         .await?;
     let Some(owner) = owner else { return Ok(None) };
+    if is_trashed(db, node_id).await? {
+        return Ok(None);
+    }
     if owner == user_id {
         return Ok(Some(Access::Owner));
     }
@@ -65,6 +72,17 @@ pub async fn access(db: &SqlitePool, user_id: &str, node_id: &str) -> Result<Opt
             }
         })
         .max())
+}
+
+/// True if the node or any of its ancestors is in the trash.
+pub async fn is_trashed(db: &SqlitePool, node_id: &str) -> Result<bool> {
+    Ok(sqlx::query_scalar(concat!(
+        ancestors_cte!(),
+        "SELECT EXISTS(SELECT 1 FROM anc JOIN nodes n ON n.id = anc.id WHERE n.trashed_at IS NOT NULL)"
+    ))
+    .bind(node_id)
+    .fetch_one(db)
+    .await?)
 }
 
 /// Require at least `min` access. Nodes the user can't see at all are

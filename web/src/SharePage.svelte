@@ -223,7 +223,7 @@
     <div class="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-2 px-4 py-5 text-xs text-fg-muted">
       <p class="flex items-center gap-1.5">
         <Icon name="shield-check" class="size-3.5" />
-        Decrypted in your browser. The key is in the link after the #, which is never sent to the server.
+        Decrypted in your browser. The key is never sent to the server.
       </p>
       {#if expiresAt}<p>Link expires {formatDate(expiresAt * 1000)}</p>{/if}
     </div>

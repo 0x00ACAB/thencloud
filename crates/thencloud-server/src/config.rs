@@ -35,6 +35,15 @@ pub struct Config {
     #[arg(long, env = "THENCLOUD_SESSION_DAYS", default_value_t = 30)]
     pub session_days: i64,
 
+    /// Versions kept per file, including the current one. Older versions
+    /// are deleted when a new one is uploaded.
+    #[arg(long, env = "THENCLOUD_MAX_VERSIONS", default_value_t = 10)]
+    pub max_versions: i64,
+
+    /// Days before items in the trash are deleted permanently.
+    #[arg(long, env = "THENCLOUD_TRASH_DAYS", default_value_t = 30)]
+    pub trash_days: i64,
+
     /// How long an unfinished upload is kept, in hours.
     #[arg(long, env = "THENCLOUD_UPLOAD_TTL_HOURS", default_value_t = 24)]
     pub upload_ttl_hours: i64,
@@ -51,6 +60,8 @@ impl Config {
             allow_registration: true,
             default_quota: 1024 * 1024 * 1024,
             session_days: 30,
+            max_versions: 10,
+            trash_days: 30,
             upload_ttl_hours: 24,
         }
     }

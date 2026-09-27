@@ -33,6 +33,8 @@ Every flag can also be set as an environment variable.
 | `--allow-registration` | `THENCLOUD_ALLOW_REGISTRATION` | `true` (the first user can always register) |
 | `--default-quota` | `THENCLOUD_DEFAULT_QUOTA` | 10 GiB |
 | `--session-days` | `THENCLOUD_SESSION_DAYS` | `30` |
+| `--max-versions` | `THENCLOUD_MAX_VERSIONS` | `10` (versions kept per file, including the current one) |
+| `--trash-days` | `THENCLOUD_TRASH_DAYS` | `30` (days before trashed items are purged) |
 | `--upload-ttl-hours` | `THENCLOUD_UPLOAD_TTL_HOURS` | `24` |
 
 **Serve thencloud over HTTPS in production** (for example, behind a reverse proxy). The crypto protects data at rest on the server, but the page and its WASM must reach the browser intact.
@@ -107,7 +109,7 @@ cd web && npm run dev           # hot-reloading client; proxies /api to a server
 cd web && npm run check         # svelte-check
 ```
 
-`crates/thencloud-server/tests/e2e.rs` drives a real server in-process with a native client built on `thencloud-crypto`. It covers register, upload, move, share, public link, revoke and delete. It then scans the SQLite database and blob store to check that no plaintext names, contents, passwords or keys were stored.
+`crates/thencloud-server/tests/e2e.rs` drives a real server in-process with a native client built on `thencloud-crypto`. It covers register, upload, move, share, public link, revoke, version history and the trash. It then scans the SQLite database and blob store to check that no plaintext names, contents, passwords or keys were stored.
 
 ## AI assistance
 

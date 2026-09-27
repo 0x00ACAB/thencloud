@@ -15,7 +15,7 @@ use crate::access;
 use crate::auth::ClientIp;
 use crate::db::{NodeRow, get_children, get_node};
 use crate::error::{AppError, Result};
-use crate::routes::nodes::chunk_response;
+use crate::routes::nodes::current_chunk;
 use crate::util::*;
 
 const LINK_SESSION_SECS: i64 = 12 * 3600;
@@ -73,7 +73,9 @@ async fn resolve(state: &AppState, token: &str, headers: &HeaderMap) -> Result<L
 }
 
 async fn node_in_link(state: &AppState, link: &LinkRow, node_id: &str) -> Result<NodeRow> {
-    if !access::is_within(&state.db, node_id, &link.node_id).await? {
+    if !access::is_within(&state.db, node_id, &link.node_id).await?
+        || access::is_trashed(&state.db, node_id).await?
+    {
         return Err(AppError::NotFound);
     }
     get_node(&state.db, node_id)
@@ -87,6 +89,9 @@ pub async fn info(
     headers: HeaderMap,
 ) -> Result<Json<PublicLinkInfo>> {
     let link = resolve(&state, &token, &headers).await?;
+    if access::is_trashed(&state.db, &link.node_id).await? {
+        return Err(AppError::NotFound);
+    }
     let node = get_node(&state.db, &link.node_id)
         .await?
         .ok_or(AppError::NotFound)?;
@@ -147,5 +152,5 @@ pub async fn chunk(
 ) -> Result<Response> {
     let link = resolve(&state, &token, &headers).await?;
     let node = node_in_link(&state, &link, &id).await?;
-    chunk_response(&state, node, idx).await
+    current_chunk(&state, node, idx).await
 }

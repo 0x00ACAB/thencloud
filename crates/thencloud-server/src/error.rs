@@ -19,6 +19,8 @@ pub enum AppError {
     NotFound,
     #[error("{0}")]
     Conflict(String),
+    #[error("the original folder is in the trash or was deleted")]
+    ParentUnavailable,
     #[error("storage quota exceeded")]
     QuotaExceeded,
     #[error("too many failed attempts, try again later")]
@@ -50,6 +52,7 @@ impl AppError {
             Forbidden => (StatusCode::FORBIDDEN, "forbidden"),
             NotFound => (StatusCode::NOT_FOUND, "not_found"),
             Conflict(_) => (StatusCode::CONFLICT, "conflict"),
+            ParentUnavailable => (StatusCode::CONFLICT, "parent_unavailable"),
             QuotaExceeded => (StatusCode::INSUFFICIENT_STORAGE, "quota_exceeded"),
             RateLimited => (StatusCode::TOO_MANY_REQUESTS, "rate_limited"),
             RegistrationClosed => (StatusCode::FORBIDDEN, "registration_closed"),

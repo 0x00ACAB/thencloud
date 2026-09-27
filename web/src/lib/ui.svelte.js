@@ -5,10 +5,14 @@ import { ApiError } from './api.js';
 export const toasts = $state([]);
 let toastSeq = 0;
 
-export function toast(message, { kind = 'info', timeout = 4000 } = {}) {
+/**
+ * `action`: optional { label, onclick } shown as a button (e.g. Undo).
+ * `icon`: optional icon name, overriding the one for `kind`.
+ */
+export function toast(message, { kind = 'info', timeout = 4000, action = null, icon = null } = {}) {
   const id = ++toastSeq;
-  toasts.push({ id, message, kind });
-  setTimeout(() => dismissToast(id), timeout);
+  toasts.push({ id, message, kind, action, icon });
+  setTimeout(() => dismissToast(id), action ? Math.max(timeout, 7000) : timeout);
 }
 
 export function dismissToast(id) {
@@ -70,6 +74,66 @@ export function setTheme(pref) {
     /* private mode */
   }
   applyTheme();
+}
+
+// Accent colour: one hex value; the CSS derives every shade from it.
+export const DEFAULT_ACCENT = '#3b47f9';
+export const ACCENT_PRESETS = [
+  ['#3b47f9', 'Blue'],
+  ['#0f9f8f', 'Teal'],
+  ['#22a559', 'Green'],
+  ['#e5a000', 'Amber'],
+  ['#f2651d', 'Orange'],
+  ['#e5484d', 'Red'],
+  ['#e03e8c', 'Pink'],
+  ['#8b5cf6', 'Violet'],
+  ['#64748b', 'Slate'],
+];
+
+function luminance(hex) {
+  const [r, g, b] = [1, 3, 5].map((i) => {
+    const c = parseInt(hex.slice(i, i + 2), 16) / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** Contrast ratio between two hex colours (WCAG). */
+export function contrast(a, b) {
+  const [x, y] = [luminance(a), luminance(b)].sort((p, q) => q - p);
+  return (x + 0.05) / (y + 0.05);
+}
+
+/** Black or white, whichever reads better on the accent. */
+export function accentForeground(hex) {
+  return contrast(hex, '#ffffff') >= contrast(hex, '#000000') ? '#ffffff' : '#000000';
+}
+
+const validHex = (v) => typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v);
+
+function readAccent() {
+  try {
+    const v = localStorage.getItem('accent');
+    return validHex(v) ? v.toLowerCase() : DEFAULT_ACCENT;
+  } catch {
+    return DEFAULT_ACCENT;
+  }
+}
+
+export const accent = $state({ value: readAccent() });
+
+export function setAccent(hex) {
+  if (!validHex(hex)) return;
+  accent.value = hex.toLowerCase();
+  const root = document.documentElement.style;
+  root.setProperty('--accent-base', accent.value);
+  root.setProperty('--accent-fg', accentForeground(accent.value));
+  try {
+    if (accent.value === DEFAULT_ACCENT) localStorage.removeItem('accent');
+    else localStorage.setItem('accent', accent.value);
+  } catch {
+    /* private mode */
+  }
 }
 
 export async function copyText(text, what = 'Copied to clipboard') {

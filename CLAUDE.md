@@ -32,12 +32,15 @@ cargo run -p thencloud-server -- --bind 127.0.0.1:8080 --data-dir ./data
 - `crates/thencloud-crypto`: key derivation, key wrapping, sealed boxes, metadata and chunk encryption. `api.rs` holds the JSON wire types shared by the server and clients.
 - `crates/thencloud-wasm`: thin `wasm-bindgen` wrappers. JS does networking only, never crypto.
 - `crates/thencloud-server`: axum + SQLite (sqlx, migrations in `migrations/`) and a local blob store.
-  - `access.rs` is the single place authorisation is decided (owner, or a share on any ancestor). Every route goes through it.
+  - `access.rs` is the single place authorisation is decided (owner, or a share on any ancestor). Every route goes through it, and it hides anything in the trash (a trashed node or any trashed ancestor); only `routes/trash.rs` reaches trashed nodes, checking ownership itself.
+  - Deleting a node only marks it trashed; `delete_subtree` in `routes/nodes.rs` is the one permanent delete (used by the trash and the janitor).
 - `web/`: the browser client, Svelte 5 + Vite + Tailwind CSS v4. The server serves the build output in `web/dist`.
   - `src/lib/`: `cloud.svelte.js` holds the session and every server operation (the only place keys are handled), `crypto.js` wraps the WASM module, `kdf.worker.js` runs Argon2 off the main thread, `ui.svelte.js` holds toasts, transfers and the theme.
   - `src/components/`: `Shell.svelte` (logged-in layout), `views/` (one per sidebar section), `dialogs/`, plus shared `Modal`, `Menu`, `Icon`.
   - `src/SharePage.svelte`: the public-link viewer (`share.html`).
   - `src/lib/icons.js` is generated from Lucide by `npm run icons`; add names to `scripts/gen-icons.mjs`.
+  - `src/lib/motion.js` wraps Svelte transitions with the app's timings and `prefers-reduced-motion`; use it instead of `svelte/transition` directly. Popovers use its `portal` action.
+  - Don't leave a `transform` on an element after an animation (use `animation-fill-mode: backwards`): it traps `position: fixed` descendants.
   - Fonts (Geist, OFL) and the logo live in `web/public/`.
 - `assets/`: branding. The logo mark is `thencloud-logo-mark.png`; `branding.txt` has the name, the katakana ゼンクラウド and the accent colour `#3B47F9`.
 

@@ -190,10 +190,107 @@ export async function move(entry, targetId, targetKey) {
   });
 }
 
-export async function remove(entry) {
+/** Move to the trash. Keys stay wrapped as they are, so it can come back. */
+export async function trash(entry) {
   await api('DELETE', `/api/nodes/${entry.node.id}`);
-  keyCache.delete(entry.node.id);
 }
+
+// ---------------------------------------------------------------------------
+// Trash
+// ---------------------------------------------------------------------------
+
+/**
+ * Items in our trash. Each comes with its path from our root folder, which
+ * is how we unwrap its key (trashed nodes can't be reached through /path).
+ */
+export async function trashItems() {
+  const items = await api('GET', '/api/trash');
+  return items.map((it) => {
+    try {
+      let key;
+      const chain = it.path.map((node, i) => {
+        key = i === 0 ? tc.unwrap_node_key(mk, unb64(node.enc_key), node.id) : unwrapChild(key, node);
+        return { node, key, meta: decryptMeta(key, node) };
+      });
+      const entry = chain[chain.length - 1];
+      return { ...it, entry, location: chain.slice(0, -1).map((c) => c.meta.name) };
+    } catch (e) {
+      return { ...it, error: String(e?.message || e) };
+    }
+  });
+}
+
+/**
+ * Restore to the original folder. If that folder is gone or in the trash
+ * too, restore into the root instead, re-wrapping the key for it.
+ * Returns the name of the folder it went back into, or null for "original".
+ */
+export async function restoreFromTrash(item) {
+  const id = item.node.id;
+  try {
+    await api('POST', `/api/trash/${id}/restore`, { body: {} });
+    return null;
+  } catch (e) {
+    if (e.code !== 'parent_unavailable') throw e;
+  }
+  const rootId = session.me.keys.root_node_id;
+  const rootKey = await keyOf(rootId);
+  await api('POST', `/api/trash/${id}/restore`, {
+    body: { parent_id: rootId, enc_key: b64(tc.wrap_node_key(rootKey, item.entry.key, id)) },
+  });
+  return 'My files';
+}
+
+/** Undo a delete we just did (owner only). */
+export const untrash = (entry) => api('POST', `/api/trash/${entry.node.id}/restore`, { body: {} });
+
+export const purgeFromTrash = (id) => api('DELETE', `/api/trash/${id}`);
+export const emptyTrash = () => api('DELETE', '/api/trash');
+
+// ---------------------------------------------------------------------------
+// Versions
+// ---------------------------------------------------------------------------
+
+/** Version history, newest first, each with its decrypted metadata. */
+export async function versions(entry) {
+  const list = await api('GET', `/api/nodes/${entry.node.id}/versions`);
+  return list.map((v) => {
+    let meta = null;
+    try {
+      meta = JSON.parse(tc.decrypt_metadata(entry.key, entry.node.id, unb64(v.enc_metadata)));
+    } catch {
+      /* shown as unreadable */
+    }
+    return { ...v, meta };
+  });
+}
+
+/** A version as a node-shaped object that fetchFile() understands. */
+const versionNode = (entry, v) => ({
+  ...entry.node,
+  enc_metadata: v.enc_metadata,
+  version: { id: v.id, enc_content_key: v.enc_content_key, chunk_count: v.chunk_count, size: v.size, created_at: v.created_at },
+});
+
+export async function downloadVersion(entry, v, onProgress) {
+  const { blob, meta } = await fetchFile(
+    versionNode(entry, v),
+    entry.key,
+    (i) => api('GET', `/api/nodes/${entry.node.id}/versions/${v.id}/chunks/${i}`),
+    onProgress,
+  );
+  saveBlob(blob, meta.name);
+}
+
+/** Make `v` current. The name stays as it is now; size and mtime come from the version. */
+export async function restoreVersion(entry, v) {
+  const meta = { ...entry.meta, size: v.meta.size, mtime: v.meta.mtime, mime: v.meta.mime ?? entry.meta.mime };
+  return api('POST', `/api/nodes/${entry.node.id}/versions/${v.id}/restore`, {
+    body: { enc_metadata: encryptMeta(entry.key, entry.node.id, meta), if_revision: entry.node.revision },
+  });
+}
+
+export const deleteVersion = (entry, v) => api('DELETE', `/api/nodes/${entry.node.id}/versions/${v.id}`);
 
 export async function download(entry, onProgress) {
   const { node, key } = entry;

@@ -26,7 +26,7 @@ struct UserRow {
 }
 
 impl UserRow {
-    fn into_me(self) -> Result<Me> {
+    fn into_me(self, cfg: &crate::Config) -> Result<Me> {
         let kdf_params: KdfParams = serde_json::from_str(&self.kdf_params)
             .map_err(|e| AppError::Internal(e.to_string()))?;
         Ok(Me {
@@ -43,6 +43,8 @@ impl UserRow {
                 enc_private_key: B64(self.enc_private_key),
                 root_node_id: self.root_node_id,
             },
+            max_versions: cfg.max_versions,
+            trash_days: cfg.trash_days,
         })
     }
 }
@@ -171,7 +173,7 @@ pub async fn register(
     tracing::info!(%username, admin = user_count == 0, "user registered");
 
     let token = create_session(&state, &user_id, req.device_name.as_deref()).await?;
-    let me = user_by_id(&state, &user_id).await?.into_me()?;
+    let me = user_by_id(&state, &user_id).await?.into_me(&state.config)?;
     Ok((StatusCode::CREATED, Json(SessionResponse { token, me })))
 }
 
@@ -206,7 +208,7 @@ pub async fn login(
     let token = create_session(&state, &user.id, req.device_name.as_deref()).await?;
     Ok(Json(SessionResponse {
         token,
-        me: user.into_me()?,
+        me: user.into_me(&state.config)?,
     }))
 }
 
@@ -219,7 +221,9 @@ pub async fn logout(State(state): State<AppState>, user: AuthUser) -> Result<Sta
 }
 
 pub async fn me(State(state): State<AppState>, user: AuthUser) -> Result<Json<Me>> {
-    Ok(Json(user_by_id(&state, &user.id).await?.into_me()?))
+    Ok(Json(
+        user_by_id(&state, &user.id).await?.into_me(&state.config)?,
+    ))
 }
 
 /// Re-wraps the master key under a new password. File keys are unaffected.

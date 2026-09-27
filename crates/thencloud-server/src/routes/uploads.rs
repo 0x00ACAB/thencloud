@@ -18,6 +18,7 @@ use crate::access::{self, Access};
 use crate::auth::AuthUser;
 use crate::db::get_node;
 use crate::error::{AppError, Result, is_fk_violation, is_unique_violation};
+use crate::routes::versions;
 use crate::util::*;
 
 /// 1M chunks of 4 MiB = 4 TiB per file.
@@ -177,6 +178,26 @@ async fn charge(state: &AppState, owner_id: &str, delta: i64) -> Result<()> {
     Ok(())
 }
 
+/// Charge the quota; if it's full, make room by deleting the owner's oldest
+/// old file versions (never current files or the trash) and try again.
+async fn charge_or_prune(state: &AppState, owner_id: &str, delta: i64) -> Result<()> {
+    match charge(state, owner_id, delta).await {
+        Err(AppError::QuotaExceeded) => {
+            let (used, quota): (i64, i64) =
+                sqlx::query_as("SELECT used_bytes, quota_bytes FROM users WHERE id = ?")
+                    .bind(owner_id)
+                    .fetch_one(&state.db)
+                    .await?;
+            let needed = used + delta - quota;
+            if versions::prune_for_space(state, owner_id, needed).await? < needed {
+                return Err(AppError::QuotaExceeded);
+            }
+            charge(state, owner_id, delta).await
+        }
+        r => r,
+    }
+}
+
 pub async fn put_chunk(
     State(state): State<AppState>,
     user: AuthUser,
@@ -197,7 +218,7 @@ pub async fn put_chunk(
             .fetch_optional(&state.db)
             .await?;
     let delta = body.len() as i64 - old.unwrap_or(0);
-    charge(&state, &up.owner_id, delta).await?;
+    charge_or_prune(&state, &up.owner_id, delta).await?;
 
     let recorded = async {
         state.blobs.put_chunk(&up.version_id, idx, &body).await?;
@@ -253,7 +274,6 @@ pub async fn finish(
 
     let t = now();
     let mut tx = state.db.begin().await?;
-    let mut replaced: Option<(String, i64)> = None;
     if let Some(parent) = &up.parent_id {
         let res = sqlx::query(
             "INSERT INTO nodes (id, owner_id, created_by, parent_id, kind, enc_key, enc_metadata, \
@@ -282,24 +302,15 @@ pub async fn finish(
             r => r?,
         };
     } else {
-        let (rev, cur): (i64, Option<String>) =
-            sqlx::query_as("SELECT revision, current_version_id FROM nodes WHERE id = ?")
-                .bind(&up.node_id)
-                .fetch_optional(&mut *tx)
-                .await?
-                .ok_or(AppError::NotFound)?;
+        let rev: i64 = sqlx::query_scalar("SELECT revision FROM nodes WHERE id = ?")
+            .bind(&up.node_id)
+            .fetch_optional(&mut *tx)
+            .await?
+            .ok_or(AppError::NotFound)?;
         if up.if_revision.is_some_and(|r| r != rev) {
             return Err(AppError::Conflict(
                 "the file was modified by someone else".into(),
             ));
-        }
-        if let Some(v) = cur {
-            let size: i64 = sqlx::query_scalar("SELECT size FROM file_versions WHERE id = ?")
-                .bind(&v)
-                .fetch_optional(&mut *tx)
-                .await?
-                .unwrap_or(0);
-            replaced = Some((v, size));
         }
         let res = sqlx::query(
             "UPDATE nodes SET enc_metadata = ?, current_version_id = ?, revision = revision + 1, updated_at = ? \
@@ -319,37 +330,29 @@ pub async fn finish(
         }
     }
     sqlx::query(
-        "INSERT INTO file_versions (id, node_id, enc_content_key, chunk_count, size, created_by, created_at) \
-         VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO file_versions (id, node_id, enc_content_key, enc_metadata, chunk_count, size, \
+         created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&up.version_id)
     .bind(&up.node_id)
     .bind(&up.enc_content_key)
+    .bind(&up.enc_metadata)
     .bind(up.chunk_count)
     .bind(total)
     .bind(&user.id)
     .bind(t)
     .execute(&mut *tx)
     .await?;
-    // Only the current version is kept for now (see MILESTONES.md).
-    if let Some((v, size)) = &replaced {
-        sqlx::query("DELETE FROM file_versions WHERE id = ?")
-            .bind(v)
-            .execute(&mut *tx)
-            .await?;
-        sqlx::query("UPDATE users SET used_bytes = MAX(0, used_bytes - ?) WHERE id = ?")
-            .bind(size)
-            .bind(&up.owner_id)
-            .execute(&mut *tx)
-            .await?;
-    }
+    // The previous version stays in the history; drop any beyond the limit.
+    let excess = versions::excess_versions(&mut tx, &up.node_id, state.config.max_versions).await?;
+    versions::remove_versions(&mut tx, &up.owner_id, &excess).await?;
     sqlx::query("DELETE FROM uploads WHERE id = ?")
         .bind(&up.id)
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
 
-    if let Some((v, _)) = replaced {
+    for (v, _) in excess {
         state.blobs.delete_version(&v).await;
     }
     Ok(Json(

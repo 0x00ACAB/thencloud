@@ -122,6 +122,9 @@ pub async fn incoming(
     .await?;
     let mut out = Vec::with_capacity(rows.len());
     for r in rows {
+        if access::is_trashed(&state.db, &r.node_id).await? {
+            continue;
+        }
         let Some(node) = get_node(&state.db, &r.node_id).await? else {
             continue;
         };
@@ -158,8 +161,15 @@ pub async fn outgoing(
     .bind(&f.node_id)
     .fetch_all(&state.db)
     .await?;
+    let mut visible = Vec::with_capacity(rows.len());
+    for r in rows {
+        if !access::is_trashed(&state.db, &r.3).await? {
+            visible.push(r);
+        }
+    }
     Ok(Json(
-        rows.into_iter()
+        visible
+            .into_iter()
             .map(|(id, recipient, perm, node_id, created_at)| OutgoingShare {
                 id,
                 recipient,

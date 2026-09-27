@@ -1,6 +1,6 @@
 <script>
   import { session, changePassword } from '../../lib/cloud.svelte.js';
-  import { theme, setTheme, toast, errorMessage, copyText } from '../../lib/ui.svelte.js';
+  import { theme, setTheme, toast, errorMessage, copyText, accent, setAccent, ACCENT_PRESETS, DEFAULT_ACCENT, contrast, accentForeground } from '../../lib/ui.svelte.js';
   import { formatSize } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
 
@@ -34,6 +34,10 @@
     ['light', 'sun', 'Light'],
     ['dark', 'moon', 'Dark'],
   ];
+
+  const isPreset = $derived(ACCENT_PRESETS.some(([hex]) => hex === accent.value));
+  // Accent used as text/links needs to read on both backgrounds.
+  const lowContrast = $derived(Math.min(contrast(accent.value, '#ffffff'), contrast(accent.value, '#0a0a0a')) < 2.2);
 </script>
 
 {#snippet section(title, description, body, footer)}
@@ -124,6 +128,53 @@
     </div>
   {/snippet}
   {@render section('Appearance', null, themeBody)}
+
+  {#snippet accentBody()}
+    <div class="grid gap-4">
+      <div class="flex flex-wrap items-center gap-2" role="radiogroup" aria-label="Accent colour">
+        {#each ACCENT_PRESETS as [hex, name] (hex)}
+          <button
+            type="button"
+            role="radio"
+            aria-checked={accent.value === hex}
+            aria-label={name}
+            title={name}
+            class="grid size-8 cursor-pointer place-items-center rounded-full ring-offset-2 ring-offset-bg transition-[scale,box-shadow] duration-150 hover:scale-110 {accent.value === hex
+              ? 'ring-2 ring-fg'
+              : ''}"
+            style:background-color={hex}
+            style:color={accentForeground(hex)}
+            onclick={() => setAccent(hex)}>
+            {#if accent.value === hex}<Icon name="check" class="size-4" />{/if}
+          </button>
+        {/each}
+        <span class="mx-1 h-6 w-px bg-line" aria-hidden="true"></span>
+        <label
+          class="relative grid size-8 cursor-pointer place-items-center rounded-full border border-dashed border-line-strong text-fg-muted hover:text-fg {!isPreset
+            ? 'ring-2 ring-fg ring-offset-2 ring-offset-bg'
+            : ''}"
+          title="Custom colour"
+          style:background-color={isPreset ? null : accent.value}>
+          <Icon name="plus" class="size-4 {isPreset ? '' : 'opacity-0'}" />
+          <input type="color" class="absolute inset-0 cursor-pointer opacity-0" value={accent.value} aria-label="Custom accent colour" oninput={(e) => setAccent(e.currentTarget.value)} />
+        </label>
+      </div>
+      <div class="flex flex-wrap items-center gap-3 rounded-md border border-line bg-subtle p-4">
+        <button type="button" class="btn btn-accent" tabindex="-1">Primary action</button>
+        <span class="badge badge-accent">Can edit</span>
+        <span class="link text-sm">A link</span>
+        <span class="flex items-center gap-1.5 text-sm"><Icon name="folder" class="size-4 text-accent-text" />Folder</span>
+      </div>
+      {#if lowContrast}
+        <p class="flex items-center gap-2 text-[13px] text-fg-muted"><Icon name="circle-alert" class="size-4" />This colour is hard to read on one of the themes; text uses an adjusted shade.</p>
+      {/if}
+    </div>
+  {/snippet}
+  {#snippet accentFooter()}
+    <p class="mr-auto text-xs text-fg-muted">Saved on this device only.</p>
+    <button type="button" class="btn btn-secondary" disabled={accent.value === DEFAULT_ACCENT} onclick={() => setAccent(DEFAULT_ACCENT)}>Reset to blue</button>
+  {/snippet}
+  {@render section('Accent colour', 'Used for buttons, links, folders and highlights.', accentBody, accentFooter)}
 
   {#snippet aboutBody()}
     <div class="grid gap-2 text-[13px] text-fg-muted">

@@ -69,8 +69,15 @@ pub async fn list(
     .bind(&f.node_id)
     .fetch_all(&state.db)
     .await?;
+    let mut visible = Vec::with_capacity(rows.len());
+    for r in rows {
+        if !access::is_trashed(&state.db, &r.2).await? {
+            visible.push(r);
+        }
+    }
     Ok(Json(
-        rows.into_iter()
+        visible
+            .into_iter()
             .map(
                 |(id, token, node_id, has_password, expires_at, created_at)| Link {
                     id,

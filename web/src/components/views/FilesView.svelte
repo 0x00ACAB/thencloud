@@ -1,11 +1,12 @@
 <script>
-  import { session, resolvePath, listFolder, createFolder, rename, remove, download, upload, refreshMe } from '../../lib/cloud.svelte.js';
+  import { session, resolvePath, listFolder, createFolder, rename, trash, untrash, download, upload, refreshMe } from '../../lib/cloud.svelte.js';
   import { toast, toastError, trackTransfer, errorMessage } from '../../lib/ui.svelte.js';
   import { formatSize, formatWhen, fullDate, fileIcon, plural } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
   import Menu from '../Menu.svelte';
   import NameDialog from '../dialogs/NameDialog.svelte';
-  import ConfirmDialog from '../dialogs/ConfirmDialog.svelte';
+  import VersionsDialog from '../dialogs/VersionsDialog.svelte';
+  import { fade, flip, flipParams } from '../../lib/motion.js';
   import MoveDialog from '../dialogs/MoveDialog.svelte';
   import ShareDialog from '../dialogs/ShareDialog.svelte';
   import LinkDialog from '../dialogs/LinkDialog.svelte';
@@ -134,6 +135,35 @@
     }
   }
 
+  async function moveToTrash(entry) {
+    try {
+      await trash(entry);
+      rows = rows.filter((r) => r.node.id !== entry.node.id);
+      const name = entry.meta.name;
+      if (isOwner) {
+        toast(`Moved ${name} to the trash`, {
+          icon: 'trash-2',
+          action: {
+            label: 'Undo',
+            onclick: async () => {
+              try {
+                await untrash(entry);
+                await load();
+              } catch (e) {
+                toastError(e);
+              }
+            },
+          },
+        });
+      } else {
+        toast(`Deleted ${name}. ${here.node.owner} can restore it from their trash.`, { icon: 'trash-2' });
+      }
+    } catch (e) {
+      toastError(e);
+      load();
+    }
+  }
+
   function activate(entry) {
     if (entry.node.kind === 'folder') open(entry.node.id);
     else downloadEntry(entry);
@@ -159,10 +189,10 @@
             ...(!folder
               ? [{ label: 'Upload new version', icon: 'file-up', onclick: () => ((versionTarget = entry), versionInput.click()) }]
               : []),
-            'sep',
-            { label: 'Delete', icon: 'trash-2', danger: true, onclick: () => (dialog = { type: 'delete', entry }) },
           ]
         : []),
+      ...(!folder ? [{ label: 'Version history', icon: 'refresh-cw', onclick: () => (dialog = { type: 'versions', entry }) }] : []),
+      ...(canWrite ? ['sep', { label: 'Move to trash', icon: 'trash-2', danger: true, onclick: () => moveToTrash(entry) }] : []),
     ];
   }
 
@@ -212,7 +242,15 @@
 
 <div class="card relative mt-6 overflow-hidden">
   {#if loading}
-    <div class="grid h-48 place-items-center text-fg-muted"><Icon name="loader-circle" class="spinner size-5" /></div>
+    <div aria-busy="true" aria-label="Loading">
+      <div class="h-9 border-b border-line"></div>
+      {#each [44, 32, 56, 38] as w, i (i)}
+        <div class="flex h-12 items-center gap-3 border-b border-line px-4 last:border-b-0">
+          <div class="skeleton size-4 shrink-0"></div>
+          <div class="skeleton h-3.5" style:width="{w}%"></div>
+        </div>
+      {/each}
+    </div>
   {:else if loadError}
     <div class="grid place-items-center gap-3 px-6 py-16 text-center">
       <Icon name="circle-alert" class="size-6 text-danger" />
@@ -223,7 +261,7 @@
       </div>
     </div>
   {:else if !rows.length}
-    <div class="grid place-items-center gap-1 px-6 py-20 text-center">
+    <div class="grid place-items-center gap-1 px-6 py-20 text-center animate-enter">
       <div class="mb-3 grid size-11 place-items-center rounded-lg border border-line bg-subtle">
         <Icon name={canWrite ? 'upload' : 'folder-open'} class="size-5 text-fg-muted" />
       </div>
@@ -233,7 +271,7 @@
       </p>
     </div>
   {:else}
-    <table class="table">
+    <table class="table animate-enter">
       <thead>
         <tr>
           <th>Name</th>
@@ -245,7 +283,7 @@
       <tbody>
         {#each rows as entry (entry.node.id)}
           {@const folder = entry.node.kind === 'folder'}
-          <tr class="group">
+          <tr class="group" in:fade out:fade={{ duration: 120 }} animate:flip={flipParams()}>
             <td class="max-w-0">
               <button type="button" class="flex max-w-full cursor-pointer items-center gap-3 text-left" onclick={() => activate(entry)}>
                 <Icon name={folder ? 'folder' : fileIcon(entry.meta)} class="size-4 shrink-0 {folder ? 'text-accent-text' : 'text-fg-muted'}" />
@@ -303,21 +341,8 @@
       load();
     }}
     onclose={close} />
-{:else if dialog?.type === 'delete'}
-  {@const folder = dialog.entry.node.kind === 'folder'}
-  <ConfirmDialog
-    title="Delete {dialog.entry.meta.name}?"
-    description={folder
-      ? 'This folder and everything inside it will be permanently deleted, for everyone it is shared with.'
-      : 'This file will be permanently deleted, for everyone it is shared with.'}
-    confirmLabel="Delete"
-    danger
-    onconfirm={async () => {
-      await remove(dialog.entry);
-      await load();
-      refreshMe().catch(() => {});
-    }}
-    onclose={close} />
+{:else if dialog?.type === 'versions'}
+  <VersionsDialog entry={dialog.entry} {canWrite} onchanged={() => (load(), refreshMe().catch(() => {}))} onclose={close} />
 {:else if dialog?.type === 'share'}
   <ShareDialog entry={dialog.entry} onclose={close} />
 {:else if dialog?.type === 'link'}

@@ -11,6 +11,7 @@
   import SharedByMe from './views/SharedByMe.svelte';
   import LinksView from './views/LinksView.svelte';
   import SettingsView from './views/SettingsView.svelte';
+  import TrashView from './views/TrashView.svelte';
 
   const rootId = session.me.keys.root_node_id;
 
@@ -36,6 +37,7 @@
     { name: 'shared-with-me', label: 'Shared with me', icon: 'inbox', to: () => ({ name: 'shared-with-me' }) },
     { name: 'shared-by-me', label: 'Shared by me', icon: 'users', to: () => ({ name: 'shared-by-me' }) },
     { name: 'links', label: 'Public links', icon: 'link', to: () => ({ name: 'links' }) },
+    { name: 'trash', label: 'Trash', icon: 'trash-2', to: () => ({ name: 'trash' }) },
     { name: 'settings', label: 'Settings', icon: 'settings', to: () => ({ name: 'settings' }) },
   ];
 
@@ -82,7 +84,7 @@
         </div>
         <Menu
           label="Account"
-          buttonClass="grid size-8 cursor-pointer place-items-center rounded-full bg-accent text-xs font-semibold text-white uppercase ring-offset-2 ring-offset-bg hover:ring-2 hover:ring-line-strong"
+          buttonClass="grid size-8 cursor-pointer place-items-center rounded-full bg-accent text-xs font-semibold text-accent-fg uppercase ring-offset-2 ring-offset-bg hover:ring-2 hover:ring-line-strong"
           items={[
             { label: 'Settings', icon: 'settings', onclick: () => go({ name: 'settings' }) },
             'sep',
@@ -125,7 +127,8 @@
     </aside>
 
     <main class="min-w-0 flex-1 px-4 py-6 md:px-8 md:py-8">
-      <div class="mx-auto max-w-5xl">
+      {#key view.name}
+      <div class="mx-auto max-w-5xl animate-enter">
         {#if view.name === 'files'}
           <FilesView folderId={view.folderId} {go} bind:inShare />
         {:else if view.name === 'shared-with-me'}
@@ -134,10 +137,13 @@
           <SharedByMe {go} />
         {:else if view.name === 'links'}
           <LinksView {go} />
+        {:else if view.name === 'trash'}
+          <TrashView {go} />
         {:else if view.name === 'settings'}
           <SettingsView />
         {/if}
       </div>
+      {/key}
     </main>
   </div>
 </div>

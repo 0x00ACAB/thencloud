@@ -363,6 +363,31 @@ impl Client {
             .await
     }
 
+    async fn trash(&self, h: &Harness) -> Vec<TrashItem> {
+        let r = h.get("/api/trash", &self.token).await;
+        assert_eq!(r.status, StatusCode::OK);
+        r.json()
+    }
+
+    async fn delete(&self, h: &Harness, id: &str) -> StatusCode {
+        h.call(
+            Method::DELETE,
+            &format!("/api/nodes/{id}"),
+            Some(&self.token),
+            None::<()>,
+        )
+        .await
+        .status
+    }
+
+    async fn versions(&self, h: &Harness, id: &str) -> Vec<FileVersion> {
+        let r = h
+            .get(&format!("/api/nodes/{id}/versions"), &self.token)
+            .await;
+        assert_eq!(r.status, StatusCode::OK, "{r:?}");
+        r.json()
+    }
+
     async fn me(&self, h: &Harness) -> Me {
         h.get("/api/me", &self.token).await.json()
     }
@@ -790,7 +815,7 @@ async fn full_lifecycle_is_zero_knowledge() {
         }
     }
 
-    // --- new version replaces old content; quota tracks it ------------------
+    // --- a new version becomes current; the old one stays in the history -----
     let used_before = alice.me(&h).await.used_bytes;
     let moved_now: Node = h
         .get(&format!("/api/nodes/{}", file.id), &alice.token)
@@ -802,14 +827,14 @@ async fn full_lifecycle_is_zero_knowledge() {
         .await
         .unwrap();
     assert_ne!(v2.version.as_ref().unwrap().id, old_vid);
-    assert!(alice.me(&h).await.used_bytes < used_before);
+    assert!(alice.me(&h).await.used_bytes > used_before);
     let blob_dir = h
         .dir
         .path()
         .join("data/blobs")
         .join(&old_vid[..2])
         .join(&old_vid);
-    assert!(!blob_dir.exists(), "old version blobs are deleted");
+    assert!(blob_dir.exists(), "old version blobs are kept");
     // Uploading on top of a stale revision fails.
     let err = alice
         .upload(&h, "", Some(&moved_now), "renamed-plan.txt", b"stale")
@@ -853,6 +878,7 @@ async fn full_lifecycle_is_zero_knowledge() {
         StatusCode::NOT_FOUND
     );
 
+    let used = alice.me(&h).await.used_bytes;
     for folder in [&other, &docs] {
         let r = h
             .call(
@@ -864,6 +890,14 @@ async fn full_lifecycle_is_zero_knowledge() {
             .await;
         assert_eq!(r.status, StatusCode::NO_CONTENT);
     }
+    // Deleted items sit in the trash (still counted) until it's emptied.
+    assert_eq!(alice.me(&h).await.used_bytes, used);
+    assert_eq!(alice.trash(&h).await.len(), 2);
+    let r = h
+        .call(Method::DELETE, "/api/trash", Some(&alice.token), None::<()>)
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    assert!(alice.trash(&h).await.is_empty());
     assert_eq!(alice.me(&h).await.used_bytes, 0);
     let mut files = Vec::new();
     all_files(&h.dir.path().join("data/blobs"), &mut files);
@@ -1072,4 +1106,428 @@ async fn security_headers_are_set() {
             .unwrap()
             .contains("default-src 'self'")
     );
+}
+
+/// Download a specific (possibly old) version of a file.
+async fn download_version(
+    h: &Harness,
+    c: &Client,
+    node: &Node,
+    key: &Key,
+    v: &FileVersion,
+) -> Vec<u8> {
+    let as_node = Node {
+        enc_metadata: v.enc_metadata.clone(),
+        version: Some(VersionInfo {
+            id: v.id.clone(),
+            enc_content_key: v.enc_content_key.clone(),
+            chunk_count: v.chunk_count,
+            size: v.size,
+            created_at: v.created_at,
+        }),
+        ..node.clone()
+    };
+    let (_, data) = download_via(
+        h,
+        &as_node,
+        key,
+        |i| format!("/api/nodes/{}/versions/{}/chunks/{i}", node.id, v.id),
+        Some(&c.token),
+        &[],
+    )
+    .await;
+    data
+}
+
+fn blob_exists(h: &Harness, version_id: &str) -> bool {
+    h.dir
+        .path()
+        .join("data/blobs")
+        .join(&version_id[..2])
+        .join(version_id)
+        .exists()
+}
+
+#[tokio::test]
+async fn version_history_restore_and_limits() {
+    let h = Harness::with_config(|c| c.max_versions = 3).await;
+    let alice = register(&h, "alice", "pw").await;
+    let bob = register(&h, "bob", "pw").await;
+
+    let f = alice
+        .upload(&h, &alice.root, None, "doc.txt", b"first")
+        .await
+        .unwrap();
+    let key = alice.key_of(&h, &f.id).await;
+    let f = alice
+        .upload(&h, "", Some(&f), "doc.txt", b"second!")
+        .await
+        .unwrap();
+    let f = alice
+        .upload(&h, "", Some(&f), "doc.txt", b"third!!!")
+        .await
+        .unwrap();
+
+    let vs = alice.versions(&h, &f.id).await;
+    assert_eq!(vs.len(), 3);
+    assert!(vs[0].current, "newest first, and it's current");
+    assert!(vs[1..].iter().all(|v| !v.current));
+    assert_eq!(vs[0].created_by, "alice");
+    // Each version decrypts to its own content, with its own metadata.
+    assert_eq!(
+        download_version(&h, &alice, &f, &key, &vs[2]).await,
+        b"first"
+    );
+    assert_eq!(
+        download_version(&h, &alice, &f, &key, &vs[1]).await,
+        b"second!"
+    );
+
+    // Restore the first version: the client re-encrypts the node metadata
+    // with the current name and that version's size.
+    let first = vs[2].clone();
+    let r = h
+        .call(
+            Method::POST,
+            &format!("/api/nodes/{}/versions/{}/restore", f.id, first.id),
+            Some(&alice.token),
+            Some(RestoreVersionRequest {
+                enc_metadata: B64(c::encrypt_metadata(&key, &f.id, &meta("doc.txt", 5)).unwrap()),
+                if_revision: Some(f.revision),
+            }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{r:?}");
+    let f: Node = r.json();
+    assert_eq!(f.version.as_ref().unwrap().id, first.id);
+    assert_eq!(alice.download(&h, &f, &key).await.1, b"first");
+    let vs = alice.versions(&h, &f.id).await;
+    assert_eq!(vs.len(), 3, "restoring doesn't add or drop versions");
+    assert!(vs.iter().find(|v| v.id == first.id).unwrap().current);
+
+    // A fourth upload pushes out the oldest upload (pruning goes by upload
+    // time, even for a version that was restored in between).
+    let oldest_non_current = vs.last().unwrap().id.clone();
+    let f = alice
+        .upload(&h, "", Some(&f), "doc.txt", b"fourth")
+        .await
+        .unwrap();
+    let vs = alice.versions(&h, &f.id).await;
+    assert_eq!(vs.len(), 3);
+    assert!(!vs.iter().any(|v| v.id == oldest_non_current));
+    assert!(!blob_exists(&h, &oldest_non_current));
+
+    // Share read-only with bob: he can see and download history, not change it.
+    let pk: UserPublicKey = h
+        .get("/api/users/bob/public-key", &alice.token)
+        .await
+        .json();
+    let r = h
+        .call(
+            Method::POST,
+            "/api/shares",
+            Some(&alice.token),
+            Some(CreateShareRequest {
+                node_id: f.id.clone(),
+                recipient: "bob".into(),
+                wrapped_key: B64(c::seal_share_key(&pk.public_key, &key, &f.id).unwrap()),
+                permission: Permission::Read,
+            }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED);
+    let bvs = bob.versions(&h, &f.id).await;
+    assert_eq!(bvs.len(), 3);
+    let old = bvs.iter().find(|v| !v.current).unwrap();
+    let bob_key = bob.key_of(&h, &f.id).await;
+    download_version(&h, &bob, &f, &bob_key, old).await;
+    let r = h
+        .call(
+            Method::DELETE,
+            &format!("/api/nodes/{}/versions/{}", f.id, old.id),
+            Some(&bob.token),
+            None::<()>,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN);
+
+    // The owner can delete old versions (freeing space), not the current one.
+    let used = alice.me(&h).await.used_bytes;
+    let r = h
+        .call(
+            Method::DELETE,
+            &format!("/api/nodes/{}/versions/{}", f.id, old.id),
+            Some(&alice.token),
+            None::<()>,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    assert_eq!(alice.me(&h).await.used_bytes, used - old.size);
+    assert!(!blob_exists(&h, &old.id));
+    let current = alice
+        .versions(&h, &f.id)
+        .await
+        .into_iter()
+        .find(|v| v.current)
+        .unwrap();
+    let r = h
+        .call(
+            Method::DELETE,
+            &format!("/api/nodes/{}/versions/{}", f.id, current.id),
+            Some(&alice.token),
+            None::<()>,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn full_quota_prunes_old_versions_first() {
+    // Each 1000-byte upload is 1040 bytes of ciphertext.
+    let h = Harness::with_config(|c| c.default_quota = 3000).await;
+    let a = register(&h, "alice", "pw").await;
+    let f = a
+        .upload(&h, &a.root, None, "big.bin", &[1u8; 1000])
+        .await
+        .unwrap();
+    let f = a
+        .upload(&h, "", Some(&f), "big.bin", &[2u8; 1000])
+        .await
+        .unwrap();
+    let before = a.versions(&h, &f.id).await;
+    assert_eq!(before.len(), 2);
+    // A third version doesn't fit until the oldest one is pruned.
+    let f = a
+        .upload(&h, "", Some(&f), "big.bin", &[3u8; 1000])
+        .await
+        .unwrap();
+    let after = a.versions(&h, &f.id).await;
+    assert_eq!(after.len(), 2);
+    assert!(
+        !after.iter().any(|v| v.id == before[1].id),
+        "oldest version pruned"
+    );
+    assert!(a.me(&h).await.used_bytes <= 3000);
+    // Current files are never pruned: a second file that can't fit fails.
+    let err = a
+        .upload(&h, &a.root, None, "other.bin", &[4u8; 2000])
+        .await
+        .unwrap_err();
+    assert_eq!(err.status, StatusCode::INSUFFICIENT_STORAGE);
+    assert_eq!(
+        a.download(&h, &f, &a.key_of(&h, &f.id).await).await.1,
+        vec![3u8; 1000]
+    );
+}
+
+#[tokio::test]
+async fn trash_hides_restores_and_purges() {
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "pw").await;
+    let bob = register(&h, "bob", "pw").await;
+    let (folder, folder_key) = alice.mkdir(&h, &alice.root, "Photos").await;
+    let file = alice
+        .upload(&h, &folder, None, "cat.jpg", b"meow")
+        .await
+        .unwrap();
+    let file_key = alice.key_of(&h, &file.id).await;
+
+    // Share the folder with bob (write) and make a public link to it.
+    let pk: UserPublicKey = h
+        .get("/api/users/bob/public-key", &alice.token)
+        .await
+        .json();
+    h.call(
+        Method::POST,
+        "/api/shares",
+        Some(&alice.token),
+        Some(CreateShareRequest {
+            node_id: folder.clone(),
+            recipient: "bob".into(),
+            wrapped_key: B64(c::seal_share_key(&pk.public_key, &folder_key, &folder).unwrap()),
+            permission: Permission::Write,
+        }),
+    )
+    .await;
+    let link: Link = h
+        .call(
+            Method::POST,
+            "/api/links",
+            Some(&alice.token),
+            Some(CreateLinkRequest {
+                node_id: folder.clone(),
+                password: None,
+                expires_at: None,
+            }),
+        )
+        .await
+        .json();
+    let public = format!("/api/public/{}", link.token);
+
+    // Bob deletes the file inside the shared folder: it lands in *alice's* trash.
+    assert_eq!(bob.delete(&h, &file.id).await, StatusCode::NO_CONTENT);
+    assert!(bob.trash(&h).await.is_empty());
+    let t = alice.trash(&h).await;
+    assert_eq!(t.len(), 1);
+    assert_eq!(t[0].trashed_by, "bob");
+    assert!(
+        alice
+            .children(&h, &folder)
+            .await
+            .json::<Vec<Node>>()
+            .is_empty()
+    );
+
+    // The trash listing carries the path from the root, so the client can
+    // unwrap the key and show the name and where it was.
+    let ids: Vec<&str> = t[0].path.iter().map(|n| n.id.as_str()).collect();
+    assert_eq!(
+        ids,
+        vec![alice.root.as_str(), folder.as_str(), file.id.as_str()]
+    );
+    let mut k = c::unwrap_node_key(&alice.mk, &t[0].path[0].enc_key, &t[0].path[0].id).unwrap();
+    for n in &t[0].path[1..] {
+        k = c::unwrap_node_key(&k, &n.enc_key, &n.id).unwrap();
+    }
+    assert_eq!(
+        c::decrypt_metadata(&k, &file.id, &t[0].node.enc_metadata)
+            .unwrap()
+            .name,
+        "cat.jpg"
+    );
+
+    // Restore puts it back where it was, still decryptable.
+    let r = h
+        .call(
+            Method::POST,
+            &format!("/api/trash/{}/restore", file.id),
+            Some(&alice.token),
+            Some(RestoreTrashRequest::default()),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{r:?}");
+    let restored: Node = r.json();
+    assert_eq!(alice.download(&h, &restored, &file_key).await.1, b"meow");
+
+    // Trashing the folder hides the whole subtree from everyone.
+    assert_eq!(alice.delete(&h, &folder).await, StatusCode::NO_CONTENT);
+    assert_eq!(
+        alice.children(&h, &folder).await.status,
+        StatusCode::NOT_FOUND
+    );
+    let r = h
+        .get(&format!("/api/nodes/{}/chunks/0", file.id), &alice.token)
+        .await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+    assert_eq!(
+        bob.children(&h, &folder).await.status,
+        StatusCode::NOT_FOUND
+    );
+    assert!(
+        h.get("/api/shares/incoming", &bob.token)
+            .await
+            .json::<Vec<IncomingShare>>()
+            .is_empty()
+    );
+    assert!(
+        h.get("/api/links", &alice.token)
+            .await
+            .json::<Vec<Link>>()
+            .is_empty()
+    );
+    let r = h
+        .raw(Method::GET, &public, None, &[], Body::empty(), None)
+        .await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+    // Nothing can be created in a trashed folder.
+    let id = c::new_id();
+    let r = h
+        .call(
+            Method::POST,
+            "/api/nodes/folder",
+            Some(&alice.token),
+            Some(CreateFolderRequest {
+                id: id.clone(),
+                parent_id: folder.clone(),
+                enc_key: B64(c::wrap_node_key(&folder_key, &Key::generate(), &id)),
+                enc_metadata: B64(
+                    c::encrypt_metadata(&Key::generate(), &id, &meta("x", 0)).unwrap()
+                ),
+            }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+
+    // Trash the file and then its folder, and restore the file on its own:
+    // its folder is in the trash, so the client must pick another folder and
+    // re-wrap the file's key for it.
+    let r = h
+        .call(
+            Method::POST,
+            &format!("/api/trash/{folder}/restore"),
+            Some(&alice.token),
+            Some(RestoreTrashRequest::default()),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+    assert_eq!(alice.delete(&h, &file.id).await, StatusCode::NO_CONTENT);
+    assert_eq!(alice.delete(&h, &folder).await, StatusCode::NO_CONTENT);
+    assert_eq!(alice.trash(&h).await.len(), 2);
+    let r = h
+        .call(
+            Method::POST,
+            &format!("/api/trash/{}/restore", file.id),
+            Some(&alice.token),
+            Some(RestoreTrashRequest::default()),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT);
+    assert_eq!(r.error(), "parent_unavailable");
+    let root_key = alice.key_of(&h, &alice.root).await;
+    let r = h
+        .call(
+            Method::POST,
+            &format!("/api/trash/{}/restore", file.id),
+            Some(&alice.token),
+            Some(RestoreTrashRequest {
+                parent_id: Some(alice.root.clone()),
+                enc_key: Some(B64(c::wrap_node_key(&root_key, &file_key, &file.id))),
+            }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{r:?}");
+    let kids: Vec<Node> = alice.children(&h, &alice.root).await.json();
+    assert_eq!(names(&kids, &root_key), vec!["cat.jpg"]);
+
+    // Other users can't see or touch alice's trash.
+    let r = h
+        .call(
+            Method::DELETE,
+            &format!("/api/trash/{folder}"),
+            Some(&bob.token),
+            None::<()>,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+
+    // Purging one item frees its space; the janitor purges expired items.
+    let r = h
+        .call(
+            Method::DELETE,
+            &format!("/api/trash/{folder}"),
+            Some(&alice.token),
+            None::<()>,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    assert!(alice.trash(&h).await.is_empty());
+    assert_eq!(alice.delete(&h, &file.id).await, StatusCode::NO_CONTENT);
+    assert_eq!(
+        thencloud_server::routes::trash::purge_expired(&h.state, 0)
+            .await
+            .unwrap(),
+        1
+    );
+    assert!(alice.trash(&h).await.is_empty());
+    assert_eq!(alice.me(&h).await.used_bytes, 0);
 }

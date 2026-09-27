@@ -124,6 +124,10 @@ pub struct Me {
     pub quota_bytes: i64,
     pub used_bytes: i64,
     pub keys: KeyBundle,
+    /// Versions kept per file, including the current one.
+    pub max_versions: i64,
+    /// Days before trashed items are purged.
+    pub trash_days: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -210,6 +214,57 @@ pub struct ShareKey {
     pub share_id: String,
     pub wrapped_key: B64,
     pub permission: Permission,
+}
+
+// ---------------------------------------------------------------------------
+// Versions
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileVersion {
+    pub id: String,
+    pub enc_content_key: B64,
+    /// Metadata the version was uploaded with (plaintext size, mtime).
+    pub enc_metadata: B64,
+    pub chunk_count: u32,
+    /// Stored (ciphertext) size in bytes.
+    pub size: i64,
+    pub created_at: i64,
+    pub created_by: String,
+    pub current: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RestoreVersionRequest {
+    /// The node's metadata re-encrypted for the restored version (current
+    /// name, the version's size and mtime).
+    pub enc_metadata: B64,
+    #[serde(default)]
+    pub if_revision: Option<i64>,
+}
+
+// ---------------------------------------------------------------------------
+// Trash
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrashItem {
+    pub node: Node,
+    /// Chain from the owner's root folder down to (and including) the
+    /// trashed node, so the client can unwrap its key and show where it was.
+    pub path: Vec<Node>,
+    pub trashed_at: i64,
+    pub trashed_by: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct RestoreTrashRequest {
+    /// Restore into a different folder (e.g. when the original one is gone).
+    /// Requires `enc_key` re-wrapped under that folder's key.
+    #[serde(default)]
+    pub parent_id: Option<String>,
+    #[serde(default)]
+    pub enc_key: Option<B64>,
 }
 
 // ---------------------------------------------------------------------------
