@@ -4,6 +4,7 @@
   import { formatSize, formatWhen, fullDate, plural, sortEntries, nameError } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
   import FileIcon from '../FileIcon.svelte';
+  import FolderIcon from '../FolderIcon.svelte';
   import Menu from '../Menu.svelte';
   import NameDialog from '../dialogs/NameDialog.svelte';
   import VersionsDialog from '../dialogs/VersionsDialog.svelte';
@@ -698,7 +699,7 @@
           <tr class="group">
             <td class="max-w-0">
               <button type="button" class="flex max-w-full cursor-pointer items-center gap-3 text-left" onclick={() => openFound(r)}>
-                {#if folder}<Icon name="folder" class="size-4 shrink-0 text-accent-text" />{:else}<FileIcon meta={r.meta} />{/if}
+                {#if folder}<FolderIcon name={r.meta.name} />{:else}<FileIcon meta={r.meta} />{/if}
                 <span class="truncate font-medium group-hover:underline group-hover:decoration-line-strong group-hover:underline-offset-4">{r.meta.name}</span>
               </button>
             </td>
@@ -789,7 +790,7 @@
                     e.preventDefault();
                     finishRename(entry);
                   }}>
-                  {#if folder}<Icon name="folder" class="size-4 shrink-0 text-accent-text" />{:else}<FileIcon meta={entry.meta} />{/if}
+                  {#if folder}<FolderIcon name={entry.meta.name} />{:else}<FileIcon meta={entry.meta} />{/if}
                   <input
                     use:selectName={entry.meta.name}
                     class="input h-7 max-w-md px-2 font-medium"
@@ -801,7 +802,7 @@
                 </form>
               {:else}
                 <button type="button" class="row-open flex max-w-full cursor-pointer items-center gap-3 text-left" onclick={() => activate(entry)}>
-                  {#if folder}<Icon name="folder" class="size-4 shrink-0 text-accent-text" />{:else}<FileIcon meta={entry.meta} />{/if}
+                  {#if folder}<FolderIcon name={entry.meta.name} />{:else}<FileIcon meta={entry.meta} />{/if}
                   <span class="truncate font-medium group-hover:underline group-hover:underline-offset-4 group-hover:decoration-line-strong">{entry.meta.name}</span>
                 </button>
               {/if}

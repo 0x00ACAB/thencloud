@@ -77,7 +77,7 @@ Bigger pieces:
 - [x] Images in Markdown previews by relative path (`![](img/photo.png)`): found by decrypted name from the file's folder and shown from a blob: URL; nothing is requested by path, and web images still aren't loaded
 - [ ] Previews: streamed video (today the whole file is decrypted into memory first, up to 256 MB)
 - [x] **Per-file-type icons**: choose Minimal (Lucide), Material, Symbols or Documents (document-shaped icons, like a drive) in Settings; served locally, and only the chosen pack's tables and the icons on screen are downloaded
-- [ ] Optionally per-name folder icons
+- [x] Optionally per-name folder icons ("Folder icons by name" in Settings, for Material and Symbols: src, images, docs...)
 - [x] **Multi-select** with bulk move, download and delete (checkboxes, shift-click ranges, `x`, select all, a floating action bar; one Undo for a bulk trash)
 - [x] **Folder uploads** (drag a whole folder in, or Upload > Folder) and **zip downloads** of folders, selections and public folder links, zipped in the browser
 - [ ] Streamed zips for very large folders (today a zip is built in memory, up to 4 GB)
