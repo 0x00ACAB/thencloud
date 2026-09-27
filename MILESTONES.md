@@ -107,9 +107,10 @@ Smaller things:
 - [ ] **Key transparency**: a signed or auditable key directory, so even a first share doesn't depend on comparing fingerprints
 - [x] **Upload-only "file drop" links**: the link carries the owner's public key after `#`; visitors encrypt each file and seal its key to the owner (bound to the file and folder ids), and see nothing in the folder. Dropped files stay hidden until the owner's client wraps their keys under the folder key
 - [x] **Streaming downloads** through a service worker, so large files aren't buffered in memory. The page decrypts; the worker only relays pieces and never sees a key
-- [ ] **Native CLI and desktop sync client** reusing `thencloud-crypto`
+- [x] **Native CLI** reusing `thencloud-crypto` (`crates/thencloud-cli`): sign in with an app password; `ls`, `get`, `put`, `mkdir`, and one-way `pull`/`push` of folders
+- [ ] **Desktop sync client**: two-way sync with conflict handling
 - [x] **Encrypted name index**: each node carries a keyed hash of its (lower-cased) name under its folder's key, and the server refuses a second one in the same folder (409 `name_taken`) without learning the names. Uploads keep both as "name (2)", restores and dropped files pick a free name, and older items are tagged the first time their folder is listed
 - [x] **Metadata padding**: file contents are padded with zeros to a Padmé bucket (at most about 12% more) before encryption, and encrypted metadata to 128-byte steps, so the server sees only rough sizes. The real size lives in the encrypted metadata
 - [ ] **Calendar and contacts**, end-to-end encrypted
-- [ ] **Linux mount**: Mount the disk (or a subdirectory) as a linux drive
+- [x] **Linux mount**: `thencloud mount` shows My files (or a folder) as a drive through FUSE, for Dolphin, Nautilus and the shell. Reads are fetched and decrypted a chunk at a time; writes are uploaded as a new version on close; deletes go to the trash; an editor's save-and-rename becomes a new version of the original; conflicting edits are kept as a copy
 - [ ] **S3-compatible blob store** behind the existing `BlobStore` interface
