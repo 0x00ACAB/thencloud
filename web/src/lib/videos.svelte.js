@@ -9,6 +9,7 @@
 
 import { SvelteMap } from 'svelte/reactivity';
 import { session, resolvePath, walkTree, openEntry, fetchEntry, loadAppData, saveAppData, rename } from './cloud.svelte.js';
+import { isSubtitle, matchSubtitles } from './subtitles.js';
 import { previewKind, extension, MAX_PREVIEW } from './preview.js';
 import { parseEpisode, fromTitle, episodeLabel, safeName } from './episodes.js';
 import { readVideoTags } from './videotags.js';
@@ -105,6 +106,7 @@ export async function scanVideos() {
     const folders = new Map([[rootId, { path: [], names: [] }]]);
     const images = new Map(); // folder id -> poster.jpg and the like
     const named = new Map(); // "folder id/stem" -> image named after a video
+    const subtitles = new Map(); // folder id -> .srt and .vtt files in it
     const files = [];
     await walkTree(root, {
       signal: ctl.signal,
@@ -114,6 +116,9 @@ export async function scanVideos() {
         if (videoType(r.meta)) {
           files.push(r);
           videos.found++;
+        } else if (isSubtitle(r.meta.name)) {
+          if (!subtitles.has(r.parentId)) subtitles.set(r.parentId, []);
+          subtitles.get(r.parentId).push(r);
         } else if (POSTER_TYPES.has(previewKind(r.meta)?.type) && r.meta.size < 16 << 20) {
           named.set(`${r.parentId}/${stem(r.meta.name).replace(/-poster$/, '')}`, r);
           const best = images.get(r.parentId);
@@ -127,7 +132,7 @@ export async function scanVideos() {
       return { id: r.node.id, entry: r, parentId: r.parentId, path: [rootId, ...f.path], guess: parseEpisode(r.meta.name, f.names) };
     });
     videos.rootName = root.meta.name;
-    scanned.value = { rootId, items, images, named };
+    scanned.value = { rootId, items, images, named, subtitles };
   } catch (e) {
     if (!ctl.signal.aborted) videos.error = errorMessage(e);
   } finally {
@@ -291,8 +296,13 @@ export async function renameFiles(list) {
   let n = 0;
   try {
     for (const { v, name } of todo) {
+      const subs = subtitlesFor(v);
       await rename(v.entry, name);
       n++;
+      // Subtitles keep going with it: "Old.en.srt" becomes "New.en.srt".
+      const oldBase = v.entry.meta.name.replace(/\.[^.]+$/, '').length;
+      const newBase = name.replace(/\.[^.]+$/, '');
+      for (const t of subs) await rename(t.entry, newBase + t.entry.meta.name.slice(oldBase)).catch(() => {});
     }
   } finally {
     if (n) await scanVideos();
@@ -415,6 +425,11 @@ export function nextUp(series) {
 export const seriesOf = (v) => catalogue.value?.series.find((s) => s.episodes.includes(v)) ?? null;
 
 // ----------------------------------------------------------------- player
+
+/** Subtitle files named after `v`, in its folder: [{ entry, lang, label }]. */
+export function subtitlesFor(v) {
+  return matchSubtitles(v.entry.meta.name, scanned.value?.subtitles?.get(v.parentId) ?? []);
+}
 
 /** A URL `v` plays from: streamed through the worker, else the whole file in memory. { url, close }. */
 export async function openVideo(v) {

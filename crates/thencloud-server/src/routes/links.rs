@@ -29,6 +29,14 @@ pub async fn create(
     {
         return Err(AppError::bad("upload-only links are for folders"));
     }
+    if req.max_opens.is_some_and(|n| !(1..=1_000_000).contains(&n)) {
+        return Err(AppError::bad("max_opens must be between 1 and 1000000"));
+    }
+    if req.upload_only && req.max_opens.is_some() {
+        return Err(AppError::bad(
+            "upload-only links can't have a limit on opens",
+        ));
+    }
     let t = now();
     if req.expires_at.is_some_and(|e| e <= t) {
         return Err(AppError::bad("expires_at must be in the future"));
@@ -46,10 +54,12 @@ pub async fn create(
         expires_at: req.expires_at,
         created_at: t,
         upload_only: req.upload_only,
+        max_opens: req.max_opens,
+        opens: 0,
     };
     sqlx::query(
         "INSERT INTO public_links (id, token, node_id, owner_id, password_hash, expires_at, created_at, \
-         upload_only) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+         upload_only, max_opens) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&link.id)
     .bind(&link.token)
@@ -59,13 +69,24 @@ pub async fn create(
     .bind(link.expires_at)
     .bind(t)
     .bind(link.upload_only)
+    .bind(link.max_opens)
     .execute(&state.db)
     .await?;
     Ok((StatusCode::CREATED, Json(link)))
 }
 
-/// `(id, token, node_id, has_password, expires_at, created_at, upload_only)`
-type LinkRow = (String, String, String, bool, Option<i64>, i64, bool);
+#[derive(sqlx::FromRow)]
+struct LinkRow {
+    id: String,
+    token: String,
+    node_id: String,
+    has_password: bool,
+    expires_at: Option<i64>,
+    created_at: i64,
+    upload_only: bool,
+    max_opens: Option<i64>,
+    opens: i64,
+}
 
 pub async fn list(
     State(state): State<AppState>,
@@ -73,7 +94,8 @@ pub async fn list(
     Query(f): Query<NodeFilter>,
 ) -> Result<Json<Vec<Link>>> {
     let rows: Vec<LinkRow> = sqlx::query_as(
-        "SELECT id, token, node_id, password_hash IS NOT NULL, expires_at, created_at, upload_only FROM public_links \
+        "SELECT id, token, node_id, password_hash IS NOT NULL AS has_password, expires_at, created_at, upload_only, \
+         max_opens, opens FROM public_links \
          WHERE owner_id = ? AND (? IS NULL OR node_id = ?) ORDER BY created_at",
     )
     .bind(&user.id)
@@ -83,24 +105,24 @@ pub async fn list(
     .await?;
     let mut visible = Vec::with_capacity(rows.len());
     for r in rows {
-        if !access::is_trashed(&state.db, &r.2).await? {
+        if !access::is_trashed(&state.db, &r.node_id).await? {
             visible.push(r);
         }
     }
     Ok(Json(
         visible
             .into_iter()
-            .map(
-                |(id, token, node_id, has_password, expires_at, created_at, upload_only)| Link {
-                    id,
-                    token,
-                    node_id,
-                    has_password,
-                    expires_at,
-                    created_at,
-                    upload_only,
-                },
-            )
+            .map(|r| Link {
+                id: r.id,
+                token: r.token,
+                node_id: r.node_id,
+                has_password: r.has_password,
+                expires_at: r.expires_at,
+                created_at: r.created_at,
+                upload_only: r.upload_only,
+                max_opens: r.max_opens,
+                opens: r.opens,
+            })
             .collect(),
     ))
 }

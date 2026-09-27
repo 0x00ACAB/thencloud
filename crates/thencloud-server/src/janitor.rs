@@ -1,4 +1,4 @@
-//! Periodic cleanup of expired uploads, sessions and links, and thinning
+//! Periodic cleanup of expired uploads, sessions, links and shares, and thinning
 //! of old file versions.
 
 use std::time::Duration;
@@ -45,6 +45,15 @@ pub async fn run_once(state: &AppState) -> Result<()> {
             .bind(t)
             .execute(&state.db)
             .await?;
+    let ended: Vec<(String, String)> = sqlx::query_as(
+        "DELETE FROM shares WHERE expires_at IS NOT NULL AND expires_at <= ? RETURNING owner_id, recipient_id",
+    )
+    .bind(t)
+    .fetch_all(&state.db)
+    .await?;
+    for (owner, recipient) in &ended {
+        crate::routes::avatars::drop_unrelated_grants(state, owner, recipient).await?;
+    }
     sqlx::query("DELETE FROM auth_challenges WHERE expires_at <= ?")
         .bind(t)
         .execute(&state.db)
@@ -59,6 +68,7 @@ pub async fn run_once(state: &AppState) -> Result<()> {
     if !expired.is_empty()
         || sessions.rows_affected() > 0
         || links.rows_affected() > 0
+        || !ended.is_empty()
         || trashed > 0
         || thinned > 0
     {
@@ -66,6 +76,7 @@ pub async fn run_once(state: &AppState) -> Result<()> {
             uploads = expired.len(),
             sessions = sessions.rows_affected(),
             links = links.rows_affected(),
+            shares = ended.len(),
             trashed,
             thinned,
             "janitor cleaned up"

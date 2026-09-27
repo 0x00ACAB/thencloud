@@ -289,6 +289,9 @@ export async function logout() {
     /* the session is dropped locally either way */
   }
   // A full reload is the most reliable way to drop every key from memory.
+  // The next person to sign in here starts at their own files, not in our
+  // last folder.
+  history.replaceState(null, '', location.pathname);
   location.reload();
 }
 
@@ -335,6 +338,15 @@ export async function createRecoveryKey(password) {
     d.free();
     rk.fill(0);
   }
+}
+
+/** Delete the account and everything in it, for good, then start over. */
+export async function deleteAccount(password) {
+  await api('POST', '/api/me/delete', { body: { current_auth_key: await authKeyFor(password) } });
+  await forgetSession();
+  history.replaceState(null, '', location.pathname);
+  location.reload();
+  await new Promise(() => {});
 }
 
 export async function removeRecoveryKey(password) {
@@ -602,6 +614,60 @@ export async function walkTree(top, { onEntry, signal } = {}) {
   do {
     await Promise.all([worker(), worker(), worker(), worker()]);
   } while (queue.length && !signal?.aborted);
+}
+
+/**
+ * Check that everything under `top` decrypts: every key and name, and every
+ * piece of every file's current version (the ciphertext's tags prove it
+ * hasn't been changed). Downloads all of it. Calls `onProgress({ files,
+ * folders, bytes })` as it goes and `onProblem({ location, name, id,
+ * error })` for each item that fails; `name` is null when it can't be read.
+ */
+export async function verifyTree(top, { signal, onProgress, onProblem } = {}) {
+  const queue = [{ entry: top, location: [top.meta.name] }];
+  const done = { files: 0, folders: 0, bytes: 0 };
+  const problem = (location, node, name, e) =>
+    onProblem?.({ location, name, id: node.id, error: typeof e === 'string' ? e : String(e?.message || e) });
+  while (queue.length && !signal?.aborted) {
+    const { entry, location } = queue.shift();
+    let nodes;
+    try {
+      nodes = await api('GET', `/api/nodes/${entry.node.id}/children`);
+    } catch (e) {
+      problem(location.slice(0, -1), entry.node, entry.meta.name, e);
+      continue;
+    }
+    for (const node of nodes) {
+      if (signal?.aborted) return done;
+      let key, meta;
+      try {
+        key = unwrapChild(entry.key, node);
+        meta = decryptMeta(key, node);
+      } catch {
+        problem(location, node, null, "Its key or name can't be decrypted.");
+        continue;
+      }
+      if (node.kind === 'folder') {
+        done.folders++;
+        queue.push({ entry: { node, key, meta }, location: [...location, meta.name] });
+      } else if (!node.version) {
+        problem(location, node, meta.name, 'It has no content.');
+      } else {
+        try {
+          const f = openEntry({ node, key });
+          for (let i = 0; i < f.count && !signal?.aborted; i++) {
+            done.bytes += (await f.read(i)).length;
+            onProgress?.({ ...done });
+          }
+          done.files++;
+        } catch (e) {
+          problem(location, node, meta.name, e?.status ? "The server couldn't send all of it." : "It doesn't decrypt: it was damaged or changed on the server.");
+        }
+      }
+      onProgress?.({ ...done });
+    }
+  }
+  return done;
 }
 
 /** Entries under `top` whose name contains `query`, as walkTree finds them. */
@@ -1132,13 +1198,14 @@ export async function lookupUser(username) {
   return userKeys(u.username, u.public_key, u.pq_public_key);
 }
 
-export async function share(entry, user, permission) {
+export async function share(entry, user, permission, expiresAt = null) {
   await api('POST', '/api/shares', {
     body: {
       node_id: entry.node.id,
       recipient: user.username,
       wrapped_key: b64(tc.seal_share_key(user.publicKey, entry.key, entry.node.id)),
       permission,
+      expires_at: expiresAt,
     },
   });
   grantAvatar(user).catch(() => {});
@@ -1195,9 +1262,9 @@ export function linkUrl(token, nodeKey) {
  */
 const urlFor = (link, entry) => (link.upload_only ? linkUrl(link.token, myIdentity()) : linkUrl(link.token, entry.key));
 
-export async function createLink(entry, { password, expiresAt, uploadOnly = false }) {
+export async function createLink(entry, { password, expiresAt, uploadOnly = false, maxOpens = null }) {
   const link = await api('POST', '/api/links', {
-    body: { node_id: entry.node.id, password: password || null, expires_at: expiresAt ?? null, upload_only: uploadOnly },
+    body: { node_id: entry.node.id, password: password || null, expires_at: expiresAt ?? null, upload_only: uploadOnly, max_opens: maxOpens },
   });
   return { ...link, url: urlFor(link, entry) };
 }

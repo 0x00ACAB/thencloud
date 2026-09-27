@@ -619,6 +619,7 @@ async fn full_lifecycle_is_zero_knowledge() {
         recipient: "bob".into(),
         wrapped_key: B64(c::seal_share_key(&sealing_key(&pk), &other_key, &other).unwrap()),
         permission: Permission::Read,
+        expires_at: None,
     };
     let r = h
         .call(
@@ -731,6 +732,7 @@ async fn full_lifecycle_is_zero_knowledge() {
                 password: Some("letmein".into()),
                 expires_at: None,
                 upload_only: false,
+                max_opens: None,
             }),
         )
         .await;
@@ -1333,6 +1335,7 @@ async fn version_history_restore_and_limits() {
                 recipient: "bob".into(),
                 wrapped_key: B64(c::seal_share_key(&sealing_key(&pk), &key, &f.id).unwrap()),
                 permission: Permission::Read,
+                expires_at: None,
             }),
         )
         .await;
@@ -1455,6 +1458,7 @@ async fn file_drop_links_are_upload_only_and_zero_knowledge() {
         password: None,
         expires_at: None,
         upload_only,
+        max_opens: None,
     };
     let r = h
         .call(
@@ -1956,6 +1960,7 @@ async fn drafts_are_per_user_writers_only_and_opaque() {
         recipient: "bob".into(),
         wrapped_key: B64(c::seal_share_key(&sealing_key(&pk), &folder_key, &folder).unwrap()),
         permission,
+        expires_at: None,
     };
     let r = h
         .call(
@@ -2108,6 +2113,7 @@ async fn profile_pictures_are_encrypted_and_only_for_share_partners() {
                 c::seal_share_key(&sealing_key(&bob_pk), &folder_key, &folder).unwrap(),
             ),
             permission: Permission::Read,
+            expires_at: None,
         }),
     )
     .await;
@@ -2409,6 +2415,7 @@ async fn drop_visitors_cannot_prune_the_owners_versions() {
                 password: None,
                 expires_at: None,
                 upload_only: true,
+                max_opens: None,
             }),
         )
         .await
@@ -2533,6 +2540,7 @@ async fn trash_hides_restores_and_purges() {
             recipient: "bob".into(),
             wrapped_key: B64(c::seal_share_key(&sealing_key(&pk), &folder_key, &folder).unwrap()),
             permission: Permission::Write,
+            expires_at: None,
         }),
     )
     .await;
@@ -2546,6 +2554,7 @@ async fn trash_hides_restores_and_purges() {
                 password: None,
                 expires_at: None,
                 upload_only: false,
+                max_opens: None,
             }),
         )
         .await
@@ -4286,6 +4295,7 @@ async fn post_quantum_keys_seal_shares_and_drops() {
                 recipient: "old".into(),
                 wrapped_key: B64(wrapped),
                 permission: Permission::Read,
+                expires_at: None,
             }),
         )
         .await;
@@ -4307,6 +4317,7 @@ async fn post_quantum_keys_seal_shares_and_drops() {
                 recipient: "old".into(),
                 wrapped_key: B64(vec![2; 500]),
                 permission: Permission::Read,
+                expires_at: None,
             }),
         )
         .await;
@@ -4325,6 +4336,7 @@ async fn post_quantum_keys_seal_shares_and_drops() {
                 password: None,
                 expires_at: None,
                 upload_only: true,
+                max_opens: None,
             }),
         )
         .await
@@ -4358,5 +4370,531 @@ async fn post_quantum_keys_seal_shares_and_drops() {
         for seed in [pq.seed(), alice.kp.pq.as_ref().unwrap().seed()] {
             assert!(!contains(&bytes, seed), "ML-KEM seed in {}", p.display());
         }
+    }
+}
+
+#[tokio::test]
+async fn links_with_limited_opens() {
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "pw").await;
+    let (folder, folder_key) = alice.mkdir(&h, &alice.root, "Once only").await;
+    let file = alice
+        .upload(&h, &folder, None, "note.txt", b"read me once")
+        .await
+        .unwrap();
+    let create = |max_opens, password: Option<&str>, upload_only| CreateLinkRequest {
+        node_id: folder.clone(),
+        password: password.map(Into::into),
+        expires_at: None,
+        upload_only,
+        max_opens,
+    };
+    for bad in [create(Some(0), None, false), create(Some(3), None, true)] {
+        let r = h
+            .call(Method::POST, "/api/links", Some(&alice.token), Some(bad))
+            .await;
+        assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    }
+
+    // Two opens. Each visit gets a token that covers the rest of it.
+    let link: Link = h
+        .call(
+            Method::POST,
+            "/api/links",
+            Some(&alice.token),
+            Some(create(Some(2), None, false)),
+        )
+        .await
+        .json();
+    assert_eq!((link.max_opens, link.opens), (Some(2), 0));
+    let base = format!("/api/public/{}", link.token);
+    let open = || async {
+        h.raw(Method::GET, &base, None, &[], Body::empty(), None)
+            .await
+    };
+    // Without a visit's token nothing below the link is served.
+    let r = h
+        .raw(
+            Method::GET,
+            &format!("{base}/nodes/{folder}/children"),
+            None,
+            &[],
+            Body::empty(),
+            None,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+
+    let first: PublicLinkInfo = open().await.json();
+    let visit = first.link_token.expect("a visit token");
+    let vt = [("x-link-token", visit.as_str())];
+    // Asking again within the visit doesn't count another open.
+    let again: PublicLinkInfo = h
+        .raw(Method::GET, &base, None, &vt, Body::empty(), None)
+        .await
+        .json();
+    assert!(again.link_token.is_none());
+    let kids: Vec<Node> = h
+        .raw(
+            Method::GET,
+            &format!("{base}/nodes/{folder}/children"),
+            None,
+            &vt,
+            Body::empty(),
+            None,
+        )
+        .await
+        .json();
+    assert_eq!(kids.len(), 1);
+
+    let second = open().await;
+    assert_eq!(second.status, StatusCode::OK);
+    // Used up: gone for anyone new...
+    assert_eq!(open().await.status, StatusCode::NOT_FOUND);
+    // ...but the first visit can still finish its download.
+    let fk = c::unwrap_node_key(&folder_key, &file.enc_key, &file.id).unwrap();
+    let (_, got) = download_via(
+        &h,
+        &file,
+        &fk,
+        |i| format!("{base}/nodes/{}/chunks/{i}", file.id),
+        None,
+        &vt,
+    )
+    .await;
+    assert_eq!(got, b"read me once");
+    let listed: Vec<Link> = h.get("/api/links", &alice.token).await.json();
+    assert_eq!(listed[0].opens, 2);
+
+    // With a password, the open is counted after it, and the visit's token
+    // stands for the password too.
+    let link: Link = h
+        .call(
+            Method::POST,
+            "/api/links",
+            Some(&alice.token),
+            Some(create(Some(1), Some("sesame"), false)),
+        )
+        .await
+        .json();
+    let base = format!("/api/public/{}", link.token);
+    let r = h
+        .raw(Method::GET, &base, None, &[], Body::empty(), None)
+        .await;
+    assert_eq!(r.status, StatusCode::UNAUTHORIZED);
+    let unlocked: UnlockLinkResponse = h
+        .call(
+            Method::POST,
+            &format!("{base}/unlock"),
+            None,
+            Some(json!({"password": "sesame"})),
+        )
+        .await
+        .json();
+    let pt = [("x-link-token", unlocked.link_token.as_str())];
+    // A password token alone doesn't reach the files of a counted link.
+    let r = h
+        .raw(
+            Method::GET,
+            &format!("{base}/nodes/{folder}/children"),
+            None,
+            &pt,
+            Body::empty(),
+            None,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+    let info: PublicLinkInfo = h
+        .raw(Method::GET, &base, None, &pt, Body::empty(), None)
+        .await
+        .json();
+    let visit = info.link_token.unwrap();
+    let r = h
+        .raw(
+            Method::GET,
+            &format!("{base}/nodes/{folder}/children"),
+            None,
+            &[("x-link-token", visit.as_str())],
+            Body::empty(),
+            None,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+    let r = h
+        .raw(Method::GET, &base, None, &pt, Body::empty(), None)
+        .await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+
+    // Counting opens stores numbers, nothing else.
+    let mut files = Vec::new();
+    all_files(&h.dir.path().join("data"), &mut files);
+    for p in &files {
+        let bytes = std::fs::read(p).unwrap();
+        for n in [
+            &b"Once only"[..],
+            b"note.txt",
+            b"read me once",
+            b"sesame",
+            folder_key.as_bytes(),
+        ] {
+            assert!(!contains(&bytes, n), "plaintext found in {}", p.display());
+        }
+    }
+}
+
+#[tokio::test]
+async fn user_shares_can_expire() {
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "pw").await;
+    let bob = register(&h, "bob", "pw").await;
+    let (folder, folder_key) = alice.mkdir(&h, &alice.root, "For a week").await;
+    let pk: UserPublicKey = h
+        .get("/api/users/bob/public-key", &alice.token)
+        .await
+        .json();
+    let share = |expires_at| CreateShareRequest {
+        node_id: folder.clone(),
+        recipient: "bob".into(),
+        wrapped_key: B64(c::seal_share_key(&sealing_key(&pk), &folder_key, &folder).unwrap()),
+        permission: Permission::Read,
+        expires_at,
+    };
+    let t = thencloud_server::util::now();
+    let r = h
+        .call(
+            Method::POST,
+            "/api/shares",
+            Some(&alice.token),
+            Some(share(Some(t - 1))),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    let r = h
+        .call(
+            Method::POST,
+            "/api/shares",
+            Some(&alice.token),
+            Some(share(Some(t + 7 * 86400))),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED);
+    let out: OutgoingShare = r.json();
+    assert_eq!(out.expires_at, Some(t + 7 * 86400));
+    let incoming: Vec<IncomingShare> = h.get("/api/shares/incoming", &bob.token).await.json();
+    assert_eq!(incoming[0].expires_at, Some(t + 7 * 86400));
+    assert_eq!(bob.children(&h, &folder).await.status, StatusCode::OK);
+
+    // The week passes.
+    sqlx::query("UPDATE shares SET expires_at = ?")
+        .bind(t - 1)
+        .execute(&h.state.db)
+        .await
+        .unwrap();
+    assert_eq!(
+        bob.children(&h, &folder).await.status,
+        StatusCode::NOT_FOUND
+    );
+    assert!(
+        h.get("/api/shares/incoming", &bob.token)
+            .await
+            .json::<Vec<IncomingShare>>()
+            .is_empty()
+    );
+    assert!(
+        h.get("/api/shares/outgoing", &alice.token)
+            .await
+            .json::<Vec<OutgoingShare>>()
+            .is_empty()
+    );
+    thencloud_server::janitor::run_once(&h.state).await.unwrap();
+    let left: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM shares")
+        .fetch_one(&h.state.db)
+        .await
+        .unwrap();
+    assert_eq!(left, 0);
+
+    // Sharing again with no expiry works as before.
+    let r = h
+        .call(
+            Method::POST,
+            "/api/shares",
+            Some(&alice.token),
+            Some(share(None)),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED);
+    assert_eq!(bob.children(&h, &folder).await.status, StatusCode::OK);
+}
+
+async fn auth_of(h: &Harness, username: &str, password: &str) -> Key {
+    let pre: PreloginResponse = h
+        .call(
+            Method::POST,
+            "/api/auth/prelogin",
+            None,
+            Some(json!({ "username": username })),
+        )
+        .await
+        .json();
+    c::derive_account_keys(password, &pre.kdf_salt, pre.kdf_params)
+        .unwrap()
+        .auth_key
+}
+
+async fn delete_account(h: &Harness, token: &str, key: Key) -> Resp {
+    h.call(
+        Method::POST,
+        "/api/me/delete",
+        Some(token),
+        Some(DeleteAccountRequest {
+            current_auth_key: B64(key.as_bytes().to_vec()),
+        }),
+    )
+    .await
+}
+
+#[tokio::test]
+async fn people_can_delete_their_own_account() {
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "alice-pw").await; // the first, so an admin
+    let bob = register(&h, "bob", "bob-pw").await;
+    let (folder, folder_key) = bob.mkdir(&h, &bob.root, "Bob's things").await;
+    bob.upload(&h, &folder, None, "diary.txt", b"dear diary")
+        .await
+        .unwrap();
+    let pk: UserPublicKey = h
+        .get("/api/users/alice/public-key", &bob.token)
+        .await
+        .json();
+    let r = h
+        .call(
+            Method::POST,
+            "/api/shares",
+            Some(&bob.token),
+            Some(CreateShareRequest {
+                node_id: folder.clone(),
+                recipient: "alice".into(),
+                wrapped_key: B64(
+                    c::seal_share_key(&sealing_key(&pk), &folder_key, &folder).unwrap()
+                ),
+                permission: Permission::Read,
+                expires_at: None,
+            }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED);
+
+    // The wrong password is refused.
+    let r = delete_account(&h, &bob.token, auth_of(&h, "alice", "alice-pw").await).await;
+    assert_eq!(r.status, StatusCode::UNAUTHORIZED);
+    // The only admin can't leave the others without one.
+    let r = delete_account(&h, &alice.token, auth_of(&h, "alice", "alice-pw").await).await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+
+    let used_before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM nodes")
+        .fetch_one(&h.state.db)
+        .await
+        .unwrap();
+    let r = delete_account(&h, &bob.token, auth_of(&h, "bob", "bob-pw").await).await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    // Signed out, gone, and so is everything of theirs.
+    assert_eq!(
+        h.get("/api/me", &bob.token).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    assert!(login(&h, "bob", "bob-pw").await.is_err());
+    assert!(
+        h.get("/api/shares/incoming", &alice.token)
+            .await
+            .json::<Vec<IncomingShare>>()
+            .is_empty()
+    );
+    let left: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM nodes")
+        .fetch_one(&h.state.db)
+        .await
+        .unwrap();
+    assert_eq!(left, used_before - 3, "bob's root, folder and file");
+    let mut files = Vec::new();
+    all_files(&h.dir.path().join("data/blobs"), &mut files);
+    assert!(files.is_empty(), "bob's blobs removed: {files:?}");
+
+    // With nobody else left, the admin can go too.
+    let r = delete_account(&h, &alice.token, auth_of(&h, "alice", "alice-pw").await).await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn health_check_and_metrics() {
+    let h = Harness::new().await;
+    let r = h
+        .raw(Method::GET, "/api/health", None, &[], Body::empty(), None)
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+    // Metrics are off without a token configured.
+    let r = h
+        .raw(Method::GET, "/api/metrics", None, &[], Body::empty(), None)
+        .await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+
+    let h = Harness::with_config(|c| c.metrics_token = Some("scrape-me-please".into())).await;
+    let alice = register(&h, "alice", "pw").await;
+    alice
+        .upload(&h, &alice.root, None, "counted.txt", b"hello")
+        .await
+        .unwrap();
+    for bad in [None, Some("Bearer nope")] {
+        let headers: Vec<(&str, &str)> = bad.map(|b| ("authorization", b)).into_iter().collect();
+        let r = h
+            .raw(
+                Method::GET,
+                "/api/metrics",
+                None,
+                &headers,
+                Body::empty(),
+                None,
+            )
+            .await;
+        assert_eq!(r.status, StatusCode::UNAUTHORIZED);
+    }
+    let r = h
+        .raw(
+            Method::GET,
+            "/api/metrics",
+            Some("scrape-me-please"),
+            &[],
+            Body::empty(),
+            None,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+    let text = String::from_utf8(r.body).unwrap();
+    assert!(text.contains("# TYPE thencloud_users gauge\nthencloud_users 1\n"));
+    assert!(text.contains("\nthencloud_files 1\n"));
+    assert!(!text.contains("counted"));
+}
+
+#[tokio::test]
+async fn backup_restore_and_check() {
+    use thencloud_server::maintenance;
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "pw").await;
+    let (folder, folder_key) = alice.mkdir(&h, &alice.root, "Kept").await;
+    let data = secret_payload(c::CHUNK_SIZE + 99);
+    let file = alice
+        .upload(&h, &folder, None, "keep.bin", &data)
+        .await
+        .unwrap();
+    let data_dir = h.dir.path().join("data");
+
+    let r = maintenance::check(&h.state.db, &data_dir).await.unwrap();
+    assert!(r.is_ok(), "{r:?}");
+    assert_eq!((r.versions, r.chunks), (1, 2));
+
+    let dest = h.dir.path().join("backup");
+    let b = maintenance::backup(&h.state.db, &data_dir, &dest)
+        .await
+        .unwrap();
+    assert_eq!(b.chunks, 2);
+    assert!(b.missing.is_empty());
+    // A second backup into the same place is refused.
+    assert!(
+        maintenance::backup(&h.state.db, &data_dir, &dest)
+            .await
+            .is_err()
+    );
+
+    // Changes after the backup don't reach it.
+    alice.delete(&h, &file.id).await;
+    let r = h
+        .call(Method::DELETE, "/api/trash", Some(&alice.token), None::<()>)
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+
+    // Restore: a server started on the backup has the file back.
+    let mut cfg = Config::for_dir(h.dir.path());
+    cfg.data_dir = dest.clone();
+    let state = AppState::new(cfg).await.unwrap();
+    let restored = Harness {
+        app: router(state.clone()),
+        state,
+        dir: tempfile::tempdir().unwrap(),
+    };
+    let alice2 = login(&restored, "alice", "pw").await.unwrap();
+    let kids: Vec<Node> = alice2.children(&restored, &folder).await.json();
+    let f = find_by_name(&kids, &folder_key, "keep.bin");
+    let fk = c::unwrap_node_key(&folder_key, &f.enc_key, &f.id).unwrap();
+    assert_eq!(alice2.download(&restored, f, &fk).await.1, data);
+    let r = maintenance::check(&restored.state.db, &dest).await.unwrap();
+    assert!(r.is_ok() && r.orphans.is_empty(), "{r:?}");
+
+    // A lost or truncated blob, and one nothing refers to, are reported.
+    let version = f.version.as_ref().unwrap().id.clone();
+    let vdir = dest.join("blobs").join(&version[..2]).join(&version);
+    std::fs::write(vdir.join("1"), b"short").unwrap();
+    std::fs::remove_file(vdir.join("0")).unwrap();
+    let stray = dest.join("blobs/ab/abcdef00-0000-4000-8000-000000000000");
+    std::fs::create_dir_all(&stray).unwrap();
+    let r = maintenance::check(&restored.state.db, &dest).await.unwrap();
+    assert!(!r.is_ok());
+    assert_eq!(r.missing, vec![(version.clone(), 0)]);
+    assert_eq!(
+        r.orphans,
+        vec!["abcdef00-0000-4000-8000-000000000000".to_string()]
+    );
+
+    // Nothing in the backup is plaintext.
+    let mut files = Vec::new();
+    all_files(&dest, &mut files);
+    for p in &files {
+        let bytes = std::fs::read(p).unwrap();
+        for n in [MARKER, b"keep.bin", b"Kept", folder_key.as_bytes()] {
+            assert!(!contains(&bytes, n), "plaintext in {}", p.display());
+        }
+    }
+}
+
+#[tokio::test]
+async fn behind_a_proxy_rate_limits_use_forwarded_for() {
+    async fn attempt(h: &Harness, username: &str, key: &Key, from: &str) -> StatusCode {
+        let body = serde_json::to_vec(&LoginRequest {
+            username: username.into(),
+            auth_key: B64(key.as_bytes().to_vec()),
+            device_name: None,
+        })
+        .unwrap();
+        h.raw(
+            Method::POST,
+            "/api/auth/login",
+            None,
+            &[("x-forwarded-for", from)],
+            Body::from(body),
+            Some("application/json"),
+        )
+        .await
+        .status
+    }
+    for trust in [false, true] {
+        let h = Harness::with_config(|c| c.trust_proxy = trust).await;
+        register(&h, "erin", "pw").await;
+        let good = auth_of(&h, "erin", "pw").await;
+        let bad = Key::generate();
+        for i in 0..10 {
+            let st = attempt(&h, &format!("nobody{i}"), &bad, "10.0.0.1, 203.0.113.5").await;
+            assert_eq!(st, StatusCode::UNAUTHORIZED);
+        }
+        // The same client is now blocked, whatever it claims further left.
+        assert_eq!(
+            attempt(&h, "erin", &good, "198.51.100.9, 203.0.113.5").await,
+            StatusCode::TOO_MANY_REQUESTS
+        );
+        // Another client behind the same proxy isn't, but only when the
+        // proxy is trusted; otherwise the header means nothing.
+        let other = attempt(&h, "erin", &good, "203.0.113.77").await;
+        let expected = if trust {
+            StatusCode::OK
+        } else {
+            StatusCode::TOO_MANY_REQUESTS
+        };
+        assert_eq!(other, expected, "trust_proxy = {trust}");
     }
 }

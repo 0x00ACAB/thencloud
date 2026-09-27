@@ -1,6 +1,8 @@
 <script>
-  import { session, resolvePath, listFolder, createFolder, rename, trash, untrash, download, downloadZip, fetchEntry, upload, saveText, refreshMe, toolsInfo, loadDraft, storeDraft, dropDraft, searchTree, openEntry, strayDrops } from '../../lib/cloud.svelte.js';
-  import { toast, toastError, trackTransfer, errorMessage, sort, sortBy } from '../../lib/ui.svelte.js';
+  import { session, resolvePath, listFolder, createFolder, rename, move, trash, untrash, download, downloadZip, fetchEntry, upload, saveText, refreshMe, toolsInfo, loadDraft, storeDraft, dropDraft, searchTree, openEntry, strayDrops } from '../../lib/cloud.svelte.js';
+  import { toast, toastError, trackTransfer, errorMessage, sort, sortBy, photoDetails } from '../../lib/ui.svelte.js';
+  import { fileInfo, hasDetails, stripFile } from '../../lib/exif.js';
+  import Modal from '../Modal.svelte';
   import { formatSize, formatWhen, fullDate, plural, sortEntries, nameError } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
   import FileIcon from '../FileIcon.svelte';
@@ -23,6 +25,7 @@
   import { sourceKind } from '../../lib/convert.js';
   import { previewKind } from '../../lib/preview.js';
   import { play, enqueue, makeTrack } from '../../lib/music.svelte.js';
+  import { isFavourite, toggleFavourite, noteRecent } from '../../lib/places.svelte.js';
 
   let { folderId, openId = null, go, inShare = $bindable(false) } = $props();
 
@@ -190,11 +193,41 @@
     await runUploads(jobs, target);
   }
 
+  /**
+   * Location and camera details in photos: removed, kept, or (by default)
+   * asked about when a photo has a location. Marks the jobs to clean; the
+   * cleaning happens as each one uploads. Resolves to false if cancelled.
+   */
+  async function checkPhotos(jobs) {
+    if (photoDetails.value === 'keep') return true;
+    const found = [];
+    for (const job of jobs) {
+      const info = await fileInfo(job.file).catch(() => null);
+      if (hasDetails(info)) found.push({ job, info });
+    }
+    if (!found.length) return true;
+    if (photoDetails.value === 'ask') {
+      const located = found.filter((f) => f.info.gps).length;
+      if (!located) return true;
+      const choice = await new Promise((resolve) => (dialog = { type: 'photo-details', located, resolve }));
+      dialog = null;
+      if (choice === 'cancel') return false;
+      if (choice === 'keep') return true;
+    }
+    for (const f of found) f.job.clean = true;
+    return true;
+  }
+
   async function runUploads(jobs, target) {
     if (!jobs.length) return;
-    const one = async ({ file, dest, label }) => {
+    if (!(await checkPhotos(jobs))) return;
+    const one = async ({ file, dest, label, clean }) => {
       const t = trackTransfer('upload', label, file.size);
       try {
+        if (clean) {
+          file = await stripFile(file);
+          t.size = file.size;
+        }
         await upload(file, dest, (p) => (t.progress = p));
         t.status = 'done';
       } catch (e) {
@@ -285,9 +318,80 @@
     return out;
   }
 
+  // Paste to upload: a screenshot or files copied in the file manager.
+  function onPaste(e) {
+    if (!canWrite || !here || dialog || document.querySelector('dialog[open]')) return;
+    const t = e.target;
+    if (t instanceof HTMLElement && (t.isContentEditable || t.closest('input, textarea, select'))) return;
+    const files = [...(e.clipboardData?.files ?? [])];
+    if (!files.length) return;
+    e.preventDefault();
+    uploadFiles(files.map(pastedName));
+  }
+
+  /** Browsers call every pasted screenshot "image.png"; give it a date instead. */
+  function pastedName(file) {
+    if (!/^image\.\w+$/i.test(file.name)) return file;
+    const d = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}.${pad(d.getMinutes())}.${pad(d.getSeconds())}`;
+    return new File([file], `Pasted image ${stamp}${file.name.slice(file.name.lastIndexOf('.'))}`, { type: file.type, lastModified: file.lastModified });
+  }
+
+  // ---------------------------------------------------------- drag to move
+
+  // Rows dragged onto a folder row or a folder in the path are moved there.
+  // The drag carries nothing but a type; what's being moved stays here.
+  const NODES = 'application/x-thencloud-nodes';
+  let dragged = null; // entries being dragged
+  let dropTarget = $state(null); // node id of the folder under the pointer
+
+  function rowDragStart(e, entry) {
+    if (!canWrite || renaming) return e.preventDefault();
+    dragged = selected.has(entry.node.id) ? [...chosen] : [entry];
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData(NODES, '');
+  }
+
+  function rowDragEnd() {
+    dragged = null;
+    dropTarget = null;
+  }
+
+  function dragOverFolder(e, id) {
+    if (!dragged || id === folderId || dragged.some((d) => d.node.id === id)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    dropTarget = id;
+  }
+
+  function dragLeaveFolder(e, id) {
+    if (dropTarget === id && !e.currentTarget.contains(e.relatedTarget)) dropTarget = null;
+  }
+
+  async function dropOnFolder(e, target) {
+    if (!dragged || target.node.id === folderId) return;
+    e.preventDefault();
+    const list = dragged.filter((d) => d.node.id !== target.node.id);
+    rowDragEnd();
+    let done = 0;
+    for (const entry of list) {
+      try {
+        await move(entry, target.node.id, target.key);
+        done++;
+      } catch (err) {
+        toast(`Couldn't move ${entry.meta.name}: ${errorMessage(err)}`, { kind: 'error' });
+      }
+    }
+    if (done) toast(done > 1 ? `Moved ${done} items to ${target.meta.name}` : `Moved ${list[0].meta.name} to ${target.meta.name}`, { kind: 'success' });
+    selected.clear();
+    load();
+  }
+
   // ---------------------------------------------------------------- actions
 
   async function downloadEntry(entry) {
+    noteRecent(entry.node.id);
     const t = trackTransfer('download', entry.meta.name, entry.meta.size);
     try {
       await download(entry, (p) => (t.progress = p));
@@ -483,7 +587,19 @@
   }
 
   // The list is fixed when the preview opens, so a reload behind it doesn't shift ← and →.
-  const preview = (entry, edit = false) => (dialog = { type: 'preview', entries: files, start: files.indexOf(entry), edit });
+  function preview(entry, edit = false) {
+    noteRecent(entry.node.id);
+    dialog = { type: 'preview', entries: files, start: files.indexOf(entry), edit };
+  }
+
+  async function star(entry) {
+    try {
+      const on = await toggleFavourite(entry.node.id);
+      toast(on ? `Added ${entry.meta.name} to favourites` : `Removed ${entry.meta.name} from favourites`, { icon: on ? 'star' : 'star-off' });
+    } catch (e) {
+      toastError(e);
+    }
+  }
 
   // Server-side tools this user may use (the video downloader is opt-in).
   let tools = $state({ video_downloader: false });
@@ -548,6 +664,9 @@
       folder
         ? { label: 'Download as zip', icon: 'download', onclick: () => zipEntries([entry], `${entry.meta.name}.zip`) }
         : { label: 'Download', icon: 'download', onclick: () => downloadEntry(entry) },
+      isFavourite(entry.node.id)
+        ? { label: 'Remove from favourites', icon: 'star-off', onclick: () => star(entry) }
+        : { label: 'Add to favourites', icon: 'star', onclick: () => star(entry) },
       ...(isOwner
         ? [
             { label: 'Share', icon: 'share-2', onclick: () => (dialog = { type: 'share', entry }) },
@@ -634,7 +753,7 @@
   const reload = () => load();
 </script>
 
-<svelte:window {onkeydown} ondragenter={onDragEnter} ondragover={onDragOver} ondragleave={onDragLeave} ondrop={onDrop} />
+<svelte:window {onkeydown} onpaste={onPaste} ondragenter={onDragEnter} ondragover={onDragOver} ondragleave={onDragLeave} ondrop={onDrop} />
 
 <input bind:this={fileInput} type="file" multiple hidden onchange={onPick} />
 <input bind:this={folderInput} type="file" webkitdirectory hidden onchange={onPickFolder} />
@@ -652,7 +771,13 @@
         {#if i === path.length - 1}
           <h1 class="truncate px-1 text-xl font-semibold tracking-tight">{crumb.meta.name}</h1>
         {:else}
-          <button type="button" class="max-w-48 cursor-pointer truncate rounded px-1 text-fg-muted hover:text-fg" onclick={() => open(crumb.node.id)}>{crumb.meta.name}</button>
+          <button
+            type="button"
+            class="max-w-48 cursor-pointer truncate rounded px-1 text-fg-muted hover:text-fg {dropTarget === crumb.node.id ? 'bg-accent-soft text-accent-text ring-1 ring-accent' : ''}"
+            onclick={() => open(crumb.node.id)}
+            ondragover={(e) => dragOverFolder(e, crumb.node.id)}
+            ondragleave={(e) => dragLeaveFolder(e, crumb.node.id)}
+            ondrop={(e) => dropOnFolder(e, crumb)}>{crumb.meta.name}</button>
         {/if}
       {/each}
     </nav>
@@ -839,7 +964,18 @@
         {#each visible as entry (entry.node.id)}
           {@const folder = entry.node.kind === 'folder'}
           {@const isSelected = selected.has(entry.node.id)}
-          <tr class="group {isSelected ? 'bg-accent-soft/60 hover:bg-accent-soft/60' : ''}" aria-selected={isSelected} in:fade out:fade={{ duration: 120 }} animate:flip={flipParams()}>
+          <tr
+            class="group {isSelected ? 'bg-accent-soft/60 hover:bg-accent-soft/60' : ''} {dropTarget === entry.node.id ? 'drop-target' : ''}"
+            aria-selected={isSelected}
+            draggable={canWrite && !touch && renaming !== entry.node.id}
+            ondragstart={(e) => rowDragStart(e, entry)}
+            ondragend={rowDragEnd}
+            ondragover={folder ? (e) => dragOverFolder(e, entry.node.id) : undefined}
+            ondragleave={folder ? (e) => dragLeaveFolder(e, entry.node.id) : undefined}
+            ondrop={folder ? (e) => dropOnFolder(e, entry) : undefined}
+            in:fade
+            out:fade={{ duration: 120 }}
+            animate:flip={flipParams()}>
             <td class="w-10 !pr-0 {selected.size ? '' : 'max-md:hidden'}">
               <input
                 type="checkbox"
@@ -964,7 +1100,21 @@
   </div>
 {/if}
 
-{#if dialog?.type === 'mkdir'}
+{#if dialog?.type === 'photo-details'}
+  {@const answer = dialog.resolve}
+  <Modal
+    title={dialog.located === 1 ? 'This photo has a location' : `${dialog.located} photos have a location`}
+    description="Photos from phones and cameras often record where they were taken, and on what. Anyone you share them with could read it."
+    onclose={() => answer('cancel')}
+    onsubmit={() => answer('remove')}>
+    <p class="text-[13px] text-fg-muted">Removing it also drops the camera details. The pictures themselves don't change. You can choose what happens every time in Settings.</p>
+    {#snippet footer()}
+      <button type="button" class="btn btn-secondary mr-auto" onclick={() => answer('cancel')}>Cancel</button>
+      <button type="button" class="btn btn-secondary" onclick={() => answer('keep')}>Keep it</button>
+      <button class="btn btn-primary">Remove location</button>
+    {/snippet}
+  </Modal>
+{:else if dialog?.type === 'mkdir'}
   <NameDialog
     title="New folder"
     confirmLabel="Create"

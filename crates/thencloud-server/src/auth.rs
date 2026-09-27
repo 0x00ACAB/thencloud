@@ -89,19 +89,40 @@ impl FromRequestParts<AppState> for AuthUser {
     }
 }
 
-/// Peer address, if the server was started with connect info.
+/// The client's address, for rate limiting only (it's never stored): the
+/// peer, or with `--trust-proxy` the last address a reverse proxy added to
+/// `X-Forwarded-For`.
 pub struct ClientIp(pub Option<IpAddr>);
 
-impl<S: Send + Sync> FromRequestParts<S> for ClientIp {
+impl FromRequestParts<AppState> for ClientIp {
     type Rejection = Infallible;
 
-    async fn from_request_parts(parts: &mut Parts, _: &S) -> std::result::Result<Self, Infallible> {
-        Ok(ClientIp(
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> std::result::Result<Self, Infallible> {
+        let forwarded = state
+            .config
+            .trust_proxy
+            .then(|| {
+                parts
+                    .headers
+                    .get_all("x-forwarded-for")
+                    .iter()
+                    .filter_map(|v| v.to_str().ok())
+                    .flat_map(|v| v.split(','))
+                    .next_back()?
+                    .trim()
+                    .parse::<IpAddr>()
+                    .ok()
+            })
+            .flatten();
+        Ok(ClientIp(forwarded.or_else(|| {
             parts
                 .extensions
                 .get::<ConnectInfo<SocketAddr>>()
-                .map(|c| c.0.ip()),
-        ))
+                .map(|c| c.0.ip())
+        })))
     }
 }
 
