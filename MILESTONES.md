@@ -72,7 +72,7 @@ Bigger pieces:
 - [x] **Syntax highlighting** in text and code previews
 - [x] **Markdown preview**: rendered and sanitised, with a Source toggle
 - [x] **Markdown editor**: WYSIWYG (Milkdown), toolbar and shortcuts, Ctrl+S, saves each change as a new encrypted version with conflict detection; "New note" creates a file and opens it in the editor
-- [ ] Editor: clickable task-list checkboxes, tables toolbar, autosave drafts, and editing plain-text/code files
+- [x] Editor: task lists (tick them in the editor or the rendered view), a table toolbar, plain-text and code files (a monospace editor), and drafts: unsaved edits are kept on the server as you type, encrypted under your master key, and offered back when you edit the file again
 - [x] PDF previews: selectable text (pdf.js's text layer) and links (web and mail links open on click; links within the document jump to the page)
 - [x] Images in Markdown previews by relative path (`![](img/photo.png)`): found by decrypted name from the file's folder and shown from a blob: URL; nothing is requested by path, and web images still aren't loaded
 - [ ] Previews: streamed video (today the whole file is decrypted into memory first, up to 256 MB)

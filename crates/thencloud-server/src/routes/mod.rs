@@ -2,6 +2,7 @@ pub mod admin;
 pub mod app_passwords;
 pub mod auth;
 pub mod contacts;
+pub mod drafts;
 pub mod drops;
 pub mod links;
 pub mod nodes;
@@ -87,6 +88,13 @@ pub fn router(state: AppState) -> Router {
         .route("/nodes/{id}/children", get(nodes::children))
         .route("/nodes/{id}/path", get(nodes::path))
         .route("/nodes/{id}/chunks/{idx}", get(nodes::chunk))
+        .route(
+            "/nodes/{id}/draft",
+            get(drafts::get)
+                .put(drafts::put)
+                .delete(drafts::delete)
+                .layer(DefaultBodyLimit::max(8 * 1024 * 1024)),
+        )
         .route("/nodes/{id}/versions", get(versions::list))
         .route("/nodes/{id}/versions/{vid}", delete(versions::delete))
         .route(

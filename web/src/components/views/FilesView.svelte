@@ -1,5 +1,5 @@
 <script>
-  import { session, resolvePath, listFolder, createFolder, rename, trash, untrash, download, downloadZip, fetchEntry, upload, saveText, refreshMe, toolsInfo } from '../../lib/cloud.svelte.js';
+  import { session, resolvePath, listFolder, createFolder, rename, trash, untrash, download, downloadZip, fetchEntry, upload, saveText, refreshMe, toolsInfo, loadDraft, storeDraft, dropDraft } from '../../lib/cloud.svelte.js';
   import { toast, toastError, trackTransfer, errorMessage, sort, sortBy } from '../../lib/ui.svelte.js';
   import { formatSize, formatWhen, fullDate, plural, sortEntries, nameError } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
@@ -817,6 +817,7 @@
     trail={path}
     list={(f) => listFolder(f.node.id, f.key)}
     save={canWrite ? saveText : null}
+    drafts={canWrite ? { load: loadDraft, store: storeDraft, drop: dropDraft } : null}
     onsaved={() => (load(), refreshMe().catch(() => {}))}
     ondownload={downloadEntry}
     onclose={close} />
