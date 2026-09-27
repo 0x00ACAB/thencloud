@@ -22,6 +22,7 @@
 //              muted icons
 //   documents  file-icon-vectors "vivid" (MIT), npm file-icon-vectors:
 //              document-shaped icons labelled with the file type
+import { optimize } from 'svgo';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
@@ -111,6 +112,12 @@ function documents() {
   return { tables, svgs };
 }
 
+/**
+ * svgo settings for the built icons. The CSP blocks style attributes as well
+ * as <style>, so styles become presentation attributes.
+ */
+export const SVGO = { multipass: true, plugins: ['preset-default', 'convertStyleToAttrs'] };
+
 const PACKS = { material, symbols, documents };
 const PREFIX = 'virtual:file-icons/';
 
@@ -135,7 +142,7 @@ export default function fileIcons() {
     },
     generateBundle() {
       for (const name of Object.keys(PACKS)) {
-        for (const [id, svg] of pack(name).svgs) this.emitFile({ type: 'asset', fileName: `file-icons/${name}/${id}.svg`, source: svg() });
+        for (const [id, svg] of pack(name).svgs) this.emitFile({ type: 'asset', fileName: `file-icons/${name}/${id}.svg`, source: optimize(String(svg()), SVGO).data });
       }
     },
   };
