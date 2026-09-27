@@ -613,9 +613,31 @@ export async function upload(file, { parentId, parentKey, existing }, onProgress
  * changed since `entry` was loaded. Returns the updated entry.
  */
 export function saveText(entry, text) {
-  const file = new File([text], entry.meta.name, { type: entry.meta.mime || 'text/markdown', lastModified: Date.now() });
+  const file = new File([text], entry.meta.name, { type: entry.meta.mime || '', lastModified: Date.now() });
   return upload(file, { existing: entry });
 }
+
+// ---------------------------------------------------------------------------
+// Drafts: unsaved edits, kept on the server encrypted under the master key and
+// bound to this account and the file, so a closed tab doesn't lose them.
+// ---------------------------------------------------------------------------
+
+const draftLabel = (entry) => `draft:${entry.node.id}`;
+
+/** { text, baseRevision, updatedAt }, or null if there's none. */
+export async function loadDraft(entry) {
+  const d = await api('GET', `/api/nodes/${entry.node.id}/draft`);
+  if (!d) return null;
+  const text = dec.decode(tc.decrypt_private_data(mk, session.me.user_id, draftLabel(entry), unb64(d.data)));
+  return { text, baseRevision: d.base_revision, updatedAt: d.updated_at };
+}
+
+export const storeDraft = (entry, text) =>
+  api('PUT', `/api/nodes/${entry.node.id}/draft`, {
+    body: { data: b64(tc.encrypt_private_data(mk, session.me.user_id, draftLabel(entry), enc.encode(text))), base_revision: entry.node.revision },
+  });
+
+export const dropDraft = (entry) => api('DELETE', `/api/nodes/${entry.node.id}/draft`).catch(() => {});
 
 // ---------------------------------------------------------------------------
 // Sharing

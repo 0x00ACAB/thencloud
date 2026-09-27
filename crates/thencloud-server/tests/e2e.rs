@@ -1764,6 +1764,143 @@ async fn app_passwords_are_scoped_revocable_and_opaque() {
 }
 
 #[tokio::test]
+async fn drafts_are_per_user_writers_only_and_opaque() {
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "pw").await;
+    let bob = register(&h, "bob", "pw").await;
+    let (folder, folder_key) = alice.mkdir(&h, &alice.root, "Notes").await;
+    let file = alice
+        .upload(&h, &folder, None, "plan.md", b"# Plan")
+        .await
+        .unwrap();
+    let alice_id = alice.me(&h).await.user_id;
+    let label = format!("draft:{}", file.id);
+    let text = b"# Plan\n\nDRAFT-SECRET-WORDS";
+    let draft = Draft {
+        data: B64(c::encrypt_private_data(&alice.mk, &alice_id, &label, text)),
+        base_revision: file.revision,
+        updated_at: 0,
+    };
+    let uri = format!("/api/nodes/{}/draft", file.id);
+    let none: Option<Draft> = h.get(&uri, &alice.token).await.json();
+    assert!(none.is_none());
+    let r = h
+        .call(Method::PUT, &uri, Some(&alice.token), Some(&draft))
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT, "{r:?}");
+    let got: Draft = h
+        .get(&uri, &alice.token)
+        .await
+        .json::<Option<Draft>>()
+        .unwrap();
+    assert_eq!(got.base_revision, file.revision);
+    assert_eq!(
+        c::decrypt_private_data(&alice.mk, &alice_id, &label, &got.data).unwrap(),
+        text
+    );
+    // Bound to the file: it doesn't open as another file's draft.
+    assert!(c::decrypt_private_data(&alice.mk, &alice_id, "draft:other", &got.data).is_err());
+
+    // Read-only recipients can't keep drafts; writers get their own.
+    let pk: UserPublicKey = h
+        .get("/api/users/bob/public-key", &alice.token)
+        .await
+        .json();
+    let share = |permission| CreateShareRequest {
+        node_id: folder.clone(),
+        recipient: "bob".into(),
+        wrapped_key: B64(c::seal_share_key(&pk.public_key, &folder_key, &folder).unwrap()),
+        permission,
+    };
+    let r = h
+        .call(
+            Method::POST,
+            "/api/shares",
+            Some(&alice.token),
+            Some(share(Permission::Read)),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED);
+    let r = h
+        .call(Method::PUT, &uri, Some(&bob.token), Some(&draft))
+        .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN);
+    let s: Vec<OutgoingShare> = h.get("/api/shares/outgoing", &alice.token).await.json();
+    h.call(
+        Method::PATCH,
+        &format!("/api/shares/{}", s[0].id),
+        Some(&alice.token),
+        Some(json!({"permission": "write"})),
+    )
+    .await;
+    assert!(
+        h.get(&uri, &bob.token)
+            .await
+            .json::<Option<Draft>>()
+            .is_none()
+    );
+    let r = h
+        .call(Method::PUT, &uri, Some(&bob.token), Some(&draft))
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+
+    // Too large is refused.
+    let big = Draft {
+        data: B64(vec![0; 5 * 1024 * 1024 + 512 * 1024]),
+        base_revision: 1,
+        updated_at: 0,
+    };
+    let r = h
+        .call(Method::PUT, &uri, Some(&alice.token), Some(&big))
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+
+    // No plaintext at rest.
+    let mut files = Vec::new();
+    all_files(&h.dir.path().join("data"), &mut files);
+    for p in &files {
+        assert!(
+            !contains(&std::fs::read(p).unwrap(), b"DRAFT-SECRET-WORDS"),
+            "draft found in {}",
+            p.display()
+        );
+    }
+
+    // Discarding, and deleting the file, remove drafts.
+    let r = h
+        .call(Method::DELETE, &uri, Some(&alice.token), None::<()>)
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    assert!(
+        h.get(&uri, &alice.token)
+            .await
+            .json::<Option<Draft>>()
+            .is_none()
+    );
+    assert!(
+        h.get(&uri, &bob.token)
+            .await
+            .json::<Option<Draft>>()
+            .is_some()
+    );
+    assert_eq!(alice.delete(&h, &file.id).await, StatusCode::NO_CONTENT);
+    let r = h
+        .call(
+            Method::DELETE,
+            &format!("/api/trash/{}", file.id),
+            Some(&alice.token),
+            None::<()>,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    let left: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM drafts")
+        .fetch_one(&h.state.db)
+        .await
+        .unwrap();
+    assert_eq!(left, 0);
+}
+
+#[tokio::test]
 async fn janitor_thins_old_versions_by_age() {
     let h = Harness::new().await;
     let a = register(&h, "alice", "pw").await;

@@ -3,8 +3,10 @@
   // like a download, and shown from a blob: URL that is revoked when you
   // move on. ← and → step through the other files in the folder.
   //
-  // Markdown files can be edited when `save` is given (the viewer can
-  // write): each save uploads the text as a new encrypted version.
+  // Markdown and text files can be edited when `save` is given (the viewer
+  // can write): each save uploads the text as a new encrypted version.
+  // With `drafts` ({ load, store, drop }), unsaved edits are kept encrypted
+  // on the server as you type and offered back next time.
   import { onMount, untrack } from 'svelte';
   import Icon from './Icon.svelte';
   import Time from './Time.svelte';
@@ -13,6 +15,7 @@
   import MarkdownView from './preview/MarkdownView.svelte';
   import PdfView from './preview/PdfView.svelte';
   import MarkdownEditor from './preview/MarkdownEditor.svelte';
+  import TextEditor from './preview/TextEditor.svelte';
   import ConfirmDialog from './dialogs/ConfirmDialog.svelte';
   import { saveBlob } from '../lib/crypto.js';
   import { previewKind, readText, MAX_PREVIEW, MAX_TEXT } from '../lib/preview.js';
@@ -20,8 +23,8 @@
   import { errorMessage, toastError } from '../lib/ui.svelte.js';
   import { fade } from '../lib/motion.js';
 
-  /** @type {{ entries: any[], start: number, fetch: (entry: any, onProgress: (p: number) => void) => Promise<{ blob: Blob }>, ondownload: (entry: any) => void, onclose: () => void, save?: ((entry: any, text: string) => Promise<any>) | null, onsaved?: (entry: any) => void, edit?: boolean, trail?: any[] | null, list?: ((folder: any) => Promise<any[]>) | null }} */
-  let { entries, start, fetch, ondownload, onclose, save = null, onsaved, edit = false, trail = null, list = null } = $props();
+  /** @type {{ entries: any[], start: number, fetch: (entry: any, onProgress: (p: number) => void) => Promise<{ blob: Blob }>, ondownload: (entry: any) => void, onclose: () => void, save?: ((entry: any, text: string) => Promise<any>) | null, onsaved?: (entry: any) => void, edit?: boolean, trail?: any[] | null, list?: ((folder: any) => Promise<any[]>) | null, drafts?: any }} */
+  let { entries, start, fetch, ondownload, onclose, save = null, onsaved, edit = false, trail = null, list = null, drafts = null } = $props();
 
   let dlg;
   let index = $state(untrack(() => start));
@@ -102,11 +105,15 @@
   // ------------------------------------------------------------ editing
 
   let editing = $state(false);
-  let draft = $state(null); // current Markdown while editing
+  let draft = $state(null); // current text while editing
+  let editorText = $state(''); // what the editor starts from
+  let editorKey = $state(0); // bumped to start the editor again (restoring a draft)
+  let offer = $state(null); // a draft from earlier: { text, baseRevision, updatedAt }
+  let draftTimer = null;
   let saving = $state(false);
   let saveError = $state('');
   let confirm = $state(null); // { title, description, label, then } before discarding changes
-  const canEdit = $derived(!!save && kind?.kind === 'markdown' && view.status === 'ready');
+  const canEdit = $derived(!!save && (kind?.kind === 'markdown' || kind?.kind === 'text') && view.status === 'ready' && view.text !== undefined);
   const dirty = $derived(editing && draft !== null && draft !== view.text);
 
   // `edit` opens straight into the editor (for a new note).
@@ -117,12 +124,24 @@
   function startEditing() {
     draft = null;
     saveError = '';
+    editorText = view.text;
+    offer = null;
     editing = true;
+    const e = entry;
+    drafts
+      ?.load(e)
+      .then((d) => {
+        if (d && editing && e === entry && d.text !== view.text) offer = d;
+      })
+      .catch(() => {});
   }
 
   function stopEditing() {
+    clearTimeout(draftTimer);
+    if (drafts && (dirty || offer)) drafts.drop(entry);
     editing = false;
     draft = null;
+    offer = null;
     saveError = '';
   }
 
@@ -130,6 +149,23 @@
   function guard(then) {
     if (!dirty) return then();
     confirm = { then };
+  }
+
+  function onEdit(text) {
+    draft = text;
+    if (!drafts) return;
+    clearTimeout(draftTimer);
+    const e = entry;
+    draftTimer = setTimeout(() => {
+      if (editing && e === entry && dirty) drafts.store(e, draft).catch(() => {});
+    }, 1500);
+  }
+
+  function restoreDraft() {
+    editorText = offer.text;
+    draft = offer.text;
+    offer = null;
+    editorKey++;
   }
 
   async function saveDraft() {
@@ -151,6 +187,9 @@
     saveError = '';
     try {
       const next = await save(entry, text);
+      clearTimeout(draftTimer);
+      drafts?.drop(entry);
+      offer = null;
       updated[next.node.id] = { ...entry, ...next };
       loaded = { id: next.node.id, status: 'ready', text, blob: new Blob([text], { type: 'text/plain' }) };
       onsaved?.(updated[next.node.id]);
@@ -285,6 +324,18 @@
     </button>
   </header>
 
+  {#if editing && offer}
+    <div class="flex flex-wrap items-center gap-3 border-b border-line bg-subtle px-4 py-2 text-[13px]" role="status">
+      <Icon name="circle-alert" class="size-4 shrink-0 text-fg-muted" />
+      <p class="min-w-0 flex-1">
+        You have unsaved changes from <Time ms={offer.updatedAt * 1000} relative />.
+        {#if offer.baseRevision !== entry.node.revision}<span class="text-fg-muted">The file has changed since, so restoring replaces those changes when you save.</span>{/if}
+      </p>
+      <button type="button" class="btn btn-ghost h-7 px-2.5 text-[13px]" onclick={() => (drafts.drop(entry), (offer = null))}>Discard</button>
+      <button type="button" class="btn btn-secondary h-7 px-2.5 text-[13px]" onclick={restoreDraft}>Restore</button>
+    </div>
+  {/if}
+
   <div class="relative min-h-0 flex-1">
     {#key entry.node.id}
       {#if view.status === 'loading'}
@@ -327,7 +378,9 @@
           {:else if kind.kind === 'pdf'}
             <PdfView blob={view.blob} />
           {:else if kind.kind === 'markdown' && editing}
-            <MarkdownEditor text={view.text} onchange={(md) => (draft = md)} />
+            {#key editorKey}<MarkdownEditor text={editorText} onchange={onEdit} />{/key}
+          {:else if kind.kind === 'text' && editing}
+            {#key editorKey}<TextEditor text={editorText} onchange={onEdit} />{/key}
           {:else if kind.kind === 'markdown' && !showSource}
             <MarkdownView text={view.text} loadImage={trail && list ? loadImage : null} ontoggle={save ? toggleTask : null} />
           {:else}

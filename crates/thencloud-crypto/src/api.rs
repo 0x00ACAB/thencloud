@@ -671,6 +671,17 @@ pub struct PutPrivateData {
     pub if_revision: i64,
 }
 
+/// Unsaved edits to a text file, encrypted under the editor's master key
+/// (see `encrypt_private_data`, labelled with the node id).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Draft {
+    pub data: B64,
+    /// The file's revision the draft started from.
+    pub base_revision: i64,
+    #[serde(default)]
+    pub updated_at: i64,
+}
+
 // ---------------------------------------------------------------------------
 // Tools
 // ---------------------------------------------------------------------------
