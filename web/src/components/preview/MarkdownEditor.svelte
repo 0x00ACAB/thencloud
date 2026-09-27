@@ -74,16 +74,28 @@
     [
       ['bullets', 'list', 'Bulleted list'],
       ['numbers', 'list-ordered', 'Numbered list'],
+      ['task', 'list-checks', 'Task list'],
       ['quote', 'text-quote', 'Quote'],
       ['codeBlock', 'square-code', 'Code block'],
       ['rule', 'minus', 'Divider'],
+      ['table', 'table', 'Table'],
     ],
+  ];
+
+  // Shown while the cursor is in a table.
+  const tableTools = [
+    ['addRow', 'between-horizontal-end', 'Add row below'],
+    ['addCol', 'between-vertical-end', 'Add column to the right'],
+    ['deleteRow', 'grid-2x2-x', 'Delete row'],
+    ['deleteCol', 'columns-2', 'Delete column'],
+    ['deleteTable', 'trash-2', 'Delete table'],
   ];
 
   function press(id) {
     if (id === 'link') return startLink();
     const level = { h1: 1, h2: 2, h3: 3 }[id];
     if (level) return active.heading === level ? run('paragraph') : run('heading', level);
+    if (id === 'table') return active.table || run('table', { row: 3, col: 3 });
     run(id);
   }
 
@@ -92,6 +104,7 @@
     if (level) return active.heading === level;
     if (id === 'bullets') return active.list === 'bullet_list';
     if (id === 'numbers') return active.list === 'ordered_list';
+    if (id === 'task') return active.list === 'task';
     return !!active[id];
   }
 </script>
@@ -114,6 +127,20 @@
         </button>
       {/each}
     {/each}
+    {#if active.table}
+      <span class="mx-1 h-5 w-px bg-line" aria-hidden="true"></span>
+      {#each tableTools as [id, icon, label] (id)}
+        <button
+          type="button"
+          class="btn btn-ghost btn-icon h-7 w-7"
+          aria-label={label}
+          title={label}
+          onmousedown={(e) => e.preventDefault()}
+          onclick={() => run(id)}>
+          <Icon name={icon} />
+        </button>
+      {/each}
+    {/if}
     {#if linking}
       <form class="ml-2 flex items-center gap-1" onsubmit={applyLink}>
         <input bind:this={linkInput} class="input h-7 w-64 text-[13px]" bind:value={href} aria-label="Link address" onkeydown={(e) => e.key === 'Escape' && (e.stopPropagation(), e.preventDefault(), (linking = false), editor?.focus())} />
