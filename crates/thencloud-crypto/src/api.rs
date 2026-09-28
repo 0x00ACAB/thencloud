@@ -930,6 +930,25 @@ pub struct Draft {
 }
 
 // ---------------------------------------------------------------------------
+// Activity in folders
+// ---------------------------------------------------------------------------
+
+/// Something someone did in a folder. Names aren't here: the client finds
+/// and decrypts the node's, if it can still reach it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActivityEvent {
+    pub id: i64,
+    pub node_id: String,
+    /// Username of whoever did it.
+    pub actor: String,
+    /// added, changed (a new version), renamed, moved, trashed or restored.
+    pub kind: String,
+    pub folder: bool,
+    /// Unix seconds, to the hour.
+    pub at: i64,
+}
+
+// ---------------------------------------------------------------------------
 // Comments (encrypted under the node key; see `encrypt_comment`)
 // ---------------------------------------------------------------------------
 

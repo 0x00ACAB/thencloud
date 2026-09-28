@@ -12,6 +12,7 @@
   import NameDialog from '../dialogs/NameDialog.svelte';
   import VersionsDialog from '../dialogs/VersionsDialog.svelte';
   import CommentsDialog from '../dialogs/CommentsDialog.svelte';
+  import ActivityDialog from '../dialogs/ActivityDialog.svelte';
   import { fade, fly, flip, flipParams } from '../../lib/motion.js';
   import { SvelteSet } from 'svelte/reactivity';
   import MoveDialog from '../dialogs/MoveDialog.svelte';
@@ -688,6 +689,7 @@
       ...(!folder && sourceKind(entry.meta) ? [{ label: 'Convert', icon: 'file-cog', onclick: () => (dialog = { type: 'convert', entry }) }] : []),
       ...(!folder ? [{ label: 'Version history', icon: 'refresh-cw', onclick: () => (dialog = { type: 'versions', entry }) }] : []),
       { label: 'Comments', icon: 'message-square', onclick: () => (dialog = { type: 'comments', entry }) },
+      ...(folder ? [{ label: 'Activity', icon: 'history', onclick: () => (dialog = { type: 'activity', entry }) }] : []),
       ...(canWrite ? ['sep', { label: 'Move to trash', icon: 'trash-2', danger: true, onclick: () => moveToTrash(entry) }] : []),
     ];
   }
@@ -819,6 +821,9 @@
         </div>
       {/if}
     {/if}
+    <button type="button" class="btn btn-ghost btn-icon" aria-label="Activity in this folder" title="Activity" disabled={!here} onclick={() => (dialog = { type: 'activity', entry: here })}>
+      <Icon name="history" />
+    </button>
     <div class="flex h-8 rounded-md border border-line p-0.5" role="radiogroup" aria-label="Show files as">
       {#each [['list', 'list', 'List'], ['grid', 'layout-grid', 'Grid']] as [value, icon, label] (value)}
         <button
@@ -1249,6 +1254,14 @@
       toast(count > 1 ? `Moved ${count} items to ${dest}` : `Moved to ${dest}`, { kind: 'success' });
       selected.clear();
       load();
+    }}
+    onclose={close} />
+{:else if dialog?.type === 'activity'}
+  <ActivityDialog
+    entry={dialog.entry}
+    onopen={(e) => {
+      close();
+      open(e.folder ? e.node_id : e.parentId);
     }}
     onclose={close} />
 {:else if dialog?.type === 'comments'}

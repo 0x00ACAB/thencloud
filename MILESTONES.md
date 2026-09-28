@@ -124,7 +124,7 @@ Smaller things:
 - [x] **Expiry on user shares**, like links have: an expired share gives no access, and the janitor deletes it (and takes back profile picture keys that depended on it)
 - [x] **Comments on files**, encrypted under the node key so everyone with access (and only them) can read them. From a file or folder's menu; bound to the node, the comment and its author, so the server can't move one or change who wrote it. Anyone who can open the item can comment; authors and the owner can delete
 - [ ] **Files reports**, report a file, an unencrypted copy gets sent to the admin (with an acknowledgement in the reporting process), the admin then may remove the file or mark it as safe
-- [ ] **Activity in shared folders**: who added, changed or deleted what, with names decrypted in the browser. The server already sees these events; it doesn't learn the names
+- [x] **Activity in shared folders**: who added, changed or deleted what, with names decrypted in the browser. The server already sees these events; it doesn't learn the names. Kept 90 days as node ids, kinds and hours, listed under every folder that held the item (both sides of a move); one event per person, item and kind per hour, so autosaves don't flood it. From a folder's menu or the clock button above the list
 - [x] Drag rows onto a folder (or the breadcrumb) to move them
 - [x] Paste to upload (Ctrl+V a screenshot or copied files)
 

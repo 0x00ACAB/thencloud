@@ -5327,3 +5327,130 @@ async fn thumbnails_follow_the_current_version() {
         );
     }
 }
+
+#[tokio::test]
+async fn activity_shows_who_did_what_to_those_who_can_see_the_folder() {
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "pw").await;
+    let bob = register(&h, "bob", "pw").await;
+    let carol = register(&h, "carol", "pw").await;
+    let (team, team_key) = alice.mkdir(&h, &alice.root, "Team").await;
+    let (inner, _) = alice.mkdir(&h, &team, "Drafts").await;
+    let (elsewhere, elsewhere_key) = alice.mkdir(&h, &alice.root, "Private").await;
+    let pk: UserPublicKey = h
+        .get("/api/users/bob/public-key", &alice.token)
+        .await
+        .json();
+    let r = h
+        .call(
+            Method::POST,
+            "/api/shares",
+            Some(&alice.token),
+            Some(CreateShareRequest {
+                node_id: team.clone(),
+                recipient: "bob".into(),
+                wrapped_key: B64(c::seal_share_key(&sealing_key(&pk), &team_key, &team).unwrap()),
+                permission: Permission::Write,
+                expires_at: None,
+            }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED);
+
+    // Bob adds a file deep in the share and saves it twice; Alice renames
+    // it, then moves it out to a folder Bob can't see, then trashes the
+    // inner folder.
+    let file = bob
+        .upload(&h, &inner, None, "plan.txt", b"one")
+        .await
+        .unwrap();
+    let file = bob
+        .upload(&h, "", Some(&file), "plan.txt", b"two")
+        .await
+        .unwrap();
+    bob.upload(&h, "", Some(&file), "plan.txt", b"three")
+        .await
+        .unwrap();
+    let file_key = alice.key_of(&h, &file.id).await;
+    let meta = c::encrypt_metadata(&file_key, &file.id, &meta("plan-v2.txt", 5)).unwrap();
+    let node: Node = h
+        .get(&format!("/api/nodes/{}", file.id), &alice.token)
+        .await
+        .json();
+    let r = h
+        .call(
+            Method::PATCH,
+            &format!("/api/nodes/{}", file.id),
+            Some(&alice.token),
+            Some(UpdateNodeRequest {
+                enc_metadata: Some(B64(meta)),
+                parent_id: None,
+                enc_key: None,
+                if_revision: Some(node.revision),
+                name_tag: None,
+            }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{r:?}");
+    let r = h
+        .call(
+            Method::PATCH,
+            &format!("/api/nodes/{}", file.id),
+            Some(&alice.token),
+            Some(UpdateNodeRequest {
+                enc_metadata: None,
+                parent_id: Some(elsewhere.clone()),
+                enc_key: Some(B64(c::wrap_node_key(&elsewhere_key, &file_key, &file.id))),
+                if_revision: None,
+                name_tag: None,
+            }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{r:?}");
+    assert_eq!(alice.delete(&h, &inner).await, StatusCode::NO_CONTENT);
+
+    let list = |who: &Client, folder: &str| {
+        let (h, uri, token) = (
+            &h,
+            format!("/api/nodes/{folder}/activity"),
+            who.token.clone(),
+        );
+        async move { h.get(&uri, &token).await }
+    };
+    let events: Vec<ActivityEvent> = list(&bob, &team).await.json();
+    let seen: Vec<(String, String, String)> = events
+        .iter()
+        .map(|e| (e.actor.clone(), e.kind.clone(), e.node_id.clone()))
+        .collect();
+    let ev = |a: &str, k: &str, n: &str| (a.to_string(), k.to_string(), n.to_string());
+    // Newest first. The two saves in one hour are one "changed"; everything
+    // stays in Team's history though the file has left it.
+    assert_eq!(
+        seen,
+        vec![
+            ev("alice", "trashed", &inner),
+            ev("alice", "moved", &file.id),
+            ev("alice", "renamed", &file.id),
+            ev("bob", "changed", &file.id),
+            ev("bob", "added", &file.id),
+            ev("alice", "added", &inner),
+        ]
+    );
+    assert!(events[0].folder && !events[1].folder);
+    assert_eq!(events[0].at % 3600, 0, "to the hour");
+    // Paging.
+    let older: Vec<ActivityEvent> = h
+        .get(
+            &format!("/api/nodes/{team}/activity?before={}", events[2].id),
+            &bob.token,
+        )
+        .await
+        .json();
+    assert_eq!(older.len(), 3);
+    // The move shows where it went too, but only to those who can see there.
+    let private: Vec<ActivityEvent> = list(&alice, &elsewhere).await.json();
+    assert_eq!(private.len(), 1);
+    assert_eq!(private[0].kind, "moved");
+    assert_eq!(list(&bob, &elsewhere).await.status, StatusCode::NOT_FOUND);
+    assert_eq!(list(&carol, &team).await.status, StatusCode::NOT_FOUND);
+}

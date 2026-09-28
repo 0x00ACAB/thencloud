@@ -8,6 +8,7 @@ use crate::access::{self, Access};
 use crate::auth::AuthUser;
 use crate::db::{NodeRow, get_children, get_node};
 use crate::error::{AppError, Result, is_unique_violation, name_conflict};
+use crate::routes::activity::{self, Event};
 use crate::util::*;
 use crate::{AppState, subtree_cte};
 
@@ -122,6 +123,7 @@ pub async fn create_folder(
         }
         r => r?,
     };
+    activity::note(&state.db, &user.id, &req.id, Event::Added, None).await;
     let node = get_node(&state.db, &req.id)
         .await?
         .ok_or(AppError::NotFound)?;
@@ -215,6 +217,11 @@ pub async fn update(
             "the node was modified by someone else; reload and retry".into(),
         ));
     }
+    let (what, was_in) = match moving_to {
+        Some(_) => (Event::Moved, Some(parent.as_str())),
+        None => (Event::Renamed, None),
+    };
+    activity::note(&state.db, &user.id, &id, what, was_in).await;
     Ok(Json(
         get_node(&state.db, &id)
             .await?
@@ -269,6 +276,7 @@ pub async fn delete(
     .bind(&id)
     .execute(&state.db)
     .await?;
+    activity::note(&state.db, &user.id, &id, Event::Trashed, None).await;
     Ok(StatusCode::NO_CONTENT)
 }
 

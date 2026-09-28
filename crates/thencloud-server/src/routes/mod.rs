@@ -1,3 +1,4 @@
+pub mod activity;
 pub mod admin;
 pub mod app_data;
 pub mod app_passwords;
@@ -131,6 +132,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/comments/{id}", delete(comments::delete))
         .route("/nodes/{id}/thumbnail", get(thumbnails::get))
+        .route("/nodes/{id}/activity", get(activity::list))
         .route(
             "/nodes/{id}/versions/{vid}/thumbnail",
             put(thumbnails::put).layer(DefaultBodyLimit::max(
