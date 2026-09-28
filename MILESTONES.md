@@ -142,7 +142,7 @@ Smaller things:
 
 ## Milestone 8: Hardening
 
-- [ ] **Format spec**: a written description of every ciphertext format, key derivation and wire type, with test vectors that the Rust tests, the WASM build and any other client check against
+- [x] **Format spec**: a written description of every ciphertext format, key derivation and wire type, with test vectors that the Rust tests, the WASM build and any other client check against. `docs/format/README.md` and `vectors.json`: every wrapped key, sealed box, metadata and chunk format with its associated data, the KDFs, name tags, fingerprints, padding and the recovery key encoding, plus ciphertexts that must not open (moved, swapped, cut short)
 - [ ] **Format versions**: a version byte on every ciphertext and a tested path for moving old data to a new format
 - [x] **Fuzzing**: `cargo-fuzz` targets for the crypto decoders and the server's request parsing, and fuzz tests for the untrusted parsers in the browser (`tags.js`, `videotags.js`, the zip and PDF link handling). Also sealed boxes, WebAuthn, and in the browser photos, CSV, subtitles and episode names; in CI on every push and weekly for longer
 - [x] **Browser tests**: Playwright in CI for sign-up, upload, share, public links and previews, including a check that no request carries a name, key or plaintext
