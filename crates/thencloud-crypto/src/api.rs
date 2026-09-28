@@ -1040,6 +1040,9 @@ pub struct SetAvatar {
     /// The display name, encrypted under the same key (`encrypt_display_name`).
     #[serde(default)]
     pub name: Option<B64>,
+    /// Pronouns and grammatical gender, under the same key (`encrypt_person_details`).
+    #[serde(default)]
+    pub details: Option<B64>,
     /// The avatar key, encrypted under the master key.
     pub enc_key: B64,
 }
@@ -1049,6 +1052,8 @@ pub struct MyAvatar {
     pub data: Option<B64>,
     #[serde(default)]
     pub name: Option<B64>,
+    #[serde(default)]
+    pub details: Option<B64>,
     pub enc_key: Option<B64>,
     /// Who has been given the avatar key.
     pub grantees: Vec<String>,
@@ -1067,6 +1072,8 @@ pub struct UserAvatar {
     pub data: Option<B64>,
     #[serde(default)]
     pub name: Option<B64>,
+    #[serde(default)]
+    pub details: Option<B64>,
     pub sealed_key: B64,
     pub updated_at: i64,
 }

@@ -2106,6 +2106,12 @@ async fn profile_pictures_and_display_names_are_encrypted_and_only_for_share_par
     let alice_id = alice.me(&h).await.user_id;
     let picture = b"AVATAR-PNG-SECRET-PIXELS";
     let display_name = "Alice Pleasance Secretname";
+    let pronouns = c::PersonDetails {
+        subject: "zesecret".into(),
+        object: "zirsecret".into(),
+        possessive: "zirs".into(),
+        gender: Some(c::Gender::Feminine),
+    };
     let ak = Key::generate();
     let enc_key = B64(c::encrypt_private_data(
         &alice.mk,
@@ -2118,11 +2124,19 @@ async fn profile_pictures_and_display_names_are_encrypted_and_only_for_share_par
         SetAvatar {
             data: None,
             name: None,
+            details: None,
             enc_key: enc_key.clone(),
         },
         SetAvatar {
             data: None,
             name: Some(B64(c::encrypt_avatar(&ak, "alice", b"short"))),
+            details: None,
+            enc_key: enc_key.clone(),
+        },
+        SetAvatar {
+            data: None,
+            name: None,
+            details: Some(B64(c::encrypt_avatar(&ak, "alice", b"short"))),
             enc_key: enc_key.clone(),
         },
     ] {
@@ -2140,6 +2154,9 @@ async fn profile_pictures_and_display_names_are_encrypted_and_only_for_share_par
                 data: Some(B64(c::encrypt_avatar(&ak, "alice", picture))),
                 name: Some(B64(
                     c::encrypt_display_name(&ak, "alice", display_name).unwrap()
+                )),
+                details: Some(B64(
+                    c::encrypt_person_details(&ak, "alice", &pronouns).unwrap()
                 )),
                 enc_key: B64(c::encrypt_private_data(
                     &alice.mk,
@@ -2215,6 +2232,10 @@ async fn profile_pictures_and_display_names_are_encrypted_and_only_for_share_par
         c::decrypt_display_name(&k, "alice", &got.name.unwrap()).unwrap(),
         display_name
     );
+    assert_eq!(
+        c::decrypt_person_details(&k, "alice", &got.details.unwrap()).unwrap(),
+        pronouns
+    );
     let none: Option<UserAvatar> = h.get("/api/users/alice/avatar", &carol.token).await.json();
     assert!(none.is_none());
     let mine: MyAvatar = h.get("/api/me/avatar", &alice.token).await.json();
@@ -2241,7 +2262,14 @@ async fn profile_pictures_and_display_names_are_encrypted_and_only_for_share_par
     all_files(&h.dir.path().join("data"), &mut files);
     for p in &files {
         let bytes = std::fs::read(p).unwrap();
-        for n in [picture.as_slice(), display_name.as_bytes(), ak.as_bytes()] {
+        for n in [
+            picture.as_slice(),
+            display_name.as_bytes(),
+            b"zesecret",
+            b"zirsecret",
+            b"feminine",
+            ak.as_bytes(),
+        ] {
             assert!(!contains(&bytes, n), "avatar data found in {}", p.display());
         }
     }
@@ -2259,7 +2287,12 @@ async fn profile_pictures_and_display_names_are_encrypted_and_only_for_share_par
     let none: Option<UserAvatar> = h.get("/api/users/alice/avatar", &bob.token).await.json();
     assert!(none.is_none());
     let mine: MyAvatar = h.get("/api/me/avatar", &alice.token).await.json();
-    assert!(mine.data.is_none() && mine.name.is_none() && mine.grantees.is_empty());
+    assert!(
+        mine.data.is_none()
+            && mine.name.is_none()
+            && mine.details.is_none()
+            && mine.grantees.is_empty()
+    );
 }
 
 #[tokio::test]

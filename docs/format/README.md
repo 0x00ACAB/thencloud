@@ -165,6 +165,7 @@ Each of these is `seal(key, plaintext, aad)`:
 | `content-key` | file's node key | content key | `aad("content-key", node_id, version_id)` |
 | `private-data` | MK | any bytes | `aad("private-data", user_id, label)` |
 | `avatar` | the user's avatar key | the image | `aad("avatar", owner_username)` |
+| `person-details` | the user's avatar key | pronouns and grammatical gender as JSON, zero-padded to 256 bytes (see below) | `aad("person-details", owner_username)` |
 | `display-name` | the user's avatar key | the display name, UTF-8, zero-padded to 256 bytes (see below) | `aad("display-name", owner_username)` |
 | `link-key` | a link password's KEK | node key | `aad("link-key", node_id)` |
 | `link-secret` | the node key | the link's secret, so the owner can show the link again | `aad("link-secret", node_id)` |
@@ -179,6 +180,14 @@ another). The padding hides its length. A reader must refuse a name that
 isn't already in that form, or whose padding isn't all zeros, since any
 client could have written it; clients show it next to the username, never
 instead of it.
+
+Person details are how someone likes to be referred to: JSON with optional
+`subject`, `object` and `possessive` pronouns (English: "they", "them",
+"their"; each NFC, trimmed, at most 24 characters, with the same forbidden
+characters as display names) and an optional `gender` (`neuter`, `feminine`
+or `masculine`), for languages whose words change with it. Missing means
+not said. The JSON is padded like a display name, and a reader refuses
+pronouns not already in stored form, an unknown gender or non-zero padding.
 
 Private data labels in use: `contacts` (verified contacts), `avatar-key` (the
 owner's copy of their avatar key), `music`, `videos`, `files`, `notes`,

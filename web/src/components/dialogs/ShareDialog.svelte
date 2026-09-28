@@ -11,16 +11,19 @@
   import PhotoLocationNotice from '../PhotoLocationNotice.svelte';
   import Avatar from '../Avatar.svelte';
   import PersonName from '../PersonName.svelte';
-  import { lookupUser, share, outgoingShares, setSharePermission, deleteShare, session, contactStatus, verifyContact } from '../../lib/cloud.svelte.js';
+  import { lookupUser, share, outgoingShares, setSharePermission, deleteShare, session, contactStatus, verifyContact, profileOf } from '../../lib/cloud.svelte.js';
   import Time from '../Time.svelte';
   import { errorMessage, toast, toastError } from '../../lib/ui.svelte.js';
   import { formatDate } from '../../lib/format.js';
-  import { t } from '../../lib/i18n.svelte.js';
+  import { t, pronouns } from '../../lib/i18n.svelte.js';
 
   let { entry, onclose } = $props();
 
   let username = $state('');
   let user = $state(null); // { username, publicKey, fingerprint }
+  // Their pronouns and gender, if they've shared them with us (people we
+  // already share with); otherwise neutral wording.
+  let them = $state(pronouns());
   let verified = $state(false);
   let status = $state(null); // { state: 'new' | 'verified' | 'changed', verifiedAt, pinnedFingerprint }
   let permission = $state('read');
@@ -62,6 +65,7 @@
         const found = await lookupUser(name);
         status = await contactStatus(found);
         verified = status.state === 'verified';
+        them = pronouns((await profileOf(found.username).catch(() => null))?.details);
         user = found;
       } else {
         // Remember a key once it's been checked (or re-checked after a change).
@@ -125,7 +129,7 @@
         <Avatar username={user.username} class="size-8 text-xs" />
         <div class="min-w-0 flex-1">
           <p class="font-medium"><PersonName username={user.username} /></p>
-          <p class="hint">{t('Their key fingerprint')}</p>
+          <p class="hint">{t('{Their} key fingerprint', them)}</p>
         </div>
       </div>
       <p class="fingerprint rounded-md bg-subtle px-3 py-2 text-center select-all">{user.fingerprint}</p>
@@ -141,16 +145,16 @@
             <span class="fingerprint mt-1 block text-fg-muted">{status.pinnedFingerprint}</span>
           </p>
           <p class="text-fg-muted">
-            {t("That can happen if they made a new account with the same name. It's also what an attack would look like. Don't share until {name} reads you the new fingerprint above.", { name: user.username })}
+            {t("That can happen if {they} made a new account with the same name. It's also what an attack would look like. Don't share until {name} reads you the new fingerprint above.", { name: user.username, ...them })}
           </p>
         </div>
         <label class="flex cursor-pointer items-center gap-2 text-[13px]">
           <input type="checkbox" bind:checked={verified} class="size-4 accent-accent" />
-          {t('{name} read me the new fingerprint and it matches', { name: user.username })}
+          {t('{name} read me the new fingerprint and it matches', { name: user.username, ...them })}
         </label>
       {:else}
         <p class="hint">
-          {t("Ask {name} to open Settings and read you their fingerprint. If it doesn't match exactly, don't share: someone may be intercepting. Once you've checked, it's remembered.", { name: user.username })}
+          {t("Ask {name} to open Settings and read you {their} fingerprint. If it doesn't match exactly, don't share: someone may be intercepting. Once you've checked, it's remembered.", { name: user.username, ...them })}
         </p>
         <label class="flex cursor-pointer items-center gap-2 text-[13px]">
           <input type="checkbox" bind:checked={verified} class="size-4 accent-accent" />

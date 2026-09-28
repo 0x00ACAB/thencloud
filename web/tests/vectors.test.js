@@ -33,6 +33,10 @@ function openSymmetric(v) {
     case 'pq-private-key': return tc.unwrap_pq_private_key(k, sealed);
     case 'private-data': return tc.decrypt_private_data(k, c[0], c[1], sealed);
     case 'avatar': return tc.decrypt_avatar(k, c[0], sealed);
+    case 'person-details': {
+      assert.deepEqual(JSON.parse(tc.decrypt_person_details(k, c[0], sealed)), v.details);
+      return null;
+    }
     case 'display-name': {
       assert.equal(tc.decrypt_display_name(k, c[0], sealed), v.name);
       return null;

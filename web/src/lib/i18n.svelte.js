@@ -1,5 +1,9 @@
 // Translations. The English text is the key, and {placeholders} in it are
-// filled from the second argument (params such as name or count). A message
+// filled from the second argument (params such as name or count). A
+// translation may leave a placeholder out (Polish has no use for {their}),
+// but never add one. A translation can also have forms by grammatical
+// gender (`feminine`, `masculine`, `neuter`, and `other` for "not said"),
+// picked by a `gender` param; see `pronouns` for someone's English ones. A message
 // with a {count} can have plural forms, chosen by Intl.PluralRules for the
 // language (Polish has one, few and many; English and German one and
 // other); English plural forms are in messages/en.js. Anything without a
@@ -43,6 +47,28 @@ export async function loadLanguage(lang = language()) {
   }
 }
 
+export const GENDERS = ['feminine', 'masculine', 'neuter'];
+const isGendered = (msg) => GENDERS.some((g) => g in msg);
+
+/**
+ * Someone's English pronouns from their person details, for {they}, {them}
+ * and {their} ({They} and {Their} to start a sentence), with their gender
+ * for gendered forms. Not said: they, them, their.
+ */
+export function pronouns(details = {}) {
+  const cap = (w) => w.charAt(0).toUpperCase() + w.slice(1);
+  const they = details.subject || 'they';
+  const their = details.possessive || 'their';
+  return {
+    they,
+    They: cap(they),
+    them: details.object || 'them',
+    their,
+    Their: cap(their),
+    gender: details.gender ?? null,
+  };
+}
+
 const plurals = new Map();
 function pluralRules(lang) {
   if (!plurals.has(lang)) plurals.set(lang, new Intl.PluralRules(lang));
@@ -54,8 +80,7 @@ export function t(key, params) {
   const lang = language();
   let msg = catalogs[lang]?.[key] ?? en[key] ?? key;
   if (typeof msg === 'object') {
-    const form = pluralRules(lang).select(params?.count ?? 0);
-    msg = msg[form] ?? msg.other;
+    msg = isGendered(msg) ? (msg[params?.gender] ?? msg.other) : (msg[pluralRules(lang).select(params?.count ?? 0)] ?? msg.other);
   }
   if (!params) return msg;
   return msg.replace(/\{(\w+)\}/g, (m, name) => (name in params ? String(params[name]) : m));

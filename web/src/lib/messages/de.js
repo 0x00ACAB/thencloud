@@ -445,14 +445,14 @@ export default {
   'People you share with can decrypt this folder and everything in it.': 'Personen, mit denen du teilst, können diesen Ordner und alles darin entschlüsseln.',
   'People you share with can decrypt this file.': 'Personen, mit denen du teilst, können diese Datei entschlüsseln.',
   'e.g. alex': 'z. B. alex',
-  'Their key fingerprint': 'Fingerabdruck des Schlüssels',
+  '{Their} key fingerprint': 'Fingerabdruck des Schlüssels',
   'You checked this key on {date}.': 'Du hast diesen Schlüssel am {date} geprüft.',
   'This key is not the one you checked': 'Das ist nicht der Schlüssel, den du geprüft hast',
   'You verified a different key for {name} on {date}:': 'Du hast am {date} einen anderen Schlüssel für {name} geprüft:',
-  "That can happen if they made a new account with the same name. It's also what an attack would look like. Don't share until {name} reads you the new fingerprint above.":
+  "That can happen if {they} made a new account with the same name. It's also what an attack would look like. Don't share until {name} reads you the new fingerprint above.":
     'Das kann passieren, wenn jemand ein neues Konto mit demselben Namen erstellt hat. Genauso würde aber auch ein Angriff aussehen. Teile nichts, bis {name} dir den neuen Fingerabdruck oben vorliest.',
   '{name} read me the new fingerprint and it matches': '{name} hat mir den neuen Fingerabdruck vorgelesen und er stimmt',
-  "Ask {name} to open Settings and read you their fingerprint. If it doesn't match exactly, don't share: someone may be intercepting. Once you've checked, it's remembered.":
+  "Ask {name} to open Settings and read you {their} fingerprint. If it doesn't match exactly, don't share: someone may be intercepting. Once you've checked, it's remembered.":
     'Bitte {name}, die Einstellungen zu öffnen und dir den Fingerabdruck vorzulesen. Stimmt er nicht genau überein, teile nichts: Jemand könnte mitlesen. Nach der Prüfung wird er gespeichert.',
   'The fingerprints match': 'Die Fingerabdrücke stimmen überein',
   'Can view and download': 'Darf ansehen und herunterladen',
@@ -555,4 +555,23 @@ export default {
   Sleepy: 'Schläfrig',
   Peaceful: 'Friedlich',
   Serene: 'Gelassen',
+
+  // Pronouns and grammatical gender
+  'Pronouns saved': 'Pronomen gespeichert',
+  Pronouns: 'Pronomen',
+  'Pronoun as the subject, like "they"': 'Pronomen als Subjekt, z. B. "they"',
+  'Pronoun as the object, like "them"': 'Pronomen als Objekt, z. B. "them"',
+  'Possessive pronoun, like "their"': 'Possessivpronomen, z. B. "their"',
+  'How thencloud refers to you when it talks about you to others in English. Fill in the blanks the way you like; empty ones read they, them and their.':
+    'Wie thencloud auf Englisch von dir spricht, wenn es anderen etwas über dich sagt. Füll die Lücken so aus, wie du es magst; leere lauten they, them und their.',
+  'Grammatical gender': 'Grammatisches Geschlecht',
+  'Not set': 'Nicht festgelegt',
+  Feminine: 'Weiblich',
+  Masculine: 'Männlich',
+  Neuter: 'Sächlich',
+  'For languages whose words change with it, like Polish "przeczytała" or "przeczytał". Not set keeps the wording neutral.':
+    'Für Sprachen, deren Wörter sich danach richten, wie das polnische "przeczytała" oder "przeczytał". Ohne Angabe bleibt die Formulierung neutral.',
+  "Those pronouns have characters that can't be used.": 'Diese Pronomen enthalten Zeichen, die nicht verwendet werden können.',
+  'Shown only to the people who see your picture and display name, and encrypted the same way.':
+    'Nur für die Personen sichtbar, die dein Bild und deinen Anzeigenamen sehen, und genauso verschlüsselt.',
 };

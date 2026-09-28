@@ -1649,13 +1649,13 @@ export async function addComment(entry, text) {
 export const deleteComment = (id) => api('DELETE', `/api/comments/${id}`);
 
 // ---------------------------------------------------------------------------
-// Profile pictures and display names: encrypted under our avatar key, which
-// is sealed to each person we share with (either way round). The server
-// can't see either.
+// Profile pictures, display names and pronouns: encrypted under our avatar
+// key, which is sealed to each person we share with (either way round). The
+// server can't see any of them.
 // ---------------------------------------------------------------------------
 
-export const avatar = $state({ url: null, name: null }); // our own picture (a blob: URL) and display name
-let avatarState = null; // { key, grantees: Set, picture: bytes | null, name: string | null }
+export const avatar = $state({ url: null, name: null, details: {} }); // our own picture (a blob: URL), display name and person details
+let avatarState = null; // { key, grantees: Set, picture: bytes | null, name: string | null, details: object }
 const profiles = new Map(); // username -> Promise<{ url, name }>
 
 const imageType = (b) =>
@@ -1673,14 +1673,17 @@ export async function loadMyAvatar() {
   let key = null;
   let picture = null;
   let name = null;
+  let details = {};
   if (r.enc_key) {
     key = tc.decrypt_private_data(mk, me.user_id, 'avatar-key', unb64(r.enc_key));
     if (r.data) picture = tc.decrypt_avatar(key, me.username, unb64(r.data));
     if (r.name) name = tc.decrypt_display_name(key, me.username, unb64(r.name));
+    if (r.details) details = JSON.parse(tc.decrypt_person_details(key, me.username, unb64(r.details)));
   }
-  avatarState = { key, grantees: new Set(r.grantees), picture, name };
+  avatarState = { key, grantees: new Set(r.grantees), picture, name, details };
   avatar.url = picture ? avatarBlobUrl(picture) : null;
   avatar.name = name;
+  avatar.details = details;
   return avatarState;
 }
 
@@ -1708,31 +1711,37 @@ async function sharePartners() {
   return partners;
 }
 
+const hasDetails = (d) => !!(d?.subject || d?.object || d?.possessive || d?.gender);
+
 /**
- * Store our picture and name (either may be null; both null removes them).
- * A new key each time, given to the people we share with now, so someone
- * we've stopped sharing with never gets a later one.
+ * Store our picture, name and person details, changing those given in
+ * `change` (null removes one; all gone removes the lot). A new key each
+ * time, given to the people we share with now, so someone we've stopped
+ * sharing with never gets a later one.
  */
-async function saveProfile(picture, name) {
+async function saveProfile(change) {
   const a = await loadMyAvatar();
   const me = session.me;
-  if (!picture && !name) {
+  const { picture, name, details } = { picture: a.picture, name: a.name, details: a.details, ...change };
+  if (!picture && !name && !hasDetails(details)) {
     await api('DELETE', '/api/me/avatar');
-    Object.assign(a, { key: null, grantees: new Set(), picture: null, name: null });
+    Object.assign(a, { key: null, grantees: new Set(), picture: null, name: null, details: {} });
   } else {
     const key = tc.random_key();
     await api('PUT', '/api/me/avatar', {
       body: {
         data: picture ? b64(tc.encrypt_avatar(key, me.username, picture)) : null,
         name: name ? b64(tc.encrypt_display_name(key, me.username, name)) : null,
+        details: hasDetails(details) ? b64(tc.encrypt_person_details(key, me.username, JSON.stringify(details))) : null,
         enc_key: b64(tc.encrypt_private_data(mk, me.user_id, 'avatar-key', key)),
       },
     });
-    Object.assign(a, { key, grantees: new Set(), picture, name });
+    Object.assign(a, { key, grantees: new Set(), picture, name, details: details ?? {} });
   }
   if (avatar.url) URL.revokeObjectURL(avatar.url);
-  avatar.url = picture ? avatarBlobUrl(picture) : null;
-  avatar.name = name;
+  avatar.url = a.picture ? avatarBlobUrl(a.picture) : null;
+  avatar.name = a.name;
+  avatar.details = a.details;
   if (!a.key) return;
   const pinned = (await loadContacts()).data;
   for (const username of await sharePartners()) {
@@ -1750,14 +1759,12 @@ export async function setAvatar(file) {
   let blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.85 });
   if (blob.type !== 'image/webp') blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.85 });
   const bytes = new Uint8Array(await blob.arrayBuffer());
-  const a = await loadMyAvatar();
-  await saveProfile(bytes, a.name);
+  await saveProfile({ picture: bytes });
 }
 
-/** Remove our picture (the display name stays). */
+/** Remove our picture (the display name and pronouns stay). */
 export async function removeAvatar() {
-  const a = await loadMyAvatar();
-  await saveProfile(null, a.name);
+  await saveProfile({ picture: null });
 }
 
 /** The name as it would be stored, or null if it can't be one. */
@@ -1767,28 +1774,53 @@ export const cleanDisplayName = (name) => tc.clean_display_name(name) ?? null;
 export async function setDisplayName(name) {
   const clean = name.trim() ? cleanDisplayName(name) : null;
   if (name.trim() && !clean) throw new Error('That name has characters that can\'t be used.');
-  const a = await loadMyAvatar();
-  await saveProfile(a.picture, clean);
+  await saveProfile({ name: clean });
 }
 
-/** Someone's picture (a blob: URL) and display name, each null if they haven't given us one. */
+/** A pronoun as it would be stored, or null if it can't be one. */
+export const cleanPronoun = (p) => tc.clean_pronoun(p) ?? null;
+
+/**
+ * Set how we like to be referred to: { subject, object, possessive } (English
+ * pronouns, empty for "not said") and gender ('neuter', 'feminine',
+ * 'masculine' or null).
+ */
+export async function setPersonDetails({ subject = '', object = '', possessive = '', gender = null }) {
+  const d = {};
+  for (const [k, v] of Object.entries({ subject, object, possessive })) {
+    const clean = cleanPronoun(v);
+    if (clean === null) throw new Error(t("Those pronouns have characters that can't be used."));
+    if (clean) d[k] = clean;
+  }
+  if (gender) d.gender = gender;
+  await saveProfile({ details: d });
+}
+
+/**
+ * Someone's picture (a blob: URL), display name and person details ({}
+ * when not said), each empty if they haven't given us their avatar key.
+ */
 export function profileOf(username) {
-  if (username === session.me?.username) return loadMyAvatar().then(() => ({ url: avatar.url, name: avatar.name }));
+  if (username === session.me?.username) return loadMyAvatar().then(() => ({ url: avatar.url, name: avatar.name, details: avatar.details }));
   if (!profiles.has(username)) {
     profiles.set(
       username,
       api('GET', `/api/users/${encodeURIComponent(username)}/avatar`)
         .then((r) => {
-          if (!r) return { url: null, name: null };
+          if (!r) return { url: null, name: null, details: {} };
           const key = tc.open_avatar_key(sk, unb64(r.sealed_key), username, session.me.username);
           const url = r.data ? avatarBlobUrl(tc.decrypt_avatar(key, username, unb64(r.data))) : null;
           let name = null;
+          let details = {};
           try {
             if (r.name) name = tc.decrypt_display_name(key, username, unb64(r.name));
           } catch {}
-          return { url, name };
+          try {
+            if (r.details) details = JSON.parse(tc.decrypt_person_details(key, username, unb64(r.details)));
+          } catch {}
+          return { url, name, details };
         })
-        .catch(() => ({ url: null, name: null })),
+        .catch(() => ({ url: null, name: null, details: {} })),
     );
   }
   return profiles.get(username);
