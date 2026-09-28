@@ -26,6 +26,9 @@
   import VideoDownloadDialog from '../dialogs/VideoDownloadDialog.svelte';
   import { onMount, tick, untrack } from 'svelte';
   import { sourceKind } from '../../lib/convert.js';
+  import PdfToolsDialog from '../dialogs/PdfToolsDialog.svelte';
+  // Kept here: pdfedit.js pulls in pdf-lib, which loads only with the dialog.
+  const isPdf = (meta) => meta.mime === 'application/pdf' || /\.pdf$/i.test(meta.name);
   import { previewKind } from '../../lib/preview.js';
   import { play, enqueue, makeTrack } from '../../lib/music.svelte.js';
   import { isFavourite, toggleFavourite, noteRecent } from '../../lib/places.svelte.js';
@@ -771,6 +774,7 @@
           ]
         : []),
       ...(!folder && sourceKind(entry.meta) ? [{ label: 'Convert', icon: 'file-cog', onclick: () => (dialog = { type: 'convert', entry }) }] : []),
+      ...(!folder && isPdf(entry.meta) ? [{ label: 'PDF tools', icon: 'file-stack', onclick: () => (dialog = { type: 'pdf', entries: [entry] }) }] : []),
       ...(!folder ? [{ label: 'Version history', icon: 'refresh-cw', onclick: () => (dialog = { type: 'versions', entry }) }] : []),
       { label: 'Comments', icon: 'message-square', onclick: () => (dialog = { type: 'comments', entry }) },
       ...(folder ? [{ label: 'Activity', icon: 'history', onclick: () => (dialog = { type: 'activity', entry }) }] : []),
@@ -1263,6 +1267,11 @@
           <Icon name="file-cog" /><span class="hidden sm:inline">Convert</span>
         </button>
       {/if}
+      {#if chosen.length > 1 && chosen.every((r) => r.node.kind === 'file' && isPdf(r.meta))}
+        <button type="button" class="btn btn-ghost" onclick={() => (dialog = { type: 'pdf', entries: [...chosen] })}>
+          <Icon name="file-stack" /><span class="hidden sm:inline">Merge PDFs</span>
+        </button>
+      {/if}
       {#if canWrite}
         <button type="button" class="btn btn-ghost" onclick={() => (dialog = { type: 'move', entries: [...chosen] })}>
           <Icon name="move" /><span class="hidden sm:inline">Move</span>
@@ -1327,6 +1336,8 @@
     fetch={fetchEntry}
     save={canWrite ? saveNewFile : null}
     onclose={close} />
+{:else if dialog?.type === 'pdf'}
+  <PdfToolsDialog entries={dialog.entries} fetch={fetchEntry} save={canWrite ? saveNewFile : null} onclose={close} />
 {:else if dialog?.type === 'stray-drops'}
   <StrayDropsDialog onclose={close} onchanged={() => load()} />
 {:else if dialog?.type === 'convert-many'}
