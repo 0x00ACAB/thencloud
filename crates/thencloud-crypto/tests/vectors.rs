@@ -112,6 +112,7 @@ fn open_symmetric(v: &Value) -> Result<Vec<u8>> {
         "content-key" => bytes(unwrap_content_key(&k, &sealed, c[0], c[1])?),
         "link-key" => bytes(unwrap_link_key(&k, &sealed, c[0])?),
         "link-secret" => bytes(decrypt_link_secret(&k, &sealed, c[0])?),
+        "comment" => decrypt_comment(&k, c[0], c[1], c[2], &sealed)?,
         "backup" => open_backup_record(&k, &b64_decode(c[0])?, c[1].parse().unwrap(), &sealed)?,
         "chunk" => decrypt_chunk(&k, c[0], c[1].parse().unwrap(), c[2] == "last", &sealed)?,
         f => panic!("unknown format {f}"),
@@ -552,6 +553,17 @@ fn write_vectors() {
             encrypt_link_secret(&node_key, &link_secret, node),
         ),
         {
+            let comment_id = "7c1d2e3f-4a5b-4c6d-9e7f-8a9b0c1d2e3f";
+            let body = br#"{"text":"Looks good, one typo on page 2.","at":1790000123456}"#;
+            sym(
+                "comment",
+                &node_key,
+                &[node, comment_id, user],
+                body,
+                encrypt_comment(&node_key, node, comment_id, user, body),
+            )
+        },
+        {
             let backup_key = key("backup key");
             let id = bytes("backup id", BACKUP_ID_LEN);
             let record = br#"E{"path":["Docs","a.txt"],"folder":false,"size":5,"mtime":0}"#;
@@ -611,6 +623,15 @@ fn write_vectors() {
             json!({ "key": b64(derive_link_password_keys(link_secret.as_bytes(), "open says me").unwrap().kek.as_bytes()) }),
             "a link's key with the wrong password",
         ),
+        {
+            let v = find(&symmetric, "comment");
+            let ctx = v["context"].clone();
+            reject(
+                &v,
+                json!({ "context": [ctx[0], ctx[1], other_node] }),
+                "a comment put in someone else's name",
+            )
+        },
         {
             let v = find(&symmetric, "backup");
             let id = v["context"][0].clone();

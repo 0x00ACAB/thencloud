@@ -1005,6 +1005,41 @@ pub fn decrypt_chunk(
 }
 
 // ---------------------------------------------------------------------------
+// Comments on files and folders: under the node key, so everyone who can
+// open the node can read them and no one else can. Bound to the node, the
+// comment's id and its author, so the server can't move a comment to
+// another file or put it in someone else's name.
+// ---------------------------------------------------------------------------
+
+pub fn encrypt_comment(
+    node_key: &Key,
+    node_id: &str,
+    comment_id: &str,
+    author_id: &str,
+    body: &[u8],
+) -> Vec<u8> {
+    seal(
+        node_key,
+        body,
+        &aad("comment", &[node_id, comment_id, author_id]),
+    )
+}
+
+pub fn decrypt_comment(
+    node_key: &Key,
+    node_id: &str,
+    comment_id: &str,
+    author_id: &str,
+    sealed: &[u8],
+) -> Result<Vec<u8>> {
+    open(
+        node_key,
+        sealed,
+        &aad("comment", &[node_id, comment_id, author_id]),
+    )
+}
+
+// ---------------------------------------------------------------------------
 // Backups (`thencloud backup`): a file of records sealed under a random
 // backup key that only the user holds, each bound to the backup's random id
 // and its position, so records can't be dropped, reordered or mixed in from

@@ -513,3 +513,37 @@ pub fn decrypt_link_secret(node_key: &[u8], sealed: &[u8], node_id: &str) -> R<V
         .as_bytes()
         .to_vec())
 }
+
+#[wasm_bindgen]
+pub fn encrypt_comment(
+    node_key: &[u8],
+    node_id: &str,
+    comment_id: &str,
+    author_id: &str,
+    body: &[u8],
+) -> R<Vec<u8>> {
+    Ok(c::encrypt_comment(
+        &key(node_key)?,
+        node_id,
+        comment_id,
+        author_id,
+        body,
+    ))
+}
+
+#[wasm_bindgen]
+pub fn decrypt_comment(
+    node_key: &[u8],
+    node_id: &str,
+    comment_id: &str,
+    author_id: &str,
+    sealed: &[u8],
+) -> R<Vec<u8>> {
+    Ok(c::decrypt_comment(
+        &key(node_key)?,
+        node_id,
+        comment_id,
+        author_id,
+        sealed,
+    )?)
+}

@@ -927,6 +927,29 @@ pub struct Draft {
 }
 
 // ---------------------------------------------------------------------------
+// Comments (encrypted under the node key; see `encrypt_comment`)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Comment {
+    pub id: String,
+    pub node_id: String,
+    pub author_id: String,
+    /// The author's username. Comments go when their author's account does.
+    pub author: String,
+    /// To the hour; the exact time is inside the encrypted body.
+    pub created_at: i64,
+    pub enc_body: B64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateCommentRequest {
+    /// Chosen by the client: it's bound into `enc_body`.
+    pub id: String,
+    pub enc_body: B64,
+}
+
+// ---------------------------------------------------------------------------
 // Profile pictures (encrypted; see `encrypt_avatar`)
 // ---------------------------------------------------------------------------
 

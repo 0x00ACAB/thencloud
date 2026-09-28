@@ -41,6 +41,7 @@ function openSymmetric(v) {
     case 'content-key': return tc.unwrap_content_key(k, sealed, c[0], c[1]);
     case 'link-key': return tc.unwrap_link_key(k, sealed, c[0]);
     case 'link-secret': return tc.decrypt_link_secret(k, sealed, c[0]);
+    case 'comment': return tc.decrypt_comment(k, c[0], c[1], c[2], sealed);
     case 'chunk': return tc.decrypt_chunk(k, c[0], Number(c[1]), c[2] === 'last', sealed);
     default: throw new Error(`unknown format ${v.format}`);
   }
