@@ -13,6 +13,8 @@
   const inRange = $derived(series.map((s) => ({ ...s, points: s.points.filter((p) => p.t >= from && p.t <= to) })));
   const all = $derived(inRange.flatMap((s) => s.points));
 
+  import { formatDateTime } from '../../lib/locale.svelte.js';
+
   // "Nice" ticks: 1, 2, 2.5 or 5 times a power of ten.
   function ticks(lo, hi, n = 4) {
     if (hi - lo < 1e-9) [lo, hi] = [lo - 1, hi + 1];
@@ -46,7 +48,7 @@
     const opts = span > 400 * 86400e3 ? { month: 'short', year: 'numeric' } : { month: 'short', day: 'numeric' };
     return Array.from({ length: n }, (_, i) => {
       const t = from + (span * i) / (n - 1);
-      return { t, text: new Date(t).toLocaleDateString(undefined, opts) };
+      return { t, text: formatDateTime(t, opts) };
     });
   });
 
@@ -95,7 +97,7 @@
       <div
         class="pointer-events-none absolute top-1 z-10 rounded-md border border-line bg-bg px-2.5 py-1.5 text-xs shadow-sm"
         style:left="{x(tip.t) + 170 < width ? x(tip.t) + 10 : Math.max(0, x(tip.t) - 170)}px">
-        <p class="text-fg-muted">{new Date(tip.t).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}</p>
+        <p class="text-fg-muted">{formatDateTime(tip.t)}</p>
         {#each inRange as s, si (si)}
           {#if s.points[hover]}
             <p class="flex items-center gap-1.5 font-medium tabular-nums">

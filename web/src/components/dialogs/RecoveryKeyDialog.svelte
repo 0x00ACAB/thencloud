@@ -1,6 +1,7 @@
 <script>
   // Create or replace the recovery key: confirm the password, then show the
   // key once. It's made in this browser and never sent to the server.
+  import { formatDateTime } from '../../lib/locale.svelte.js';
   import Modal from '../Modal.svelte';
   import Icon from '../Icon.svelte';
   import { session, createRecoveryKey } from '../../lib/cloud.svelte.js';
@@ -36,7 +37,7 @@
       '',
       `Account: ${session.me.username}`,
       `Server:  ${location.origin}`,
-      `Created: ${new Date().toLocaleString()}`,
+      `Created: ${formatDateTime(Date.now())}`,
       '',
       key,
       '',
