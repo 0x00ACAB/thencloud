@@ -481,7 +481,7 @@ pub async fn publish(
         } else {
             Event::Changed
         };
-        activity::note(&state.db, &created_by, &up.node_id, what, None).await;
+        activity::note(state, &created_by, &up.node_id, what, None).await;
     }
     Ok(Json(
         get_node(&state.db, &up.node_id)

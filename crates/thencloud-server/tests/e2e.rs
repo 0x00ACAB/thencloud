@@ -5454,3 +5454,72 @@ async fn activity_shows_who_did_what_to_those_who_can_see_the_folder() {
     assert_eq!(list(&bob, &elsewhere).await.status, StatusCode::NOT_FOUND);
     assert_eq!(list(&carol, &team).await.status, StatusCode::NOT_FOUND);
 }
+
+#[tokio::test]
+async fn live_changes_reach_those_watching_the_folder() {
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "pw").await;
+    let bob = register(&h, "bob", "pw").await;
+    let (team, _) = alice.mkdir(&h, &alice.root, "Team").await;
+    let (inner, _) = alice.mkdir(&h, &team, "Inner").await;
+    let (other, _) = alice.mkdir(&h, &alice.root, "Other").await;
+    let uri = format!("/api/nodes/{team}/changes");
+    assert_eq!(h.get(&uri, &bob.token).await.status, StatusCode::NOT_FOUND);
+
+    let req = Request::builder()
+        .uri(&uri)
+        .header("authorization", format!("Bearer {}", alice.token))
+        .body(Body::empty())
+        .unwrap();
+    let res = h.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert!(
+        res.headers()[axum::http::header::CONTENT_TYPE]
+            .to_str()
+            .unwrap()
+            .starts_with("text/event-stream")
+    );
+    let mut body = res.into_body();
+
+    // A change elsewhere, then one deep inside the folder being watched.
+    alice
+        .upload(&h, &other, None, "elsewhere.txt", b"x")
+        .await
+        .unwrap();
+    let file = alice
+        .upload(&h, &inner, None, "LIVE-SECRET.txt", b"y")
+        .await
+        .unwrap();
+    let mut got = String::new();
+    while !got.contains("\n\n") {
+        let frame = tokio::time::timeout(std::time::Duration::from_secs(5), body.frame())
+            .await
+            .expect("a change arrives")
+            .unwrap()
+            .unwrap();
+        if let Ok(data) = frame.into_data() {
+            got.push_str(std::str::from_utf8(&data).unwrap());
+        }
+    }
+    assert!(got.starts_with("event: change\n"), "{got}");
+    assert!(
+        got.contains(&file.id),
+        "only the watched folder's change: {got}"
+    );
+    assert!(!got.contains("LIVE-SECRET"), "ids only: {got}");
+
+    // A new folder counts too.
+    let (made, _) = alice.mkdir(&h, &team, "New").await;
+    let mut got = String::new();
+    while !got.contains("\n\n") {
+        let frame = tokio::time::timeout(std::time::Duration::from_secs(5), body.frame())
+            .await
+            .expect("a new folder arrives")
+            .unwrap()
+            .unwrap();
+        if let Ok(data) = frame.into_data() {
+            got.push_str(std::str::from_utf8(&data).unwrap());
+        }
+    }
+    assert!(got.contains(&made), "{got}");
+}

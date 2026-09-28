@@ -131,7 +131,7 @@ pub async fn restore(
     .execute(&state.db)
     .await
     .map_err(crate::error::name_conflict)?;
-    activity::note(&state.db, &user.id, &id, Event::Restored, None).await;
+    activity::note(&state, &user.id, &id, Event::Restored, None).await;
     Ok(Json(
         get_node(&state.db, &id)
             .await?
