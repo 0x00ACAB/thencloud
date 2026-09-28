@@ -5,7 +5,7 @@ use sqlx::SqlitePool;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
 use thencloud_crypto::api::{B64, Node, NodeKind, VersionInfo};
 
-use crate::error::Result;
+use crate::error::{AppError, Result};
 
 pub async fn open(
     path: &Path,
@@ -118,6 +118,73 @@ pub async fn get_node<'e, E: sqlx::SqliteExecutor<'e>>(e: E, id: &str) -> Result
         .bind(id)
         .fetch_optional(e)
         .await?)
+}
+
+/// Most children in one page.
+pub const MAX_PAGE: u32 = 5000;
+
+/// `?limit=&after=` on a folder listing.
+#[derive(Debug, Default, serde::Deserialize)]
+pub struct ChildrenQuery {
+    pub limit: Option<u32>,
+    pub after: Option<String>,
+}
+
+/// A folder's children as the route returns them: the whole array, or with
+/// `limit` a [`NodePage`](thencloud_crypto::api::NodePage) in the same order,
+/// continued after an opaque cursor (the last row's kind, time and id).
+pub async fn children_response(
+    db: &SqlitePool,
+    parent_id: &str,
+    q: ChildrenQuery,
+) -> Result<axum::response::Response> {
+    use axum::Json;
+    use axum::response::IntoResponse;
+    let Some(limit) = q.limit else {
+        let kids = get_children(db, parent_id).await?;
+        return Ok(
+            Json(kids.into_iter().map(NodeRow::into_api).collect::<Vec<_>>()).into_response(),
+        );
+    };
+    let limit = limit.clamp(1, MAX_PAGE);
+    let after = match &q.after {
+        None => None,
+        Some(c) => {
+            let mut parts = c.splitn(3, '.');
+            let (Some(kind), Some(at), Some(id)) = (parts.next(), parts.next(), parts.next())
+            else {
+                return Err(AppError::bad("bad cursor"));
+            };
+            let at: i64 = at.parse().map_err(|_| AppError::bad("bad cursor"))?;
+            Some((kind.to_owned(), at, id.to_owned()))
+        }
+    };
+    let (k, at, id) = after.unwrap_or_default();
+    let sql = format!(
+        "{NODE_SELECT} WHERE n.parent_id = ?1 AND n.trashed_at IS NULL AND n.dropped = 0 \
+         AND (?2 = 0 OR n.kind < ?3 OR (n.kind = ?3 AND (n.created_at > ?4 OR (n.created_at = ?4 AND n.id > ?5)))) \
+         ORDER BY n.kind DESC, n.created_at, n.id LIMIT ?6"
+    );
+    let mut rows = sqlx::query_as::<_, NodeRow>(&sql)
+        .bind(parent_id)
+        .bind(q.after.is_some())
+        .bind(&k)
+        .bind(at)
+        .bind(&id)
+        .bind(i64::from(limit) + 1)
+        .fetch_all(db)
+        .await?;
+    let more = rows.len() > limit as usize;
+    rows.truncate(limit as usize);
+    let nodes: Vec<_> = rows.into_iter().map(NodeRow::into_api).collect();
+    let next = more.then(|| nodes.last()).flatten().map(|n| {
+        let kind = match n.kind {
+            NodeKind::File => "file",
+            NodeKind::Folder => "folder",
+        };
+        format!("{kind}.{}.{}", n.created_at, n.id)
+    });
+    Ok(Json(thencloud_crypto::api::NodePage { nodes, next }).into_response())
 }
 
 pub async fn get_children(db: &SqlitePool, parent_id: &str) -> Result<Vec<NodeRow>> {

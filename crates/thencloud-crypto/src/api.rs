@@ -948,6 +948,15 @@ pub struct ActivityEvent {
     pub at: i64,
 }
 
+/// A page of a folder's children (`GET .../children?limit=<n>&after=<cursor>`);
+/// without `limit` the listing is the whole array instead.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct NodePage {
+    pub nodes: Vec<Node>,
+    /// Pass as `after` for the next page; `None` on the last one.
+    pub next: Option<String>,
+}
+
 /// One page of the change feed (`GET /api/changes?since=<cursor>`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ChangeFeed {

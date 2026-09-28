@@ -24,7 +24,7 @@
   import BatchConvertDialog from '../dialogs/BatchConvertDialog.svelte';
   import StrayDropsDialog from '../dialogs/StrayDropsDialog.svelte';
   import VideoDownloadDialog from '../dialogs/VideoDownloadDialog.svelte';
-  import { onMount, untrack } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import { sourceKind } from '../../lib/convert.js';
   import { previewKind } from '../../lib/preview.js';
   import { play, enqueue, makeTrack } from '../../lib/music.svelte.js';
@@ -108,6 +108,65 @@
   });
 
   const open = (id) => go({ name: 'files', folderId: id });
+
+  // Big folders. The list keeps only the rows near the screen in the page,
+  // with a spacer above and below standing in for the rest, and the grid
+  // adds tiles as you scroll down, so 100,000 items stay as quick as 100.
+  // Smaller folders render in full, with their animations.
+  const WINDOWED = 400;
+  const windowed = $derived(visible.length > WINDOWED);
+  let rowH = $state(49);
+  let win = $state({ start: 0, end: WINDOWED });
+  const shown = $derived(windowed ? visible.slice(win.start, win.end) : visible);
+  const GRID_STEP = 300;
+  let gridLimit = $state(GRID_STEP);
+  const gridShown = $derived(visible.length > gridLimit ? visible.slice(0, gridLimit) : visible);
+  // No fading or sliding while rows come and go by scrolling.
+  const motion = (d) => (windowed ? { duration: 0 } : d);
+
+  let frame = 0;
+  function updateWindow() {
+    if (frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      if (!windowed || !tbody || fileView.value === 'grid') return;
+      const row = tbody.querySelector('tr[data-row]');
+      if (row?.offsetHeight) rowH = row.offsetHeight;
+      const top = tbody.getBoundingClientRect().top;
+      const start = Math.max(0, Math.floor(-top / rowH) - 30);
+      const end = Math.min(visible.length, start + Math.ceil(innerHeight / rowH) + 60);
+      if (start !== win.start || end !== win.end) win = { start, end };
+    });
+  }
+  $effect(() => {
+    // Again whenever the rows or the layout change.
+    visible;
+    fileView.value;
+    tbody;
+    updateWindow();
+  });
+  $effect(() => {
+    folderId;
+    gridLimit = GRID_STEP;
+    win = { start: 0, end: WINDOWED };
+  });
+
+  /** Calls `more` when the element comes near the screen. */
+  function nearScreen(node, more) {
+    const io = new IntersectionObserver((es) => es.some((e) => e.isIntersecting) && more(), { rootMargin: '800px' });
+    io.observe(node);
+    return { destroy: () => io.disconnect() };
+  }
+
+  /** Make sure row `i` of `visible` is in the page (scrolling to it if the list is windowed). */
+  async function revealRow(i) {
+    if (!windowed || (i >= win.start && i < win.end)) return;
+    const top = tbody.getBoundingClientRect().top + scrollY;
+    scrollTo({ top: top + i * rowH - innerHeight / 2 });
+    const start = Math.max(0, i - 60);
+    win = { start, end: Math.min(visible.length, start + Math.ceil(innerHeight / rowH) + 120) };
+    await tick();
+  }
 
   // Search everywhere below the top of this tree (My files, or the shared
   // folder we're in), not just this folder; "Inside files" also looks in
@@ -723,18 +782,25 @@
 
   const rowButtons = () => [...(tbody?.querySelectorAll('button.row-open') ?? [])];
 
-  function focusRow(delta) {
+  // The first row in the page is this one in `visible` (not 0 when the
+  // list is windowed).
+  const firstInPage = () => (windowed && fileView.value !== 'grid' ? win.start : 0);
+
+  async function focusRow(delta) {
     const list = rowButtons();
     if (!list.length) return;
     const i = list.indexOf(document.activeElement);
-    const next = i === -1 ? (delta > 0 ? 0 : list.length - 1) : Math.max(0, Math.min(list.length - 1, i + delta));
-    list[next].focus();
-    list[next].scrollIntoView({ block: 'nearest' });
+    const last = fileView.value === 'grid' ? list.length - 1 : visible.length - 1;
+    const next = i === -1 ? firstInPage() + (delta > 0 ? 0 : list.length - 1) : Math.max(0, Math.min(last, firstInPage() + i + delta));
+    await revealRow(next);
+    const b = rowButtons()[next - firstInPage()];
+    b?.focus();
+    b?.scrollIntoView({ block: 'nearest' });
   }
 
   function focusedEntry() {
     const i = rowButtons().indexOf(document.activeElement);
-    return i === -1 ? null : visible[i];
+    return i === -1 ? null : visible[firstInPage() + i];
   }
 
   function onkeydown(e) {
@@ -783,7 +849,7 @@
   const reload = () => load();
 </script>
 
-<svelte:window {onkeydown} onpaste={onPaste} ondragenter={onDragEnter} ondragover={onDragOver} ondragleave={onDragLeave} ondrop={onDrop} />
+<svelte:window {onkeydown} onscroll={updateWindow} onresize={updateWindow} onpaste={onPaste} ondragenter={onDragEnter} ondragover={onDragOver} ondragleave={onDragLeave} ondrop={onDrop} />
 
 <input bind:this={fileInput} type="file" multiple hidden onchange={onPick} />
 <input bind:this={folderInput} type="file" webkitdirectory hidden onchange={onPickFolder} />
@@ -978,7 +1044,7 @@
           <span>Nothing in this folder matches "{query.trim()}". <button type="button" class="link" onclick={() => (query = '')}>Clear search</button></span>
         </li>
       {/if}
-      {#each visible as entry (entry.node.id)}
+      {#each gridShown as entry (entry.node.id)}
         {@const folder = entry.node.kind === 'folder'}
         {@const isSelected = selected.has(entry.node.id)}
         <li
@@ -1046,6 +1112,9 @@
           </div>
         </li>
       {/each}
+      {#if gridShown.length < visible.length}
+        {#key gridLimit}<li class="col-span-full h-px" aria-hidden="true" use:nearScreen={() => (gridLimit += GRID_STEP)}></li>{/key}
+      {/if}
     </ul>
   {:else}
     <table class="table animate-enter">
@@ -1083,10 +1152,14 @@
             </td>
           </tr>
         {/if}
-        {#each visible as entry (entry.node.id)}
+        {#if windowed && win.start}
+          <tr aria-hidden="true" class="!bg-transparent"><td colspan="5" class="!border-0 !p-0" style:height="{win.start * rowH}px"></td></tr>
+        {/if}
+        {#each shown as entry (entry.node.id)}
           {@const folder = entry.node.kind === 'folder'}
           {@const isSelected = selected.has(entry.node.id)}
           <tr
+            data-row
             class="group {isSelected ? 'bg-accent-soft/60 hover:bg-accent-soft/60' : ''} {dropTarget === entry.node.id ? 'drop-target' : ''}"
             aria-selected={isSelected}
             draggable={canWrite && !touch && renaming !== entry.node.id}
@@ -1095,9 +1168,9 @@
             ondragover={folder ? (e) => dragOverFolder(e, entry.node.id) : undefined}
             ondragleave={folder ? (e) => dragLeaveFolder(e, entry.node.id) : undefined}
             ondrop={folder ? (e) => dropOnFolder(e, entry) : undefined}
-            in:fade
-            out:fade={{ duration: 120 }}
-            animate:flip={flipParams()}>
+            in:fade={motion({})}
+            out:fade={motion({ duration: 120 })}
+            animate:flip={motion(flipParams())}>
             <td class="w-10 !pr-0 {selected.size ? '' : 'max-md:hidden'}">
               <input
                 type="checkbox"
@@ -1152,6 +1225,9 @@
             <td class="text-right"><Menu items={menuFor(entry)} label="Actions for {entry.meta.name}" /></td>
           </tr>
         {/each}
+        {#if windowed && win.end < visible.length}
+          <tr aria-hidden="true" class="!bg-transparent"><td colspan="5" class="!border-0 !p-0" style:height="{(visible.length - win.end) * rowH}px"></td></tr>
+        {/if}
       </tbody>
     </table>
   {/if}

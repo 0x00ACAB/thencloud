@@ -42,3 +42,23 @@ export async function request(method, path, { token, body, raw, headers } = {}) 
   if ((res.headers.get('content-type') || '').includes('application/json')) return res.json();
   return new Uint8Array(await res.arrayBuffer());
 }
+
+/** Children per request when listing a folder. */
+const PAGE = 2000;
+
+/**
+ * Every child of a folder, fetched a page at a time (`path` is its
+ * `.../children` URL, `get` makes one request). `onPage` sees each page as
+ * it arrives, so a big folder can show while the rest loads.
+ */
+export async function allChildren(get, path, onPage) {
+  const out = [];
+  let after = null;
+  do {
+    const page = await get(`${path}?limit=${PAGE}${after ? `&after=${encodeURIComponent(after)}` : ''}`);
+    out.push(...page.nodes);
+    onPage?.(page.nodes);
+    after = page.next;
+  } while (after);
+  return out;
+}

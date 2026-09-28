@@ -9,7 +9,7 @@
   // a secret: the folder or file key comes from the server wrapped under the
   // secret and the password together, and the password itself is never sent
   // (only an auth key derived from it).
-  import { request } from './lib/api.js';
+  import { request, allChildren } from './lib/api.js';
   import { tc, b64, unb64, encryptMeta, decryptMeta, decryptChildren, fetchFile, openFile, encryptPiece, saveBlob, deriveLinkKeys } from './lib/crypto.js';
   import { streamsAvailable, streamDownload } from './lib/stream.js';
   import { formatSize, sortEntries } from './lib/format.js';
@@ -145,7 +145,7 @@
     if (!here || here.node.kind !== 'folder') return;
     const { node, key } = here;
     listing = true;
-    request('GET', `${base}/nodes/${node.id}/children`, opts())
+    allChildren((p) => request('GET', p, opts()), `${base}/nodes/${node.id}/children`)
       .then((nodes) => {
         if (here?.node.id === node.id) rows = sortEntries(decryptChildren(key, nodes));
       })
@@ -160,7 +160,7 @@
   let preview = $state(null); // { entries, start }
   const files = $derived(rows.filter((r) => r.node.kind === 'file'));
 
-  const listFolder = async (entry) => sortEntries(decryptChildren(entry.key, await request('GET', `${base}/nodes/${entry.node.id}/children`, opts())));
+  const listFolder = async (entry) => sortEntries(decryptChildren(entry.key, await allChildren((p) => request('GET', p, opts()), `${base}/nodes/${entry.node.id}/children`)));
 
   /** Everything in the folder being viewed, as one zip. */
   async function downloadAll() {
