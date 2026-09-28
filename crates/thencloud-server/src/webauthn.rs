@@ -39,14 +39,17 @@ fn client_data(json: &[u8], kind: &str, challenge: &[u8]) -> Result<String> {
     origin_host(&cd.origin).ok_or_else(|| AppError::bad("passkeys need https"))
 }
 
-/// `https://host[:port]`, or plain http on localhost for development.
+/// `https://host[:port]`, or plain http on localhost for development and on
+/// an onion service (Tor's own encryption covers it, and Tor Browser treats
+/// .onion pages as secure).
 fn origin_host(origin: &str) -> Option<String> {
     let (scheme, rest) = origin.split_once("://")?;
     let host = match rest.rsplit_once(':') {
         Some((h, port)) if port.bytes().all(|b| b.is_ascii_digit()) => h,
         _ => rest,
     };
-    let local = host == "localhost" || host.ends_with(".localhost");
+    let lower = host.to_ascii_lowercase();
+    let local = lower == "localhost" || lower.ends_with(".localhost") || lower.ends_with(".onion");
     let ok = !host.is_empty()
         && !host.contains(['/', '@', '[', ']'])
         && (scheme == "https" || (scheme == "http" && local));
@@ -246,6 +249,12 @@ mod tests {
             Some("localhost")
         );
         assert_eq!(origin_host("http://cloud.example.com"), None);
+        assert_eq!(
+            origin_host("http://abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuv.onion")
+                .as_deref(),
+            Some("abcdefghijklmnopqrstuvwxyz234567abcdefghijklmnopqrstuv.onion")
+        );
+        assert_eq!(origin_host("http://evil.onion.example.com"), None);
         assert_eq!(origin_host("https://a@b"), None);
         assert_eq!(origin_host("nonsense"), None);
     }

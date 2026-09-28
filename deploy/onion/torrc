@@ -1,0 +1,10 @@
+# A Tor onion service for thencloud. Add to /etc/tor/torrc (or use as is
+# with tor -f), then start thencloud with:
+#
+#   thencloud-server --bind 127.0.0.1:8080 --limit-by-address false
+#
+# and read the address from /var/lib/tor/thencloud/hostname. Visitors need
+# Tor Browser (or another Tor client); the server never learns their IP.
+
+HiddenServiceDir /var/lib/tor/thencloud/
+HiddenServicePort 80 127.0.0.1:8080

@@ -230,9 +230,9 @@ pub async fn login(
     let username = req.username.trim().to_lowercase();
     let (ukey, ikey) = (
         format!("login-user:{username}"),
-        format!("login-ip:{}", ip.key()),
+        ip.key().map(|k| format!("login-ip:{k}")),
     );
-    if state.limiter.blocked(&ukey) || state.limiter.blocked(&ikey) {
+    if state.limiter.blocked(&ukey) || ikey.as_deref().is_some_and(|k| state.limiter.blocked(k)) {
         return Err(AppError::RateLimited);
     }
     let user = user_by_name(&state, &username).await?;
@@ -245,7 +245,9 @@ pub async fn login(
         Some(u) if ok => u,
         _ => {
             state.limiter.fail(&ukey);
-            state.limiter.fail(&ikey);
+            if let Some(k) = &ikey {
+                state.limiter.fail(k);
+            }
             return Err(AppError::InvalidCredentials);
         }
     };
@@ -472,9 +474,9 @@ async fn verify_recovery(
     let username = username.trim().to_lowercase();
     let (ukey, ikey) = (
         format!("recovery-user:{username}"),
-        format!("recovery-ip:{}", ip.key()),
+        ip.key().map(|k| format!("recovery-ip:{k}")),
     );
-    if state.limiter.blocked(&ukey) || state.limiter.blocked(&ikey) {
+    if state.limiter.blocked(&ukey) || ikey.as_deref().is_some_and(|k| state.limiter.blocked(k)) {
         return Err(AppError::RateLimited);
     }
     let user = user_by_name(state, &username).await?;
@@ -493,7 +495,9 @@ async fn verify_recovery(
         }
         _ => {
             state.limiter.fail(&ukey);
-            state.limiter.fail(&ikey);
+            if let Some(k) = &ikey {
+                state.limiter.fail(k);
+            }
             Err(AppError::InvalidCredentials)
         }
     }

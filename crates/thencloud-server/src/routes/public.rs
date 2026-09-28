@@ -178,7 +178,8 @@ pub async fn unlock(
     ip: ClientIp,
     Json(req): Json<UnlockLinkRequest>,
 ) -> Result<Json<UnlockLinkResponse>> {
-    let key = format!("link:{token}:{}", ip.key());
+    // Per visitor and link; without addresses, per link.
+    let key = format!("link:{token}:{}", ip.key().unwrap_or_default());
     if state.limiter.blocked(&key) {
         return Err(AppError::RateLimited);
     }
