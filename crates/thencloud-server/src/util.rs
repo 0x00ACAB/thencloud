@@ -1,6 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
+use argon2::{PasswordHasher, PasswordVerifier};
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Digest, Sha256};
 use thencloud_crypto::api::B64;
@@ -124,10 +124,8 @@ pub fn check_metadata(b: &[u8]) -> Result<()> {
 /// Argon2id PHC hash, computed off the async runtime.
 pub async fn hash_secret(secret: Vec<u8>) -> Result<String> {
     tokio::task::spawn_blocking(move || {
-        let salt = SaltString::encode_b64(&thencloud_crypto::random_bytes(16))
-            .map_err(|e| AppError::Internal(e.to_string()))?;
         argon2::Argon2::default()
-            .hash_password(&secret, &salt)
+            .hash_password_with_salt(&secret, &thencloud_crypto::random_bytes(16))
             .map(|h| h.to_string())
             .map_err(|e| AppError::Internal(e.to_string()))
     })
@@ -137,9 +135,8 @@ pub async fn hash_secret(secret: Vec<u8>) -> Result<String> {
 
 pub async fn verify_secret(secret: Vec<u8>, phc: String) -> Result<bool> {
     tokio::task::spawn_blocking(move || {
-        let parsed = PasswordHash::new(&phc).map_err(|e| AppError::Internal(e.to_string()))?;
         Ok(argon2::Argon2::default()
-            .verify_password(&secret, &parsed)
+            .verify_password(&secret, phc.as_str())
             .is_ok())
     })
     .await

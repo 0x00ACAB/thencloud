@@ -1,6 +1,7 @@
 use axum::Json;
 use axum::extract::State;
 use axum::http::StatusCode;
+use sqlx::AssertSqlSafe;
 use thencloud_crypto::api::*;
 use thencloud_crypto::{KEY_LEN, KdfParams, SALT_LEN};
 
@@ -70,7 +71,7 @@ const USER_SELECT: &str = "SELECT id, username, auth_hash, kdf_salt, kdf_params,
 
 async fn user_by_name(state: &AppState, username: &str) -> Result<Option<UserRow>> {
     let sql = format!("{USER_SELECT} WHERE username = ?");
-    Ok(sqlx::query_as(&sql)
+    Ok(sqlx::query_as(AssertSqlSafe(sql))
         .bind(username)
         .fetch_optional(&state.db)
         .await?)
@@ -78,7 +79,7 @@ async fn user_by_name(state: &AppState, username: &str) -> Result<Option<UserRow
 
 pub(crate) async fn user_by_id(state: &AppState, id: &str) -> Result<UserRow> {
     let sql = format!("{USER_SELECT} WHERE id = ?");
-    sqlx::query_as(&sql)
+    sqlx::query_as(AssertSqlSafe(sql))
         .bind(id)
         .fetch_optional(&state.db)
         .await?

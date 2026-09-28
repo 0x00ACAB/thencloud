@@ -10,6 +10,7 @@ use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
+use sqlx::AssertSqlSafe;
 use thencloud_crypto::api::*;
 use thencloud_crypto::{MAX_ENCRYPTED_CHUNK, NONCE_LEN, TAG_LEN};
 
@@ -58,10 +59,10 @@ async fn load_upload(state: &AppState, id: &str, who: &Uploader<'_>) -> Result<U
         Uploader::User(u) => (&u.id, "user_id = ? AND link_id IS NULL"),
         Uploader::Link(l) => (&l.id, "link_id = ?"),
     };
-    sqlx::query_as(&format!(
+    sqlx::query_as(AssertSqlSafe(format!(
         "SELECT id, owner_id, node_id, parent_id, enc_key, enc_metadata, version_id, enc_content_key, \
          chunk_count, if_revision, name_tag FROM uploads WHERE id = ? AND {filter} AND expires_at > ?"
-    ))
+    )))
     .bind(id)
     .bind(by)
     .bind(now())
