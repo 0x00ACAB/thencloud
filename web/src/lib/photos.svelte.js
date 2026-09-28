@@ -4,7 +4,7 @@
 // view does. Dates come from the encrypted metadata: `taken`, read from
 // EXIF at upload, else the file's modified time. Nothing is downloaded to
 // build the timeline; tiles use the encrypted thumbnails.
-import { session, resolvePath, walkTree } from './cloud.svelte.js';
+import { session, resolvePath, walkTree, folderLabel } from './cloud.svelte.js';
 import { errorMessage } from './ui.svelte.js';
 import { previewKind } from './preview.js';
 import { formatDateTime } from './locale.svelte.js';
@@ -59,7 +59,7 @@ export async function scanPhotos() {
       },
     });
     if (ctl.signal.aborted) return;
-    photos.rootName = root.meta.name;
+    photos.rootName = folderLabel(root);
     photos.list = found.sort((a, b) => b.at - a.at);
   } catch (e) {
     if (!ctl.signal.aborted) photos.error = errorMessage(e);

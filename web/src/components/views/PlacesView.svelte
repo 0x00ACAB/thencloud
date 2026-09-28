@@ -1,4 +1,5 @@
 <script>
+  import { t } from '../../lib/i18n.svelte.js';
   // Favourites and Recent: node ids from the encrypted app data, resolved
   // and decrypted here. Items that are gone are quietly dropped.
   import { places, loadPlaces, resolvePlaces, forgetPlaces, toggleFavourite } from '../../lib/places.svelte.js';
@@ -46,13 +47,13 @@
     }
   }
 
-  const title = $derived(mode === 'favourites' ? 'Favourites' : 'Recent');
+  const title = $derived(mode === 'favourites' ? t('Favourites') : t('Recent'));
 </script>
 
 <div>
   <h1 class="text-xl font-semibold tracking-tight">{title}</h1>
   <p class="mt-1 text-[13px] text-fg-muted">
-    {mode === 'favourites' ? 'Files and folders you starred.' : 'Files you opened lately, on any device.'} The list is encrypted, so the server can't tell which they are.
+    {mode === 'favourites' ? t('Files and folders you starred.') : t('Files you opened lately, on any device.')} {t("The list is encrypted, so the server can't tell which they are.")}
   </p>
 </div>
 
@@ -64,20 +65,20 @@
       <div class="mb-3 grid size-11 place-items-center rounded-lg border border-line bg-subtle">
         <Icon name={mode === 'favourites' ? 'star' : 'clock'} class="size-5 text-fg-muted" />
       </div>
-      <p class="font-medium">{mode === 'favourites' ? 'No favourites yet' : 'Nothing opened yet'}</p>
+      <p class="font-medium">{mode === 'favourites' ? t('No favourites yet') : t('Nothing opened yet')}</p>
       <p class="text-[13px] text-fg-muted">
-        {mode === 'favourites' ? 'Use "Add to favourites" in the menu on any file or folder.' : 'Files you preview or download show up here.'}
+        {mode === 'favourites' ? t('Use "Add to favourites" in the menu on any file or folder.') : t('Files you preview or download show up here.')}
       </p>
     </div>
   {:else}
     <table class="table">
       <thead>
         <tr>
-          <th>Name</th>
-          <th class="hidden md:table-cell">Location</th>
-          <th class="hidden w-28 text-right sm:table-cell">Size</th>
-          <th class="hidden w-36 lg:table-cell">{mode === 'recent' ? 'Opened' : 'Modified'}</th>
-          {#if mode === 'favourites'}<th class="w-12"><span class="sr-only">Actions</span></th>{/if}
+          <th>{t('Name')}</th>
+          <th class="hidden md:table-cell">{t('Location')}</th>
+          <th class="hidden w-28 text-right sm:table-cell">{t('Size')}</th>
+          <th class="hidden w-36 lg:table-cell">{mode === 'recent' ? t('Opened') : t('Modified')}</th>
+          {#if mode === 'favourites'}<th class="w-12"><span class="sr-only">{t('Actions')}</span></th>{/if}
         </tr>
       </thead>
       <tbody>
@@ -103,7 +104,7 @@
             </td>
             {#if mode === 'favourites'}
               <td class="text-right">
-                <button type="button" class="btn btn-ghost btn-icon" aria-label="Remove {x.entry.meta.name} from favourites" title="Remove from favourites" onclick={() => unstar(x)}>
+                <button type="button" class="btn btn-ghost btn-icon" aria-label={t('Remove {name} from favourites', { name: x.entry.meta.name })} title={t('Remove from favourites')} onclick={() => unstar(x)}>
                   <Icon name="star-off" />
                 </button>
               </td>
