@@ -130,7 +130,7 @@ Smaller things:
 
 ## Milestone 7: Clients and self-hosting
 
-- [x] **Installable app (PWA)**: a manifest and icons. No share target: its POST would reach the server with the plaintext files whenever the service worker isn't running
+- [ ] **Installable app (PWA)**: a manifest and icons, and on Android a share target, so "Share to thencloud" encrypts and uploads from any app
 - [ ] **Local WebDAV bridge** in the CLI (`thencloud serve`): serves your files decrypted on 127.0.0.1 only, so macOS Finder, Windows Explorer and iOS Files apps can use them while the server still sees only ciphertext
 - [ ] **Import from Nextcloud**: the CLI reads a Nextcloud account over WebDAV, encrypts locally and uploads, keeping folders and dates
 - [x] **Container image and release binaries**: a Dockerfile, a compose example with a reverse proxy, and binaries built in CI for each release. The image builds the web client like a release, so `verify-web` passes; `--trust-proxy` keeps rate limits per client behind the proxy
@@ -152,20 +152,20 @@ Smaller things:
 
 ## Milestone 9: Less metadata
 
-- [x] **Coarse timestamps**: the server records created and changed times rounded to the hour (the exact times stay in the encrypted metadata). Files show their exact time from the metadata
+- [x] **Coarse timestamps**: the server records created and changed times rounded to the hour (the exact times stay in the encrypted metadata). Nodes, versions and the trash; the metadata's new `changed` field holds the exact time, and items from before fall back to the server's
 - [ ] **Hide file vs folder**: store the node type in the encrypted metadata, so the server sees only nodes that have children or content
-- [ ] **Onion service**: document and test running thencloud as a Tor onion service, so the server doesn't learn clients' IP addresses
+- [x] **Onion service**: document and test running thencloud as a Tor onion service, so the server doesn't learn clients' IP addresses. `--limit-by-address false` keeps one visitor's wrong guesses from locking everyone out (all arrive from Tor's address); passkeys work on `http://…onion`; the browser tests run through Tor with `THENCLOUD_E2E_URL` and `THENCLOUD_E2E_PROXY`
 - [ ] **Uniform upload sizes**: small files uploaded in batches padded to fixed sizes, so upload timing and count give away less
 
 ## Milestone 10: More ways to open files
 
 - [x] **Subtitles**: `.srt` and `.vtt` next to a video are decrypted and shown in the player, with a picker (`Film.en.srt` and the like; SRT is turned into WebVTT in the browser). Renaming a series' files takes its subtitles along
 - [ ] **Books**: an EPUB and comic (CBZ) reader, with reading progress kept in the encrypted app data
-- [ ] **Audiobooks and podcasts**: remember the position per file, chapters from MP4/M4B, and playback speed
+- [x] **Audiobooks and podcasts**: remember the position per file, chapters from MP4/M4B, and playback speed. Tracks over 20 minutes (and any .m4b) pick up where they were left, on any device (kept in the encrypted music data); chapters come from the Nero `chpl` box, which ffmpeg and most audiobook tools write
 - [x] **Tables**: CSV and TSV shown as a sortable table instead of plain text, with a Source toggle and editing as text
 - [ ] **Office previews**: DOCX, XLSX, ODT and PPTX rendered in the browser, loaded only when needed and sanitised like Markdown
 - [ ] **PDF tools**: merge, split, rotate and reorder pages in the browser, saved as a new encrypted file
-- [ ] **Notes view**: a folder of Markdown files as a notebook, with a list, search and pinned notes
+- [x] **Notes view**: a folder of Markdown files as a notebook, with a list, search and pinned notes. Saved as you type as new versions, with a choice when a note changed elsewhere; search reads notes' text in the browser; pins are kept in the encrypted app data
 
 ## Milestone 11: People and organisations
 

@@ -801,6 +801,11 @@ pub struct Metadata {
     /// Modification time, milliseconds since the Unix epoch.
     #[serde(default)]
     pub mtime: i64,
+    /// When this node was last changed (made, uploaded, renamed), in
+    /// milliseconds: the exact time, which the server only knows to the
+    /// hour. Missing on items from before it was added.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changed: Option<i64>,
 }
 
 impl Metadata {
@@ -967,6 +972,7 @@ mod tests {
                 mime: None,
                 size: 1,
                 mtime: 0,
+                changed: None,
             },
         )
         .unwrap();
@@ -978,6 +984,7 @@ mod tests {
                 mime: None,
                 size: 1,
                 mtime: 0,
+                changed: None,
             },
         )
         .unwrap();
@@ -1028,6 +1035,7 @@ mod tests {
             mime: Some("text/plain".into()),
             size: 3,
             mtime: 1,
+            changed: None,
         };
         let ct = encrypt_metadata(&k, &id, &m).unwrap();
         assert_eq!(decrypt_metadata(&k, &id, &ct).unwrap(), m);

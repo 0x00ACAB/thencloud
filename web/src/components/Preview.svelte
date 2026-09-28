@@ -22,7 +22,7 @@
   import ConfirmDialog from './dialogs/ConfirmDialog.svelte';
   import { saveBlob } from '../lib/crypto.js';
   import { previewKind, readText, MAX_PREVIEW, MAX_TEXT } from '../lib/preview.js';
-  import { formatSize, modifiedAt } from '../lib/format.js';
+  import { formatSize, changedAt } from '../lib/format.js';
   import { separatorFor } from '../lib/csv.js';
   import { errorMessage, toastError } from '../lib/ui.svelte.js';
   import { fade } from '../lib/motion.js';
@@ -311,7 +311,7 @@
     <div class="min-w-0 flex-1">
       <h2 class="truncate text-sm font-medium">{entry.meta.name}</h2>
       <p class="truncate text-xs text-fg-muted">
-        {formatSize(entry.meta.size)}{#if entry.node.updated_at}{' · '}<Time ms={modifiedAt(entry)} relative />{/if}
+        {formatSize(entry.meta.size)}{#if entry.node.updated_at}{' · '}<Time ms={changedAt(entry)} relative />{/if}
       </p>
     </div>
 

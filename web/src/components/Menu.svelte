@@ -1,6 +1,7 @@
 <script>
   // Dropdown menu anchored to a trigger button. `items` is a list of
-  // { label, icon, onclick, danger } or 'sep' for a separator.
+  // { label, icon, onclick, danger, checked } or 'sep' for a separator; items
+  // with `checked` (true or false) show a check mark or the space for one.
   import { tick } from 'svelte';
   import Icon from './Icon.svelte';
   import { pop, fade, portal } from '../lib/motion.js';
@@ -68,7 +69,7 @@
         <div class="menu-sep" role="separator"></div>
       {:else}
         <button type="button" role="menuitem" class="menu-item" class:danger={item.danger} onclick={() => choose(item)}>
-          {#if item.icon}<Icon name={item.icon} />{/if}
+          {#if item.icon}<Icon name={item.icon} />{:else if item.checked !== undefined}<span class="grid size-4 place-items-center">{#if item.checked}<Icon name="check" />{/if}</span>{/if}
           {item.label}
         </button>
       {/if}

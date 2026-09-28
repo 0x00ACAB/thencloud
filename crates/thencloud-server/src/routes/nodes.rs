@@ -264,7 +264,7 @@ pub async fn delete(
     sqlx::query(
         "UPDATE nodes SET trashed_at = ?, trashed_by = ?, revision = revision + 1 WHERE id = ?",
     )
-    .bind(now())
+    .bind(coarse_now())
     .bind(&user.id)
     .bind(&id)
     .execute(&state.db)

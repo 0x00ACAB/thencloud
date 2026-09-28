@@ -19,6 +19,8 @@
   import { unloadVideos } from '../lib/videos.svelte.js';
   import PlayerBar from './PlayerBar.svelte';
   import PlacesView from './views/PlacesView.svelte';
+  import NotesView from './views/NotesView.svelte';
+  import { unloadNotes } from '../lib/notes.svelte.js';
   import FolderIcon from './FolderIcon.svelte';
   import FileIcon from './FileIcon.svelte';
   import { places, loadPlaces, resolvePlaces } from '../lib/places.svelte.js';
@@ -26,6 +28,7 @@
   const rootId = session.me.keys.root_node_id;
   loadMyAvatar().catch(() => {});
   onDestroy(unloadVideos);
+  onDestroy(unloadNotes);
 
   // Phones get a bottom tab bar; fixed things (toasts, the transfer tray,
   // the selection bar, the + button) sit above it, and the music player,
@@ -42,6 +45,7 @@
     { name: 'shared-with-me', label: 'Shared with me', short: 'Shared', icon: 'inbox', to: () => ({ name: 'shared-with-me' }) },
     { name: 'shared-by-me', label: 'Shared by me', icon: 'users', to: () => ({ name: 'shared-by-me' }) },
     { name: 'links', label: 'Public links', icon: 'link', to: () => ({ name: 'links' }) },
+    { name: 'notes', label: 'Notes', icon: 'notebook-pen', to: () => ({ name: 'notes' }) },
     { name: 'music', label: 'Music', icon: 'music', to: () => ({ name: 'music' }) },
     { name: 'videos', label: 'Videos', icon: 'clapperboard', to: () => ({ name: 'videos' }) },
     { name: 'trash', label: 'Trash', icon: 'trash-2', to: () => ({ name: 'trash' }) },
@@ -214,6 +218,8 @@
           <SharedByMe {go} />
         {:else if view.name === 'links'}
           <LinksView {go} />
+        {:else if view.name === 'notes'}
+          <NotesView {go} />
         {:else if view.name === 'music'}
           <MusicView album={view.album} playlist={view.playlist} {go} />
         {:else if view.name === 'videos'}

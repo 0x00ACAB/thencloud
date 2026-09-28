@@ -13,7 +13,13 @@ export function decryptMeta(nodeKey, node) {
   return JSON.parse(tc.decrypt_metadata(nodeKey, node.id, unb64(node.enc_metadata)));
 }
 
+/**
+ * Encrypt a node's metadata, stamping it with when it changed (`meta.changed`
+ * is set on the object passed in, so the caller's copy has it too). The
+ * server records times to the hour only; this one is exact.
+ */
 export function encryptMeta(nodeKey, nodeId, meta) {
+  meta.changed = Date.now();
   return b64(tc.encrypt_metadata(nodeKey, nodeId, JSON.stringify(meta)));
 }
 
