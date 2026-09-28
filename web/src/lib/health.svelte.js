@@ -1,8 +1,10 @@
 // The Health module: measurements and moods, kept in the encrypted "health"
-// app data. Values are stored in metric units (kg, cm) and converted for
-// display; nothing leaves the browser unencrypted. `unloadHealth` drops it
-// all when the signed-in view goes away.
+// app data. Values are stored in metric units (kg, cm) and shown in the
+// units chosen under Language and region (`unitSystem`); nothing leaves the
+// browser unencrypted. `unloadHealth` drops it all when the signed-in view
+// goes away.
 import { loadAppData, saveAppData } from './cloud.svelte.js';
+import { unitSystem, formatNumber } from './locale.svelte.js';
 
 const KG_PER_LB = 0.45359237;
 const CM_PER_IN = 2.54;
@@ -27,7 +29,6 @@ export const health = $state({
   measures: [],
   /** [{ id, at, x, y, word, note? }], x and y from -1 to 1, oldest first. */
   moods: [],
-  units: { mass: 'kg', length: 'cm' },
 });
 
 const finite = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -36,7 +37,6 @@ const byTime = (a, b) => a.at - b.at;
 function apply(d) {
   health.measures = (d.measures ?? []).filter((m) => KINDS[m.kind] && finite(m.value) && finite(m.at)).sort(byTime);
   health.moods = (d.moods ?? []).filter((m) => finite(m.x) && finite(m.y) && finite(m.at)).sort(byTime);
-  health.units = { mass: d.units?.mass === 'lb' ? 'lb' : 'kg', length: d.units?.length === 'in' ? 'in' : 'cm' };
 }
 
 let loading = null;
@@ -57,7 +57,7 @@ export function loadHealth() {
 
 export function unloadHealth() {
   loading = null;
-  Object.assign(health, { loaded: false, measures: [], moods: [], units: { mass: 'kg', length: 'cm' } });
+  Object.assign(health, { loaded: false, measures: [], moods: [] });
 }
 
 async function save(change) {
@@ -88,15 +88,15 @@ export const removeMood = (id) => save((d) => (d.moods = (d.moods ?? []).filter(
 /** Put a removed entry back (undo). */
 export const putBack = (list, item) => save((d) => (d[list] = [...(d[list] ?? []).filter((x) => x.id !== item.id), item]));
 
-export const setUnits = (units) => save((d) => (d.units = { ...health.units, ...units }));
 
 // ---------------------------------------------------------------- units
 
 /** The unit a kind is shown in. */
 export function unitOf(kind) {
   const k = KINDS[kind];
-  if (k.dim === 'mass') return health.units.mass;
-  if (k.dim === 'length') return health.units.length;
+  const imperial = unitSystem() === 'imperial';
+  if (k.dim === 'mass') return imperial ? 'lb' : 'kg';
+  if (k.dim === 'length') return imperial ? 'in' : 'cm';
   return k.unit;
 }
 
@@ -115,7 +115,7 @@ export function fromDisplay(kind, v) {
 /** "72.4 kg", "120/80 mmHg". */
 export function formatMeasure(m) {
   const k = KINDS[m.kind];
-  const n = (v) => (Math.round(v * 10) / 10).toLocaleString(undefined, { maximumFractionDigits: 1 });
+  const n = (v) => formatNumber(Math.round(v * 10) / 10, { maximumFractionDigits: 1 });
   if (k.pair) return `${Math.round(m.value)}/${Math.round(m.value2)} ${k.unit}`;
   return `${n(toDisplay(m.kind, m.value))} ${unitOf(m.kind)}`;
 }

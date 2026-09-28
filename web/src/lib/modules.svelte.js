@@ -2,6 +2,7 @@
 // on is kept in the encrypted "prefs" app data, so it follows the account to
 // every device and the server doesn't learn it.
 import { loadAppData, saveAppData } from './cloud.svelte.js';
+import { applyAccountFormat } from './locale.svelte.js';
 
 export const MODULES = [
   {
@@ -21,6 +22,8 @@ export function loadModules() {
   loading ??= loadAppData('prefs').then(
     (d) => {
       for (const m of MODULES) modules[m.name] = !!d.modules?.[m.name];
+      // Language and region settings live in the same app data.
+      applyAccountFormat(d.format);
       modules.loaded = true;
     },
     (e) => {

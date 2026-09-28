@@ -3,11 +3,11 @@
   // charts, and a mood meter. Everything is in the encrypted "health" app
   // data and decrypted here; the server keeps one opaque blob.
   import { onMount } from 'svelte';
-  import { health, loadHealth, KINDS, addMeasure, removeMeasure, addMood, removeMood, putBack, setUnits, unitOf, toDisplay, formatMeasure, bmi, bmiBand } from '../../lib/health.svelte.js';
+  import { health, loadHealth, KINDS, addMeasure, removeMeasure, addMood, removeMood, putBack, unitOf, toDisplay, formatMeasure, bmi, bmiBand } from '../../lib/health.svelte.js';
   import { quadrant } from '../../lib/mood.js';
   import { toast, toastError } from '../../lib/ui.svelte.js';
   import Icon from '../Icon.svelte';
-  import Menu from '../Menu.svelte';
+  import { formatDateTime, formatNumber } from '../../lib/locale.svelte.js';
   import LineChart from '../health/LineChart.svelte';
   import MoodMeter from '../health/MoodMeter.svelte';
 
@@ -41,8 +41,8 @@
     d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
     return d.toISOString().slice(0, 16);
   };
-  const when = (ms) => new Date(ms).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-  const round1 = (v) => (Math.round(v * 10) / 10).toLocaleString(undefined, { maximumFractionDigits: 1 });
+  const when = (ms) => formatDateTime(ms);
+  const round1 = (v) => formatNumber(Math.round(v * 10) / 10, { maximumFractionDigits: 1 });
 
   // ------------------------------------------------------- measurements
 
@@ -164,17 +164,6 @@
         <button type="button" role="tab" aria-selected={tab === value} class="h-7 cursor-pointer rounded px-3 text-[13px] {tab === value ? 'bg-muted font-medium text-fg' : 'text-fg-muted hover:text-fg'}" onclick={() => (tab = value)}>{label}</button>
       {/each}
     </div>
-    <Menu
-      label="Units"
-      items={[
-        { label: 'Kilograms', checked: health.units.mass === 'kg', onclick: () => setUnits({ mass: 'kg' }).catch(toastError) },
-        { label: 'Pounds', checked: health.units.mass === 'lb', onclick: () => setUnits({ mass: 'lb' }).catch(toastError) },
-        'sep',
-        { label: 'Centimetres', checked: health.units.length === 'cm', onclick: () => setUnits({ length: 'cm' }).catch(toastError) },
-        { label: 'Inches', checked: health.units.length === 'in', onclick: () => setUnits({ length: 'in' }).catch(toastError) },
-      ]}>
-      {#snippet trigger()}<Icon name="settings" />{/snippet}
-    </Menu>
   </div>
 </div>
 

@@ -7,6 +7,7 @@
 import { session, resolvePath, walkTree } from './cloud.svelte.js';
 import { errorMessage } from './ui.svelte.js';
 import { previewKind } from './preview.js';
+import { formatDateTime } from './locale.svelte.js';
 
 function readRoot() {
   try {
@@ -67,7 +68,7 @@ export async function scanPhotos() {
   }
 }
 
-const monthFmt = new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric' });
+
 
 /** Photos by month, newest first: [{ key, label, items }]. */
 export function byMonth(list) {
@@ -75,7 +76,7 @@ export function byMonth(list) {
   for (const p of list) {
     const d = new Date(p.at);
     const key = `${d.getFullYear()}-${d.getMonth()}`;
-    if (groups.at(-1)?.key !== key) groups.push({ key, label: monthFmt.format(d), items: [] });
+    if (groups.at(-1)?.key !== key) groups.push({ key, label: formatDateTime(d, { month: 'long', year: 'numeric' }), items: [] });
     groups.at(-1).items.push(p);
   }
   return groups;

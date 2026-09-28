@@ -1,7 +1,8 @@
 <script>
   import { MODULES, modules, loadModules, setModule } from '../../lib/modules.svelte.js';
+  import { format, setFormat, REGIONS, unitSystem, formatDateTime, formatNumber } from '../../lib/locale.svelte.js';
   import { onMount } from 'svelte';
-  import { session, changePassword, listSessions, revokeSession, revokeOtherSessions, removeRecoveryKey, listAppPasswords, deleteAppPassword, avatar, loadMyAvatar, setAvatar, removeAvatar, setDisplayName, cleanDisplayName, listContacts, forgetContact, forgetThisBrowser, myTransfer, listPasskeys, removePasskey, disableTotp, deleteAccount, verifyTree, resolvePath, exportAccount } from '../../lib/cloud.svelte.js';
+  import { session, changePassword, listSessions, revokeSession, revokeOtherSessions, removeRecoveryKey, listAppPasswords, deleteAppPassword, avatar, loadMyAvatar, setAvatar, removeAvatar, setDisplayName, cleanDisplayName, listContacts, forgetContact, forgetThisBrowser, myTransfer, listPasskeys, removePasskey, disableTotp, deleteAccount, verifyTree, resolvePath, exportAccount, saveAppData } from '../../lib/cloud.svelte.js';
   import { passkeysSupported } from '../../lib/passkeys.js';
   import TotpDialog from '../dialogs/TotpDialog.svelte';
   import PasskeyDialog from '../dialogs/PasskeyDialog.svelte';
@@ -90,8 +91,26 @@
   let transfer = $state(null);
   onMount(() => myTransfer().then((t) => (transfer = t)).catch(() => {}));
 
-  // Optional modules.
+  // Optional modules (and the language and region settings, in the same app data).
   onMount(() => loadModules().catch(() => {}));
+
+  // Language and region.
+  let browserRegion = $state('');
+  try {
+    browserRegion = new Intl.DisplayNames([navigator.language], { type: 'language' }).of(navigator.language) ?? navigator.language;
+  } catch {
+    browserRegion = navigator.language;
+  }
+  function changeFormat(change) {
+    setFormat(change, (f) => saveAppData('prefs', f))?.catch(toastError);
+  }
+  const example = $derived.by(() => {
+    format.region;
+    format.clock;
+    format.units;
+    const metric = unitSystem() === 'metric';
+    return `${formatDateTime(Date.UTC(2026, 8, 28, 21, 30), { dateStyle: 'medium', timeStyle: 'short' })} · ${formatNumber(metric ? 72.4 : 159.6)} ${metric ? 'kg' : 'lb'} · ${formatNumber(1234567.89)}`;
+  });
   async function toggleModule(m, on) {
     try {
       await setModule(m.name, on);
@@ -587,6 +606,34 @@
       {/each}
     </div>
   {/snippet}
+  {#snippet regionBody()}
+    <dl class="grid gap-4 text-sm sm:grid-cols-[10rem_1fr] sm:items-center">
+      <dt class="text-fg-muted">Language</dt>
+      <dd>English <span class="text-xs text-fg-muted">More languages will be added here.</span></dd>
+      <dt class="text-fg-muted"><label for="region-format">Dates and numbers</label></dt>
+      <dd>
+        <select id="region-format" class="input h-9 max-w-sm" value={format.region} onchange={(e) => changeFormat({ region: e.currentTarget.value })}>
+          <option value="auto">Automatic ({browserRegion})</option>
+          {#each REGIONS as [tag, label] (tag)}<option value={tag}>{label}</option>{/each}
+        </select>
+      </dd>
+      {#snippet choice(key, options, label)}
+        <div class="flex w-fit rounded-md border border-line p-0.5" role="radiogroup" aria-label={label}>
+          {#each options as [value, text] (value)}
+            <button type="button" role="radio" aria-checked={format[key] === value} class="h-7 cursor-pointer rounded px-3 text-[13px] {format[key] === value ? 'bg-muted font-medium text-fg' : 'text-fg-muted hover:text-fg'}" onclick={() => changeFormat({ [key]: value })}>{text}</button>
+          {/each}
+        </div>
+      {/snippet}
+      <dt class="text-fg-muted">Time</dt>
+      <dd>{@render choice('clock', [['auto', 'Automatic'], ['12', '12-hour'], ['24', '24-hour']], 'Time format')}</dd>
+      <dt class="text-fg-muted">Units</dt>
+      <dd>{@render choice('units', [['auto', 'Automatic'], ['metric', 'Metric'], ['imperial', 'Imperial']], 'Units')}</dd>
+      <dt class="text-fg-muted">Looks like</dt>
+      <dd class="text-fg-muted tabular-nums">{example}</dd>
+    </dl>
+  {/snippet}
+  {@render section('Language and region', 'How dates, times, numbers and measurements are shown. Saved with your account, so your other devices use it too.', regionBody)}
+
   {@render section('Appearance', null, themeBody)}
 
   {#snippet accentBody()}

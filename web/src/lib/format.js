@@ -1,4 +1,5 @@
 import { previewKind } from './preview.js';
+import { formatDateTime, relativeTime } from './locale.svelte.js';
 
 /**
  * When a node last changed, in ms: the exact time from its encrypted
@@ -19,27 +20,24 @@ export function formatSize(n) {
   return `${n < 10 ? n.toFixed(1) : Math.round(n)} ${units[i]}`;
 }
 
-const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' });
-const dateFmt = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-
 /** "just now", "5 minutes ago", "yesterday", then a plain date. */
 export function formatWhen(ms) {
   if (!ms) return '';
   const s = Math.round((ms - Date.now()) / 1000);
   const abs = Math.abs(s);
   if (abs < 45) return 'just now';
-  if (abs < 3600) return rtf.format(Math.round(s / 60), 'minute');
-  if (abs < 86400) return rtf.format(Math.round(s / 3600), 'hour');
-  if (abs < 7 * 86400) return rtf.format(Math.round(s / 86400), 'day');
-  return dateFmt.format(ms);
+  if (abs < 3600) return relativeTime(Math.round(s / 60), 'minute');
+  if (abs < 86400) return relativeTime(Math.round(s / 3600), 'hour');
+  if (abs < 7 * 86400) return relativeTime(Math.round(s / 86400), 'day');
+  return formatDate(ms);
 }
 
 export function formatDate(ms) {
-  return ms ? dateFmt.format(ms) : '';
+  return ms ? formatDateTime(ms, { day: 'numeric', month: 'short', year: 'numeric' }) : '';
 }
 
 export function fullDate(ms) {
-  return ms ? new Date(ms).toLocaleString() : '';
+  return ms ? formatDateTime(ms, { dateStyle: 'long', timeStyle: 'short' }) : '';
 }
 
 /** Pick an icon for a file from its MIME type or extension. */
