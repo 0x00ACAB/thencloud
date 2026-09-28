@@ -11,6 +11,7 @@
 // and a remote one would tell its host the file was opened. The Markdown
 // keeps the image as written.
 
+import { t } from './i18n.svelte.js';
 import { Editor, rootCtx, defaultValueCtx, editorViewCtx } from '@milkdown/kit/core';
 import {
   commonmark,
@@ -41,8 +42,8 @@ const safeImage = imageSchema.extendSchema((prev) => (ctx) => {
     ...base,
     toDOM: (node) => [
       'span',
-      { class: 'md-image', title: "Images in Markdown files aren't loaded" },
-      node.attrs.alt ? `Image: ${node.attrs.alt}` : 'Image',
+      { class: 'md-image', title: t("Images in Markdown files aren't loaded") },
+      node.attrs.alt ? t('Image: {alt}', { alt: node.attrs.alt }) : t('Image'),
     ],
     parseMarkdown: {
       ...base.parseMarkdown,

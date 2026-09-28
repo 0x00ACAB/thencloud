@@ -3,6 +3,7 @@
 // any note text read for searching, live in memory and go when the
 // signed-in view does. Pinned notes are node ids in the encrypted "notes"
 // app data.
+import { t } from './i18n.svelte.js';
 import { session, resolvePath, walkTree, fetchEntry, saveText, upload, loadAppData, saveAppData, keyOf } from './cloud.svelte.js';
 import { errorMessage } from './ui.svelte.js';
 
@@ -54,7 +55,7 @@ export async function scanNotes() {
   try {
     const { items } = await resolvePath(notes.rootId);
     const root = items[items.length - 1];
-    if (root.node.kind !== 'folder') throw new Error('The notes folder is not a folder');
+    if (root.node.kind !== 'folder') throw new Error(t('The notes folder is not a folder'));
     const found = [];
     await walkTree(root, {
       signal: ctl.signal,
