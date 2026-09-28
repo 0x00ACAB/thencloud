@@ -10,6 +10,7 @@ import {
   deriveAccountKeys, deriveLinkKeys, fetchFile, openFile, encryptPiece, saveBlob,
 } from './crypto.js';
 import { sortEntries } from './format.js';
+import { canThumbnail, makeThumbnail, isJpeg } from './thumbnail.js';
 import { rememberSession, rememberedSession, forgetSession } from './remember.js';
 import { streamsAvailable, streamDownload } from './stream.js';
 import { createPasskey, usePasskey, passkeysSupported } from './passkeys.js';
@@ -1042,7 +1043,52 @@ export async function upload(file, { parentId, parentKey, existing }, onProgress
     throw e;
   }
   keyCache.set(nodeId, nodeKey);
+  if (canThumbnail(file) && (await uploadThumbnail(file, node, nodeKey))) {
+    node = { ...node, version: { ...node.version, has_thumbnail: true } };
+  }
   return { node, key: nodeKey, meta };
+}
+
+/** Make, encrypt and store a thumbnail for `node`'s current version. True if it worked; a file without one is fine. */
+async function uploadThumbnail(file, node, nodeKey) {
+  try {
+    const image = await makeThumbnail(file);
+    if (!image) return false;
+    const v = node.version.id;
+    await api('PUT', `/api/nodes/${node.id}/versions/${v}/thumbnail`, { raw: tc.encrypt_thumbnail(nodeKey, node.id, v, image) });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Decrypted thumbnails as blob: URLs, by version (each is bound to one).
+const thumbs = new Map(); // version id -> Promise<url | null>
+const MAX_THUMBS = 400;
+
+/**
+ * A file's thumbnail as a blob: URL, or null. Only used when the bytes are a
+ * JPEG, and typed as one whatever they claim to be: a shared file's
+ * thumbnail was made by someone else.
+ */
+export function thumbnailUrl(entry, fetchThumb = (id) => api('GET', `/api/nodes/${id}/thumbnail`)) {
+  const v = entry.node.version;
+  if (!v?.has_thumbnail) return Promise.resolve(null);
+  if (!thumbs.has(v.id)) {
+    if (thumbs.size >= MAX_THUMBS) {
+      const [oldest, url] = thumbs.entries().next().value;
+      thumbs.delete(oldest);
+      url.then((u) => u && URL.revokeObjectURL(u));
+    }
+    const url = fetchThumb(entry.node.id)
+      .then((sealed) => {
+        const image = tc.decrypt_thumbnail(entry.key, entry.node.id, v.id, sealed);
+        return isJpeg(image) ? URL.createObjectURL(new Blob([image], { type: 'image/jpeg' })) : null;
+      })
+      .catch(() => null);
+    thumbs.set(v.id, url);
+  }
+  return thumbs.get(v.id);
 }
 
 /**

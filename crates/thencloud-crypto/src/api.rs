@@ -387,6 +387,9 @@ pub struct VersionInfo {
     /// Stored (ciphertext) size in bytes.
     pub size: i64,
     pub created_at: i64,
+    /// Whether this version has an encrypted thumbnail (`encrypt_thumbnail`).
+    #[serde(default)]
+    pub has_thumbnail: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1005,6 +1005,25 @@ pub fn decrypt_chunk(
 }
 
 // ---------------------------------------------------------------------------
+// Thumbnails: a small image made in the browser when a file is uploaded,
+// under the file's node key and bound to the version it shows, so an old
+// thumbnail can't be passed off as the current file's.
+// ---------------------------------------------------------------------------
+
+pub fn encrypt_thumbnail(node_key: &Key, node_id: &str, version_id: &str, image: &[u8]) -> Vec<u8> {
+    seal(node_key, image, &aad("thumbnail", &[node_id, version_id]))
+}
+
+pub fn decrypt_thumbnail(
+    node_key: &Key,
+    node_id: &str,
+    version_id: &str,
+    sealed: &[u8],
+) -> Result<Vec<u8>> {
+    open(node_key, sealed, &aad("thumbnail", &[node_id, version_id]))
+}
+
+// ---------------------------------------------------------------------------
 // Comments on files and folders: under the node key, so everyone who can
 // open the node can read them and no one else can. Bound to the node, the
 // comment's id and its author, so the server can't move a comment to

@@ -547,3 +547,33 @@ pub fn decrypt_comment(
         sealed,
     )?)
 }
+
+#[wasm_bindgen]
+pub fn encrypt_thumbnail(
+    node_key: &[u8],
+    node_id: &str,
+    version_id: &str,
+    image: &[u8],
+) -> R<Vec<u8>> {
+    Ok(c::encrypt_thumbnail(
+        &key(node_key)?,
+        node_id,
+        version_id,
+        image,
+    ))
+}
+
+#[wasm_bindgen]
+pub fn decrypt_thumbnail(
+    node_key: &[u8],
+    node_id: &str,
+    version_id: &str,
+    sealed: &[u8],
+) -> R<Vec<u8>> {
+    Ok(c::decrypt_thumbnail(
+        &key(node_key)?,
+        node_id,
+        version_id,
+        sealed,
+    )?)
+}

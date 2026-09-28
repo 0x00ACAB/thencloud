@@ -14,6 +14,7 @@ pub mod passkeys;
 pub mod public;
 pub mod sessions;
 pub mod shares;
+pub mod thumbnails;
 pub mod tools;
 pub mod trash;
 pub mod two_factor;
@@ -129,6 +130,13 @@ pub fn router(state: AppState) -> Router {
             get(comments::list).post(comments::create),
         )
         .route("/comments/{id}", delete(comments::delete))
+        .route("/nodes/{id}/thumbnail", get(thumbnails::get))
+        .route(
+            "/nodes/{id}/versions/{vid}/thumbnail",
+            put(thumbnails::put).layer(DefaultBodyLimit::max(
+                thumbnails::MAX_THUMBNAIL_BYTES + 1024,
+            )),
+        )
         .route(
             "/nodes/{id}/draft",
             get(drafts::get)
@@ -172,6 +180,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/public/{token}/nodes/{id}/chunks/{idx}",
             get(public::chunk),
+        )
+        .route(
+            "/public/{token}/nodes/{id}/thumbnail",
+            get(public::thumbnail),
         )
         .route("/public/{token}/uploads", post(public::upload_create))
         .route("/public/{token}/uploads/{id}", delete(public::upload_abort))

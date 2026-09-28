@@ -228,6 +228,16 @@ pub async fn chunk(
     current_chunk(&state, node, idx).await
 }
 
+pub async fn thumbnail(
+    State(state): State<AppState>,
+    Path((token, id)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Result<Response> {
+    let link = resolve(&state, &token, &headers).await?;
+    node_in_link(&state, &link, &id).await?;
+    crate::routes::thumbnails::current(&state, &id).await
+}
+
 /// Resolve an upload-only link for a visitor adding a file.
 async fn drop_link(state: &AppState, token: &str, headers: &HeaderMap) -> Result<DropLink> {
     let link = resolve(state, token, headers).await?;

@@ -1,12 +1,13 @@
 <script>
   import { session, resolvePath, listFolder, createFolder, rename, move, trash, untrash, download, downloadZip, fetchEntry, upload, saveText, refreshMe, toolsInfo, loadDraft, storeDraft, dropDraft, searchTree, openEntry, strayDrops } from '../../lib/cloud.svelte.js';
-  import { toast, toastError, trackTransfer, errorMessage, sort, sortBy, photoDetails } from '../../lib/ui.svelte.js';
+  import { toast, toastError, trackTransfer, errorMessage, sort, sortBy, photoDetails, fileView, setFileView } from '../../lib/ui.svelte.js';
   import { fileInfo, hasDetails, stripFile } from '../../lib/exif.js';
   import Modal from '../Modal.svelte';
   import { formatSize, formatWhen, fullDate, plural, sortEntries, nameError, changedAt } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
   import FileIcon from '../FileIcon.svelte';
   import FolderIcon from '../FolderIcon.svelte';
+  import Thumb from '../Thumb.svelte';
   import Menu from '../Menu.svelte';
   import NameDialog from '../dialogs/NameDialog.svelte';
   import VersionsDialog from '../dialogs/VersionsDialog.svelte';
@@ -818,6 +819,18 @@
         </div>
       {/if}
     {/if}
+    <div class="flex h-8 rounded-md border border-line p-0.5" role="radiogroup" aria-label="Show files as">
+      {#each [['list', 'list', 'List'], ['grid', 'layout-grid', 'Grid']] as [value, icon, label] (value)}
+        <button
+          type="button"
+          role="radio"
+          aria-checked={fileView.value === value}
+          aria-label={label}
+          title={label}
+          class="grid w-7 cursor-pointer place-items-center rounded transition-colors {fileView.value === value ? 'bg-muted text-fg' : 'text-fg-muted hover:text-fg'}"
+          onclick={() => setFileView(value)}><Icon name={icon} class="size-4" /></button>
+      {/each}
+    </div>
     {#if canWrite}
       <!-- On phones these live in the + button instead. -->
       <div class="hidden gap-2 md:flex">
@@ -927,6 +940,82 @@
         </p>
       {/if}
     </div>
+  {:else if fileView.value === 'grid'}
+    <ul class="grid animate-enter grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-1 p-2" bind:this={tbody}>
+      {#if !visible.length}
+        <li class="col-span-full grid h-24 place-items-center text-[13px] text-fg-muted">
+          <span>Nothing in this folder matches "{query.trim()}". <button type="button" class="link" onclick={() => (query = '')}>Clear search</button></span>
+        </li>
+      {/if}
+      {#each visible as entry (entry.node.id)}
+        {@const folder = entry.node.kind === 'folder'}
+        {@const isSelected = selected.has(entry.node.id)}
+        <li
+          class="group relative rounded-lg transition-colors {isSelected ? 'bg-accent-soft/60 ring-1 ring-accent/40' : 'hover:bg-subtle'} {dropTarget === entry.node.id ? 'bg-accent-soft ring-1 ring-accent' : ''}"
+          draggable={canWrite && !touch && renaming !== entry.node.id}
+          ondragstart={(e) => rowDragStart(e, entry)}
+          ondragend={rowDragEnd}
+          ondragover={folder ? (e) => dragOverFolder(e, entry.node.id) : undefined}
+          ondragleave={folder ? (e) => dragLeaveFolder(e, entry.node.id) : undefined}
+          ondrop={folder ? (e) => dropOnFolder(e, entry) : undefined}
+          in:fade
+          out:fade={{ duration: 120 }}
+          animate:flip={flipParams()}>
+          {#snippet tile()}
+            <span class="grid aspect-square w-full place-items-center overflow-hidden rounded-md border border-line bg-subtle">
+              {#if folder}<FolderIcon name={entry.meta.name} class="size-12" />{:else}<Thumb {entry} />{/if}
+            </span>
+          {/snippet}
+          {#if renaming === entry.node.id}
+            <form
+              class="grid gap-2 p-2"
+              onsubmit={(e) => {
+                e.preventDefault();
+                finishRename(entry);
+              }}>
+              {@render tile()}
+              <input
+                use:selectName={entry.meta.name}
+                class="input h-7 px-2 text-[13px] font-medium"
+                aria-label="New name for {entry.meta.name}"
+                bind:value={renameValue}
+                spellcheck="false"
+                onkeydown={(e) => e.key === 'Escape' && (e.preventDefault(), e.stopPropagation(), finishRename(entry, false))}
+                onblur={() => finishRename(entry)} />
+            </form>
+          {:else}
+            <button
+              type="button"
+              class="row-open grid w-full cursor-pointer gap-2 p-2 text-left select-none"
+              title={entry.meta.name}
+              onclick={() => rowTap(entry)}
+              onpointerdown={(e) => pressStart(e, entry)}
+              onpointerup={pressEnd}
+              onpointercancel={pressEnd}
+              onpointermove={pressMove}
+              oncontextmenu={(e) => e.pointerType !== 'mouse' && touch && e.preventDefault()}>
+              {@render tile()}
+              <span class="grid min-w-0 px-0.5">
+                <span class="truncate text-[13px] font-medium">{entry.meta.name}</span>
+                <span class="truncate text-xs text-fg-muted">{#if !folder}{formatSize(entry.meta.size)}{' · '}{/if}{formatWhen(changedAt(entry))}</span>
+              </span>
+            </button>
+          {/if}
+          <input
+            type="checkbox"
+            class="absolute top-3.5 left-3.5 size-4 cursor-pointer accent-accent transition-opacity focus-visible:opacity-100 {selected.size ? '' : 'opacity-0 group-hover:opacity-100'}"
+            aria-label="Select {entry.meta.name}"
+            checked={isSelected}
+            onclick={(e) => {
+              e.preventDefault();
+              toggle(entry, e);
+            }} />
+          <div class="absolute top-2.5 right-2.5 rounded-md bg-bg/90 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 max-md:opacity-100">
+            <Menu items={menuFor(entry)} label="Actions for {entry.meta.name}" />
+          </div>
+        </li>
+      {/each}
+    </ul>
   {:else}
     <table class="table animate-enter">
       <thead>
