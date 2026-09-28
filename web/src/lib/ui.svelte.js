@@ -171,6 +171,27 @@ export async function copyText(text, what = 'Copied to clipboard') {
   }
 }
 
+// Files as a list or a grid of thumbnails. A display preference only.
+function readFileView() {
+  try {
+    return localStorage.getItem('fileView') === 'grid' ? 'grid' : 'list';
+  } catch {
+    return 'list';
+  }
+}
+
+export const fileView = $state({ value: readFileView() });
+
+export function setFileView(v) {
+  fileView.value = v;
+  try {
+    if (v === 'grid') localStorage.setItem('fileView', 'grid');
+    else localStorage.removeItem('fileView');
+  } catch {
+    /* private mode */
+  }
+}
+
 // File icon pack (see lib/file-icons.svelte.js). A display preference only.
 function readIconPack() {
   try {

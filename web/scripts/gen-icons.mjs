@@ -4,7 +4,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const ICONS = [
-  'message-square', 'cloud', 'folder', 'folder-open', 'folder-plus', 'file', 'file-text', 'file-image', 'file-video',
+  'message-square', 'layout-grid', 'cloud', 'folder', 'folder-open', 'folder-plus', 'file', 'file-text', 'file-image', 'file-video',
   'file-audio', 'file-archive', 'file-code', 'upload', 'download', 'pencil', 'move', 'share-2', 'link',
   'trash-2', 'ellipsis', 'chevron-right', 'log-out', 'settings', 'users', 'user', 'lock', 'key-round',
   'shield-check', 'fingerprint', 'copy', 'check', 'x', 'sun', 'moon', 'monitor', 'hard-drive', 'inbox', 'globe',

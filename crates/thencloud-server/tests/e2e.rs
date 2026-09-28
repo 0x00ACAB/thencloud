@@ -1266,6 +1266,7 @@ async fn download_version(
             chunk_count: v.chunk_count,
             size: v.size,
             created_at: v.created_at,
+            has_thumbnail: false,
         }),
         ..node.clone()
     };
@@ -5198,4 +5199,130 @@ async fn comments_are_read_by_those_with_access_and_no_one_else() {
         h.get(&uri, &alice.token).await.status,
         StatusCode::NOT_FOUND
     );
+}
+
+#[tokio::test]
+async fn thumbnails_follow_the_current_version() {
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "pw").await;
+    let bob = register(&h, "bob", "pw").await;
+    let (folder, _) = alice.mkdir(&h, &alice.root, "Photos").await;
+    let file = alice
+        .upload(&h, &folder, None, "cat.jpg", b"not really a jpeg")
+        .await
+        .unwrap();
+    let key = alice.key_of(&h, &file.id).await;
+    let v1 = file.version.clone().unwrap();
+    assert!(!v1.has_thumbnail);
+    let get = format!("/api/nodes/{}/thumbnail", file.id);
+    assert_eq!(
+        h.get(&get, &alice.token).await.status,
+        StatusCode::NOT_FOUND
+    );
+
+    let put = |vid: &str| format!("/api/nodes/{}/versions/{vid}/thumbnail", file.id);
+    let thumb = c::encrypt_thumbnail(&key, &file.id, &v1.id, b"THUMB-SECRET small jpeg");
+    let send = |uri: String, token: String, body: Vec<u8>| {
+        let h = &h;
+        async move {
+            h.raw(Method::PUT, &uri, Some(&token), &[], Body::from(body), None)
+                .await
+                .status
+        }
+    };
+    // Only someone who can write the file, and only a thumbnail-sized one.
+    assert_eq!(
+        send(put(&v1.id), bob.token.clone(), thumb.clone()).await,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        send(put(&v1.id), alice.token.clone(), vec![0; 70 * 1024]).await,
+        StatusCode::PAYLOAD_TOO_LARGE
+    );
+    assert_eq!(
+        send(put("no-such-version"), alice.token.clone(), thumb.clone()).await,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        send(put(&v1.id), alice.token.clone(), thumb.clone()).await,
+        StatusCode::NO_CONTENT
+    );
+    let node: Node = h
+        .get(&format!("/api/nodes/{}", file.id), &alice.token)
+        .await
+        .json();
+    assert!(node.version.as_ref().unwrap().has_thumbnail);
+    let r = h.get(&get, &alice.token).await;
+    assert_eq!(r.status, StatusCode::OK);
+    assert_eq!(
+        c::decrypt_thumbnail(&key, &file.id, &v1.id, &r.body).unwrap(),
+        b"THUMB-SECRET small jpeg"
+    );
+
+    // A new version has none until one is made for it; the old one can't
+    // stand in for it, since it's bound to its version.
+    let v2 = alice
+        .upload(&h, "", Some(&node), "cat.jpg", b"another")
+        .await
+        .unwrap();
+    let v2_id = v2.version.as_ref().unwrap().id.clone();
+    assert!(!v2.version.unwrap().has_thumbnail);
+    assert_eq!(
+        h.get(&get, &alice.token).await.status,
+        StatusCode::NOT_FOUND
+    );
+    assert!(c::decrypt_thumbnail(&key, &file.id, &v2_id, &thumb).is_err());
+
+    // Through a public link, as far as the link reaches.
+    assert_eq!(
+        send(
+            put(&v2_id),
+            alice.token.clone(),
+            c::encrypt_thumbnail(&key, &file.id, &v2_id, b"THUMB-SECRET v2")
+        )
+        .await,
+        StatusCode::NO_CONTENT
+    );
+    let link: Link = h
+        .call(
+            Method::POST,
+            "/api/links",
+            Some(&alice.token),
+            Some(CreateLinkRequest {
+                node_id: folder.clone(),
+                password_auth: None,
+                enc_link_key: None,
+                enc_link_secret: None,
+                expires_at: None,
+                upload_only: false,
+                max_opens: None,
+            }),
+        )
+        .await
+        .json();
+    let r = h
+        .raw(
+            Method::GET,
+            &format!("/api/public/{}/nodes/{}/thumbnail", link.token, file.id),
+            None,
+            &[],
+            Body::empty(),
+            None,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+    assert_eq!(
+        c::decrypt_thumbnail(&key, &file.id, &v2_id, &r.body).unwrap(),
+        b"THUMB-SECRET v2"
+    );
+
+    let mut files = Vec::new();
+    all_files(&h.dir.path().join("data"), &mut files);
+    for p in &files {
+        assert!(
+            !contains(&std::fs::read(p).unwrap(), b"THUMB-SECRET"),
+            "{}",
+            p.display()
+        );
+    }
 }

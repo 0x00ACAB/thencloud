@@ -112,6 +112,7 @@ fn open_symmetric(v: &Value) -> Result<Vec<u8>> {
         "content-key" => bytes(unwrap_content_key(&k, &sealed, c[0], c[1])?),
         "link-key" => bytes(unwrap_link_key(&k, &sealed, c[0])?),
         "link-secret" => bytes(decrypt_link_secret(&k, &sealed, c[0])?),
+        "thumbnail" => decrypt_thumbnail(&k, c[0], c[1], &sealed)?,
         "comment" => decrypt_comment(&k, c[0], c[1], c[2], &sealed)?,
         "backup" => open_backup_record(&k, &b64_decode(c[0])?, c[1].parse().unwrap(), &sealed)?,
         "chunk" => decrypt_chunk(&k, c[0], c[1].parse().unwrap(), c[2] == "last", &sealed)?,
@@ -552,6 +553,13 @@ fn write_vectors() {
             link_secret.as_bytes(),
             encrypt_link_secret(&node_key, &link_secret, node),
         ),
+        sym(
+            "thumbnail",
+            &node_key,
+            &[node, version],
+            b"\xff\xd8\xff\xe0 a small JPEG",
+            encrypt_thumbnail(&node_key, node, version, b"\xff\xd8\xff\xe0 a small JPEG"),
+        ),
         {
             let comment_id = "7c1d2e3f-4a5b-4c6d-9e7f-8a9b0c1d2e3f";
             let body = br#"{"text":"Looks good, one typo on page 2.","at":1790000123456}"#;
@@ -622,6 +630,11 @@ fn write_vectors() {
             &find(&symmetric, "link-key"),
             json!({ "key": b64(derive_link_password_keys(link_secret.as_bytes(), "open says me").unwrap().kek.as_bytes()) }),
             "a link's key with the wrong password",
+        ),
+        reject(
+            &find(&symmetric, "thumbnail"),
+            json!({ "context": [node, other_node] }),
+            "an old version's thumbnail shown for a new one",
         ),
         {
             let v = find(&symmetric, "comment");

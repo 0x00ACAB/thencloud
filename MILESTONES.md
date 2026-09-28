@@ -115,7 +115,7 @@ Smaller things:
 
 ## Milestone 6: Everyday files
 
-- [ ] **Encrypted thumbnails**: made in the browser on upload (images, video frames, PDF first pages), encrypted under the file's key and stored as a small side blob; a grid view that uses them
+- [ ] **Encrypted thumbnails**: made in the browser on upload (images, video frames, PDF first pages), encrypted under the file's key and stored as a small side blob; a grid view that uses them. Images are done: a JPEG of up to 256 px made on upload, sealed under the node key and bound to its version, stored with the version; My files has a list/grid switch. Video frames and PDF first pages are still to do
 - [ ] **Photos**: a timeline of a chosen folder by date taken (EXIF read in the browser, like music tags), with albums and a lightbox
 - [x] **Strip location on share**: offer to remove GPS and camera details from photos before they're uploaded or shared. JPEG, PNG and WebP; the orientation is kept. Uploads ask (or always remove, or keep: Settings), and sharing a photo that has a location offers to remove it, deleting the older versions too
 - [x] **Favourites and Recent**: kept as node ids in the encrypted app data, shown in the sidebar. Star from a file's menu; files count as recent when previewed or downloaded
