@@ -8,6 +8,7 @@
   import { toastError } from '../../lib/ui.svelte.js';
   import { formatWhen, fullDate } from '../../lib/format.js';
   import { fly, slide } from '../../lib/motion.js';
+  import { t } from '../../lib/i18n.svelte.js';
 
   // `isOwner`: the node is ours, so any comment on it can be deleted.
   let { entry, isOwner, onclose } = $props();
@@ -29,11 +30,11 @@
 
   async function post(e) {
     e?.preventDefault();
-    const t = text.trim();
-    if (!t || posting) return;
+    const body = text.trim();
+    if (!body || posting) return;
     posting = true;
     try {
-      list = [...list, await addComment(entry, t)];
+      list = [...list, await addComment(entry, body)];
       text = '';
       requestAnimationFrame(() => listEl?.scrollTo({ top: listEl.scrollHeight }));
     } catch (err) {
@@ -61,8 +62,8 @@
 </script>
 
 <Modal
-  title="Comments"
-  description="On {entry.meta.name}. Encrypted like the file itself: everyone who can open it can read them, and the server can't."
+  title={t('Comments')}
+  description={t("On {name}. Encrypted like the file itself: everyone who can open it can read them, and the server can't.", { name: entry.meta.name })}
   {onclose}
   onsubmit={post}
   class="max-w-lg">
@@ -83,7 +84,7 @@
               <span class="text-xs text-fg-muted" title={fullDate(c.at)}>{formatWhen(c.at)}</span>
             </p>
             {#if c.text === null}
-              <p class="text-[13px] text-fg-muted italic">This comment can't be decrypted. It may have been tampered with.</p>
+              <p class="text-[13px] text-fg-muted italic">{t("This comment can't be decrypted. It may have been tampered with.")}</p>
             {:else}
               <p class="text-sm break-words whitespace-pre-wrap">{c.text}</p>
             {/if}
@@ -92,8 +93,8 @@
             <button
               type="button"
               class="btn btn-ghost btn-icon opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-              aria-label="Delete comment"
-              title="Delete"
+              aria-label={t('Delete comment')}
+              title={t('Delete')}
               disabled={busy !== null}
               onclick={() => remove(c)}>
               {#if busy === c.id}<Icon name="loader-circle" class="spinner" />{:else}<Icon name="trash-2" />{/if}
@@ -103,26 +104,26 @@
       {/each}
     </ul>
   {:else}
-    <p class="text-[13px] text-fg-muted">No comments yet.</p>
+    <p class="text-[13px] text-fg-muted">{t('No comments yet.')}</p>
   {/if}
 
   <div class="field">
-    <label class="sr-only" for="comment-text">Add a comment</label>
+    <label class="sr-only" for="comment-text">{t('Add a comment')}</label>
     <textarea
       id="comment-text"
       class="input min-h-20 resize-y py-2"
-      placeholder="Add a comment"
+      placeholder={t('Add a comment')}
       maxlength={MAX_COMMENT}
       bind:value={text}
       onkeydown={keydown}></textarea>
   </div>
 
   {#snippet footer()}
-    <span class="mr-auto text-xs text-fg-muted">Ctrl+Enter to post</span>
-    <button type="button" class="btn btn-secondary" onclick={onclose}>Done</button>
+    <span class="mr-auto text-xs text-fg-muted">{t('Ctrl+Enter to post')}</span>
+    <button type="button" class="btn btn-secondary" onclick={onclose}>{t('Done')}</button>
     <button class="btn btn-primary" disabled={posting || !text.trim() || list === null}>
       {#if posting}<Icon name="loader-circle" class="spinner" />{/if}
-      Post
+      {t('Post')}
     </button>
   {/snippet}
 </Modal>

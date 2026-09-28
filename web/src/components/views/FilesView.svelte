@@ -1032,7 +1032,7 @@
         <img src="/img/logo.webp" alt="" width="715" height="349" class="mb-4 h-auto w-40 select-none" draggable="false" />
         <p class="font-medium">{t('Nothing here yet')}</p>
         <p class="max-w-sm text-[13px] text-fg-muted">
-          Drop files or whole folders anywhere on this page, or use Upload. Everything is encrypted before it leaves your device.
+          {t('Drop files or whole folders anywhere on this page, or use Upload. Everything is encrypted before it leaves your device.')}
         </p>
       {:else}
         <div class="mb-3 grid size-11 place-items-center rounded-lg border border-line bg-subtle">

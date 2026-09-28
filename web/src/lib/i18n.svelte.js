@@ -85,3 +85,12 @@ export function t(key, params) {
   if (!params) return msg;
   return msg.replace(/\{(\w+)\}/g, (m, name) => (name in params ? String(params[name]) : m));
 }
+
+/**
+ * A translated message split around the placeholders `t` left unfilled, for
+ * putting components in them: strings for text, `{ slot: 'name' }` for each
+ * placeholder, in the translation's word order.
+ */
+export function slots(text) {
+  return text.split(/\{(\w+)\}/).map((s, i) => (i % 2 ? { slot: s } : s));
+}
