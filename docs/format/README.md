@@ -183,6 +183,7 @@ Everything the server must not know about a node is JSON:
 
 ```json
 {"name":"Holiday photos.zip","mime":"application/zip","size":1234,"mtime":1790000000000,"changed":1790000123456}
+{"name":"IMG_2041.jpg","mime":"image/jpeg","size":3145728,"mtime":1790000000000,"changed":1790000123456,"taken":1563120239000}
 ```
 
 - `name` (required) must not be empty, `.` or `..`, and must not contain `/`
@@ -193,6 +194,9 @@ Everything the server must not know about a node is JSON:
 - `mtime` is the file's own modification time.
 - `changed` is when the node was last made, uploaded or renamed. It's missing
   on older items, whose time comes from the server (to the hour).
+- `taken` (optional) is when a photo was taken, from its EXIF
+  `DateTimeOriginal` (else `DateTime`) at upload, read as the uploader's
+  local time. It's only there when the uploaded file still had it.
 
 Readers must ignore fields they don't know. Before sealing, the JSON is
 padded with spaces (valid JSON whitespace) to a multiple of 128 bytes, so the
