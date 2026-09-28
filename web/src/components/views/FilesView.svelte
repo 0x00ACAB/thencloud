@@ -1,5 +1,5 @@
 <script>
-  import { session, resolvePath, listFolder, createFolder, rename, move, trash, untrash, download, downloadZip, fetchEntry, upload, saveText, refreshMe, toolsInfo, loadDraft, storeDraft, dropDraft, searchTree, openEntry, strayDrops } from '../../lib/cloud.svelte.js';
+  import { session, resolvePath, listFolder, createFolder, rename, move, trash, untrash, download, downloadZip, fetchEntry, upload, saveText, refreshMe, toolsInfo, loadDraft, storeDraft, dropDraft, searchTree, openEntry, strayDrops, bookProgress } from '../../lib/cloud.svelte.js';
   import { toast, toastError, trackTransfer, errorMessage, sort, sortBy, photoDetails, fileView, setFileView } from '../../lib/ui.svelte.js';
   import { fileInfo, hasDetails, stripFile } from '../../lib/exif.js';
   import Modal from '../Modal.svelte';
@@ -1275,6 +1275,7 @@
     edit={dialog.edit}
     fetch={fetchEntry}
     open={openEntry}
+    {bookProgress}
     trail={path}
     list={(f) => listFolder(f.node.id, f.key)}
     save={canWrite ? saveText : null}

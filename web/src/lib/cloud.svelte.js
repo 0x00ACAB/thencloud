@@ -955,7 +955,7 @@ export async function exportAccount(onProgress) {
     return { node: { kind: 'file' }, meta: { name, size: bytes.length, mtime: now }, bytes };
   };
   const data = [];
-  for (const name of ['music', 'videos', 'files', 'notes']) {
+  for (const name of ['music', 'videos', 'files', 'notes', 'books']) {
     const d = await loadAppData(name);
     if (Object.keys(d).length) data.push(json(`${name}.json`, d));
   }
@@ -1197,6 +1197,32 @@ export async function loadAppData(name) {
   appData.set(name, { data, revision: r.revision });
   return data;
 }
+
+// Where books were left, in the "books" app data: node id -> { at, frac, t }
+// (`at` is the page or chapter, `frac` how far down a chapter).
+const MAX_BOOKS = 500;
+let bookSave = null;
+
+export const bookProgress = {
+  async load(entry) {
+    return (await loadAppData('books')).positions?.[entry.node.id] ?? null;
+  },
+  /** Kept a moment after the reader stops moving, so turning pages doesn't save each one. */
+  save(entry, pos) {
+    clearTimeout(bookSave);
+    bookSave = setTimeout(() => {
+      saveAppData('books', (d) => {
+        d.positions ??= {};
+        d.positions[entry.node.id] = { ...pos, t: Date.now() };
+        const ids = Object.keys(d.positions);
+        if (ids.length > MAX_BOOKS) {
+          ids.sort((a, b) => d.positions[a].t - d.positions[b].t);
+          for (const id of ids.slice(0, ids.length - MAX_BOOKS)) delete d.positions[id];
+        }
+      }).catch(() => {});
+    }, 1500);
+  },
+};
 
 /** Apply `change` to a copy of the data and save it. Resolves to the new data. */
 export function saveAppData(name, change) {
