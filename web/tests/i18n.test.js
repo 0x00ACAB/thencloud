@@ -42,10 +42,17 @@ for (const [lang, catalog] of [['pl', pl], ['de', de]]) {
   test(`i18n: ${lang} keeps the placeholders and has its plural forms`, () => {
     const categories = new Intl.PluralRules(lang).resolvedOptions().pluralCategories;
     for (const [key, msg] of Object.entries(catalog)) {
-      // A plural form may leave out {count} ("this photo"), nothing else.
-      const without = (x) => placeholders(x).split(',').filter((p) => p && (typeof msg !== 'object' || p !== 'count')).join(',');
-      for (const f of forms(msg)) assert.equal(without(f), without(key), `${lang}: ${key}`);
-      if (typeof msg === 'object') {
+      // A translation may leave placeholders out (a plural form "this
+      // photo", Polish without {their}) but never bring in new ones.
+      const keyHas = new Set(placeholders(key).split(','));
+      for (const f of forms(msg)) {
+        for (const p of placeholders(f).split(',').filter(Boolean)) assert.ok(keyHas.has(p), `${lang}: {${p}} isn't in ${key}`);
+      }
+      const gendered = typeof msg === 'object' && ['feminine', 'masculine', 'neuter'].some((g) => g in msg);
+      if (gendered) {
+        assert.ok('other' in msg, `${lang}: ${key} needs an "other" form for when no gender is said`);
+        for (const k of Object.keys(msg)) assert.ok(['feminine', 'masculine', 'neuter', 'other'].includes(k), `${lang}: ${key} has an odd form ${k}`);
+      } else if (typeof msg === 'object') {
         assert.ok(key.includes('{count}'), `${lang}: plural forms need {count}: ${key}`);
         for (const c of categories) assert.ok(c in msg || 'other' in msg, `${lang}: ${key} lacks ${c}`);
         if (lang === 'pl') for (const c of ['one', 'few', 'many']) assert.ok(c in msg, `pl: ${key} lacks ${c}`);

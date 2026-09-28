@@ -3,7 +3,7 @@
   import { t, LANGUAGES, language } from '../../lib/i18n.svelte.js';
   import { format, setFormat, REGIONS, autoRegionTag, unitSystem, formatDateTime, formatNumber } from '../../lib/locale.svelte.js';
   import { onMount } from 'svelte';
-  import { session, changePassword, listSessions, revokeSession, revokeOtherSessions, removeRecoveryKey, listAppPasswords, deleteAppPassword, avatar, loadMyAvatar, setAvatar, removeAvatar, setDisplayName, cleanDisplayName, listContacts, forgetContact, forgetThisBrowser, myTransfer, listPasskeys, removePasskey, disableTotp, deleteAccount, verifyTree, resolvePath, exportAccount, saveAppData } from '../../lib/cloud.svelte.js';
+  import { session, changePassword, listSessions, revokeSession, revokeOtherSessions, removeRecoveryKey, listAppPasswords, deleteAppPassword, avatar, loadMyAvatar, setAvatar, removeAvatar, setDisplayName, cleanDisplayName, setPersonDetails, cleanPronoun, listContacts, forgetContact, forgetThisBrowser, myTransfer, listPasskeys, removePasskey, disableTotp, deleteAccount, verifyTree, resolvePath, exportAccount, saveAppData } from '../../lib/cloud.svelte.js';
   import { passkeysSupported } from '../../lib/passkeys.js';
   import TotpDialog from '../dialogs/TotpDialog.svelte';
   import PasskeyDialog from '../dialogs/PasskeyDialog.svelte';
@@ -134,6 +134,36 @@
       .then((a) => (nameDraft = a.name ?? ''))
       .catch(() => {}),
   );
+  // Pronouns (English) and grammatical gender, filled in like the example
+  // sentences read.
+  let pro = $state({ subject: '', object: '', possessive: '', gender: null });
+  let proBusy = $state(false);
+  const fromDetails = (d = {}) => ({ subject: d.subject ?? '', object: d.object ?? '', possessive: d.possessive ?? '', gender: d.gender ?? null });
+  onMount(() =>
+    loadMyAvatar()
+      .then((a) => (pro = fromDetails(a.details)))
+      .catch(() => {}),
+  );
+  const proValid = $derived(['subject', 'object', 'possessive'].every((k) => cleanPronoun(pro[k]) !== null));
+  const proChanged = $derived.by(() => {
+    const now = fromDetails(avatar.details);
+    return ['subject', 'object', 'possessive'].some((k) => (cleanPronoun(pro[k]) ?? pro[k]) !== now[k]) || pro.gender !== now.gender;
+  });
+  async function savePronouns(e) {
+    e.preventDefault();
+    if (!proValid || !proChanged) return;
+    proBusy = true;
+    try {
+      await setPersonDetails(pro);
+      pro = fromDetails(avatar.details);
+      toast(t('Pronouns saved'), { kind: 'success' });
+    } catch (err) {
+      toastError(err);
+    } finally {
+      proBusy = false;
+    }
+  }
+
   const nameValid = $derived(!nameDraft.trim() || cleanDisplayName(nameDraft) !== null);
   const nameChanged = $derived((nameDraft.trim() ? cleanDisplayName(nameDraft) : null) !== avatar.name);
 
@@ -325,6 +355,44 @@
         <p id="display-name-hint" class="text-xs {nameValid ? 'text-fg-muted' : 'text-danger'}">
           {nameValid ? t('Any script, up to 64 characters. Shown next to your username, to the same people who see your picture.') : t("That name has characters that can't be used.")}
         </p>
+      </dd>
+      <dt class="text-fg-muted">{t('Pronouns')}</dt>
+      <dd>
+        {#snippet blank(key, placeholder)}
+          <input
+            class="input inline-block h-7 w-24 px-2 align-baseline"
+            bind:value={pro[key]}
+            {placeholder}
+            maxlength="24"
+            autocomplete="off"
+            spellcheck="false"
+            aria-label={{ subject: t('Pronoun as the subject, like "they"'), object: t('Pronoun as the object, like "them"'), possessive: t('Possessive pronoun, like "their"') }[key]} />
+        {/snippet}
+        <form class="grid max-w-md gap-3" onsubmit={savePronouns}>
+          <p class="text-xs text-fg-muted">{t('How thencloud refers to you when it talks about you to others in English. Fill in the blanks the way you like; empty ones read they, them and their.')}</p>
+          <div class="grid gap-2 rounded-md border border-line bg-subtle p-3 text-sm leading-7" lang="en">
+            <p>Yesterday, {@render blank('subject', 'they')} shared a folder with you.</p>
+            <p>Send {@render blank('object', 'them')} a file.</p>
+            <p>Ask {avatar.name ?? session.me.username} to read you {@render blank('possessive', 'their')} key fingerprint.</p>
+          </div>
+          <div class="grid gap-1.5">
+            <p class="text-[13px] font-medium" id="gender-label">{t('Grammatical gender')}</p>
+            <div class="flex w-fit flex-wrap rounded-md border border-line p-0.5" role="radiogroup" aria-labelledby="gender-label">
+              {#each [[null, t('Not set')], ['feminine', t('Feminine')], ['masculine', t('Masculine')], ['neuter', t('Neuter')]] as [value, label] (value ?? 'none')}
+                <button type="button" role="radio" aria-checked={pro.gender === value} class="h-7 cursor-pointer rounded px-3 text-[13px] {pro.gender === value ? 'bg-muted font-medium text-fg' : 'text-fg-muted hover:text-fg'}" onclick={() => (pro.gender = value)}>{label}</button>
+              {/each}
+            </div>
+            <p class="text-xs text-fg-muted">{t('For languages whose words change with it, like Polish "przeczytała" or "przeczytał". Not set keeps the wording neutral.')}</p>
+          </div>
+          {#if !proValid}<p class="text-xs text-danger">{t("Those pronouns have characters that can't be used.")}</p>{/if}
+          <div>
+            <button class="btn btn-secondary" disabled={proBusy || !proValid || !proChanged}>
+              {#if proBusy}<Icon name="loader-circle" class="spinner" />{/if}
+              {t('Save')}
+            </button>
+          </div>
+          <p class="text-xs text-fg-muted">{t('Shown only to the people who see your picture and display name, and encrypted the same way.')}</p>
+        </form>
       </dd>
       <dt class="text-fg-muted">{t('Username')}</dt>
       <dd class="font-medium">{session.me.username}{#if session.me.is_admin}<span class="badge ml-2">{t('Admin')}</span>{/if}</dd>

@@ -435,6 +435,27 @@ pub fn decrypt_avatar(key_bytes: &[u8], owner: &str, sealed: &[u8]) -> R<Vec<u8>
     Ok(c::decrypt_avatar(&key(key_bytes)?, owner, sealed)?)
 }
 
+/// A pronoun as it would be stored, or undefined if it can't be one.
+#[wasm_bindgen]
+pub fn clean_pronoun(p: &str) -> Option<String> {
+    c::clean_pronoun(p)
+}
+
+/// `details_json` is `PersonDetails` as JSON.
+#[wasm_bindgen]
+pub fn encrypt_person_details(key_bytes: &[u8], owner: &str, details_json: &str) -> R<Vec<u8>> {
+    let d: c::PersonDetails =
+        serde_json::from_str(details_json).map_err(|e| JsError::new(&e.to_string()))?;
+    Ok(c::encrypt_person_details(&key(key_bytes)?, owner, &d)?)
+}
+
+/// `PersonDetails` as JSON.
+#[wasm_bindgen]
+pub fn decrypt_person_details(key_bytes: &[u8], owner: &str, sealed: &[u8]) -> R<String> {
+    let d = c::decrypt_person_details(&key(key_bytes)?, owner, sealed)?;
+    serde_json::to_string(&d).map_err(|e| JsError::new(&e.to_string()))
+}
+
 /// The name as it would be stored, or undefined if it can't be one.
 #[wasm_bindgen]
 pub fn clean_display_name(name: &str) -> Option<String> {

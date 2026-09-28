@@ -1,4 +1,4 @@
-//! Profile pictures and display names. Both are encrypted under their
+//! Profile pictures, display names and pronouns. All are encrypted under their
 //! owner's avatar key, which the owner seals to the people they share with
 //! (either way round); the server stores ciphertext and sealed keys and can
 //! see neither.
@@ -6,8 +6,8 @@
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
-use thencloud_crypto::DISPLAY_NAME_SEALED_LEN;
 use thencloud_crypto::api::{AvatarGrant, B64, MyAvatar, SetAvatar, UserAvatar};
+use thencloud_crypto::{DISPLAY_NAME_SEALED_LEN, PERSON_DETAILS_SEALED_LEN};
 
 use crate::AppState;
 use crate::auth::AuthUser;
@@ -18,9 +18,14 @@ use crate::util::*;
 const MAX_AVATAR_BYTES: usize = 256 * 1024;
 
 pub async fn get_mine(State(state): State<AppState>, user: AuthUser) -> Result<Json<MyAvatar>> {
-    type Row = (Option<Vec<u8>>, Option<Vec<u8>>, Option<Vec<u8>>);
-    let (data, name, enc_key): Row = sqlx::query_as(
-        "SELECT enc_avatar, enc_display_name, enc_avatar_key FROM users WHERE id = ?",
+    type Row = (
+        Option<Vec<u8>>,
+        Option<Vec<u8>>,
+        Option<Vec<u8>>,
+        Option<Vec<u8>>,
+    );
+    let (data, name, details, enc_key): Row = sqlx::query_as(
+        "SELECT enc_avatar, enc_display_name, enc_person_details, enc_avatar_key FROM users WHERE id = ?",
     )
     .bind(&user.id)
     .fetch_one(&state.db)
@@ -35,6 +40,7 @@ pub async fn get_mine(State(state): State<AppState>, user: AuthUser) -> Result<J
     Ok(Json(MyAvatar {
         data: data.map(B64),
         name: name.map(B64),
+        details: details.map(B64),
         enc_key: enc_key.map(B64),
         grantees,
     }))
@@ -45,7 +51,7 @@ pub async fn set(
     user: AuthUser,
     Json(req): Json<SetAvatar>,
 ) -> Result<StatusCode> {
-    if req.data.is_none() && req.name.is_none() {
+    if req.data.is_none() && req.name.is_none() && req.details.is_none() {
         return Err(AppError::bad("nothing to set; remove it instead"));
     }
     if req
@@ -58,14 +64,18 @@ pub async fn set(
     if let Some(name) = &req.name {
         check_len(name, DISPLAY_NAME_SEALED_LEN, "name")?;
     }
+    if let Some(details) = &req.details {
+        check_len(details, PERSON_DETAILS_SEALED_LEN, "details")?;
+    }
     check_len(&req.enc_key, WRAPPED_KEY_LEN, "enc_key")?;
     // Both are replaced: each change comes under a new key.
     sqlx::query(
-        "UPDATE users SET enc_avatar = ?, enc_display_name = ?, enc_avatar_key = ?, avatar_updated_at = ? \
+        "UPDATE users SET enc_avatar = ?, enc_display_name = ?, enc_person_details = ?, enc_avatar_key = ?, avatar_updated_at = ? \
          WHERE id = ?",
     )
     .bind(req.data.as_ref().map(|d| &d.0))
     .bind(req.name.as_ref().map(|n| &n.0))
+    .bind(req.details.as_ref().map(|d| &d.0))
     .bind(&req.enc_key.0)
     .bind(now())
     .bind(&user.id)
@@ -78,7 +88,7 @@ pub async fn set(
 pub async fn remove(State(state): State<AppState>, user: AuthUser) -> Result<StatusCode> {
     let mut tx = state.db.begin().await?;
     sqlx::query(
-        "UPDATE users SET enc_avatar = NULL, enc_display_name = NULL, enc_avatar_key = NULL, \
+        "UPDATE users SET enc_avatar = NULL, enc_display_name = NULL, enc_person_details = NULL, enc_avatar_key = NULL, \
          avatar_updated_at = NULL WHERE id = ?",
     )
     .bind(&user.id)
@@ -142,9 +152,15 @@ pub async fn get_user(
     user: AuthUser,
     Path(username): Path<String>,
 ) -> Result<Json<Option<UserAvatar>>> {
-    type Row = (Option<Vec<u8>>, Option<Vec<u8>>, Vec<u8>, i64);
+    type Row = (
+        Option<Vec<u8>>,
+        Option<Vec<u8>>,
+        Option<Vec<u8>>,
+        Vec<u8>,
+        i64,
+    );
     let row: Option<Row> = sqlx::query_as(
-        "SELECT u.enc_avatar, u.enc_display_name, g.sealed_key, u.avatar_updated_at FROM users u \
+        "SELECT u.enc_avatar, u.enc_display_name, u.enc_person_details, g.sealed_key, u.avatar_updated_at FROM users u \
          JOIN avatar_grants g ON g.owner_id = u.id AND g.grantee_id = ? \
          WHERE u.username = ? AND u.enc_avatar_key IS NOT NULL \
          AND EXISTS(SELECT 1 FROM shares s WHERE (s.owner_id = u.id AND s.recipient_id = ?) \
@@ -156,14 +172,15 @@ pub async fn get_user(
     .bind(&user.id)
     .fetch_optional(&state.db)
     .await?;
-    Ok(Json(row.map(|(data, name, sealed_key, updated_at)| {
-        UserAvatar {
+    Ok(Json(row.map(
+        |(data, name, details, sealed_key, updated_at)| UserAvatar {
             data: data.map(B64),
             name: name.map(B64),
+            details: details.map(B64),
             sealed_key: B64(sealed_key),
             updated_at,
-        }
-    })))
+        },
+    )))
 }
 
 /// Take back avatar keys between two users who no longer share anything.

@@ -99,6 +99,17 @@ fn open_symmetric(v: &Value) -> Result<Vec<u8>> {
         "pq-private-key" => unwrap_pq_private_key(&k, &sealed)?.seed().to_vec(),
         "private-data" => decrypt_private_data(&k, c[0], c[1], &sealed)?,
         "avatar" => decrypt_avatar(&k, c[0], &sealed)?,
+        "person-details" => {
+            let d = decrypt_person_details(&k, c[0], &sealed)?;
+            assert_eq!(
+                serde_json::to_value(&d).unwrap(),
+                *get(v, "details"),
+                "person details"
+            );
+            let mut b = serde_json::to_vec(&d).unwrap();
+            b.resize(PERSON_DETAILS_PADDED, 0);
+            b
+        }
         "display-name" => {
             let name = decrypt_display_name(&k, c[0], &sealed)?;
             assert_eq!(name, text(v, "name"), "display name");
@@ -527,6 +538,20 @@ fn write_vectors() {
             v["name"] = json!(name);
             v
         },
+        {
+            let d = PersonDetails {
+                subject: "xe".into(),
+                object: "xem".into(),
+                possessive: "xyr".into(),
+                gender: Some(Gender::Neuter),
+            };
+            let mut padded = serde_json::to_vec(&d).unwrap();
+            padded.resize(PERSON_DETAILS_PADDED, 0);
+            let sealed = encrypt_person_details(&avatar_key, "chloe", &d).unwrap();
+            let mut v = sym("person-details", &avatar_key, &["chloe"], &padded, sealed);
+            v["details"] = serde_json::to_value(&d).unwrap();
+            v
+        },
         sym(
             "node-key",
             &folder,
@@ -686,6 +711,11 @@ fn write_vectors() {
             &find(&symmetric, "master-key"),
             json!({ "key": b64(mk.as_bytes()) }),
             "the wrong key",
+        ),
+        reject(
+            &find(&symmetric, "person-details"),
+            json!({ "context": ["alice"] }),
+            "someone's pronouns shown as another person's",
         ),
         reject(
             &find(&symmetric, "display-name"),

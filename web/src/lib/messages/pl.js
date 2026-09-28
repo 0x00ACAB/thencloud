@@ -493,14 +493,19 @@ export default {
   'People you share with can decrypt this folder and everything in it.': 'Osoby, którym udostępnisz, mogą odszyfrować ten folder i wszystko, co w nim jest.',
   'People you share with can decrypt this file.': 'Osoby, którym udostępnisz, mogą odszyfrować ten plik.',
   'e.g. alex': 'np. ala',
-  'Their key fingerprint': 'Odcisk klucza tej osoby',
+  '{Their} key fingerprint': 'Odcisk klucza tej osoby',
   'You checked this key on {date}.': 'Ten klucz został sprawdzony {date}.',
   'This key is not the one you checked': 'To nie jest klucz, który był sprawdzony',
   'You verified a different key for {name} on {date}:': 'Dla {name} był sprawdzony inny klucz, {date}:',
-  "That can happen if they made a new account with the same name. It's also what an attack would look like. Don't share until {name} reads you the new fingerprint above.":
+  "That can happen if {they} made a new account with the same name. It's also what an attack would look like. Don't share until {name} reads you the new fingerprint above.":
     'Tak bywa, gdy ktoś założy nowe konto o tej samej nazwie. Tak samo wyglądałby też atak. Nie udostępniaj, dopóki {name} nie przeczyta ci nowego odcisku podanego wyżej.',
-  '{name} read me the new fingerprint and it matches': 'Nowy odcisk przeczytany przez {name} się zgadza',
-  "Ask {name} to open Settings and read you their fingerprint. If it doesn't match exactly, don't share: someone may be intercepting. Once you've checked, it's remembered.":
+  '{name} read me the new fingerprint and it matches': {
+    feminine: '{name} przeczytała mi nowy odcisk i się zgadza',
+    masculine: '{name} przeczytał mi nowy odcisk i się zgadza',
+    neuter: '{name} przeczytało mi nowy odcisk i się zgadza',
+    other: 'Nowy odcisk przeczytany przez {name} się zgadza',
+  },
+  "Ask {name} to open Settings and read you {their} fingerprint. If it doesn't match exactly, don't share: someone may be intercepting. Once you've checked, it's remembered.":
     'Poproś {name} o otwarcie Ustawień i przeczytanie ci odcisku klucza. Jeśli nie zgadza się dokładnie, nie udostępniaj: ktoś może przechwytywać połączenie. Po sprawdzeniu zostanie zapamiętany.',
   'The fingerprints match': 'Odciski się zgadzają',
   'Can view and download': 'Może oglądać i pobierać',
@@ -608,4 +613,23 @@ export default {
   Sleepy: 'Senność',
   Peaceful: 'Ukojenie',
   Serene: 'Pogoda ducha',
+
+  // Pronouns and grammatical gender
+  'Pronouns saved': 'Zapisano zaimki',
+  Pronouns: 'Zaimki',
+  'Pronoun as the subject, like "they"': 'Zaimek jako podmiot, np. "they"',
+  'Pronoun as the object, like "them"': 'Zaimek jako dopełnienie, np. "them"',
+  'Possessive pronoun, like "their"': 'Zaimek dzierżawczy, np. "their"',
+  'How thencloud refers to you when it talks about you to others in English. Fill in the blanks the way you like; empty ones read they, them and their.':
+    'Jak thencloud mówi o tobie innym osobom po angielsku. Uzupełnij luki tak, jak lubisz; puste to they, them i their.',
+  'Grammatical gender': 'Rodzaj gramatyczny',
+  'Not set': 'Nie ustawiono',
+  Feminine: 'Żeński',
+  Masculine: 'Męski',
+  Neuter: 'Nijaki',
+  'For languages whose words change with it, like Polish "przeczytała" or "przeczytał". Not set keeps the wording neutral.':
+    'Dla języków, w których słowa się od niego zmieniają, np. "przeczytała" albo "przeczytał". Gdy nie jest ustawiony, sformułowania pozostają neutralne.',
+  "Those pronouns have characters that can't be used.": 'Te zaimki zawierają znaki, których nie można użyć.',
+  'Shown only to the people who see your picture and display name, and encrypted the same way.':
+    'Widoczne tylko dla osób, które widzą twoje zdjęcie i nazwę wyświetlaną, i szyfrowane tak samo.',
 };
