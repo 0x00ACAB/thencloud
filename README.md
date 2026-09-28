@@ -132,6 +132,7 @@ crates/thencloud-wasm     wasm-bindgen bindings used by the web client
 crates/thencloud-server   axum + SQLite server, local blob store
 crates/thencloud-cli      command-line client and FUSE mount (`thencloud`)
 web/                      browser client: Svelte 5 + Vite + Tailwind CSS
+docs/format               the ciphertext formats and key derivations, with test vectors
 ```
 
 ## How the encryption works
@@ -148,6 +149,8 @@ folder key ──wraps──► child node keys
 node key   ──seals──► metadata {name, mime, size, mtime}
 file key   ──wraps──► per-version content key ──seals──► 4 MiB chunks
 ```
+
+Every byte of this is written down in [`docs/format`](docs/format/README.md), with test vectors that the Rust crate and the WASM build are checked against, so other clients can be written from the spec.
 
 Primitives:
 - **AEAD:** XChaCha20-Poly1305.
