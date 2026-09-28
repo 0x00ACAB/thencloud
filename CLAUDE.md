@@ -100,6 +100,7 @@ The web client follows this direction; keep it that way when changing it.
 **Stack:** Svelte 5 (runes) + Vite + Tailwind CSS v4, all compiled at build time into static files in `web/dist`.
 - Never load anything from a CDN (no Tailwind Play script, no Google Fonts). The server's CSP (`routes/mod.rs`) allows only same-origin scripts and stylesheets, and that is also what keeps the `#key` fragment safe from outside code. Don't loosen it.
 - No inline `<script>` or `style="..."` attributes in markup: the CSP blocks them. Svelte's `style:prop={...}` directive is fine (it sets styles through the CSSOM).
+- Text colours must reach WCAG AA (4.5:1, 3:1 for large text) on the backgrounds they sit on, in dark, light and both tinted themes; `fg-faint` is the faintest that does. White text on red uses `danger-strong`, not `danger`.
 - Colours come from the semantic tokens in `web/src/app.css` (`bg`, `fg`, `line`, `accent`...), which switch for dark mode. Don't use raw palette colours in components. With "Tint the whole theme" on (`tint` in `ui.svelte.js`, the `tinted` class on `<html>`, set early by `public/theme-init.js`), the neutral tokens are derived from the accent's hue with relative `oklch()` colours; add any new neutral token to both blocks.
 
 **Look:** in the spirit of vercel.com / the Vercel dashboard, Linear and similar developer tools:

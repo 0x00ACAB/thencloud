@@ -40,6 +40,15 @@
       const all = [...menu.querySelectorAll('button')];
       const i = all.indexOf(document.activeElement);
       all[(i + (e.key === 'ArrowDown' ? 1 : -1) + all.length) % all.length]?.focus({ preventScroll: true });
+    } else if (e.key === 'Home' || e.key === 'End') {
+      e.preventDefault();
+      const all = [...menu.querySelectorAll('button')];
+      all[e.key === 'Home' ? 0 : all.length - 1]?.focus({ preventScroll: true });
+    } else if (e.key === 'Tab') {
+      // Tabbing out closes it, and focus carries on from the button.
+      e.preventDefault();
+      open = false;
+      btn.focus();
     }
   }
 
