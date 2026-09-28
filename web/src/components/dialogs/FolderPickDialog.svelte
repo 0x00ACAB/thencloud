@@ -3,13 +3,14 @@
   import { untrack } from 'svelte';
   import Modal from '../Modal.svelte';
   import Icon from '../Icon.svelte';
-  import { listFolder } from '../../lib/cloud.svelte.js';
+  import { listFolder, folderLabel } from '../../lib/cloud.svelte.js';
+  import { t } from '../../lib/i18n.svelte.js';
   import { errorMessage } from '../../lib/ui.svelte.js';
 
   /** `onpick(id)` */
   let { root, title, description, onpick, onclose } = $props();
 
-  let trail = $state(untrack(() => [{ id: root.node.id, key: root.key, name: root.meta.name }]));
+  let trail = $state(untrack(() => [{ id: root.node.id, key: root.key, name: folderLabel(root) }]));
   let folders = $state([]);
   let loading = $state(true);
   let error = $state('');
@@ -49,7 +50,7 @@
       {#if loading}
         <li class="grid h-full place-items-center text-fg-muted"><Icon name="loader-circle" class="spinner" /></li>
       {:else if !folders.length}
-        <li class="grid h-full place-items-center text-[13px] text-fg-muted">No folders in here</li>
+        <li class="grid h-full place-items-center text-[13px] text-fg-muted">{t('No folders in here')}</li>
       {:else}
         {#each folders as f (f.node.id)}
           <li>
@@ -68,7 +69,7 @@
   </div>
   {#if error}<p class="text-[13px] text-danger">{error}</p>{/if}
   {#snippet footer()}
-    <button type="button" class="btn btn-secondary" onclick={onclose}>Cancel</button>
-    <button class="btn btn-primary" disabled={loading}>Use {here.name}</button>
+    <button type="button" class="btn btn-secondary" onclick={onclose}>{t('Cancel')}</button>
+    <button class="btn btn-primary" disabled={loading}>{t('Use {name}', { name: here.name })}</button>
   {/snippet}
 </Modal>
