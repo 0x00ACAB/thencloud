@@ -167,6 +167,7 @@ Each of these is `seal(key, plaintext, aad)`:
 | `avatar` | the user's avatar key | the image | `aad("avatar", owner_user_id)` |
 | `link-key` | a link password's KEK | node key | `aad("link-key", node_id)` |
 | `link-secret` | the node key | the link's secret, so the owner can show the link again | `aad("link-secret", node_id)` |
+| `backup` | a backup key | one backup record (see [Backups](#backups)) | `aad("backup", base64url(backup_id), decimal(index))` |
 
 Private data labels in use: `contacts` (verified contacts), `avatar-key` (the
 owner's copy of their avatar key), `music`, `videos`, `files` and `notes`
@@ -293,6 +294,28 @@ of a node key. That's 32 bytes, or 64 when the owner has an ML-KEM key. With
 64, the page fetches the ML-KEM key from the server and refuses to send
 anything unless its SHA-256 matches the second half. Each dropped file gets a
 random node key, which is sealed to the owner as a `drop` box.
+
+## Backups
+
+`thencloud backup` writes a folder into one file under a random 32-byte
+backup key. The key is shown once, in the same text format as a recovery
+key. The backup holds the files decrypted and sealed again, so it can be
+restored into any account on any server:
+
+```
+file   = "thncbk01" || id (16 random bytes) || record*
+record = length (u32, big-endian) || seal(backup_key, plain, aad("backup", base64url(id), decimal(index)))
+plain  = 'E' || entry JSON   {"path": ["Docs", "a.txt"], "folder": false, "size": 5, "mtime": 0, "mime": "text/plain"}
+       | 'D' || bytes        the next bytes of the last file entry, at most 4 MiB
+       | 'Z'                 the end
+```
+
+Records are numbered from 0. `path` runs from the folder that was backed up
+(not included) to the item's own name, and a folder's entry comes before
+anything in it. A file entry is followed by data records holding exactly
+`size` bytes. A reader stops at the first record that doesn't open, a
+missing end record, or anything after it, so a backup can't be cut short,
+reordered or spliced with another without it showing.
 
 ## Wire types
 

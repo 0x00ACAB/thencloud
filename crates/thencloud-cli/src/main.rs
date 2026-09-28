@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(target_os = "linux")]
 use thencloud_cli::mount::{self, MountOptions};
 use thencloud_cli::{Client, Error, Result, parse_app_password, safe_name, verify};
+use thencloud_crypto::{self as c, Key};
 
 #[derive(Parser)]
 #[command(
@@ -53,6 +54,12 @@ enum Command {
     Pull { remote: String, local: PathBuf },
     /// Upload new and changed files from a local directory into a folder.
     Push { local: PathBuf, remote: String },
+    /// Save a folder ("" is My files) as one encrypted file, under a new
+    /// backup key that's shown once. It can be restored anywhere.
+    Backup { remote: String, file: PathBuf },
+    /// Restore a backup into a folder, on this server or any other. Reads
+    /// the backup key from THENCLOUD_BACKUP_KEY or stdin.
+    Restore { file: PathBuf, remote: String },
     /// Check that a server sends exactly the web client of a signed release.
     VerifyWeb {
         /// The server's address, e.g. https://cloud.example.com.
@@ -290,6 +297,58 @@ fn run(cmd: Command) -> Result<()> {
                 let folder = client.resolve(&remote)?;
                 let s = client.push(&local, &folder, &mut |p| println!("up {p}"))?;
                 println!("{} uploaded, {} unchanged", s.transferred, s.unchanged);
+            }
+            Command::Backup { remote, file } => {
+                let folder = client.resolve(&remote)?;
+                if !folder.is_folder() {
+                    return Err(Error::Usage(format!("{remote} is a file")));
+                }
+                // Never overwrite: the old backup may be the only copy.
+                let mut opts = fs::OpenOptions::new();
+                opts.write(true).create_new(true);
+                #[cfg(unix)]
+                std::os::unix::fs::OpenOptionsExt::mode(&mut opts, 0o600);
+                let f = opts
+                    .open(&file)
+                    .map_err(|e| Error::Usage(format!("{}: {e}", file.display())))?;
+                let key = Key::generate();
+                let s = client.backup(&folder, io::BufWriter::new(f), key.clone(), &mut |p| {
+                    println!("saved {p}")
+                });
+                if let Err(e) = s {
+                    let _ = fs::remove_file(&file);
+                    return Err(e);
+                }
+                println!("{} files in {}", s?.transferred, file.display());
+                eprintln!(
+                    "\nBackup key: {}\nWrite it down. It's the only way to open this backup, and it isn't kept anywhere.",
+                    c::encode_recovery_key(&key)
+                );
+            }
+            Command::Restore { file, remote } => {
+                let folder = client.resolve(&remote)?;
+                if !folder.is_folder() {
+                    return Err(Error::Usage(format!("{remote} is a file")));
+                }
+                let text = match std::env::var("THENCLOUD_BACKUP_KEY") {
+                    Ok(t) => t,
+                    Err(_) => {
+                        eprint!("Backup key: ");
+                        io::stderr().flush()?;
+                        let mut line = String::new();
+                        io::stdin().lock().read_line(&mut line)?;
+                        line
+                    }
+                };
+                let key = c::decode_recovery_key(&text).map_err(|_| {
+                    Error::Usage("that isn't a backup key; check it for typos".into())
+                })?;
+                let f = fs::File::open(&file)
+                    .map_err(|e| Error::Usage(format!("{}: {e}", file.display())))?;
+                let s = client.restore(io::BufReader::new(f), key, &folder, &mut |p| {
+                    println!("restored {p}")
+                })?;
+                println!("{} files restored", s.transferred);
             }
             #[cfg(target_os = "linux")]
             Command::Mount { .. } => unreachable!(),

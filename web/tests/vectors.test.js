@@ -19,8 +19,8 @@ const skip = built ? false : 'the WASM build is missing; run ../build.sh';
 const bytes = (s) => tc.b64_decode(s);
 const b64 = (b) => tc.b64_encode(b);
 
-// Only the CLI unwraps these; the browser only makes them.
-const noBinding = new Set(['master-key-app']);
+// Only the CLI opens these: the browser makes app passwords and never backups.
+const noBinding = new Set(['master-key-app', 'backup']);
 
 /** Opens a symmetric vector the way the web client does. */
 function openSymmetric(v) {

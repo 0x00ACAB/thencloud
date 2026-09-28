@@ -112,6 +112,7 @@ fn open_symmetric(v: &Value) -> Result<Vec<u8>> {
         "content-key" => bytes(unwrap_content_key(&k, &sealed, c[0], c[1])?),
         "link-key" => bytes(unwrap_link_key(&k, &sealed, c[0])?),
         "link-secret" => bytes(decrypt_link_secret(&k, &sealed, c[0])?),
+        "backup" => open_backup_record(&k, &b64_decode(c[0])?, c[1].parse().unwrap(), &sealed)?,
         "chunk" => decrypt_chunk(&k, c[0], c[1].parse().unwrap(), c[2] == "last", &sealed)?,
         f => panic!("unknown format {f}"),
     })
@@ -550,6 +551,18 @@ fn write_vectors() {
             link_secret.as_bytes(),
             encrypt_link_secret(&node_key, &link_secret, node),
         ),
+        {
+            let backup_key = key("backup key");
+            let id = bytes("backup id", BACKUP_ID_LEN);
+            let record = br#"E{"path":["Docs","a.txt"],"folder":false,"size":5,"mtime":0}"#;
+            sym(
+                "backup",
+                &backup_key,
+                &[&b64_encode(&id), "1"],
+                record,
+                seal_backup_record(&backup_key, &id, 1, record),
+            )
+        },
         sym(
             "chunk",
             &content_key,
@@ -598,6 +611,15 @@ fn write_vectors() {
             json!({ "key": b64(derive_link_password_keys(link_secret.as_bytes(), "open says me").unwrap().kek.as_bytes()) }),
             "a link's key with the wrong password",
         ),
+        {
+            let v = find(&symmetric, "backup");
+            let id = v["context"][0].clone();
+            reject(
+                &v,
+                json!({ "context": [id, "2"] }),
+                "a backup's records reordered",
+            )
+        },
         reject(
             &find(&symmetric, "private-data"),
             json!({ "context": [user, "music"] }),

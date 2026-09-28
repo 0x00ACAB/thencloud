@@ -42,7 +42,7 @@ Files, folder names and keys are encrypted and decrypted **in your browser**. Th
 - **Converting:** images, video and audio to other formats in the browser with canvas encoders and ffmpeg.wasm.
 - **Music:** pick a folder and play it as a library of albums, with a queue, shuffle, cover art and media keys. Tracks are decrypted as they stream; tags are read in the browser.
 - **Accounts:** two-step sign-in with an authenticator app or passkeys (which can also sign in without the password), an optional recovery key, session and device list, and an admin view that counts things but can't read them.
-- **Command line and Linux drive:** a native client that signs in with an app password, syncs folders, and mounts your files as a drive (FUSE) for Dolphin, Nautilus or the shell. See [crates/thencloud-cli](crates/thencloud-cli/README.md).
+- **Command line and Linux drive:** a native client that signs in with an app password, syncs folders, makes encrypted backups you can restore to any server, and mounts your files as a drive (FUSE) for Dolphin, Nautilus or the shell. See [crates/thencloud-cli](crates/thencloud-cli/README.md).
 - **Self-hosted and small:** one Rust binary, SQLite and a folder of encrypted blobs. Nothing loads from a CDN.
 
 ## Quick start
