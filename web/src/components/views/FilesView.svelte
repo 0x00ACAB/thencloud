@@ -10,6 +10,7 @@
   import Menu from '../Menu.svelte';
   import NameDialog from '../dialogs/NameDialog.svelte';
   import VersionsDialog from '../dialogs/VersionsDialog.svelte';
+  import CommentsDialog from '../dialogs/CommentsDialog.svelte';
   import { fade, fly, flip, flipParams } from '../../lib/motion.js';
   import { SvelteSet } from 'svelte/reactivity';
   import MoveDialog from '../dialogs/MoveDialog.svelte';
@@ -685,6 +686,7 @@
         : []),
       ...(!folder && sourceKind(entry.meta) ? [{ label: 'Convert', icon: 'file-cog', onclick: () => (dialog = { type: 'convert', entry }) }] : []),
       ...(!folder ? [{ label: 'Version history', icon: 'refresh-cw', onclick: () => (dialog = { type: 'versions', entry }) }] : []),
+      { label: 'Comments', icon: 'message-square', onclick: () => (dialog = { type: 'comments', entry }) },
       ...(canWrite ? ['sep', { label: 'Move to trash', icon: 'trash-2', danger: true, onclick: () => moveToTrash(entry) }] : []),
     ];
   }
@@ -1160,6 +1162,8 @@
       load();
     }}
     onclose={close} />
+{:else if dialog?.type === 'comments'}
+  <CommentsDialog entry={dialog.entry} {isOwner} onclose={close} />
 {:else if dialog?.type === 'versions'}
   <VersionsDialog entry={dialog.entry} {canWrite} onchanged={() => (load(), refreshMe().catch(() => {}))} onclose={close} />
 {:else if dialog?.type === 'preview'}

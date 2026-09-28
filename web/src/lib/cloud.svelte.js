@@ -1340,6 +1340,39 @@ export async function links(nodeId) {
 export const deleteLink = (id) => api('DELETE', `/api/links/${id}`);
 
 // ---------------------------------------------------------------------------
+// Comments: encrypted under the node key, so whoever can open the node can
+// read them. Each is bound to the node, its id and its author, so the server
+// can't move one or put it in someone else's name.
+// ---------------------------------------------------------------------------
+
+/** Longest comment, in characters. */
+export const MAX_COMMENT = 4000;
+
+/** A node's comments, oldest first, with `text` (null if it doesn't open) and the exact time `at`. */
+export async function comments(entry) {
+  const list = await api('GET', `/api/nodes/${entry.node.id}/comments`);
+  return list.map((c) => {
+    try {
+      const body = JSON.parse(dec.decode(tc.decrypt_comment(entry.key, entry.node.id, c.id, c.author_id, unb64(c.enc_body))));
+      return { ...c, text: String(body.text ?? ''), at: Number(body.at) || c.created_at * 1000 };
+    } catch {
+      return { ...c, text: null, at: c.created_at * 1000 };
+    }
+  });
+}
+
+export async function addComment(entry, text) {
+  const id = tc.new_id();
+  const at = Date.now();
+  const body = enc.encode(JSON.stringify({ text, at }));
+  const sealed = tc.encrypt_comment(entry.key, entry.node.id, id, session.me.user_id, body);
+  const c = await api('POST', `/api/nodes/${entry.node.id}/comments`, { body: { id, enc_body: b64(sealed) } });
+  return { ...c, text, at };
+}
+
+export const deleteComment = (id) => api('DELETE', `/api/comments/${id}`);
+
+// ---------------------------------------------------------------------------
 // Profile pictures: encrypted under our avatar key, which is sealed to each
 // person we share with (either way round). The server can't see them.
 // ---------------------------------------------------------------------------

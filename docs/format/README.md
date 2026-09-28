@@ -167,6 +167,7 @@ Each of these is `seal(key, plaintext, aad)`:
 | `avatar` | the user's avatar key | the image | `aad("avatar", owner_user_id)` |
 | `link-key` | a link password's KEK | node key | `aad("link-key", node_id)` |
 | `link-secret` | the node key | the link's secret, so the owner can show the link again | `aad("link-secret", node_id)` |
+| `comment` | the node key | a comment: JSON `{"text": "...", "at": <ms>}` | `aad("comment", node_id, comment_id, author_user_id)` |
 | `backup` | a backup key | one backup record (see [Backups](#backups)) | `aad("backup", base64url(backup_id), decimal(index))` |
 
 Private data labels in use: `contacts` (verified contacts), `avatar-key` (the

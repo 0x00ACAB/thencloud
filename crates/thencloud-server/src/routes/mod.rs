@@ -3,6 +3,7 @@ pub mod app_data;
 pub mod app_passwords;
 pub mod auth;
 pub mod avatars;
+pub mod comments;
 pub mod contacts;
 pub mod drafts;
 pub mod drops;
@@ -123,6 +124,11 @@ pub fn router(state: AppState) -> Router {
         .route("/nodes/{id}/path", get(nodes::path))
         .route("/nodes/{id}/name-tags", post(nodes::tag_names))
         .route("/nodes/{id}/chunks/{idx}", get(nodes::chunk))
+        .route(
+            "/nodes/{id}/comments",
+            get(comments::list).post(comments::create),
+        )
+        .route("/comments/{id}", delete(comments::delete))
         .route(
             "/nodes/{id}/draft",
             get(drafts::get)

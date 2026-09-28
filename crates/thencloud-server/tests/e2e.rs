@@ -5038,3 +5038,164 @@ async fn the_server_records_times_to_the_hour() {
         assert!(trashed.is_none_or(|t| t % 3600 == 0));
     }
 }
+
+#[tokio::test]
+async fn comments_are_read_by_those_with_access_and_no_one_else() {
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "pw").await;
+    let bob = register(&h, "bob", "pw").await;
+    let carol = register(&h, "carol", "pw").await;
+    let (alice_id, bob_id) = (alice.me(&h).await.user_id, bob.me(&h).await.user_id);
+    let (folder, folder_key) = alice.mkdir(&h, &alice.root, "Reviewed").await;
+    let file = alice
+        .upload(&h, &folder, None, "draft.txt", b"text")
+        .await
+        .unwrap();
+    let file_key = alice.key_of(&h, &file.id).await;
+    let pk: UserPublicKey = h
+        .get("/api/users/bob/public-key", &alice.token)
+        .await
+        .json();
+    let r = h
+        .call(
+            Method::POST,
+            "/api/shares",
+            Some(&alice.token),
+            Some(CreateShareRequest {
+                node_id: folder.clone(),
+                recipient: "bob".into(),
+                wrapped_key: B64(
+                    c::seal_share_key(&sealing_key(&pk), &folder_key, &folder).unwrap()
+                ),
+                permission: Permission::Read,
+                expires_at: None,
+            }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED);
+
+    let uri = format!("/api/nodes/{}/comments", file.id);
+    let post = |who: &Client, author_id: &str, text: &str| {
+        let id = c::new_id();
+        let body = c::encrypt_comment(&file_key, &file.id, &id, author_id, text.as_bytes());
+        (
+            who.token.clone(),
+            CreateCommentRequest {
+                id,
+                enc_body: B64(body),
+            },
+        )
+    };
+    let (t, req) = post(&alice, &alice_id, "COMMENT-SECRET looks good");
+    let r = h.call(Method::POST, &uri, Some(&t), Some(&req)).await;
+    assert_eq!(r.status, StatusCode::CREATED);
+    // The same id again is refused.
+    assert_eq!(
+        h.call(Method::POST, &uri, Some(&t), Some(&req))
+            .await
+            .status,
+        StatusCode::CONFLICT
+    );
+    // A reader can comment too.
+    let (t, req) = post(&bob, &bob_id, "COMMENT-SECRET one typo");
+    let bobs: Comment = h
+        .call(Method::POST, &uri, Some(&t), Some(&req))
+        .await
+        .json();
+    assert_eq!(bobs.author, "bob");
+
+    // Bob reads both, in order; each opens only in its own name.
+    let list: Vec<Comment> = h.get(&uri, &bob.token).await.json();
+    assert_eq!(list.len(), 2);
+    let text = |cm: &Comment| {
+        String::from_utf8(
+            c::decrypt_comment(&file_key, &file.id, &cm.id, &cm.author_id, &cm.enc_body).unwrap(),
+        )
+        .unwrap()
+    };
+    assert_eq!(text(&list[0]), "COMMENT-SECRET looks good");
+    assert_eq!(text(&list[1]), "COMMENT-SECRET one typo");
+    assert!(
+        c::decrypt_comment(&file_key, &file.id, &list[0].id, &bob_id, &list[0].enc_body).is_err(),
+        "a comment can't be put in someone else's name"
+    );
+    assert!(
+        c::decrypt_comment(
+            &file_key,
+            &folder,
+            &list[0].id,
+            &alice_id,
+            &list[0].enc_body
+        )
+        .is_err(),
+        "or moved to another node"
+    );
+
+    // Carol has no access: she can't see them, add one, or delete one.
+    assert_eq!(
+        h.get(&uri, &carol.token).await.status,
+        StatusCode::NOT_FOUND
+    );
+    let (t, req) = post(&carol, "carol", "hello");
+    assert_eq!(
+        h.call(Method::POST, &uri, Some(&t), Some(&req))
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+    let del = |id: &str| format!("/api/comments/{id}");
+    assert_eq!(
+        h.call(
+            Method::DELETE,
+            &del(&list[0].id),
+            Some(&carol.token),
+            None::<()>
+        )
+        .await
+        .status,
+        StatusCode::NOT_FOUND
+    );
+    // Bob can't delete Alice's, only his own; Alice owns the file and can delete any.
+    assert_eq!(
+        h.call(
+            Method::DELETE,
+            &del(&list[0].id),
+            Some(&bob.token),
+            None::<()>
+        )
+        .await
+        .status,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        h.call(
+            Method::DELETE,
+            &del(&bobs.id),
+            Some(&alice.token),
+            None::<()>
+        )
+        .await
+        .status,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        h.get(&uri, &alice.token).await.json::<Vec<Comment>>().len(),
+        1
+    );
+
+    // The text never reaches the disk; deleting the file takes its comments.
+    let mut files = Vec::new();
+    all_files(&h.dir.path().join("data"), &mut files);
+    for p in &files {
+        assert!(
+            !contains(&std::fs::read(p).unwrap(), b"COMMENT-SECRET"),
+            "{}",
+            p.display()
+        );
+    }
+    assert_eq!(alice.delete(&h, &file.id).await, StatusCode::NO_CONTENT);
+    assert_eq!(
+        h.get(&uri, &alice.token).await.status,
+        StatusCode::NOT_FOUND
+    );
+}
