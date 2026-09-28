@@ -31,6 +31,9 @@ pub enum AppError {
     QuotaExceeded,
     #[error("too many failed attempts, try again later")]
     RateLimited,
+    /// "download" or "upload".
+    #[error("you've reached today's {0} limit on this server; it starts again at midnight UTC")]
+    TransferLimit(&'static str),
     #[error("registration is disabled on this server")]
     RegistrationClosed,
     #[error("this account has been disabled by an administrator")]
@@ -72,6 +75,7 @@ impl AppError {
             NameTaken => (StatusCode::CONFLICT, "name_taken"),
             QuotaExceeded => (StatusCode::INSUFFICIENT_STORAGE, "quota_exceeded"),
             RateLimited => (StatusCode::TOO_MANY_REQUESTS, "rate_limited"),
+            TransferLimit(_) => (StatusCode::TOO_MANY_REQUESTS, "transfer_limit"),
             RegistrationClosed => (StatusCode::FORBIDDEN, "registration_closed"),
             AccountDisabled => (StatusCode::FORBIDDEN, "account_disabled"),
             InvalidInvite => (StatusCode::FORBIDDEN, "invalid_invite"),

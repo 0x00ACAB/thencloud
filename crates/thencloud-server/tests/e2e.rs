@@ -5820,3 +5820,71 @@ async fn big_folders_are_listed_a_page_at_a_time() {
     );
     assert!(!plan.iter().any(|p| p.contains("TEMP B-TREE")), "{plan:?}");
 }
+
+#[tokio::test]
+async fn admins_can_limit_how_much_someone_moves_a_day() {
+    let h = Harness::new().await;
+    let admin = register(&h, "root", "admin password").await;
+    let bob = register(&h, "bob", "bob's password").await;
+    let bob_id = bob.me(&h).await.user_id;
+    let file = bob
+        .upload(&h, &bob.root, None, "a.txt", b"some bytes")
+        .await
+        .unwrap();
+    let chunk = format!("/api/nodes/{}/chunks/0", file.id);
+    let limit = |body: serde_json::Value| {
+        let (h, uri, token) = (
+            &h,
+            format!("/api/admin/users/{bob_id}"),
+            admin.token.clone(),
+        );
+        async move {
+            h.call(Method::PATCH, &uri, Some(&token), Some(body))
+                .await
+                .json::<AdminUser>()
+        }
+    };
+
+    // No limit by default.
+    for _ in 0..3 {
+        assert_eq!(h.get(&chunk, &bob.token).await.status, StatusCode::OK);
+    }
+    let u = limit(json!({})).await;
+    assert!(u.daily_download_limit.is_none() && u.downloaded_today > 0);
+
+    // Over today's download limit: refused, with a reason, until it's lifted.
+    let u = limit(json!({"daily_download_limit": u.downloaded_today})).await;
+    assert_eq!(u.daily_download_limit, Some(u.downloaded_today));
+    let r = h.get(&chunk, &bob.token).await;
+    assert_eq!(r.status, StatusCode::TOO_MANY_REQUESTS);
+    assert!(String::from_utf8_lossy(&r.body).contains("transfer_limit"));
+    let mine: TransferInfo = h.get("/api/me/transfer", &bob.token).await.json();
+    assert_eq!(mine.daily_download_limit, u.daily_download_limit);
+    assert!(mine.resets_at > now_secs() && mine.resets_at % 86_400 == 0);
+    limit(json!({"daily_download_limit": 0})).await;
+    assert_eq!(h.get(&chunk, &bob.token).await.status, StatusCode::OK);
+
+    // Uploads the same way.
+    let u = limit(json!({"daily_upload_limit": 1})).await;
+    assert!(u.uploaded_today > 0);
+    let r = bob.upload(&h, &bob.root, None, "b.txt", b"more").await;
+    assert_eq!(r.unwrap_err().status, StatusCode::TOO_MANY_REQUESTS);
+
+    // Only admins set them.
+    let r = h
+        .call(
+            Method::PATCH,
+            &format!("/api/admin/users/{bob_id}"),
+            Some(&bob.token),
+            Some(json!({"daily_upload_limit": 0})),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN);
+}
+
+fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64
+}

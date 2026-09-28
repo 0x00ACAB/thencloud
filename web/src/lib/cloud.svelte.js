@@ -309,6 +309,8 @@ export async function logout() {
 
 /** Signed-in sessions, most recently active first. */
 export const listSessions = () => api('GET', '/api/sessions');
+/** Daily transfer limits an admin set for us, and today's use. */
+export const myTransfer = () => api('GET', '/api/me/transfer');
 export const revokeSession = (id) => api('DELETE', `/api/sessions/${encodeURIComponent(id)}`);
 export const revokeOtherSessions = () => api('DELETE', '/api/sessions');
 

@@ -767,6 +767,27 @@ pub struct AdminUser {
     pub created_at: i64,
     /// Most recent activity of any of their sessions.
     pub last_seen: Option<i64>,
+    /// Daily transfer limits in bytes (None: no limit), and what was moved
+    /// today (UTC).
+    #[serde(default)]
+    pub daily_download_limit: Option<i64>,
+    #[serde(default)]
+    pub daily_upload_limit: Option<i64>,
+    #[serde(default)]
+    pub downloaded_today: i64,
+    #[serde(default)]
+    pub uploaded_today: i64,
+}
+
+/// The caller's own daily transfer limits and use (`GET /api/me/transfer`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TransferInfo {
+    pub daily_download_limit: Option<i64>,
+    pub daily_upload_limit: Option<i64>,
+    pub downloaded_today: i64,
+    pub uploaded_today: i64,
+    /// When today's counts start again (Unix seconds, midnight UTC).
+    pub resets_at: i64,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -777,6 +798,11 @@ pub struct UpdateUserRequest {
     pub disabled: Option<bool>,
     #[serde(default)]
     pub is_admin: Option<bool>,
+    /// Bytes per day; 0 removes the limit.
+    #[serde(default)]
+    pub daily_download_limit: Option<i64>,
+    #[serde(default)]
+    pub daily_upload_limit: Option<i64>,
 }
 
 /// Who may use the video downloader, the one tool where the server sees

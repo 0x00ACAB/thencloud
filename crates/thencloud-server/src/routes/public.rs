@@ -225,7 +225,8 @@ pub async fn chunk(
 ) -> Result<Response> {
     let link = resolve(&state, &token, &headers).await?;
     let node = node_in_link(&state, &link, &id).await?;
-    current_chunk(&state, node, idx).await
+    // Downloads through a link count for its owner.
+    current_chunk(&state, node, idx, &link.owner_id).await
 }
 
 pub async fn thumbnail(

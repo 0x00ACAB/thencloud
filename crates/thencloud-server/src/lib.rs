@@ -16,6 +16,7 @@ pub mod maintenance;
 pub mod routes;
 pub mod settings;
 pub mod totp;
+pub mod transfer;
 pub mod util;
 pub mod webauthn;
 
