@@ -288,6 +288,12 @@ pub async fn store_chunk(
     if i64::from(idx) >= up.chunk_count {
         return Err(AppError::bad("chunk index out of range"));
     }
+    // Whoever sends it pays for it: the user, or a drop link's owner.
+    let payer = match &who {
+        Uploader::User(u) => u.id.as_str(),
+        Uploader::Link(l) => l.owner_id.as_str(),
+    };
+    crate::transfer::check(state, payer, crate::transfer::Dir::Up).await?;
     if body.len() < NONCE_LEN + TAG_LEN || body.len() > MAX_ENCRYPTED_CHUNK {
         return Err(AppError::bad("chunk has an invalid size"));
     }
@@ -333,6 +339,7 @@ pub async fn store_chunk(
             e => e,
         });
     }
+    crate::transfer::add(state, payer, crate::transfer::Dir::Up, body.len() as i64).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

@@ -1,7 +1,7 @@
 <script>
   import { MODULES, modules, loadModules, setModule } from '../../lib/modules.svelte.js';
   import { onMount } from 'svelte';
-  import { session, changePassword, listSessions, revokeSession, revokeOtherSessions, removeRecoveryKey, listAppPasswords, deleteAppPassword, avatar, loadMyAvatar, setAvatar, removeAvatar, setDisplayName, cleanDisplayName, listContacts, forgetContact, forgetThisBrowser, listPasskeys, removePasskey, disableTotp, deleteAccount, verifyTree, resolvePath, exportAccount } from '../../lib/cloud.svelte.js';
+  import { session, changePassword, listSessions, revokeSession, revokeOtherSessions, removeRecoveryKey, listAppPasswords, deleteAppPassword, avatar, loadMyAvatar, setAvatar, removeAvatar, setDisplayName, cleanDisplayName, listContacts, forgetContact, forgetThisBrowser, myTransfer, listPasskeys, removePasskey, disableTotp, deleteAccount, verifyTree, resolvePath, exportAccount } from '../../lib/cloud.svelte.js';
   import { passkeysSupported } from '../../lib/passkeys.js';
   import TotpDialog from '../dialogs/TotpDialog.svelte';
   import PasskeyDialog from '../dialogs/PasskeyDialog.svelte';
@@ -85,6 +85,10 @@
       busy = false;
     }
   }
+
+  // Daily transfer limits, shown only when an admin set some.
+  let transfer = $state(null);
+  onMount(() => myTransfer().then((t) => (transfer = t)).catch(() => {}));
 
   // Optional modules.
   onMount(() => loadModules().catch(() => {}));
@@ -305,6 +309,14 @@
         <span class="tabular-nums">{formatSize(session.me.used_bytes)} of {formatSize(session.me.quota_bytes)} used</span>
         <div class="progress"><div style:width="{usedPct}%"></div></div>
       </dd>
+      {#if transfer && (transfer.daily_download_limit || transfer.daily_upload_limit)}
+        <dt class="text-fg-muted">Today's transfers</dt>
+        <dd class="grid max-w-sm gap-0.5 text-[13px] tabular-nums">
+          {#if transfer.daily_download_limit}<span>{formatSize(transfer.downloaded_today)} of {formatSize(transfer.daily_download_limit)} downloaded</span>{/if}
+          {#if transfer.daily_upload_limit}<span>{formatSize(transfer.uploaded_today)} of {formatSize(transfer.daily_upload_limit)} uploaded</span>{/if}
+          <span class="text-xs text-fg-muted">Limits set by your server's admin. They start again at midnight UTC.</span>
+        </dd>
+      {/if}
     </dl>
   {/snippet}
   {@render section('Account', null, accountBody)}

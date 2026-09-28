@@ -117,6 +117,7 @@
     const self = u.id === session.me.user_id;
     return [
       { label: 'Change quota', icon: 'hard-drive', onclick: () => (dialog = { type: 'quota', user: u }) },
+      { label: 'Transfer limits', icon: 'refresh-cw', onclick: () => (dialog = { type: 'transfer', user: u }) },
       ...(!self
         ? [
             u.is_admin
@@ -148,6 +149,28 @@
     const u = dialog.user;
     dialog = null;
     await update(u, { quota_bytes: Math.round(gb * 1024 ** 3) }, `${u.username} now has ${formatSize(Math.round(gb * 1024 ** 3))}`);
+  }
+
+  // Daily transfer limits, in GB (blank: none).
+  let downGb = $state('');
+  let upGb = $state('');
+  let transferError = $state('');
+  $effect(() => {
+    if (dialog?.type === 'transfer') {
+      const gb = (v) => (v ? String(+(v / 1024 ** 3).toFixed(2)) : '');
+      downGb = gb(dialog.user.daily_download_limit);
+      upGb = gb(dialog.user.daily_upload_limit);
+      transferError = '';
+    }
+  });
+
+  async function saveTransfer() {
+    const bytes = (v) => (String(v).trim() === '' ? 0 : Math.round(Number(v) * 1024 ** 3));
+    const [down, up] = [bytes(downGb), bytes(upGb)];
+    if (![down, up].every((b) => Number.isFinite(b) && b >= 0)) return (transferError = 'Enter a number of GB, like 5 or 0.5, or leave it empty for no limit.');
+    const u = dialog.user;
+    dialog = null;
+    await update(u, { daily_download_limit: down, daily_upload_limit: up }, down || up ? `Limits set for ${u.username}` : `${u.username} has no transfer limits`);
   }
 
   const pct = (u) => Math.min(100, (u.used_bytes / Math.max(1, u.quota_bytes)) * 100);
@@ -345,6 +368,28 @@
       <input id="quota" class="input" inputmode="decimal" bind:value={quotaGb} />
       {#if quotaError}<p class="text-[13px] text-danger">{quotaError}</p>{/if}
     </div>
+    {#snippet footer()}
+      <button type="button" class="btn btn-secondary" onclick={() => (dialog = null)}>Cancel</button>
+      <button class="btn btn-primary">Save</button>
+    {/snippet}
+  </Modal>
+{:else if dialog?.type === 'transfer'}
+  <Modal
+    title="Transfer limits for {dialog.user.username}"
+    description="How much they can download and upload each day (UTC), counting what goes through their public links. Today so far: {formatSize(dialog.user.downloaded_today)} down, {formatSize(dialog.user.uploaded_today)} up."
+    onclose={() => (dialog = null)}
+    onsubmit={saveTransfer}>
+    <div class="grid gap-3 sm:grid-cols-2">
+      <div class="field">
+        <label class="label" for="down-limit">Downloads, GB a day</label>
+        <input id="down-limit" class="input" inputmode="decimal" placeholder="No limit" bind:value={downGb} />
+      </div>
+      <div class="field">
+        <label class="label" for="up-limit">Uploads, GB a day</label>
+        <input id="up-limit" class="input" inputmode="decimal" placeholder="No limit" bind:value={upGb} />
+      </div>
+    </div>
+    {#if transferError}<p class="text-[13px] text-danger">{transferError}</p>{/if}
     {#snippet footer()}
       <button type="button" class="btn btn-secondary" onclick={() => (dialog = null)}>Cancel</button>
       <button class="btn btn-primary">Save</button>
