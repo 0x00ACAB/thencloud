@@ -861,6 +861,10 @@ async fn full_lifecycle_is_zero_knowledge() {
         .await;
     assert_eq!(r.status, StatusCode::UNAUTHORIZED);
 
+    // The change feed has recorded all that (ids only; scanned below).
+    let feed: ChangeFeed = h.get("/api/changes?since=0", &alice.token).await.json();
+    assert!(feed.changes.iter().any(|c| c.node_id == file.id));
+
     // --- zero-knowledge check: no plaintext at rest -------------------------
     let mut files = Vec::new();
     all_files(&h.dir.path().join("data"), &mut files);
@@ -5587,4 +5591,138 @@ async fn the_search_index_may_be_bigger_than_other_app_data() {
     };
     assert_eq!(put("music").await, StatusCode::BAD_REQUEST);
     assert_eq!(put("search").await, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn the_change_feed_lists_what_changed_after_a_cursor() {
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "pw").await;
+    let bob = register(&h, "bob", "pw").await;
+    let feed = |who: &Client, since: Option<i64>| {
+        let uri = match since {
+            Some(s) => format!("/api/changes?since={s}"),
+            None => "/api/changes".to_string(),
+        };
+        let (h, token) = (&h, who.token.clone());
+        async move {
+            let r = h.get(&uri, &token).await;
+            assert_eq!(r.status, StatusCode::OK, "{r:?}");
+            r.json::<ChangeFeed>()
+        }
+    };
+    fn ids(f: &ChangeFeed) -> Vec<&str> {
+        f.changes.iter().map(|c| c.node_id.as_str()).collect()
+    }
+
+    // Without a cursor: just where things stand now.
+    let start = feed(&alice, None).await;
+    assert!(start.changes.is_empty() && !start.resync);
+    let bob_start = feed(&bob, None).await.cursor;
+
+    let (team, team_key) = alice.mkdir(&h, &alice.root, "Team").await;
+    let (private, private_key) = alice.mkdir(&h, &alice.root, "Private").await;
+    let pk: UserPublicKey = h
+        .get("/api/users/bob/public-key", &alice.token)
+        .await
+        .json();
+    let r = h
+        .call(
+            Method::POST,
+            "/api/shares",
+            Some(&alice.token),
+            Some(CreateShareRequest {
+                node_id: team.clone(),
+                recipient: "bob".into(),
+                wrapped_key: B64(c::seal_share_key(&sealing_key(&pk), &team_key, &team).unwrap()),
+                permission: Permission::Write,
+                expires_at: None,
+            }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED);
+    let shared = alice.upload(&h, &team, None, "a.txt", b"a").await.unwrap();
+    let secret = alice
+        .upload(&h, &private, None, "b.txt", b"b")
+        .await
+        .unwrap();
+    let edited = bob
+        .upload(&h, "", Some(&shared), "a.txt", b"a2")
+        .await
+        .unwrap();
+
+    // Alice sees everything in her tree, in order, whoever did it.
+    let all = feed(&alice, Some(start.cursor)).await;
+    assert_eq!(
+        ids(&all),
+        [
+            team.as_str(),
+            private.as_str(),
+            shared.id.as_str(),
+            secret.id.as_str(),
+            edited.id.as_str()
+        ]
+    );
+    assert!(!all.more && !all.resync);
+    assert!(all.changes.windows(2).all(|w| w[0].seq < w[1].seq));
+    // Nothing new since then.
+    let again = feed(&alice, Some(all.cursor)).await;
+    assert!(again.changes.is_empty() && again.cursor == all.cursor);
+
+    // Bob sees only what's under the folder shared with him.
+    let bobs = feed(&bob, Some(bob_start)).await;
+    assert_eq!(
+        ids(&bobs),
+        [team.as_str(), shared.id.as_str(), shared.id.as_str()]
+    );
+    assert_eq!(bobs.cursor, all.cursor, "past what he can't see too");
+
+    // A move out of the shared folder shows to him (it left), and nothing
+    // after it in the private folder does.
+    let file_key = alice.key_of(&h, &shared.id).await;
+    let r = h
+        .call(
+            Method::PATCH,
+            &format!("/api/nodes/{}", shared.id),
+            Some(&alice.token),
+            Some(UpdateNodeRequest {
+                enc_metadata: None,
+                parent_id: Some(private.clone()),
+                enc_key: Some(B64(c::wrap_node_key(&private_key, &file_key, &shared.id))),
+                if_revision: None,
+                name_tag: None,
+            }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{r:?}");
+    alice
+        .upload(&h, "", Some(&secret), "b.txt", b"b2")
+        .await
+        .unwrap();
+    let bobs = feed(&bob, Some(bobs.cursor)).await;
+    assert_eq!(ids(&bobs), [shared.id.as_str()]);
+    let later = feed(&alice, Some(all.cursor)).await;
+    assert_eq!(ids(&later), [shared.id.as_str(), secret.id.as_str()]);
+
+    // A cursor from the future, or from before what's kept: start over.
+    assert!(feed(&alice, Some(later.cursor + 5)).await.resync);
+    sqlx::query("UPDATE changes SET at = 0 WHERE seq <= ?")
+        .bind(all.cursor)
+        .execute(&h.state.db)
+        .await
+        .unwrap();
+    thencloud_server::janitor::run_once(&h.state).await.unwrap();
+    let old = feed(&alice, Some(start.cursor)).await;
+    assert!(old.resync && old.changes.is_empty());
+    assert_eq!(old.cursor, later.cursor);
+    let kept = feed(&alice, Some(all.cursor)).await;
+    assert!(!kept.resync);
+    assert_eq!(ids(&kept), [shared.id.as_str(), secret.id.as_str()]);
+    // Pruning took the scope rows with it.
+    let orphans: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM change_scope WHERE seq NOT IN (SELECT seq FROM changes)",
+    )
+    .fetch_one(&h.state.db)
+    .await
+    .unwrap();
+    assert_eq!(orphans, 0);
 }

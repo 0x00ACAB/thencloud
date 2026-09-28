@@ -96,6 +96,14 @@ pub async fn adopt(
     .await
     .map_err(crate::error::name_conflict)?;
     tx.commit().await?;
+    crate::routes::activity::note(
+        &state,
+        &user.id,
+        &id,
+        crate::routes::activity::Event::Added,
+        None,
+    )
+    .await;
     Ok(Json(
         crate::db::get_node(&state.db, &id)
             .await?

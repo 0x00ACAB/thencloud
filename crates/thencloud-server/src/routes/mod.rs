@@ -137,6 +137,7 @@ pub fn router(state: AppState) -> Router {
         .route("/nodes/{id}/thumbnail", get(thumbnails::get))
         .route("/nodes/{id}/activity", get(activity::list))
         .route("/nodes/{id}/changes", get(activity::live))
+        .route("/changes", get(activity::changes))
         .route(
             "/nodes/{id}/versions/{vid}/thumbnail",
             put(thumbnails::put).layer(DefaultBodyLimit::max(

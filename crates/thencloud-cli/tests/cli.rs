@@ -500,6 +500,21 @@ fn mount_reads_writes_and_renames() {
         b"hello"
     );
 
+    // The mount keeps that listing until the change feed says otherwise: a
+    // rename and a new file elsewhere show up once it's checked again.
+    let hi = child(&cl, &other, "hi.txt").unwrap();
+    let mut meta = hi.meta.clone();
+    meta.name = "hello.txt".into();
+    cl.update(&hi, &other, meta).unwrap();
+    cl.mkdir(&other, "Later").unwrap();
+    std::thread::sleep(std::time::Duration::from_secs(6));
+    let mut names: Vec<String> = fs::read_dir(m.join("From the browser"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .collect();
+    names.sort();
+    assert_eq!(names, ["Later", "hello.txt"]);
+
     // Space is the account's quota.
     let st = nix_statvfs(m);
     assert!(st > 0);
