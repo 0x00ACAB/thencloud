@@ -383,7 +383,8 @@ pub async fn publish(
         Uploader::Link(l) => (l.owner_id.clone(), true),
     };
 
-    let t = now();
+    // Node and version times are recorded to the hour only.
+    let t = coarse_now();
     let mut tx = state.db.begin().await?;
     if let Some(parent) = &up.parent_id {
         let res = sqlx::query(

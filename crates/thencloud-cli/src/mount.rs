@@ -935,6 +935,7 @@ impl Filesystem for CloudFs {
                     mime: None,
                     size: 0,
                     mtime: now_ms(),
+                    changed: None,
                 },
                 folder: false,
                 remote: None,

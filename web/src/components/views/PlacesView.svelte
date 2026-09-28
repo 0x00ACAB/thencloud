@@ -3,7 +3,7 @@
   // and decrypted here. Items that are gone are quietly dropped.
   import { places, loadPlaces, resolvePlaces, forgetPlaces, toggleFavourite } from '../../lib/places.svelte.js';
   import { toastError } from '../../lib/ui.svelte.js';
-  import { formatSize } from '../../lib/format.js';
+  import { formatSize, changedAt } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
   import Time from '../Time.svelte';
   import FileIcon from '../FileIcon.svelte';
@@ -99,7 +99,7 @@
             </td>
             <td class="hidden text-right text-fg-muted tabular-nums sm:table-cell">{folder ? '' : formatSize(x.entry.meta.size)}</td>
             <td class="hidden text-fg-muted lg:table-cell">
-              {#if mode === 'recent' && openedAt.get(x.id)}<Time ms={openedAt.get(x.id)} relative />{:else}<Time ms={x.entry.node.updated_at * 1000} relative />{/if}
+              {#if mode === 'recent' && openedAt.get(x.id)}<Time ms={openedAt.get(x.id)} relative />{:else}<Time ms={changedAt(x.entry)} relative />{/if}
             </td>
             {#if mode === 'favourites'}
               <td class="text-right">

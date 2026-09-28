@@ -116,7 +116,7 @@ pub async fn restore(
     )
     .bind(&version_id)
     .bind(&req.enc_metadata.0)
-    .bind(now())
+    .bind(coarse_now())
     .bind(&id)
     .bind(req.if_revision.unwrap_or(node.revision))
     .execute(&state.db)

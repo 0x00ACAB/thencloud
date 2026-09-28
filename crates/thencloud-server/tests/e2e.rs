@@ -156,6 +156,7 @@ fn meta(name: &str, size: u64) -> Metadata {
         mime: Some("application/octet-stream".into()),
         size,
         mtime: 1_700_000_000_000,
+        changed: None,
     }
 }
 
@@ -4970,4 +4971,28 @@ async fn onion_services_limit_by_account_not_by_address() {
         assert_eq!(unlock("wrong").await, StatusCode::UNAUTHORIZED);
     }
     assert_eq!(unlock("right").await, StatusCode::TOO_MANY_REQUESTS);
+}
+
+#[tokio::test]
+async fn the_server_records_times_to_the_hour() {
+    let h = Harness::new().await;
+    let a = register(&h, "grace", "pw").await;
+    let (folder, _) = a.mkdir(&h, &a.root, "Timed").await;
+    let f = a.upload(&h, &folder, None, "t.txt", b"one").await.unwrap();
+    let f = a.upload(&h, "", Some(&f), "t.txt", b"two").await.unwrap();
+    for v in a.versions(&h, &f.id).await {
+        assert_eq!(v.created_at % 3600, 0);
+    }
+    a.delete(&h, &folder).await;
+    let rows: Vec<(i64, i64, Option<i64>)> =
+        sqlx::query_as("SELECT created_at, updated_at, trashed_at FROM nodes")
+            .fetch_all(&h.state.db)
+            .await
+            .unwrap();
+    assert_eq!(rows.len(), 3); // root, folder, file
+    for (created, updated, trashed) in rows {
+        assert_eq!(created % 3600, 0);
+        assert_eq!(updated % 3600, 0);
+        assert!(trashed.is_none_or(|t| t % 3600 == 0));
+    }
 }

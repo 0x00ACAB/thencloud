@@ -7,6 +7,7 @@
   import { session, resolvePath, trash } from '../../lib/cloud.svelte.js';
   import { notes, openNotes, setNotesRoot, scanNotes, readNote, writeNote, refreshNote, searchNotes, createNote, isPinned, togglePin } from '../../lib/notes.svelte.js';
   import { toast, toastError, errorMessage } from '../../lib/ui.svelte.js';
+  import { changedAt } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
   import Time from '../Time.svelte';
   import Menu from '../Menu.svelte';
@@ -32,7 +33,7 @@
   let found = $state(null); // search results: [{ entry, snippet }]
   const pinned = $derived(new Set(notes.pinned));
   const sorted = $derived(
-    (notes.list ?? []).toSorted((a, b) => (pinned.has(b.node.id) ? 1 : 0) - (pinned.has(a.node.id) ? 1 : 0) || b.node.updated_at - a.node.updated_at),
+    (notes.list ?? []).toSorted((a, b) => (pinned.has(b.node.id) ? 1 : 0) - (pinned.has(a.node.id) ? 1 : 0) || changedAt(b) - changedAt(a)),
   );
   const shown = $derived(found ?? sorted.map((entry) => ({ entry, snippet: '' })));
 
@@ -233,7 +234,7 @@
                 <span class="truncate text-sm font-medium {open?.node.id === entry.node.id ? 'text-accent-text' : ''}">{title(entry)}</span>
               </span>
               <span class="truncate text-xs text-fg-muted">
-                {#if snippet}{snippet}{:else}{#if entry.location.length}{entry.location.join(' / ')} · {/if}<Time ms={entry.node.updated_at * 1000} relative />{/if}
+                {#if snippet}{snippet}{:else}{#if entry.location.length}{entry.location.join(' / ')} · {/if}<Time ms={changedAt(entry)} relative />{/if}
               </span>
             </button>
           </li>

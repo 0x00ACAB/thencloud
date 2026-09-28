@@ -188,8 +188,8 @@ pub async fn register(
     .bind(&user_id)
     .bind(&req.root.enc_key.0)
     .bind(&req.root.enc_metadata.0)
-    .bind(t)
-    .bind(t)
+    .bind(coarse_now())
+    .bind(coarse_now())
     .execute(&mut *tx)
     .await;
     match res {

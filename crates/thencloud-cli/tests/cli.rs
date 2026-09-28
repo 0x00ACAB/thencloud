@@ -84,6 +84,7 @@ fn start() -> Server {
         mime: None,
         size: 0,
         mtime: 0,
+        changed: None,
     };
     let session: SessionResponse = call(
         &format!("{url}/api/auth/register"),
