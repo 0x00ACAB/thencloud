@@ -55,11 +55,16 @@ const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'bas
  * Sort folder rows in place: folders first, then by `key` ('name', 'size'
  * or 'modified') in `dir` order, ties broken by name.
  */
+/** Milliseconds. Files use the exact time from their encrypted metadata; the server's is rounded to the hour. */
+export function modifiedAt(r) {
+  return (r.node.kind === 'file' && r.meta.mtime) || r.node.updated_at * 1000;
+}
+
 export function sortEntries(rows, { key = 'name', dir = 'asc' } = {}) {
   const sign = dir === 'desc' ? -1 : 1;
   const value = {
     size: (r) => (r.node.kind === 'folder' ? 0 : r.meta.size),
-    modified: (r) => r.node.updated_at,
+    modified: modifiedAt,
   }[key];
   return rows.sort((a, b) => {
     if (a.node.kind !== b.node.kind) return a.node.kind === 'folder' ? -1 : 1;
