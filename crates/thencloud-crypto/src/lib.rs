@@ -819,6 +819,59 @@ pub fn decrypt_avatar(key: &Key, owner: &str, sealed: &[u8]) -> Result<Vec<u8>> 
     open(key, sealed, &aad("avatar", &[owner]))
 }
 
+/// Longest display name, in characters.
+pub const MAX_DISPLAY_NAME_CHARS: usize = 64;
+/// Display names are padded to this many bytes before encryption, so the
+/// ciphertext doesn't give away their length.
+pub const DISPLAY_NAME_PADDED: usize = 256;
+/// The size of every encrypted display name.
+pub const DISPLAY_NAME_SEALED_LEN: usize = NONCE_LEN + DISPLAY_NAME_PADDED + TAG_LEN;
+
+/// A display name as it's stored: NFC, trimmed, 1 to 64 characters, with no
+/// control or bidirectional formatting characters (which could make it look
+/// like someone else's name, or reorder the text around it). `None` if it
+/// can't be one.
+pub fn clean_display_name(name: &str) -> Option<String> {
+    let name = nfc(name.trim());
+    let bad = |c: char| {
+        c.is_control()
+            || matches!(c, '\u{200e}' | '\u{200f}' | '\u{061c}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+    };
+    let n = name.chars().count();
+    (n > 0 && n <= MAX_DISPLAY_NAME_CHARS && !name.chars().any(bad)).then_some(name)
+}
+
+/// A display name, encrypted under the same per-user key as the avatar (see
+/// `seal_avatar_key`), padded with zeros to `DISPLAY_NAME_PADDED` bytes.
+pub fn encrypt_display_name(key: &Key, owner: &str, name: &str) -> Result<Vec<u8>> {
+    let name = clean_display_name(name)
+        .ok_or_else(|| Error::Metadata("not a valid display name".into()))?;
+    let mut pt = name.into_bytes();
+    if pt.len() > DISPLAY_NAME_PADDED {
+        return Err(Error::Metadata("display name too long".into()));
+    }
+    pt.resize(DISPLAY_NAME_PADDED, 0);
+    let sealed = seal(key, &pt, &aad("display-name", &[owner]));
+    pt.zeroize();
+    Ok(sealed)
+}
+
+/// Opens a display name, and refuses one that `clean_display_name` wouldn't
+/// have let through (another client could have written anything).
+pub fn decrypt_display_name(key: &Key, owner: &str, sealed: &[u8]) -> Result<String> {
+    let pt = open(key, sealed, &aad("display-name", &[owner]))?;
+    let end = pt.iter().position(|&b| b == 0).unwrap_or(pt.len());
+    if pt.len() != DISPLAY_NAME_PADDED || pt[end..].iter().any(|&b| b != 0) {
+        return Err(Error::Metadata("bad display name padding".into()));
+    }
+    let name = std::str::from_utf8(&pt[..end])
+        .map_err(|_| Error::Metadata("display name isn't UTF-8".into()))?;
+    match clean_display_name(name) {
+        Some(clean) if clean == name => Ok(clean),
+        _ => Err(Error::Metadata("not a valid display name".into())),
+    }
+}
+
 pub fn seal_avatar_key(
     grantee_pub: &[u8],
     key: &Key,
@@ -1268,6 +1321,30 @@ mod tests {
         let w = wrap_private_key(&mk, &kp.secret);
         assert_eq!(unwrap_private_key(&mk, &w).unwrap().public, kp.public);
         assert_eq!(fingerprint(&kp.public).len(), 39);
+    }
+
+    #[test]
+    fn display_names() {
+        let ak = Key::generate();
+        let sealed = encrypt_display_name(&ak, "chloe", "  Chloe\u{301} ").unwrap();
+        assert_eq!(sealed.len(), DISPLAY_NAME_SEALED_LEN);
+        assert_eq!(
+            decrypt_display_name(&ak, "chloe", &sealed).unwrap(),
+            "Chlo\u{e9}"
+        );
+        assert!(decrypt_display_name(&ak, "alice", &sealed).is_err());
+        assert_eq!(clean_display_name("くろえ").as_deref(), Some("くろえ"));
+        for bad in ["", "  ", "a\u{202e}b", "a\nb", "a\u{0}b", &"x".repeat(65)] {
+            assert!(clean_display_name(bad).is_none(), "{bad:?}");
+            assert!(encrypt_display_name(&ak, "chloe", bad).is_err());
+        }
+        // Written by some other client: not NFC, or not trimmed.
+        for raw in ["Chloe\u{301}", " Chloe"] {
+            let mut pt = raw.as_bytes().to_vec();
+            pt.resize(DISPLAY_NAME_PADDED, 0);
+            let s = seal(&ak, &pt, &aad("display-name", &["chloe"]));
+            assert!(decrypt_display_name(&ak, "chloe", &s).is_err());
+        }
     }
 
     #[test]

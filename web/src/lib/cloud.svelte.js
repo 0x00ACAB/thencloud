@@ -1637,13 +1637,14 @@ export async function addComment(entry, text) {
 export const deleteComment = (id) => api('DELETE', `/api/comments/${id}`);
 
 // ---------------------------------------------------------------------------
-// Profile pictures: encrypted under our avatar key, which is sealed to each
-// person we share with (either way round). The server can't see them.
+// Profile pictures and display names: encrypted under our avatar key, which
+// is sealed to each person we share with (either way round). The server
+// can't see either.
 // ---------------------------------------------------------------------------
 
-export const avatar = $state({ url: null }); // our own picture, as a blob: URL
-let avatarState = null; // { key, grantees: Set }
-const avatarUrls = new Map(); // username -> Promise<url | null>
+export const avatar = $state({ url: null, name: null }); // our own picture (a blob: URL) and display name
+let avatarState = null; // { key, grantees: Set, picture: bytes | null, name: string | null }
+const profiles = new Map(); // username -> Promise<{ url, name }>
 
 const imageType = (b) =>
   b[0] === 0x89 ? 'image/png' : b[0] === 0x52 && b[8] === 0x57 ? 'image/webp' : 'image/jpeg';
@@ -1652,23 +1653,28 @@ function avatarBlobUrl(bytes) {
   return URL.createObjectURL(new Blob([bytes], { type: imageType(bytes) }));
 }
 
-/** Load our own picture (once per session). */
+/** Load our own picture and display name (once per session). */
 export async function loadMyAvatar() {
   if (avatarState) return avatarState;
   const r = await api('GET', '/api/me/avatar');
   const me = session.me;
   let key = null;
-  if (r.data && r.enc_key) {
+  let picture = null;
+  let name = null;
+  if (r.enc_key) {
     key = tc.decrypt_private_data(mk, me.user_id, 'avatar-key', unb64(r.enc_key));
-    avatar.url = avatarBlobUrl(tc.decrypt_avatar(key, me.username, unb64(r.data)));
+    if (r.data) picture = tc.decrypt_avatar(key, me.username, unb64(r.data));
+    if (r.name) name = tc.decrypt_display_name(key, me.username, unb64(r.name));
   }
-  avatarState = { key, grantees: new Set(r.grantees) };
+  avatarState = { key, grantees: new Set(r.grantees), picture, name };
+  avatar.url = picture ? avatarBlobUrl(picture) : null;
+  avatar.name = name;
   return avatarState;
 }
 
 /**
- * Give `username` our avatar key, if we have a picture and haven't yet.
- * Only to a verified contact whose key still matches: the same rule as
+ * Give `username` our avatar key, if we have a picture or name and haven't
+ * yet. Only to a verified contact whose key still matches: the same rule as
  * sharing, so a key the server swapped in never gets it.
  */
 async function grantAvatar(user) {
@@ -1690,6 +1696,38 @@ async function sharePartners() {
   return partners;
 }
 
+/**
+ * Store our picture and name (either may be null; both null removes them).
+ * A new key each time, given to the people we share with now, so someone
+ * we've stopped sharing with never gets a later one.
+ */
+async function saveProfile(picture, name) {
+  const a = await loadMyAvatar();
+  const me = session.me;
+  if (!picture && !name) {
+    await api('DELETE', '/api/me/avatar');
+    Object.assign(a, { key: null, grantees: new Set(), picture: null, name: null });
+  } else {
+    const key = tc.random_key();
+    await api('PUT', '/api/me/avatar', {
+      body: {
+        data: picture ? b64(tc.encrypt_avatar(key, me.username, picture)) : null,
+        name: name ? b64(tc.encrypt_display_name(key, me.username, name)) : null,
+        enc_key: b64(tc.encrypt_private_data(mk, me.user_id, 'avatar-key', key)),
+      },
+    });
+    Object.assign(a, { key, grantees: new Set(), picture, name });
+  }
+  if (avatar.url) URL.revokeObjectURL(avatar.url);
+  avatar.url = picture ? avatarBlobUrl(picture) : null;
+  avatar.name = name;
+  if (!a.key) return;
+  const pinned = (await loadContacts()).data;
+  for (const username of await sharePartners()) {
+    if (pinned[username]) await grantAvatar(await lookupUser(username)).catch(() => {});
+  }
+}
+
 /** Set our picture from an image file: cropped square, 256 px, encrypted here. */
 export async function setAvatar(file) {
   const bitmap = await createImageBitmap(file);
@@ -1701,50 +1739,47 @@ export async function setAvatar(file) {
   if (blob.type !== 'image/webp') blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.85 });
   const bytes = new Uint8Array(await blob.arrayBuffer());
   const a = await loadMyAvatar();
-  // A new key for each picture, given to the people we share with now, so
-  // someone we've stopped sharing with never gets a later one.
-  const key = tc.random_key();
-  const me = session.me;
-  await api('PUT', '/api/me/avatar', {
-    body: {
-      data: b64(tc.encrypt_avatar(key, me.username, bytes)),
-      enc_key: b64(tc.encrypt_private_data(mk, me.user_id, 'avatar-key', key)),
-    },
-  });
-  a.key = key;
-  a.grantees = new Set();
-  if (avatar.url) URL.revokeObjectURL(avatar.url);
-  avatar.url = avatarBlobUrl(bytes);
-  const pinned = (await loadContacts()).data;
-  for (const username of await sharePartners()) {
-    if (pinned[username]) await grantAvatar(await lookupUser(username)).catch(() => {});
-  }
+  await saveProfile(bytes, a.name);
 }
 
-/** Remove our picture and take back the key from everyone. */
+/** Remove our picture (the display name stays). */
 export async function removeAvatar() {
-  await api('DELETE', '/api/me/avatar');
-  if (avatar.url) URL.revokeObjectURL(avatar.url);
-  avatar.url = null;
-  avatarState = { key: null, grantees: new Set() };
+  const a = await loadMyAvatar();
+  await saveProfile(null, a.name);
 }
 
-/** Someone's picture as a blob: URL, or null if they haven't given us one. */
-export function avatarUrl(username) {
-  if (username === session.me?.username) return loadMyAvatar().then(() => avatar.url);
-  if (!avatarUrls.has(username)) {
-    avatarUrls.set(
+/** The name as it would be stored, or null if it can't be one. */
+export const cleanDisplayName = (name) => tc.clean_display_name(name) ?? null;
+
+/** Set our display name, or remove it with an empty one. */
+export async function setDisplayName(name) {
+  const clean = name.trim() ? cleanDisplayName(name) : null;
+  if (name.trim() && !clean) throw new Error('That name has characters that can\'t be used.');
+  const a = await loadMyAvatar();
+  await saveProfile(a.picture, clean);
+}
+
+/** Someone's picture (a blob: URL) and display name, each null if they haven't given us one. */
+export function profileOf(username) {
+  if (username === session.me?.username) return loadMyAvatar().then(() => ({ url: avatar.url, name: avatar.name }));
+  if (!profiles.has(username)) {
+    profiles.set(
       username,
       api('GET', `/api/users/${encodeURIComponent(username)}/avatar`)
         .then((r) => {
-          if (!r) return null;
+          if (!r) return { url: null, name: null };
           const key = tc.open_avatar_key(sk, unb64(r.sealed_key), username, session.me.username);
-          return avatarBlobUrl(tc.decrypt_avatar(key, username, unb64(r.data)));
+          const url = r.data ? avatarBlobUrl(tc.decrypt_avatar(key, username, unb64(r.data))) : null;
+          let name = null;
+          try {
+            if (r.name) name = tc.decrypt_display_name(key, username, unb64(r.name));
+          } catch {}
+          return { url, name };
         })
-        .catch(() => null),
+        .catch(() => ({ url: null, name: null })),
     );
   }
-  return avatarUrls.get(username);
+  return profiles.get(username);
 }
 
 // ---------------------------------------------------------------------------

@@ -435,6 +435,22 @@ pub fn decrypt_avatar(key_bytes: &[u8], owner: &str, sealed: &[u8]) -> R<Vec<u8>
     Ok(c::decrypt_avatar(&key(key_bytes)?, owner, sealed)?)
 }
 
+/// The name as it would be stored, or undefined if it can't be one.
+#[wasm_bindgen]
+pub fn clean_display_name(name: &str) -> Option<String> {
+    c::clean_display_name(name)
+}
+
+#[wasm_bindgen]
+pub fn encrypt_display_name(key_bytes: &[u8], owner: &str, name: &str) -> R<Vec<u8>> {
+    Ok(c::encrypt_display_name(&key(key_bytes)?, owner, name)?)
+}
+
+#[wasm_bindgen]
+pub fn decrypt_display_name(key_bytes: &[u8], owner: &str, sealed: &[u8]) -> R<String> {
+    Ok(c::decrypt_display_name(&key(key_bytes)?, owner, sealed)?)
+}
+
 #[wasm_bindgen]
 pub fn seal_avatar_key(
     grantee_public: &[u8],

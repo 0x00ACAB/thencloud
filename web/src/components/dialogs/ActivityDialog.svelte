@@ -5,8 +5,9 @@
   import Modal from '../Modal.svelte';
   import Icon from '../Icon.svelte';
   import Avatar from '../Avatar.svelte';
+  import PersonName from '../PersonName.svelte';
   import Time from '../Time.svelte';
-  import { activity, session } from '../../lib/cloud.svelte.js';
+  import { activity } from '../../lib/cloud.svelte.js';
   import { toastError } from '../../lib/ui.svelte.js';
   import { fly } from '../../lib/motion.js';
 
@@ -35,7 +36,6 @@
   onMount(load);
 
   const VERB = { added: 'added', changed: 'uploaded a new version of', renamed: 'renamed', moved: 'moved', trashed: 'moved to the trash', restored: 'restored' };
-  const who = (e) => (e.actor === session.me.username ? 'You' : e.actor);
 </script>
 
 <Modal title="Activity" description="In {entry.meta.name} and the folders in it, over the last 90 days. The server records who did what and roughly when, not names." {onclose} class="max-w-lg">
@@ -54,7 +54,7 @@
           <Avatar username={e.actor} class="mt-0.5 size-7 text-xs" />
           <div class="min-w-0 flex-1 text-sm">
             <p class="break-words">
-              <span class="font-medium">{who(e)}</span>
+              <PersonName username={e.actor} you class="font-medium" />
               {VERB[e.kind] ?? e.kind}
               {#if e.name !== null}
                 <button type="button" class="link font-medium" onclick={() => onopen(e)}>{e.name}</button>

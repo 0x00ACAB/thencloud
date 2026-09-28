@@ -10,6 +10,7 @@
   import Icon from '../Icon.svelte';
   import PhotoLocationNotice from '../PhotoLocationNotice.svelte';
   import Avatar from '../Avatar.svelte';
+  import PersonName from '../PersonName.svelte';
   import { lookupUser, share, outgoingShares, setSharePermission, deleteShare, session, contactStatus, verifyContact } from '../../lib/cloud.svelte.js';
   import Time from '../Time.svelte';
   import { errorMessage, toast, toastError } from '../../lib/ui.svelte.js';
@@ -116,7 +117,7 @@
       <div class="flex items-center gap-3">
         <Avatar username={user.username} class="size-8 text-xs" />
         <div class="min-w-0 flex-1">
-          <p class="font-medium">{user.username}</p>
+          <p class="font-medium"><PersonName username={user.username} /></p>
           <p class="hint">Their key fingerprint</p>
         </div>
       </div>
@@ -183,7 +184,7 @@
           <li class="flex items-center gap-3 px-3 py-2">
             <Avatar username={p.recipient} class="size-7 text-xs" />
             <span class="grid min-w-0 flex-1">
-              <span class="truncate text-sm">{p.recipient}</span>
+              <PersonName username={p.recipient} class="truncate text-sm" />
               {#if p.expires_at}<span class="text-xs text-fg-muted"><Time ms={p.expires_at * 1000} prefix="Until " /></span>{/if}
             </span>
             <select

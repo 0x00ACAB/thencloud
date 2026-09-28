@@ -372,6 +372,17 @@
       "sealed": "Lqrnw6TPjvergXLF0YTONh9YkQRMHopqJCb9w5J6a9dkiV9y5qBkzJW9l574wjt2hkSaTuCvqA"
     },
     {
+      "aad": "dGhlbmNsb3VkL3YxL2Rpc3BsYXktbmFtZQBjaGxvZQ",
+      "context": [
+        "chloe"
+      ],
+      "format": "display-name",
+      "key": "ygv3zNjnOR3u9nf10qbRaM0G6-ohV4UdWC6MFLtczAQ",
+      "name": "Chloé くろえ",
+      "plaintext": "Q2hsb8OpIOOBj-OCjeOBiAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "sealed": "oDK3U3TTtiGd3iQgemTi2bLJpc2fsivr1fCw5Y6UEu7hb4EaCoVKKnyWgK8pLkeJEoiErBd3t8DL1IsRIvtxSTsVDKh__kQbltQ5gPu_SYUrsFZNe5fALcj5zLzJRn4BYcCQjDY4TQwa-4XeJiEy37xOzbAxKu1CKXHADNB1ouHCqjcyqBttAKIxt_d1dcsdQl5qVPHxTFlH3YrpHiIy0KDDJwBew1FjxG5rspK133x-9TAeqzMbP4R--1NIFTYwInF7lEIyik4dH_CC7BtmaqDqD1THlT32QtXHcwSANNyL62iqGrbPd6RRy5qnUF9_nUvKeks1gveNnKXfePOF8c0vzc2NZisbL1XKyCz8KN3zzrkzlUhxz3Ft9_l8OBxpMwYO8Jijwu0"
+    },
+    {
       "aad": "dGhlbmNsb3VkL3YxL25vZGUta2V5ADZmMWMyYjlhLTNlNGQtNGY1YS04YjZjLTdkOGU5ZjBhMWIyYw",
       "context": [
         "6f1c2b9a-3e4d-4f5a-8b6c-7d8e9f0a1b2c"
@@ -636,6 +647,27 @@
       "sealed": "JsqO2LWDGCMq2UKnWq4AXYdpP_b1RxinwwS_FFw70w4wk4yQc6aqq__VtFwjWesNE7KU_5ALaL_qWFJ_Ns_xiGteW43rfd9Z",
       "valid": false,
       "why": "the wrong key"
+    },
+    {
+      "context": [
+        "alice"
+      ],
+      "format": "display-name",
+      "key": "ygv3zNjnOR3u9nf10qbRaM0G6-ohV4UdWC6MFLtczAQ",
+      "name": "Chloé くろえ",
+      "sealed": "oDK3U3TTtiGd3iQgemTi2bLJpc2fsivr1fCw5Y6UEu7hb4EaCoVKKnyWgK8pLkeJEoiErBd3t8DL1IsRIvtxSTsVDKh__kQbltQ5gPu_SYUrsFZNe5fALcj5zLzJRn4BYcCQjDY4TQwa-4XeJiEy37xOzbAxKu1CKXHADNB1ouHCqjcyqBttAKIxt_d1dcsdQl5qVPHxTFlH3YrpHiIy0KDDJwBew1FjxG5rspK133x-9TAeqzMbP4R--1NIFTYwInF7lEIyik4dH_CC7BtmaqDqD1THlT32QtXHcwSANNyL62iqGrbPd6RRy5qnUF9_nUvKeks1gveNnKXfePOF8c0vzc2NZisbL1XKyCz8KN3zzrkzlUhxz3Ft9_l8OBxpMwYO8Jijwu0",
+      "valid": false,
+      "why": "someone's display name shown as another person's"
+    },
+    {
+      "context": [
+        "chloe"
+      ],
+      "format": "display-name",
+      "key": "ygv3zNjnOR3u9nf10qbRaM0G6-ohV4UdWC6MFLtczAQ",
+      "sealed": "D9r9aHSax1Q5EJYYSLqM-tqbCrTf4Pz9-uoqnlQexJsxB0rvDBGoRYrXbg2Jt-S7GPvCG8nb2c5NKhaIcCMAbaXQ3XqZcO553m03WxfHy64aDIaN_SUZ7SXfKUIUyKgfynYFV4Bd7r7_o0K1v-4uyZcb-M5TCM2nBGJc0zaqoNWVHpAvjI95wsVaVRIvDojpzunkPpef773x5BYLvZ2sWgz4UMPD23eluCsbkSZzcDcfHLBjCtnj-Z6ARfcWQyI0gzZf6cs8oKam3Lnj1bmckz7ig47gJLnmz34GDd4Gh0_KA9yhqNbGaqP5p8fHY6WlRKfVmCG4sz0oQaFqzKaz__862GVYiQr5MxAng1QXmtm2Jeor7396IBQMPiqHScHoEl_x6QYMySc",
+      "valid": false,
+      "why": "a display name with a right-to-left override"
     },
     {
       "context": [
