@@ -464,3 +464,116 @@ pub fn open_avatar_key(secret: &[u8], sealed: &[u8], owner: &str, grantee: &str)
 pub fn name_tag(folder_key: &[u8], name: &str) -> R<Vec<u8>> {
     Ok(c::name_tag(&key(folder_key)?, name))
 }
+
+/// The Argon2 salt for a link's password: run `derive_account_keys` with it
+/// and the default parameters (in the KDF worker), then `derive_link_keys`.
+#[wasm_bindgen]
+pub fn link_password_salt(secret: &[u8]) -> Vec<u8> {
+    c::link_password_salt(secret).to_vec()
+}
+
+/// A link's auth key and KEK, from the keys Argon2 made of its password.
+#[wasm_bindgen]
+pub fn derive_link_keys(secret: &[u8], auth_key: &[u8], kek: &[u8]) -> R<AccountKeys> {
+    let from_password = c::AccountKeys {
+        auth_key: key(auth_key)?,
+        kek: key(kek)?,
+    };
+    let r = c::derive_link_keys(secret, &from_password);
+    Ok(AccountKeys {
+        auth_key: r.auth_key.as_bytes().to_vec(),
+        kek: r.kek.as_bytes().to_vec(),
+    })
+}
+
+#[wasm_bindgen]
+pub fn wrap_link_key(kek: &[u8], node_key: &[u8], node_id: &str) -> R<Vec<u8>> {
+    Ok(c::wrap_link_key(&key(kek)?, &key(node_key)?, node_id))
+}
+
+#[wasm_bindgen]
+pub fn unwrap_link_key(kek: &[u8], wrapped: &[u8], node_id: &str) -> R<Vec<u8>> {
+    Ok(c::unwrap_link_key(&key(kek)?, wrapped, node_id)?
+        .as_bytes()
+        .to_vec())
+}
+
+#[wasm_bindgen]
+pub fn encrypt_link_secret(node_key: &[u8], secret: &[u8], node_id: &str) -> R<Vec<u8>> {
+    Ok(c::encrypt_link_secret(
+        &key(node_key)?,
+        &key(secret)?,
+        node_id,
+    ))
+}
+
+#[wasm_bindgen]
+pub fn decrypt_link_secret(node_key: &[u8], sealed: &[u8], node_id: &str) -> R<Vec<u8>> {
+    Ok(c::decrypt_link_secret(&key(node_key)?, sealed, node_id)?
+        .as_bytes()
+        .to_vec())
+}
+
+#[wasm_bindgen]
+pub fn encrypt_comment(
+    node_key: &[u8],
+    node_id: &str,
+    comment_id: &str,
+    author_id: &str,
+    body: &[u8],
+) -> R<Vec<u8>> {
+    Ok(c::encrypt_comment(
+        &key(node_key)?,
+        node_id,
+        comment_id,
+        author_id,
+        body,
+    ))
+}
+
+#[wasm_bindgen]
+pub fn decrypt_comment(
+    node_key: &[u8],
+    node_id: &str,
+    comment_id: &str,
+    author_id: &str,
+    sealed: &[u8],
+) -> R<Vec<u8>> {
+    Ok(c::decrypt_comment(
+        &key(node_key)?,
+        node_id,
+        comment_id,
+        author_id,
+        sealed,
+    )?)
+}
+
+#[wasm_bindgen]
+pub fn encrypt_thumbnail(
+    node_key: &[u8],
+    node_id: &str,
+    version_id: &str,
+    image: &[u8],
+) -> R<Vec<u8>> {
+    Ok(c::encrypt_thumbnail(
+        &key(node_key)?,
+        node_id,
+        version_id,
+        image,
+    ))
+}
+
+#[wasm_bindgen]
+pub fn decrypt_thumbnail(
+    node_key: &[u8],
+    node_id: &str,
+    version_id: &str,
+    sealed: &[u8],
+) -> R<Vec<u8>> {
+    Ok(c::decrypt_thumbnail(
+        &key(node_key)?,
+        node_id,
+        version_id,
+        sealed,
+    )?)
+}

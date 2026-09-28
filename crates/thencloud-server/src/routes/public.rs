@@ -31,11 +31,13 @@ struct LinkRow {
     expires_at: Option<i64>,
     upload_only: bool,
     max_opens: Option<i64>,
+    enc_link_key: Option<Vec<u8>>,
 }
 
 async fn find(state: &AppState, token: &str) -> Result<LinkRow> {
     sqlx::query_as(
-        "SELECT id, node_id, owner_id, password_hash, expires_at, upload_only, max_opens FROM public_links \
+        "SELECT id, node_id, owner_id, password_hash, expires_at, upload_only, max_opens, enc_link_key \
+         FROM public_links \
          WHERE token = ? AND (expires_at IS NULL OR expires_at > ?)",
     )
     .bind(token)
@@ -169,6 +171,9 @@ pub async fn info(
         folder_id: link.upload_only.then(|| node.id.clone()),
         node: (!link.upload_only).then(|| node.into_api()),
         link_token,
+        // Only reached with the password's pass, and useless without the
+        // secret after `#` as well.
+        enc_link_key: link.enc_link_key.map(B64),
     }))
 }
 
@@ -178,7 +183,8 @@ pub async fn unlock(
     ip: ClientIp,
     Json(req): Json<UnlockLinkRequest>,
 ) -> Result<Json<UnlockLinkResponse>> {
-    let key = format!("link:{token}:{}", ip.key());
+    // Per visitor and link; without addresses, per link.
+    let key = format!("link:{token}:{}", ip.key().unwrap_or_default());
     if state.limiter.blocked(&key) {
         return Err(AppError::RateLimited);
     }
@@ -186,7 +192,7 @@ pub async fn unlock(
     let Some(hash) = link.password_hash else {
         return Err(AppError::bad("this link has no password"));
     };
-    if !verify_secret(req.password.into_bytes(), hash).await? {
+    if !verify_secret(req.auth.0, hash).await? {
         state.limiter.fail(&key);
         return Err(AppError::InvalidCredentials);
     }
@@ -220,6 +226,16 @@ pub async fn chunk(
     let link = resolve(&state, &token, &headers).await?;
     let node = node_in_link(&state, &link, &id).await?;
     current_chunk(&state, node, idx).await
+}
+
+pub async fn thumbnail(
+    State(state): State<AppState>,
+    Path((token, id)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Result<Response> {
+    let link = resolve(&state, &token, &headers).await?;
+    node_in_link(&state, &link, &id).await?;
+    crate::routes::thumbnails::current(&state, &id).await
 }
 
 /// Resolve an upload-only link for a visitor adding a file.

@@ -13,7 +13,13 @@ export function decryptMeta(nodeKey, node) {
   return JSON.parse(tc.decrypt_metadata(nodeKey, node.id, unb64(node.enc_metadata)));
 }
 
+/**
+ * Encrypt a node's metadata, stamping it with when it changed (`meta.changed`
+ * is set on the object passed in, so the caller's copy has it too). The
+ * server records times to the hour only; this one is exact.
+ */
 export function encryptMeta(nodeKey, nodeId, meta) {
+  meta.changed = Date.now();
   return b64(tc.encrypt_metadata(nodeKey, nodeId, JSON.stringify(meta)));
 }
 
@@ -49,6 +55,20 @@ export function deriveAccountKeys(password, salt, params) {
     pending.set(id, { resolve, reject });
     worker.postMessage({ id, password, salt, params: JSON.stringify(params) });
   });
+}
+
+/**
+ * A link password's auth key (what the server checks) and KEK (what the
+ * node key is wrapped under), from the password and the link's secret (the
+ * owner's identity for a file drop). Argon2 runs in the worker.
+ */
+export async function deriveLinkKeys(secret, password) {
+  const params = JSON.parse(tc.default_kdf_params());
+  const k = await deriveAccountKeys(password, tc.link_password_salt(secret), params);
+  const r = tc.derive_link_keys(secret, k.authKey, k.kek);
+  const out = { auth: r.auth_key, kek: r.kek };
+  r.free();
+  return out;
 }
 
 /**

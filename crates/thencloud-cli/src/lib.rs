@@ -8,6 +8,7 @@ use std::io::{self, Read, Write};
 use std::path::Path;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+pub mod backup;
 #[cfg(target_os = "linux")]
 pub mod mount;
 pub mod verify;
@@ -259,6 +260,8 @@ impl Client {
             mime: None,
             size: 0,
             mtime: now_ms(),
+            changed: Some(now_ms()),
+            taken: None,
         };
         let req = CreateFolderRequest {
             id: id.clone(),
@@ -273,7 +276,8 @@ impl Client {
 
     /// Rename, move (to `parent`) or change the mtime: `meta` is the node's
     /// new metadata. Fails with 409 if someone else changed it meanwhile.
-    pub fn update(&self, e: &Entry, parent: &Entry, meta: Metadata) -> Result<Entry> {
+    pub fn update(&self, e: &Entry, parent: &Entry, mut meta: Metadata) -> Result<Entry> {
+        meta.changed = Some(now_ms());
         let moving = e.node.parent_id.as_deref() != Some(parent.node.id.as_str());
         let req = UpdateNodeRequest {
             enc_metadata: Some(B64(c::encrypt_metadata(&e.key, &e.node.id, &meta)?)),
@@ -398,6 +402,8 @@ impl Client {
             mime: None,
             size,
             mtime,
+            changed: Some(now_ms()),
+            taken: None,
         };
         let req = CreateUploadRequest {
             node_id: node_id.clone(),
@@ -459,6 +465,126 @@ impl Client {
                 Err(e)
             }
         }
+    }
+
+    /// Write everything under `folder` into an encrypted backup (see
+    /// [`backup`]), under `key`. Calls `progress` with each path.
+    pub fn backup(
+        &self,
+        folder: &Entry,
+        out: impl Write,
+        key: Key,
+        progress: &mut dyn FnMut(&str),
+    ) -> Result<SyncStats> {
+        let mut w = backup::BackupWriter::new(out, key)?;
+        let mut stats = SyncStats::default();
+        let mut stack = vec![(folder.clone(), Vec::<String>::new())];
+        while let Some((dir, path)) = stack.pop() {
+            for e in self.list(&dir)? {
+                let mut here = path.clone();
+                here.push(e.meta.name.clone());
+                progress(&here.join("/"));
+                w.entry(&backup::BackupEntry {
+                    path: here.clone(),
+                    folder: e.is_folder(),
+                    size: if e.is_folder() { 0 } else { e.meta.size },
+                    mtime: e.meta.mtime,
+                    mime: e.meta.mime.clone(),
+                })?;
+                if e.is_folder() {
+                    stack.push((e, here));
+                    continue;
+                }
+                let count = e.node.version.as_ref().map_or(0, |v| v.chunk_count);
+                let mut left = e.meta.size;
+                for i in 0..count {
+                    if left == 0 {
+                        break;
+                    }
+                    let plain = self.chunk(&e, i)?;
+                    let keep = left.min(plain.len() as u64) as usize;
+                    w.data(&plain[..keep])?;
+                    left -= keep as u64;
+                }
+                if left != 0 {
+                    return Err(Error::Usage(format!(
+                        "{} is shorter than its size says",
+                        here.join("/")
+                    )));
+                }
+                stats.transferred += 1;
+            }
+        }
+        w.finish()?;
+        Ok(stats)
+    }
+
+    /// Restore a backup into `target`: folders are made (or reused, when
+    /// one of that name is there), files uploaded, as new versions of files
+    /// with the same name. Calls `progress` with each path.
+    pub fn restore(
+        &self,
+        inp: impl Read,
+        key: Key,
+        target: &Entry,
+        progress: &mut dyn FnMut(&str),
+    ) -> Result<SyncStats> {
+        let mut r = backup::BackupReader::new(inp, key)?;
+        let mut stats = SyncStats::default();
+        // Folders made or found so far, by path.
+        let mut folders = std::collections::HashMap::new();
+        folders.insert(Vec::<String>::new(), target.clone());
+        while let Some(rec) = r.next_record()? {
+            let backup::Record::Entry(e) = rec else {
+                return Err(Error::Usage(
+                    "this backup is damaged: data without a file".into(),
+                ));
+            };
+            let Some((name, parent_path)) = e.path.split_last() else {
+                return Err(Error::Usage("this backup is damaged: an empty path".into()));
+            };
+            let parent = folders.get(parent_path).cloned().ok_or_else(|| {
+                Error::Usage("this backup is damaged: a file before its folder".into())
+            })?;
+            progress(&e.path.join("/"));
+            let existing = self
+                .list(&parent)?
+                .into_iter()
+                .find(|x| x.meta.name.to_lowercase() == name.to_lowercase());
+            if e.folder {
+                let dir = match existing {
+                    Some(x) if x.is_folder() => x,
+                    Some(_) => {
+                        return Err(Error::Usage(format!(
+                            "{} is a file here, and a folder in the backup",
+                            e.path.join("/")
+                        )));
+                    }
+                    None => self.mkdir(&parent, name)?,
+                };
+                folders.insert(e.path.clone(), dir);
+                continue;
+            }
+            if existing.as_ref().is_some_and(Entry::is_folder) {
+                return Err(Error::Usage(format!(
+                    "{} is a folder here, and a file in the backup",
+                    e.path.join("/")
+                )));
+            }
+            let mut data = r.file_data(e.size);
+            self.upload_from(&mut data, e.size, e.mtime, &parent, name, existing.as_ref())
+                .map_err(|err| match err {
+                    // A damaged backup shows up as a read error mid-upload.
+                    Error::Io(io) => match io.into_inner().map(|b| b.downcast::<Error>()) {
+                        Some(Ok(inner)) => *inner,
+                        Some(Err(other)) => Error::Usage(other.to_string()),
+                        None => Error::Usage("this backup couldn't be read".into()),
+                    },
+                    other => other,
+                })?;
+            stats.transferred += 1;
+        }
+        Ok(stats)
     }
 
     /// Mirror a remote folder into a local directory: new and changed files

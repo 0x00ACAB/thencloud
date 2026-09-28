@@ -54,7 +54,8 @@ jobs:
         working-directory: web
       - run: npm run check
         working-directory: web
-      # Fuzz tests of the parsers for untrusted files (tags, photos, CSV...).
+      # Fuzz tests of the parsers for untrusted files (tags, photos, CSV...),
+      # and the format test vectors against the WASM build.
       - run: npm test
         working-directory: web
         env:

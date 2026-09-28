@@ -7,9 +7,13 @@
 import { request } from './api.js';
 import {
   tc, b64, unb64, decryptMeta, encryptMeta, unwrapChild, decryptChildren,
-  deriveAccountKeys, fetchFile, openFile, encryptPiece, saveBlob,
+  deriveAccountKeys, deriveLinkKeys, fetchFile, openFile, encryptPiece, saveBlob,
 } from './crypto.js';
 import { sortEntries } from './format.js';
+import { canThumbnail, makeThumbnail, isJpeg } from './thumbnail.js';
+import { photoTaken } from './exif.js';
+import { wordsOf, queryWords, matchesWords } from './fulltext.js';
+import { previewKind } from './preview.js';
 import { rememberSession, rememberedSession, forgetSession } from './remember.js';
 import { streamsAvailable, streamDownload } from './stream.js';
 import { createPasskey, usePasskey, passkeysSupported } from './passkeys.js';
@@ -191,6 +195,7 @@ function startWithMasterKey(s, masterKey) {
   keyCache.clear();
   contacts = null;
   appData.clear();
+  contentIndex = null;
   session.token = s.token;
   session.me = s.me;
   session.fingerprint = tc.fingerprint(myIdentity());
@@ -679,6 +684,100 @@ export function searchTree(top, query, { onResult, signal } = {}) {
   return walkTree(top, { signal, onEntry: (r) => r.meta.name.toLowerCase().includes(q) && onResult?.(r) });
 }
 
+// ---------------------------------------------------------------------------
+// Searching inside files. The words in each text, Markdown and PDF file are
+// kept in the encrypted "search" app data (see fulltext.js), by node id and
+// the version they came from. Text is indexed when it's uploaded, when we
+// have it anyway; anything else is read when a search needs it. The server
+// never sees a word.
+// ---------------------------------------------------------------------------
+
+/** Files bigger than this aren't read just to index them. */
+const INDEX_TEXT_MAX = 2 * 1024 * 1024;
+const INDEX_PDF_MAX = 30 * 1024 * 1024;
+/** Keep the index under the server's limit for it, with room for the encryption. */
+const INDEX_MAX_CHARS = 8 * 1024 * 1024;
+
+let contentIndex = null; // { docs: { [nodeId]: { v: version id, w: words, t: when indexed } } }
+let indexSave = null;
+
+/** How a file's words are read, or null if it isn't indexed. */
+function indexKind(meta) {
+  const k = previewKind(meta)?.kind;
+  if ((k === 'text' || k === 'markdown') && meta.size <= INDEX_TEXT_MAX) return 'text';
+  if (k === 'pdf' && meta.size <= INDEX_PDF_MAX) return 'pdf';
+  return null;
+}
+
+async function loadIndex() {
+  contentIndex ??= { docs: (await loadAppData('search')).docs ?? {} };
+  return contentIndex;
+}
+
+function saveIndexSoon() {
+  clearTimeout(indexSave);
+  indexSave = setTimeout(() => {
+    const docs = contentIndex?.docs;
+    if (!docs) return;
+    // Oldest first out, until it fits.
+    let size = JSON.stringify(docs).length;
+    if (size > INDEX_MAX_CHARS) {
+      for (const [id, d] of Object.entries(docs).sort((a, b) => a[1].t - b[1].t)) {
+        if (size <= INDEX_MAX_CHARS) break;
+        size -= d.w.length + id.length + 80;
+        delete docs[id];
+      }
+    }
+    saveAppData('search', (d) => (d.docs = docs)).catch(() => {});
+  }, 3000);
+}
+
+/** Read and keep the words of `entry` (a file), from `blob` if we have it. */
+async function indexFile(entry, blob = null) {
+  const kind = indexKind(entry.meta);
+  if (!kind || !entry.node.version) return null;
+  blob ??= (await fetchEntry(entry)).blob;
+  let text;
+  if (kind === 'pdf') {
+    const { pdfText } = await import('./pdf.js');
+    text = await pdfText(new Uint8Array(await blob.arrayBuffer()));
+  } else {
+    text = await blob.text();
+  }
+  const idx = await loadIndex();
+  const doc = { v: entry.node.version.id, w: wordsOf(text), t: Date.now() };
+  idx.docs[entry.node.id] = doc;
+  saveIndexSoon();
+  return doc;
+}
+
+/**
+ * Files under `top` with every word of `query` in them. Files not yet in the
+ * index, or changed since, are downloaded and read first: `onProgress(done,
+ * total)` counts them. A full search of My files also drops what's gone.
+ */
+export async function searchContents(top, query, { onResult, onProgress, signal } = {}) {
+  const q = queryWords(query);
+  if (!q.length) return;
+  const idx = await loadIndex();
+  const files = [];
+  await walkTree(top, { signal, onEntry: (r) => r.node.kind === 'file' && indexKind(r.meta) && files.push(r) });
+  if (signal?.aborted) return;
+  let done = 0;
+  for (const r of files) {
+    if (signal?.aborted) return;
+    let doc = idx.docs[r.node.id];
+    if (doc?.v !== r.node.version?.id) doc = await indexFile(r).catch(() => null);
+    if (doc && matchesWords(doc.w, q)) onResult?.(r);
+    onProgress?.(++done, files.length);
+  }
+  if (top.node.id === session.me.keys.root_node_id) {
+    const here = new Set(files.map((r) => r.node.id));
+    for (const id of Object.keys(idx.docs)) if (!here.has(id)) delete idx.docs[id];
+    saveIndexSoon();
+  }
+}
+
 // Files dropped through upload-only links arrive with their key sealed to
 // our public key. Open it, wrap it under the folder key and take the file in.
 let dropsChecked = 0;
@@ -938,6 +1037,38 @@ export async function downloadZip(entries, name, onProgress) {
   await saveZip(entries, name, { list: (e) => listFolder(e.node.id, e.key), open: openEntry, onProgress });
 }
 
+/**
+ * Everything you own, decrypted into one zip: My files as they are, and a
+ * `thencloud-data` folder with your library data (playlists, pins, where
+ * you left off) and verified contacts as JSON. Shared-with-me items belong
+ * to someone else and aren't included. Streamed to disk where possible.
+ */
+export async function exportAccount(onProgress) {
+  const { items } = await resolvePath(session.me.keys.root_node_id);
+  const root = items[0];
+  const now = Date.now();
+  const json = (name, value) => {
+    const bytes = enc.encode(JSON.stringify(value, null, 2));
+    return { node: { kind: 'file' }, meta: { name, size: bytes.length, mtime: now }, bytes };
+  };
+  const data = [];
+  for (const name of ['music', 'videos', 'files', 'notes', 'books']) {
+    const d = await loadAppData(name);
+    if (Object.keys(d).length) data.push(json(`${name}.json`, d));
+  }
+  const { data: pinned } = await loadContacts();
+  if (Object.keys(pinned).length) data.push(json('contacts.json', pinned));
+  const entries = await listFolder(root.node.id, root.key);
+  if (data.length) entries.push({ node: { kind: 'folder' }, meta: { name: 'thencloud-data', mtime: now }, children: data });
+  const { saveZip } = await import('./zip.js');
+  const day = new Date(now).toISOString().slice(0, 10);
+  await saveZip(entries, `thencloud-${session.me.username}-${day}.zip`, {
+    list: (e) => e.children ?? listFolder(e.node.id, e.key),
+    open: (e) => (e.bytes ? { count: 1, read: async () => e.bytes } : openEntry(e)),
+    onProgress,
+  });
+}
+
 /** Files larger than this are streamed to disk instead of decrypted into memory first. */
 const STREAM_FROM = 16 * 1024 * 1024;
 
@@ -964,6 +1095,10 @@ export async function upload(file, { parentId, parentKey, existing }, onProgress
     size: file.size,
     mtime: file.lastModified || Date.now(),
   };
+  // When a photo was taken, for the Photos timeline. Read from the file as
+  // uploaded: a photo whose details were removed keeps no date either.
+  const taken = file.type.startsWith('image/') ? await photoTaken(file) : null;
+  if (taken) meta.taken = taken;
 
   const start = () =>
     api('POST', '/api/uploads', {
@@ -1010,7 +1145,54 @@ export async function upload(file, { parentId, parentKey, existing }, onProgress
     throw e;
   }
   keyCache.set(nodeId, nodeKey);
+  // We have the text now: index it for searching inside files.
+  if (indexKind(meta) === 'text') indexFile({ node, key: nodeKey, meta }, file).catch(() => {});
+  if (canThumbnail(file) && (await uploadThumbnail(file, node, nodeKey))) {
+    node = { ...node, version: { ...node.version, has_thumbnail: true } };
+  }
   return { node, key: nodeKey, meta };
+}
+
+/** Make, encrypt and store a thumbnail for `node`'s current version. True if it worked; a file without one is fine. */
+async function uploadThumbnail(file, node, nodeKey) {
+  try {
+    const image = await makeThumbnail(file);
+    if (!image) return false;
+    const v = node.version.id;
+    await api('PUT', `/api/nodes/${node.id}/versions/${v}/thumbnail`, { raw: tc.encrypt_thumbnail(nodeKey, node.id, v, image) });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Decrypted thumbnails as blob: URLs, by version (each is bound to one).
+const thumbs = new Map(); // version id -> Promise<url | null>
+const MAX_THUMBS = 400;
+
+/**
+ * A file's thumbnail as a blob: URL, or null. Only used when the bytes are a
+ * JPEG, and typed as one whatever they claim to be: a shared file's
+ * thumbnail was made by someone else.
+ */
+export function thumbnailUrl(entry, fetchThumb = (id) => api('GET', `/api/nodes/${id}/thumbnail`)) {
+  const v = entry.node.version;
+  if (!v?.has_thumbnail) return Promise.resolve(null);
+  if (!thumbs.has(v.id)) {
+    if (thumbs.size >= MAX_THUMBS) {
+      const [oldest, url] = thumbs.entries().next().value;
+      thumbs.delete(oldest);
+      url.then((u) => u && URL.revokeObjectURL(u));
+    }
+    const url = fetchThumb(entry.node.id)
+      .then((sealed) => {
+        const image = tc.decrypt_thumbnail(entry.key, entry.node.id, v.id, sealed);
+        return isJpeg(image) ? URL.createObjectURL(new Blob([image], { type: 'image/jpeg' })) : null;
+      })
+      .catch(() => null);
+    thumbs.set(v.id, url);
+  }
+  return thumbs.get(v.id);
 }
 
 /**
@@ -1114,6 +1296,32 @@ export async function loadAppData(name) {
   appData.set(name, { data, revision: r.revision });
   return data;
 }
+
+// Where books were left, in the "books" app data: node id -> { at, frac, t }
+// (`at` is the page or chapter, `frac` how far down a chapter).
+const MAX_BOOKS = 500;
+let bookSave = null;
+
+export const bookProgress = {
+  async load(entry) {
+    return (await loadAppData('books')).positions?.[entry.node.id] ?? null;
+  },
+  /** Kept a moment after the reader stops moving, so turning pages doesn't save each one. */
+  save(entry, pos) {
+    clearTimeout(bookSave);
+    bookSave = setTimeout(() => {
+      saveAppData('books', (d) => {
+        d.positions ??= {};
+        d.positions[entry.node.id] = { ...pos, t: Date.now() };
+        const ids = Object.keys(d.positions);
+        if (ids.length > MAX_BOOKS) {
+          ids.sort((a, b) => d.positions[a].t - d.positions[b].t);
+          for (const id of ids.slice(0, ids.length - MAX_BOOKS)) delete d.positions[id];
+        }
+      }).catch(() => {});
+    }, 1500);
+  },
+};
 
 /** Apply `change` to a copy of the data and save it. Resolves to the new data. */
 export function saveAppData(name, change) {
@@ -1251,10 +1459,13 @@ export const deleteShare = (id) => api('DELETE', `/api/shares/${id}`);
 
 /**
  * The key goes in the URL fragment (after #). Browsers never send the
- * fragment to the server, so it only ever exists on the client.
+ * fragment to the server, so it only ever exists on the client. A link with
+ * a password carries `p.` and a secret instead: the node key is wrapped
+ * under the secret and the password together, so the link alone opens
+ * nothing, and neither does a server that skips the password check.
  */
-export function linkUrl(token, nodeKey) {
-  return `${location.origin}/s/${token}#${b64(nodeKey)}`;
+export function linkUrl(token, fragment, withPassword = false) {
+  return `${location.origin}/s/${token}#${withPassword ? 'p.' : ''}${b64(fragment)}`;
 }
 
 /**
@@ -1263,12 +1474,31 @@ export function linkUrl(token, nodeKey) {
  * an ML-KEM key that's too long for a link, so it carries its hash: the
  * page gets the key from the server and checks it.
  */
-const urlFor = (link, entry) => (link.upload_only ? linkUrl(link.token, myIdentity()) : linkUrl(link.token, entry.key));
+function urlFor(link, entry) {
+  if (link.upload_only) return linkUrl(link.token, myIdentity());
+  if (!link.has_password) return linkUrl(link.token, entry.key);
+  // Password links made before passwords were part of the key have no secret.
+  if (!link.enc_link_secret) return null;
+  try {
+    return linkUrl(link.token, tc.decrypt_link_secret(entry.key, unb64(link.enc_link_secret), link.node_id), true);
+  } catch {
+    return null;
+  }
+}
 
 export async function createLink(entry, { password, expiresAt, uploadOnly = false, maxOpens = null }) {
-  const link = await api('POST', '/api/links', {
-    body: { node_id: entry.node.id, password: password || null, expires_at: expiresAt ?? null, upload_only: uploadOnly, max_opens: maxOpens },
-  });
+  const body = { node_id: entry.node.id, expires_at: expiresAt ?? null, upload_only: uploadOnly, max_opens: maxOpens };
+  if (password && uploadOnly) {
+    // Nothing to wrap in a file drop; the password only lets visitors in.
+    body.password_auth = b64((await deriveLinkKeys(myIdentity(), password)).auth);
+  } else if (password) {
+    const secret = tc.random_key();
+    const k = await deriveLinkKeys(secret, password);
+    body.password_auth = b64(k.auth);
+    body.enc_link_key = b64(tc.wrap_link_key(k.kek, entry.key, entry.node.id));
+    body.enc_link_secret = b64(tc.encrypt_link_secret(entry.key, secret, entry.node.id));
+  }
+  const link = await api('POST', '/api/links', { body });
   return { ...link, url: urlFor(link, entry) };
 }
 
@@ -1284,6 +1514,127 @@ export async function links(nodeId) {
 }
 
 export const deleteLink = (id) => api('DELETE', `/api/links/${id}`);
+
+// ---------------------------------------------------------------------------
+// Live updates: the server streams the ids of nodes that change in a folder
+// (Server-Sent Events). Read with fetch, not EventSource, so the session
+// token goes in a header rather than the URL.
+// ---------------------------------------------------------------------------
+
+/**
+ * Call `onChange(nodeId)` whenever something changes in folder `id` or
+ * below (`nodeId` is null when some were missed). Reconnects after errors,
+ * slower each time. Returns a function that stops watching.
+ */
+export function watchFolder(id, onChange) {
+  const ctl = new AbortController();
+  (async () => {
+    let wait = 2000;
+    while (!ctl.signal.aborted) {
+      try {
+        const res = await fetch(`/api/nodes/${id}/changes`, {
+          headers: { Authorization: `Bearer ${session.token}` },
+          cache: 'no-store',
+          signal: ctl.signal,
+        });
+        // Signed out, or the folder is gone or no longer ours to see.
+        if ([401, 403, 404].includes(res.status)) return;
+        if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+        wait = 2000;
+        const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+        let buf = '';
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += value;
+          let end;
+          while ((end = buf.indexOf('\n\n')) >= 0) {
+            const block = buf.slice(0, end);
+            buf = buf.slice(end + 2);
+            if (!/^event: change$/m.test(block)) continue;
+            let nodeId = null;
+            try {
+              nodeId = JSON.parse(block.match(/^data: (.*)$/m)?.[1] ?? '{}').node_id ?? null;
+            } catch {
+              /* a change all the same */
+            }
+            onChange(nodeId);
+          }
+        }
+      } catch {
+        if (ctl.signal.aborted) return;
+      }
+      await new Promise((r) => setTimeout(r, wait));
+      wait = Math.min(wait * 2, 60_000);
+    }
+  })();
+  return () => ctl.abort();
+}
+
+// ---------------------------------------------------------------------------
+// Activity: who added, changed, renamed, moved, trashed or restored what in a
+// folder. The server keeps node ids; names are found and decrypted here, for
+// the items we can still reach.
+// ---------------------------------------------------------------------------
+
+/**
+ * A page of a folder's activity, newest first: [{ ...event, name, parentId }]
+ * with `name` null for items that are gone or out of reach.
+ */
+export async function activity(folder, before = null) {
+  const q = before ? `?before=${before}` : '';
+  const events = await api('GET', `/api/nodes/${folder.node.id}/activity${q}`);
+  const ids = [...new Set(events.map((e) => e.node_id))];
+  const found = new Map();
+  // A few at a time: each is a request.
+  for (let i = 0; i < ids.length; i += 6) {
+    await Promise.all(
+      ids.slice(i, i + 6).map(async (id) => {
+        try {
+          const { items } = await resolvePath(id);
+          const it = items[items.length - 1];
+          found.set(id, { name: it.meta.name, parentId: it.node.parent_id });
+        } catch {
+          found.set(id, null);
+        }
+      }),
+    );
+  }
+  return events.map((e) => ({ ...e, name: found.get(e.node_id)?.name ?? null, parentId: found.get(e.node_id)?.parentId ?? null }));
+}
+
+// ---------------------------------------------------------------------------
+// Comments: encrypted under the node key, so whoever can open the node can
+// read them. Each is bound to the node, its id and its author, so the server
+// can't move one or put it in someone else's name.
+// ---------------------------------------------------------------------------
+
+/** Longest comment, in characters. */
+export const MAX_COMMENT = 4000;
+
+/** A node's comments, oldest first, with `text` (null if it doesn't open) and the exact time `at`. */
+export async function comments(entry) {
+  const list = await api('GET', `/api/nodes/${entry.node.id}/comments`);
+  return list.map((c) => {
+    try {
+      const body = JSON.parse(dec.decode(tc.decrypt_comment(entry.key, entry.node.id, c.id, c.author_id, unb64(c.enc_body))));
+      return { ...c, text: String(body.text ?? ''), at: Number(body.at) || c.created_at * 1000 };
+    } catch {
+      return { ...c, text: null, at: c.created_at * 1000 };
+    }
+  });
+}
+
+export async function addComment(entry, text) {
+  const id = tc.new_id();
+  const at = Date.now();
+  const body = enc.encode(JSON.stringify({ text, at }));
+  const sealed = tc.encrypt_comment(entry.key, entry.node.id, id, session.me.user_id, body);
+  const c = await api('POST', `/api/nodes/${entry.node.id}/comments`, { body: { id, enc_body: b64(sealed) } });
+  return { ...c, text, at };
+}
+
+export const deleteComment = (id) => api('DELETE', `/api/comments/${id}`);
 
 // ---------------------------------------------------------------------------
 // Profile pictures: encrypted under our avatar key, which is sealed to each

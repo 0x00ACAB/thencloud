@@ -106,7 +106,11 @@
         {#each existing as l (l.id)}
           <li class="flex items-center gap-2 px-3 py-2">
             <div class="min-w-0 flex-1">
-              <p class="truncate font-mono text-[13px] {created?.id === l.id ? 'text-accent-text' : ''}">{l.url}</p>
+              {#if l.url}
+                <p class="truncate font-mono text-[13px] {created?.id === l.id ? 'text-accent-text' : ''}">{l.url}</p>
+              {:else}
+                <p class="text-[13px] text-fg-muted">Made before link passwords were part of the key. It can't be opened; delete it and make a new one.</p>
+              {/if}
               <p class="mt-0.5 flex flex-wrap gap-x-3 text-xs text-fg-muted">
                 <span><Time ms={l.created_at * 1000} prefix="Created " /></span>
                 {#if l.upload_only}<span class="inline-flex items-center gap-1"><Icon name="inbox" class="size-3" />File drop</span>{/if}
@@ -115,9 +119,11 @@
                 {#if l.max_opens}<span>{l.opens} of {l.max_opens} {l.max_opens === 1 ? 'open' : 'opens'} used</span>{/if}
               </p>
             </div>
-            <button type="button" class="btn btn-ghost btn-icon" aria-label="Copy link" title="Copy link" onclick={() => copyText(l.url, 'Link copied')}>
-              <Icon name="copy" />
-            </button>
+            {#if l.url}
+              <button type="button" class="btn btn-ghost btn-icon" aria-label="Copy link" title="Copy link" onclick={() => copyText(l.url, 'Link copied')}>
+                <Icon name="copy" />
+              </button>
+            {/if}
             <button type="button" class="btn btn-ghost btn-icon" aria-label="Delete link" title="Delete link" onclick={() => remove(l)}>
               <Icon name="trash-2" />
             </button>

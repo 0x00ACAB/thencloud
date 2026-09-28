@@ -41,7 +41,8 @@ pub async fn server_secret(db: &SqlitePool) -> Result<[u8; 32]> {
 /// Columns needed to build an [`api::Node`](Node).
 pub const NODE_SELECT: &str = "SELECT n.id, n.parent_id, n.kind, n.owner_id, u.username AS owner, \
      n.enc_key, n.enc_metadata, n.revision, n.created_at, n.updated_at, n.name_tag IS NOT NULL AS name_tagged, \
-     v.id AS v_id, v.enc_content_key AS v_key, v.chunk_count AS v_chunks, v.size AS v_size, v.created_at AS v_created \
+     v.id AS v_id, v.enc_content_key AS v_key, v.chunk_count AS v_chunks, v.size AS v_size, v.created_at AS v_created, \
+     v.thumbnail IS NOT NULL AS v_thumb \
      FROM nodes n JOIN users u ON u.id = n.owner_id \
      LEFT JOIN file_versions v ON v.id = n.current_version_id";
 
@@ -63,6 +64,7 @@ pub struct NodeRow {
     pub v_chunks: Option<i64>,
     pub v_size: Option<i64>,
     pub v_created: Option<i64>,
+    pub v_thumb: bool,
 }
 
 impl NodeRow {
@@ -85,6 +87,7 @@ impl NodeRow {
                     chunk_count: chunks as u32,
                     size,
                     created_at,
+                    has_thumbnail: self.v_thumb,
                 })
             }
             _ => None,

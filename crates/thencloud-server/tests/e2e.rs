@@ -156,6 +156,8 @@ fn meta(name: &str, size: u64) -> Metadata {
         mime: Some("application/octet-stream".into()),
         size,
         mtime: 1_700_000_000_000,
+        changed: None,
+        taken: None,
     }
 }
 
@@ -469,6 +471,30 @@ fn names(nodes: &[Node], parent_key: &Key) -> Vec<String> {
     v
 }
 
+/// What a browser sends for a link with a password, and the secret that
+/// goes after `#`. Upload-only links derive from the fragment they carry
+/// (the owner's identity) and wrap nothing.
+fn link_with_password(node_id: &str, node_key: &Key, password: &str) -> (CreateLinkRequest, Key) {
+    let secret = Key::generate();
+    let k = c::derive_link_password_keys(secret.as_bytes(), password).unwrap();
+    let req = CreateLinkRequest {
+        node_id: node_id.into(),
+        password_auth: Some(B64(k.auth_key.as_bytes().to_vec())),
+        enc_link_key: Some(B64(c::wrap_link_key(&k.kek, node_key, node_id))),
+        enc_link_secret: Some(B64(c::encrypt_link_secret(node_key, &secret, node_id))),
+        expires_at: None,
+        upload_only: false,
+        max_opens: None,
+    };
+    (req, secret)
+}
+
+/// The body of an unlock request: the auth key, never the password.
+fn unlock_body(secret: &Key, password: &str) -> serde_json::Value {
+    let k = c::derive_link_password_keys(secret.as_bytes(), password).unwrap();
+    json!({ "auth": k.auth_key.to_b64() })
+}
+
 fn find_by_name<'a>(nodes: &'a [Node], parent_key: &Key, name: &str) -> &'a Node {
     nodes
         .iter()
@@ -722,25 +748,32 @@ async fn full_lifecycle_is_zero_knowledge() {
     assert_eq!(p.share.unwrap().permission, Permission::Write);
 
     // --- public link with password -----------------------------------------
+    let (req, secret) = link_with_password(&other, &other_key, "letmein");
+    // Every part of it goes together.
+    let mut half = req.clone();
+    half.enc_link_key = None;
     let r = h
-        .call(
-            Method::POST,
-            "/api/links",
-            Some(&alice.token),
-            Some(CreateLinkRequest {
-                node_id: other.clone(),
-                password: Some("letmein".into()),
-                expires_at: None,
-                upload_only: false,
-                max_opens: None,
-            }),
-        )
+        .call(Method::POST, "/api/links", Some(&alice.token), Some(half))
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    let r = h
+        .call(Method::POST, "/api/links", Some(&alice.token), Some(req))
         .await;
     assert_eq!(r.status, StatusCode::CREATED);
     let link: Link = r.json();
     assert!(link.has_password);
-    // What the browser would have: /s/<token>#<key>. Only the token is sent.
-    let fragment_key = other_key.to_b64();
+    // The owner can show the link again: the secret is sealed under the node key.
+    let listed: Vec<Link> = h
+        .get(&format!("/api/links?node_id={other}"), &alice.token)
+        .await
+        .json();
+    let again = listed.iter().find(|l| l.id == link.id).unwrap();
+    assert!(
+        c::decrypt_link_secret(&other_key, again.enc_link_secret.as_ref().unwrap(), &other)
+            .unwrap()
+            == secret
+    );
+    // What the browser would have: /s/<token>#p.<secret>. Only the token is sent.
     let base = format!("/api/public/{}", link.token);
     let r = h
         .raw(Method::GET, &base, None, &[], Body::empty(), None)
@@ -752,7 +785,7 @@ async fn full_lifecycle_is_zero_knowledge() {
             Method::POST,
             &format!("{base}/unlock"),
             None,
-            Some(json!({"password": "nope"})),
+            Some(unlock_body(&secret, "nope")),
         )
         .await;
     assert_eq!(r.status, StatusCode::UNAUTHORIZED);
@@ -761,7 +794,7 @@ async fn full_lifecycle_is_zero_knowledge() {
             Method::POST,
             &format!("{base}/unlock"),
             None,
-            Some(json!({"password": "letmein"})),
+            Some(unlock_body(&secret, "letmein")),
         )
         .await;
     assert_eq!(r.status, StatusCode::OK);
@@ -771,8 +804,15 @@ async fn full_lifecycle_is_zero_knowledge() {
         .raw(Method::GET, &base, None, &lt, Body::empty(), None)
         .await
         .json();
-    let lk = Key::from_b64(&fragment_key).unwrap();
+    // The node key comes wrapped under the password and the secret: without
+    // either, it doesn't open.
+    let wrapped = info.enc_link_key.unwrap();
     let info_node = info.node.unwrap();
+    let wrong = c::derive_link_password_keys(secret.as_bytes(), "nope").unwrap();
+    assert!(c::unwrap_link_key(&wrong.kek, &wrapped, &info_node.id).is_err());
+    let k = c::derive_link_password_keys(secret.as_bytes(), "letmein").unwrap();
+    let lk = c::unwrap_link_key(&k.kek, &wrapped, &info_node.id).unwrap();
+    assert!(lk == other_key);
     assert_eq!(
         c::decrypt_metadata(&lk, &info_node.id, &info_node.enc_metadata)
             .unwrap()
@@ -1227,6 +1267,7 @@ async fn download_version(
             chunk_count: v.chunk_count,
             size: v.size,
             created_at: v.created_at,
+            has_thumbnail: false,
         }),
         ..node.clone()
     };
@@ -1455,7 +1496,9 @@ async fn file_drop_links_are_upload_only_and_zero_knowledge() {
         .unwrap();
     let mk_link = |node_id: String, upload_only: bool| CreateLinkRequest {
         node_id,
-        password: None,
+        password_auth: None,
+        enc_link_key: None,
+        enc_link_secret: None,
         expires_at: None,
         upload_only,
         max_opens: None,
@@ -2412,7 +2455,9 @@ async fn drop_visitors_cannot_prune_the_owners_versions() {
             Some(&alice.token),
             Some(CreateLinkRequest {
                 node_id: inbox.clone(),
-                password: None,
+                password_auth: None,
+                enc_link_key: None,
+                enc_link_secret: None,
                 expires_at: None,
                 upload_only: true,
                 max_opens: None,
@@ -2551,7 +2596,9 @@ async fn trash_hides_restores_and_purges() {
             Some(&alice.token),
             Some(CreateLinkRequest {
                 node_id: folder.clone(),
-                password: None,
+                password_auth: None,
+                enc_link_key: None,
+                enc_link_secret: None,
                 expires_at: None,
                 upload_only: false,
                 max_opens: None,
@@ -4341,7 +4388,9 @@ async fn post_quantum_keys_seal_shares_and_drops() {
             Some(&alice.token),
             Some(CreateLinkRequest {
                 node_id: inbox.clone(),
-                password: None,
+                password_auth: None,
+                enc_link_key: None,
+                enc_link_secret: None,
                 expires_at: None,
                 upload_only: true,
                 max_opens: None,
@@ -4390,12 +4439,21 @@ async fn links_with_limited_opens() {
         .upload(&h, &folder, None, "note.txt", b"read me once")
         .await
         .unwrap();
-    let create = |max_opens, password: Option<&str>, upload_only| CreateLinkRequest {
-        node_id: folder.clone(),
-        password: password.map(Into::into),
-        expires_at: None,
-        upload_only,
-        max_opens,
+    let (with_password, secret) = link_with_password(&folder, &folder_key, "sesame");
+    let create = |max_opens, password: Option<&str>, upload_only| match password {
+        Some(_) => CreateLinkRequest {
+            max_opens,
+            ..with_password.clone()
+        },
+        None => CreateLinkRequest {
+            node_id: folder.clone(),
+            password_auth: None,
+            enc_link_key: None,
+            enc_link_secret: None,
+            expires_at: None,
+            upload_only,
+            max_opens,
+        },
     };
     for bad in [create(Some(0), None, false), create(Some(3), None, true)] {
         let r = h
@@ -4495,7 +4553,7 @@ async fn links_with_limited_opens() {
             Method::POST,
             &format!("{base}/unlock"),
             None,
-            Some(json!({"password": "sesame"})),
+            Some(unlock_body(&secret, "sesame")),
         )
         .await
         .json();
@@ -4905,4 +4963,593 @@ async fn behind_a_proxy_rate_limits_use_forwarded_for() {
         };
         assert_eq!(other, expected, "trust_proxy = {trust}");
     }
+}
+
+#[tokio::test]
+async fn onion_services_limit_by_account_not_by_address() {
+    // Behind Tor every visitor arrives from the same address: failures
+    // from strangers mustn't lock everyone else out.
+    let h = Harness::with_config(|c| c.limit_by_address = false).await;
+    let frank = register(&h, "frank", "pw").await;
+    let bad = Key::generate();
+    for i in 0..15 {
+        let r = h
+            .call(
+                Method::POST,
+                "/api/auth/login",
+                None,
+                Some(LoginRequest {
+                    username: format!("stranger{i}"),
+                    auth_key: B64(bad.as_bytes().to_vec()),
+                    device_name: None,
+                }),
+            )
+            .await;
+        assert_eq!(r.status, StatusCode::UNAUTHORIZED);
+    }
+    assert!(login(&h, "frank", "pw").await.is_ok());
+
+    // Guessing one account's password is still limited.
+    for _ in 0..10 {
+        assert!(login(&h, "frank", "wrong").await.is_err());
+    }
+    assert_eq!(
+        login(&h, "frank", "pw").await.err().unwrap().status,
+        StatusCode::TOO_MANY_REQUESTS
+    );
+
+    // So is guessing a link's password: per link, as there are no addresses.
+    let (folder, folder_key) = frank.mkdir(&h, &frank.root, "Shared").await;
+    let (req, secret) = link_with_password(&folder, &folder_key, "right");
+    let link: Link = h
+        .call(Method::POST, "/api/links", Some(&frank.token), Some(req))
+        .await
+        .json();
+    let (wrong, right) = (unlock_body(&secret, "wrong"), unlock_body(&secret, "right"));
+    let unlock = |body: &serde_json::Value| {
+        let uri = format!("/api/public/{}/unlock", link.token);
+        let (h, body) = (&h, body.clone());
+        async move { h.call(Method::POST, &uri, None, Some(body)).await.status }
+    };
+    for _ in 0..10 {
+        assert_eq!(unlock(&wrong).await, StatusCode::UNAUTHORIZED);
+    }
+    assert_eq!(unlock(&right).await, StatusCode::TOO_MANY_REQUESTS);
+}
+
+#[tokio::test]
+async fn the_server_records_times_to_the_hour() {
+    let h = Harness::new().await;
+    let a = register(&h, "grace", "pw").await;
+    let (folder, _) = a.mkdir(&h, &a.root, "Timed").await;
+    let f = a.upload(&h, &folder, None, "t.txt", b"one").await.unwrap();
+    let f = a.upload(&h, "", Some(&f), "t.txt", b"two").await.unwrap();
+    for v in a.versions(&h, &f.id).await {
+        assert_eq!(v.created_at % 3600, 0);
+    }
+    a.delete(&h, &folder).await;
+    let rows: Vec<(i64, i64, Option<i64>)> =
+        sqlx::query_as("SELECT created_at, updated_at, trashed_at FROM nodes")
+            .fetch_all(&h.state.db)
+            .await
+            .unwrap();
+    assert_eq!(rows.len(), 3); // root, folder, file
+    for (created, updated, trashed) in rows {
+        assert_eq!(created % 3600, 0);
+        assert_eq!(updated % 3600, 0);
+        assert!(trashed.is_none_or(|t| t % 3600 == 0));
+    }
+}
+
+#[tokio::test]
+async fn comments_are_read_by_those_with_access_and_no_one_else() {
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "pw").await;
+    let bob = register(&h, "bob", "pw").await;
+    let carol = register(&h, "carol", "pw").await;
+    let (alice_id, bob_id) = (alice.me(&h).await.user_id, bob.me(&h).await.user_id);
+    let (folder, folder_key) = alice.mkdir(&h, &alice.root, "Reviewed").await;
+    let file = alice
+        .upload(&h, &folder, None, "draft.txt", b"text")
+        .await
+        .unwrap();
+    let file_key = alice.key_of(&h, &file.id).await;
+    let pk: UserPublicKey = h
+        .get("/api/users/bob/public-key", &alice.token)
+        .await
+        .json();
+    let r = h
+        .call(
+            Method::POST,
+            "/api/shares",
+            Some(&alice.token),
+            Some(CreateShareRequest {
+                node_id: folder.clone(),
+                recipient: "bob".into(),
+                wrapped_key: B64(
+                    c::seal_share_key(&sealing_key(&pk), &folder_key, &folder).unwrap()
+                ),
+                permission: Permission::Read,
+                expires_at: None,
+            }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED);
+
+    let uri = format!("/api/nodes/{}/comments", file.id);
+    let post = |who: &Client, author_id: &str, text: &str| {
+        let id = c::new_id();
+        let body = c::encrypt_comment(&file_key, &file.id, &id, author_id, text.as_bytes());
+        (
+            who.token.clone(),
+            CreateCommentRequest {
+                id,
+                enc_body: B64(body),
+            },
+        )
+    };
+    let (t, req) = post(&alice, &alice_id, "COMMENT-SECRET looks good");
+    let r = h.call(Method::POST, &uri, Some(&t), Some(&req)).await;
+    assert_eq!(r.status, StatusCode::CREATED);
+    // The same id again is refused.
+    assert_eq!(
+        h.call(Method::POST, &uri, Some(&t), Some(&req))
+            .await
+            .status,
+        StatusCode::CONFLICT
+    );
+    // A reader can comment too.
+    let (t, req) = post(&bob, &bob_id, "COMMENT-SECRET one typo");
+    let bobs: Comment = h
+        .call(Method::POST, &uri, Some(&t), Some(&req))
+        .await
+        .json();
+    assert_eq!(bobs.author, "bob");
+
+    // Bob reads both, in order; each opens only in its own name.
+    let list: Vec<Comment> = h.get(&uri, &bob.token).await.json();
+    assert_eq!(list.len(), 2);
+    let text = |cm: &Comment| {
+        String::from_utf8(
+            c::decrypt_comment(&file_key, &file.id, &cm.id, &cm.author_id, &cm.enc_body).unwrap(),
+        )
+        .unwrap()
+    };
+    assert_eq!(text(&list[0]), "COMMENT-SECRET looks good");
+    assert_eq!(text(&list[1]), "COMMENT-SECRET one typo");
+    assert!(
+        c::decrypt_comment(&file_key, &file.id, &list[0].id, &bob_id, &list[0].enc_body).is_err(),
+        "a comment can't be put in someone else's name"
+    );
+    assert!(
+        c::decrypt_comment(
+            &file_key,
+            &folder,
+            &list[0].id,
+            &alice_id,
+            &list[0].enc_body
+        )
+        .is_err(),
+        "or moved to another node"
+    );
+
+    // Carol has no access: she can't see them, add one, or delete one.
+    assert_eq!(
+        h.get(&uri, &carol.token).await.status,
+        StatusCode::NOT_FOUND
+    );
+    let (t, req) = post(&carol, "carol", "hello");
+    assert_eq!(
+        h.call(Method::POST, &uri, Some(&t), Some(&req))
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+    let del = |id: &str| format!("/api/comments/{id}");
+    assert_eq!(
+        h.call(
+            Method::DELETE,
+            &del(&list[0].id),
+            Some(&carol.token),
+            None::<()>
+        )
+        .await
+        .status,
+        StatusCode::NOT_FOUND
+    );
+    // Bob can't delete Alice's, only his own; Alice owns the file and can delete any.
+    assert_eq!(
+        h.call(
+            Method::DELETE,
+            &del(&list[0].id),
+            Some(&bob.token),
+            None::<()>
+        )
+        .await
+        .status,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        h.call(
+            Method::DELETE,
+            &del(&bobs.id),
+            Some(&alice.token),
+            None::<()>
+        )
+        .await
+        .status,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        h.get(&uri, &alice.token).await.json::<Vec<Comment>>().len(),
+        1
+    );
+
+    // The text never reaches the disk; deleting the file takes its comments.
+    let mut files = Vec::new();
+    all_files(&h.dir.path().join("data"), &mut files);
+    for p in &files {
+        assert!(
+            !contains(&std::fs::read(p).unwrap(), b"COMMENT-SECRET"),
+            "{}",
+            p.display()
+        );
+    }
+    assert_eq!(alice.delete(&h, &file.id).await, StatusCode::NO_CONTENT);
+    assert_eq!(
+        h.get(&uri, &alice.token).await.status,
+        StatusCode::NOT_FOUND
+    );
+}
+
+#[tokio::test]
+async fn thumbnails_follow_the_current_version() {
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "pw").await;
+    let bob = register(&h, "bob", "pw").await;
+    let (folder, _) = alice.mkdir(&h, &alice.root, "Photos").await;
+    let file = alice
+        .upload(&h, &folder, None, "cat.jpg", b"not really a jpeg")
+        .await
+        .unwrap();
+    let key = alice.key_of(&h, &file.id).await;
+    let v1 = file.version.clone().unwrap();
+    assert!(!v1.has_thumbnail);
+    let get = format!("/api/nodes/{}/thumbnail", file.id);
+    assert_eq!(
+        h.get(&get, &alice.token).await.status,
+        StatusCode::NOT_FOUND
+    );
+
+    let put = |vid: &str| format!("/api/nodes/{}/versions/{vid}/thumbnail", file.id);
+    let thumb = c::encrypt_thumbnail(&key, &file.id, &v1.id, b"THUMB-SECRET small jpeg");
+    let send = |uri: String, token: String, body: Vec<u8>| {
+        let h = &h;
+        async move {
+            h.raw(Method::PUT, &uri, Some(&token), &[], Body::from(body), None)
+                .await
+                .status
+        }
+    };
+    // Only someone who can write the file, and only a thumbnail-sized one.
+    assert_eq!(
+        send(put(&v1.id), bob.token.clone(), thumb.clone()).await,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        send(put(&v1.id), alice.token.clone(), vec![0; 70 * 1024]).await,
+        StatusCode::PAYLOAD_TOO_LARGE
+    );
+    assert_eq!(
+        send(put("no-such-version"), alice.token.clone(), thumb.clone()).await,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        send(put(&v1.id), alice.token.clone(), thumb.clone()).await,
+        StatusCode::NO_CONTENT
+    );
+    let node: Node = h
+        .get(&format!("/api/nodes/{}", file.id), &alice.token)
+        .await
+        .json();
+    assert!(node.version.as_ref().unwrap().has_thumbnail);
+    let r = h.get(&get, &alice.token).await;
+    assert_eq!(r.status, StatusCode::OK);
+    assert_eq!(
+        c::decrypt_thumbnail(&key, &file.id, &v1.id, &r.body).unwrap(),
+        b"THUMB-SECRET small jpeg"
+    );
+
+    // A new version has none until one is made for it; the old one can't
+    // stand in for it, since it's bound to its version.
+    let v2 = alice
+        .upload(&h, "", Some(&node), "cat.jpg", b"another")
+        .await
+        .unwrap();
+    let v2_id = v2.version.as_ref().unwrap().id.clone();
+    assert!(!v2.version.unwrap().has_thumbnail);
+    assert_eq!(
+        h.get(&get, &alice.token).await.status,
+        StatusCode::NOT_FOUND
+    );
+    assert!(c::decrypt_thumbnail(&key, &file.id, &v2_id, &thumb).is_err());
+
+    // Through a public link, as far as the link reaches.
+    assert_eq!(
+        send(
+            put(&v2_id),
+            alice.token.clone(),
+            c::encrypt_thumbnail(&key, &file.id, &v2_id, b"THUMB-SECRET v2")
+        )
+        .await,
+        StatusCode::NO_CONTENT
+    );
+    let link: Link = h
+        .call(
+            Method::POST,
+            "/api/links",
+            Some(&alice.token),
+            Some(CreateLinkRequest {
+                node_id: folder.clone(),
+                password_auth: None,
+                enc_link_key: None,
+                enc_link_secret: None,
+                expires_at: None,
+                upload_only: false,
+                max_opens: None,
+            }),
+        )
+        .await
+        .json();
+    let r = h
+        .raw(
+            Method::GET,
+            &format!("/api/public/{}/nodes/{}/thumbnail", link.token, file.id),
+            None,
+            &[],
+            Body::empty(),
+            None,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+    assert_eq!(
+        c::decrypt_thumbnail(&key, &file.id, &v2_id, &r.body).unwrap(),
+        b"THUMB-SECRET v2"
+    );
+
+    let mut files = Vec::new();
+    all_files(&h.dir.path().join("data"), &mut files);
+    for p in &files {
+        assert!(
+            !contains(&std::fs::read(p).unwrap(), b"THUMB-SECRET"),
+            "{}",
+            p.display()
+        );
+    }
+}
+
+#[tokio::test]
+async fn activity_shows_who_did_what_to_those_who_can_see_the_folder() {
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "pw").await;
+    let bob = register(&h, "bob", "pw").await;
+    let carol = register(&h, "carol", "pw").await;
+    let (team, team_key) = alice.mkdir(&h, &alice.root, "Team").await;
+    let (inner, _) = alice.mkdir(&h, &team, "Drafts").await;
+    let (elsewhere, elsewhere_key) = alice.mkdir(&h, &alice.root, "Private").await;
+    let pk: UserPublicKey = h
+        .get("/api/users/bob/public-key", &alice.token)
+        .await
+        .json();
+    let r = h
+        .call(
+            Method::POST,
+            "/api/shares",
+            Some(&alice.token),
+            Some(CreateShareRequest {
+                node_id: team.clone(),
+                recipient: "bob".into(),
+                wrapped_key: B64(c::seal_share_key(&sealing_key(&pk), &team_key, &team).unwrap()),
+                permission: Permission::Write,
+                expires_at: None,
+            }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED);
+
+    // Bob adds a file deep in the share and saves it twice; Alice renames
+    // it, then moves it out to a folder Bob can't see, then trashes the
+    // inner folder.
+    let file = bob
+        .upload(&h, &inner, None, "plan.txt", b"one")
+        .await
+        .unwrap();
+    let file = bob
+        .upload(&h, "", Some(&file), "plan.txt", b"two")
+        .await
+        .unwrap();
+    bob.upload(&h, "", Some(&file), "plan.txt", b"three")
+        .await
+        .unwrap();
+    let file_key = alice.key_of(&h, &file.id).await;
+    let meta = c::encrypt_metadata(&file_key, &file.id, &meta("plan-v2.txt", 5)).unwrap();
+    let node: Node = h
+        .get(&format!("/api/nodes/{}", file.id), &alice.token)
+        .await
+        .json();
+    let r = h
+        .call(
+            Method::PATCH,
+            &format!("/api/nodes/{}", file.id),
+            Some(&alice.token),
+            Some(UpdateNodeRequest {
+                enc_metadata: Some(B64(meta)),
+                parent_id: None,
+                enc_key: None,
+                if_revision: Some(node.revision),
+                name_tag: None,
+            }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{r:?}");
+    let r = h
+        .call(
+            Method::PATCH,
+            &format!("/api/nodes/{}", file.id),
+            Some(&alice.token),
+            Some(UpdateNodeRequest {
+                enc_metadata: None,
+                parent_id: Some(elsewhere.clone()),
+                enc_key: Some(B64(c::wrap_node_key(&elsewhere_key, &file_key, &file.id))),
+                if_revision: None,
+                name_tag: None,
+            }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{r:?}");
+    assert_eq!(alice.delete(&h, &inner).await, StatusCode::NO_CONTENT);
+
+    let list = |who: &Client, folder: &str| {
+        let (h, uri, token) = (
+            &h,
+            format!("/api/nodes/{folder}/activity"),
+            who.token.clone(),
+        );
+        async move { h.get(&uri, &token).await }
+    };
+    let events: Vec<ActivityEvent> = list(&bob, &team).await.json();
+    let seen: Vec<(String, String, String)> = events
+        .iter()
+        .map(|e| (e.actor.clone(), e.kind.clone(), e.node_id.clone()))
+        .collect();
+    let ev = |a: &str, k: &str, n: &str| (a.to_string(), k.to_string(), n.to_string());
+    // Newest first. The two saves in one hour are one "changed"; everything
+    // stays in Team's history though the file has left it.
+    assert_eq!(
+        seen,
+        vec![
+            ev("alice", "trashed", &inner),
+            ev("alice", "moved", &file.id),
+            ev("alice", "renamed", &file.id),
+            ev("bob", "changed", &file.id),
+            ev("bob", "added", &file.id),
+            ev("alice", "added", &inner),
+        ]
+    );
+    assert!(events[0].folder && !events[1].folder);
+    assert_eq!(events[0].at % 3600, 0, "to the hour");
+    // Paging.
+    let older: Vec<ActivityEvent> = h
+        .get(
+            &format!("/api/nodes/{team}/activity?before={}", events[2].id),
+            &bob.token,
+        )
+        .await
+        .json();
+    assert_eq!(older.len(), 3);
+    // The move shows where it went too, but only to those who can see there.
+    let private: Vec<ActivityEvent> = list(&alice, &elsewhere).await.json();
+    assert_eq!(private.len(), 1);
+    assert_eq!(private[0].kind, "moved");
+    assert_eq!(list(&bob, &elsewhere).await.status, StatusCode::NOT_FOUND);
+    assert_eq!(list(&carol, &team).await.status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn live_changes_reach_those_watching_the_folder() {
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "pw").await;
+    let bob = register(&h, "bob", "pw").await;
+    let (team, _) = alice.mkdir(&h, &alice.root, "Team").await;
+    let (inner, _) = alice.mkdir(&h, &team, "Inner").await;
+    let (other, _) = alice.mkdir(&h, &alice.root, "Other").await;
+    let uri = format!("/api/nodes/{team}/changes");
+    assert_eq!(h.get(&uri, &bob.token).await.status, StatusCode::NOT_FOUND);
+
+    let req = Request::builder()
+        .uri(&uri)
+        .header("authorization", format!("Bearer {}", alice.token))
+        .body(Body::empty())
+        .unwrap();
+    let res = h.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    assert!(
+        res.headers()[axum::http::header::CONTENT_TYPE]
+            .to_str()
+            .unwrap()
+            .starts_with("text/event-stream")
+    );
+    let mut body = res.into_body();
+
+    // A change elsewhere, then one deep inside the folder being watched.
+    alice
+        .upload(&h, &other, None, "elsewhere.txt", b"x")
+        .await
+        .unwrap();
+    let file = alice
+        .upload(&h, &inner, None, "LIVE-SECRET.txt", b"y")
+        .await
+        .unwrap();
+    let mut got = String::new();
+    while !got.contains("\n\n") {
+        let frame = tokio::time::timeout(std::time::Duration::from_secs(5), body.frame())
+            .await
+            .expect("a change arrives")
+            .unwrap()
+            .unwrap();
+        if let Ok(data) = frame.into_data() {
+            got.push_str(std::str::from_utf8(&data).unwrap());
+        }
+    }
+    assert!(got.starts_with("event: change\n"), "{got}");
+    assert!(
+        got.contains(&file.id),
+        "only the watched folder's change: {got}"
+    );
+    assert!(!got.contains("LIVE-SECRET"), "ids only: {got}");
+
+    // A new folder counts too.
+    let (made, _) = alice.mkdir(&h, &team, "New").await;
+    let mut got = String::new();
+    while !got.contains("\n\n") {
+        let frame = tokio::time::timeout(std::time::Duration::from_secs(5), body.frame())
+            .await
+            .expect("a new folder arrives")
+            .unwrap()
+            .unwrap();
+        if let Ok(data) = frame.into_data() {
+            got.push_str(std::str::from_utf8(&data).unwrap());
+        }
+    }
+    assert!(got.contains(&made), "{got}");
+}
+
+#[tokio::test]
+async fn the_search_index_may_be_bigger_than_other_app_data() {
+    let h = Harness::new().await;
+    let ada = register(&h, "ada", "pw").await;
+    let big = vec![7u8; 3 * 1024 * 1024];
+    let put = |name: &str| {
+        let (h, uri, token, big) = (
+            &h,
+            format!("/api/me/data/{name}"),
+            ada.token.clone(),
+            big.clone(),
+        );
+        async move {
+            h.call(
+                Method::PUT,
+                &uri,
+                Some(&token),
+                Some(PutPrivateData {
+                    data: B64(big),
+                    if_revision: 0,
+                }),
+            )
+            .await
+            .status
+        }
+    };
+    assert_eq!(put("music").await, StatusCode::BAD_REQUEST);
+    assert_eq!(put("search").await, StatusCode::OK);
 }

@@ -11,7 +11,7 @@ const IMAGE = {
 };
 const VIDEO = { mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm', ogv: 'video/ogg', mov: 'video/quicktime' };
 const AUDIO = {
-  mp3: 'audio/mpeg', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg',
+  mp3: 'audio/mpeg', m4a: 'audio/mp4', m4b: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg',
   wav: 'audio/wav', flac: 'audio/flac', weba: 'audio/webm',
 };
 const MARKDOWN = new Set(['md', 'markdown', 'mdown', 'mkd']);
@@ -39,8 +39,8 @@ export function extension(name) {
 
 /**
  * How to preview a file: { kind, type } where kind is image, video, audio,
- * pdf, markdown or text and type is the Blob type to use, or null if there
- * is no preview for it. CSV and TSV are text with `table` set, so they can
+ * pdf, book, markdown or text and type is the Blob type to use, or null if
+ * there is no preview for it. A book has `format` (epub or cbz). CSV and TSV are text with `table` set, so they can
  * be shown as a table and still edited as text.
  */
 export function previewKind(meta) {
@@ -50,6 +50,7 @@ export function previewKind(meta) {
   if (VIDEO[ext]) return { kind: 'video', type: VIDEO[ext] };
   if (AUDIO[ext]) return { kind: 'audio', type: AUDIO[ext] };
   if (ext === 'pdf' || mime === 'application/pdf') return { kind: 'pdf', type: 'application/pdf' };
+  if (ext === 'epub' || ext === 'cbz') return { kind: 'book', type: 'application/octet-stream', format: ext };
   if (MARKDOWN.has(ext) || mime === 'text/markdown') return { kind: 'markdown', type: 'text/plain' };
   if (ext === 'csv' || ext === 'tsv') return { kind: 'text', type: 'text/plain', table: true };
   if (

@@ -12,6 +12,7 @@ import { session, resolvePath, walkTree, openEntry, fetchEntry, loadAppData, sav
 import { putFolderImage } from './cover.js';
 import { previewKind } from './preview.js';
 import { parseTags } from './tags.js';
+import { readChapters } from './chapters.js';
 import { toast, errorMessage } from './ui.svelte.js';
 
 // ---------------------------------------------------------------- library
@@ -112,8 +113,11 @@ export function albumTracks(album) {
 
 // ------------------------------------------------- playlists and edits
 
-const NO_DATA = { playlists: [], tracks: {}, albums: {} };
-/** `value` is { playlists: [{ id, name, tracks: [node id], at }], tracks: { id: edits }, albums: { id: edits } }. */
+const NO_DATA = { playlists: [], tracks: {}, albums: {}, positions: {} };
+/**
+ * `value` is { playlists: [{ id, name, tracks: [node id], at }], tracks: { id: edits },
+ * albums: { id: edits }, positions: { id: { t, at } } } (where long tracks were left off).
+ */
 export const saved = new (class {
   value = $state.raw(NO_DATA);
 })();
@@ -321,6 +325,23 @@ function learn(track, bytes) {
 
 // ----------------------------------------------------------------- player
 
+function readRate() {
+  try {
+    const v = parseFloat(localStorage.getItem('playbackRate'));
+    return RATES.includes(v) ? v : 1;
+  } catch {
+    return 1;
+  }
+}
+
+export const RATES = [0.75, 1, 1.25, 1.5, 1.75, 2];
+
+// Audiobooks, podcasts and other long tracks remember where they were left
+// off, and pick up there next time.
+const LONG = 20 * 60;
+const MAX_POSITIONS = 300;
+const isLong = (track, duration) => /\.m4b$/i.test(track.entry.meta.name) || duration >= LONG;
+
 function readVolume() {
   try {
     const v = parseFloat(localStorage.getItem('volume'));
@@ -343,6 +364,8 @@ export const player = new (class {
   repeat = $state('off'); // off | all | one
   volume = $state(readVolume());
   muted = $state(false);
+  rate = $state(readRate());
+  chapters = $state.raw([]); // [{ start, title }] of the current track
 })();
 
 export const current = () => player.queue[player.index] ?? null;
@@ -358,13 +381,20 @@ function element() {
   audio = new Audio();
   audio.preload = 'auto';
   audio.volume = player.volume;
-  audio.addEventListener('timeupdate', () => (player.time = audio.currentTime));
+  audio.addEventListener('timeupdate', () => {
+    player.time = audio.currentTime;
+    if (Date.now() - lastRemembered > 60_000) remember();
+  });
+  audio.addEventListener('loadedmetadata', resume);
   audio.addEventListener('durationchange', () => {
     player.duration = Number.isFinite(audio.duration) ? audio.duration : 0;
     updatePosition();
   });
   audio.addEventListener('play', () => (player.playing = true));
-  audio.addEventListener('pause', () => (player.playing = false));
+  audio.addEventListener('pause', () => {
+    player.playing = false;
+    remember();
+  });
   audio.addEventListener('waiting', () => (player.buffering = true));
   audio.addEventListener('playing', () => {
     player.buffering = false;
@@ -398,9 +428,12 @@ function release() {
 }
 
 async function load(autoplay = true) {
+  remember(); // the track being left, before anything changes
   const track = current();
   const seq = ++loadSeq;
   const a = element();
+  loaded = track;
+  player.chapters = [];
   // Detach the old stream first, or its closing reads as an error here.
   a.pause();
   a.removeAttribute('src');
@@ -410,6 +443,8 @@ async function load(autoplay = true) {
   updateSession();
   try {
     const type = previewKind(track.entry.meta).type;
+    // Where long tracks were left off (also when playing from My files).
+    await loadSaved();
     const { streamsAvailable, serveFile } = await import('./stream.js');
     let src;
     if (await streamsAvailable()) {
@@ -435,6 +470,8 @@ async function load(autoplay = true) {
     }
     if (seq !== loadSeq) return;
     a.src = src;
+    a.defaultPlaybackRate = a.playbackRate = player.rate;
+    findChapters(track, seq);
     if (autoplay) await a.play();
     else player.buffering = false;
   } catch (e) {
@@ -452,6 +489,7 @@ function failed(e) {
 }
 
 function ended() {
+  forget(current());
   if (player.repeat === 'one') {
     audio.currentTime = 0;
     audio.play();
@@ -580,6 +618,8 @@ export function removeFromQueue(i) {
 
 /** Stop and empty the queue. */
 export function stop() {
+  remember();
+  loaded = null;
   loadSeq++;
   release();
   if (audio) {
@@ -587,7 +627,7 @@ export function stop() {
     audio.removeAttribute('src');
     audio.load();
   }
-  Object.assign(player, { queue: [], index: -1, playing: false, buffering: false, time: 0, duration: 0 });
+  Object.assign(player, { queue: [], index: -1, playing: false, buffering: false, time: 0, duration: 0, chapters: [] });
   original = [];
   if ('mediaSession' in navigator) navigator.mediaSession.metadata = null;
 }
@@ -614,10 +654,79 @@ function updateSession() {
   navigator.mediaSession.metadata = new MediaMetadata({ title: i.title, artist: i.artist, album: i.album, artwork: i.cover ? [{ src: i.cover }] : [] });
 }
 
+let loaded = null; // the track the element holds
+let lastRemembered = 0;
+
+/** Save where a long track is, so it can pick up there next time. */
+function remember() {
+  const track = loaded;
+  lastRemembered = Date.now();
+  if (!track || !audio || !player.duration || !isLong(track, player.duration)) return;
+  const t = Math.floor(audio.currentTime);
+  // Near either end there's nothing worth coming back to.
+  if (t < 15 || t > player.duration - 30) return forget(track);
+  if (saved.value.positions?.[track.id]?.t === t) return;
+  savePosition(track.id, { t, at: Date.now() });
+}
+
+function forget(track) {
+  if (track && saved.value.positions?.[track.id]) savePosition(track.id, null);
+}
+
+function savePosition(id, pos) {
+  update((d) => {
+    if (pos) d.positions[id] = pos;
+    else delete d.positions[id];
+    // Keep the most recent few hundred.
+    const all = Object.entries(d.positions);
+    if (all.length > MAX_POSITIONS) {
+      all.sort((a, b) => b[1].at - a[1].at);
+      d.positions = Object.fromEntries(all.slice(0, MAX_POSITIONS));
+    }
+  }).catch(() => {});
+}
+
+function resume() {
+  const track = loaded;
+  const pos = track && saved.value.positions?.[track.id];
+  if (!pos || !isLong(track, audio.duration) || pos.t >= audio.duration - 30) return;
+  audio.currentTime = pos.t;
+  toast(`Picked up where you left off, at ${formatTime(pos.t)}`, { icon: 'play' });
+}
+
+/** Chapters from an M4B/MP4, read from its moov box (a few pieces at most). */
+async function findChapters(track, seq) {
+  if (!/\.(m4b|m4a|mp4)$/i.test(track.entry.meta.name)) return;
+  const list = await readChapters(openEntry(track.entry));
+  if (seq === loadSeq) player.chapters = list;
+}
+
+/** Whether the current track is long enough for speed and chapters to matter. */
+export const longForm = () => !!current() && (isLong(current(), player.duration) || player.chapters.length > 0);
+
+/** The chapter playing at `time`, as an index into player.chapters, or -1. */
+export function chapterAt(time) {
+  const c = player.chapters;
+  let i = -1;
+  while (i + 1 < c.length && c[i + 1].start <= time + 0.5) i++;
+  return i;
+}
+
+export function setRate(r) {
+  player.rate = r;
+  if (audio) audio.defaultPlaybackRate = audio.playbackRate = r;
+  updatePosition();
+  try {
+    localStorage.setItem('playbackRate', String(r));
+  } catch {
+    /* private mode */
+  }
+}
+
 function updatePosition() {
   if (!('mediaSession' in navigator) || !player.duration) return;
   try {
-    navigator.mediaSession.setPositionState({ duration: player.duration, position: Math.min(player.time, player.duration), playbackRate: 1 });
+    navigator.mediaSession.setPositionState({ duration: player.duration, position: Math.min(player.time, player.duration), playbackRate: player.rate });
   } catch {
     /* not supported here */
   }

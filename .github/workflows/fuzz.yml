@@ -26,7 +26,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [crypto-decode, sealed-box, webauthn-register, webauthn-assert, api-json, server-input]
+        target: [crypto-decode, sealed-box, webauthn-register, webauthn-assert, api-json, server-input, backup-read]
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@nightly

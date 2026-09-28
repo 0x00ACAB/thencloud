@@ -4,7 +4,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const ICONS = [
-  'cloud', 'folder', 'folder-open', 'folder-plus', 'file', 'file-text', 'file-image', 'file-video',
+  'message-square', 'layout-grid', 'history', 'cloud', 'folder', 'folder-open', 'folder-plus', 'file', 'file-text', 'file-image', 'file-video',
   'file-audio', 'file-archive', 'file-code', 'upload', 'download', 'pencil', 'move', 'share-2', 'link',
   'trash-2', 'ellipsis', 'chevron-right', 'log-out', 'settings', 'users', 'user', 'lock', 'key-round',
   'shield-check', 'fingerprint', 'copy', 'check', 'x', 'sun', 'moon', 'monitor', 'hard-drive', 'inbox', 'globe',
@@ -15,7 +15,7 @@ const ICONS = [
   'list-checks', 'table', 'between-horizontal-end', 'between-vertical-end', 'grid-2x2-x', 'columns-2',
   'music', 'play', 'pause', 'skip-forward', 'skip-back', 'shuffle', 'repeat', 'repeat-1', 'volume-2', 'volume-1', 'volume-x',
   'list-music', 'disc-3', 'audio-lines', 'list-start', 'list-end',
-  'list-plus', 'image', 'clapperboard', 'tv', 'film', 'star', 'star-off', 'clock', 'captions',
+  'list-plus', 'image', 'clapperboard', 'tv', 'film', 'star', 'star-off', 'clock', 'captions', 'notebook-pen', 'pin', 'pin-off',
 ];
 
 const out = {};

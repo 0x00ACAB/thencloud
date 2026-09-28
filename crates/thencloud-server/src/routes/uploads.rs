@@ -18,6 +18,7 @@ use crate::access::{self, Access};
 use crate::auth::AuthUser;
 use crate::db::get_node;
 use crate::error::{AppError, Result, is_fk_violation, is_unique_violation};
+use crate::routes::activity::{self, Event};
 use crate::routes::versions;
 use crate::util::*;
 
@@ -383,6 +384,7 @@ pub async fn publish(
         Uploader::Link(l) => (l.owner_id.clone(), true),
     };
 
+    // Node and version times are recorded to the hour only.
     let t = coarse_now();
     let mut tx = state.db.begin().await?;
     if let Some(parent) = &up.parent_id {
@@ -471,6 +473,15 @@ pub async fn publish(
 
     for (v, _) in excess {
         state.blobs.delete_version(&v).await;
+    }
+    // Files dropped through a link show up when the owner takes them in.
+    if !dropped {
+        let what = if up.parent_id.is_some() {
+            Event::Added
+        } else {
+            Event::Changed
+        };
+        activity::note(state, &created_by, &up.node_id, what, None).await;
     }
     Ok(Json(
         get_node(&state.db, &up.node_id)

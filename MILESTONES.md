@@ -108,23 +108,23 @@ Smaller things:
 - [x] **Passkeys**: WebAuthn as a second step after the password, and with the PRF extension a way to sign in without it: the browser wraps a copy of the master key under a key from the passkey's PRF output, and the server hands that copy out only after checking the passkey. Settings shows which passkeys can sign in on their own
 - [x] **Two-factor codes (TOTP)** as a server-side gate on login, for people without passkeys. Set up with a QR code; only the TOTP secret is stored, never a key, and each code works once. App passwords and the recovery key skip the second step
 - [x] **Post-quantum sealing**: every account has an ML-KEM-768 key next to its X25519 one (older accounts get one on their next sign-in), and keys sealed to other users (shares, profile picture keys, file drops) use both, so recorded shares can't be opened later by a quantum computer. Fingerprints and verified contacts cover both keys
-- [ ] **Link passwords in the key**: optionally derive part of a public link's key from its password, so the server can't skip the password check
+- [x] **Link passwords in the key**: optionally derive part of a public link's key from its password, so the server can't skip the password check. Links with a password carry `#p.<secret>`; the node key is wrapped under a KEK from the secret and the password, and visitors unlock with an auth key derived from the password, which never reaches the server
 - [x] **One-time and counted links**: a download limit on public links, and "expires after first open". An open is one visit to the link page, counted by the server, which hands that visit a signed token for the rest of it (browsing, downloads, streaming); once they're used up the link is gone for new visitors, while visits under way can finish
 - [x] **Delete my account** from Settings, with the password and a typed confirmation. Not from an app password, and the only admin can't leave others without one
-- [ ] **Account export**: everything decrypted into a zip in the browser (streamed), plus an encrypted backup the CLI can restore to another server
+- [x] **Account export**: everything decrypted into a zip in the browser (streamed), plus an encrypted backup the CLI can restore to another server. Settings, "Export your data": My files plus library data and contacts as JSON. `thencloud backup <folder> <file>` writes one file under a new backup key shown once; `thencloud restore <file> <folder>` puts it back on any server, encrypted afresh there
 
 ## Milestone 6: Everyday files
 
-- [ ] **Encrypted thumbnails**: made in the browser on upload (images, video frames, PDF first pages), encrypted under the file's key and stored as a small side blob; a grid view that uses them
-- [ ] **Photos**: a timeline of a chosen folder by date taken (EXIF read in the browser, like music tags), with albums and a lightbox
+- [x] **Encrypted thumbnails**: made in the browser on upload (images, video frames, PDF first pages), encrypted under the file's key and stored as a small side blob; a grid view that uses them. A JPEG of up to 256 px from the uploader's own file (a frame a little way into a video, a PDF's first page), sealed under the node key and bound to its version, kept with the version; My files has a list/grid switch
+- [x] **Photos**: a timeline of a chosen folder by date taken (EXIF read in the browser, like music tags), with albums and a lightbox. The date is read at upload into the encrypted metadata (`taken`), so the timeline downloads nothing; albums are folders, tiles are the encrypted thumbnails, and photos open in the preview. A photo cleaned of its details keeps no date either, and sorts by its file time
 - [x] **Strip location on share**: offer to remove GPS and camera details from photos before they're uploaded or shared. JPEG, PNG and WebP; the orientation is kept. Uploads ask (or always remove, or keep: Settings), and sharing a photo that has a location offers to remove it, deleting the older versions too
 - [x] **Favourites and Recent**: kept as node ids in the encrypted app data, shown in the sidebar. Star from a file's menu; files count as recent when previewed or downloaded
-- [ ] **Full-text search**: an encrypted index of text, Markdown and PDF contents built in the browser and saved as app data, so search can look inside files without the server learning the words
+- [x] **Full-text search**: an encrypted index of text, Markdown and PDF contents built in the browser and saved as app data, so search can look inside files without the server learning the words. "Inside files" next to Everywhere: each file's words (up to 4,000, NFC, lower case) by node and version in the "search" app data; text is indexed as it's uploaded, anything else is read when a search needs it, and words match by prefix
 - [ ] **Groups**: share with a group whose key is sealed to each member; adding someone doesn't mean re-sharing everything
 - [x] **Expiry on user shares**, like links have: an expired share gives no access, and the janitor deletes it (and takes back profile picture keys that depended on it)
-- [ ] **Comments on files**, encrypted under the node key so everyone with access (and only them) can read them
+- [x] **Comments on files**, encrypted under the node key so everyone with access (and only them) can read them. From a file or folder's menu; bound to the node, the comment and its author, so the server can't move one or change who wrote it. Anyone who can open the item can comment; authors and the owner can delete
 - [ ] **Files reports**, report a file, an unencrypted copy gets sent to the admin (with an acknowledgement in the reporting process), the admin then may remove the file or mark it as safe
-- [ ] **Activity in shared folders**: who added, changed or deleted what, with names decrypted in the browser. The server already sees these events; it doesn't learn the names
+- [x] **Activity in shared folders**: who added, changed or deleted what, with names decrypted in the browser. The server already sees these events; it doesn't learn the names. Kept 90 days as node ids, kinds and hours, listed under every folder that held the item (both sides of a move); one event per person, item and kind per hour, so autosaves don't flood it. From a folder's menu or the clock button above the list
 - [x] Drag rows onto a folder (or the breadcrumb) to move them
 - [x] Paste to upload (Ctrl+V a screenshot or copied files)
 
@@ -138,11 +138,11 @@ Smaller things:
 - [x] **Health and metrics**: a health check and Prometheus metrics with the same counts the admin view shows, nothing more (`/api/health`; `/api/metrics` only with `--metrics-token`)
 - [x] **Integrity check**: the server checks every blob it expects exists with the right size; the client can verify that everything decrypts and flags what doesn't (`thencloud-server check`, and Settings > Check your files)
 - [ ] **Translations**: move UI strings into message files and pick the language from the browser
-- [ ] **Accessibility pass**: screen reader labels, focus handling in dialogs and menus, and colour contrast checked in both themes and with the tint on
+- [x] **Accessibility pass**: screen reader labels, focus handling in dialogs and menus, and colour contrast checked in both themes and with the tint on. Every text element on the main pages and dialogs measured in the browser against WCAG AA in dark, light and both tinted themes: the faint grey and danger buttons were below 4.5:1 and are fixed. Menus take Home/End, and Tab closes them; icon-only buttons all have names
 
 ## Milestone 8: Hardening
 
-- [ ] **Format spec**: a written description of every ciphertext format, key derivation and wire type, with test vectors that the Rust tests, the WASM build and any other client check against
+- [x] **Format spec**: a written description of every ciphertext format, key derivation and wire type, with test vectors that the Rust tests, the WASM build and any other client check against. `docs/format/README.md` and `vectors.json`: every wrapped key, sealed box, metadata and chunk format with its associated data, the KDFs, name tags, fingerprints, padding and the recovery key encoding, plus ciphertexts that must not open (moved, swapped, cut short)
 - [ ] **Format versions**: a version byte on every ciphertext and a tested path for moving old data to a new format
 - [x] **Fuzzing**: `cargo-fuzz` targets for the crypto decoders and the server's request parsing, and fuzz tests for the untrusted parsers in the browser (`tags.js`, `videotags.js`, the zip and PDF link handling). Also sealed boxes, WebAuthn, and in the browser photos, CSV, subtitles and episode names; in CI on every push and weekly for longer
 - [x] **Browser tests**: Playwright in CI for sign-up, upload, share, public links and previews, including a check that no request carries a name, key or plaintext
@@ -152,20 +152,20 @@ Smaller things:
 
 ## Milestone 9: Less metadata
 
-- [x] **Coarse timestamps**: the server records created and changed times rounded to the hour (the exact times stay in the encrypted metadata). Files show their exact time from the metadata
+- [x] **Coarse timestamps**: the server records created and changed times rounded to the hour (the exact times stay in the encrypted metadata). Nodes, versions and the trash; the metadata's new `changed` field holds the exact time, and items from before fall back to the server's
 - [ ] **Hide file vs folder**: store the node type in the encrypted metadata, so the server sees only nodes that have children or content
-- [ ] **Onion service**: document and test running thencloud as a Tor onion service, so the server doesn't learn clients' IP addresses
+- [x] **Onion service**: document and test running thencloud as a Tor onion service, so the server doesn't learn clients' IP addresses. `--limit-by-address false` keeps one visitor's wrong guesses from locking everyone out (all arrive from Tor's address); passkeys work on `http://…onion`; the browser tests run through Tor with `THENCLOUD_E2E_URL` and `THENCLOUD_E2E_PROXY`
 - [ ] **Uniform upload sizes**: small files uploaded in batches padded to fixed sizes, so upload timing and count give away less
 
 ## Milestone 10: More ways to open files
 
 - [x] **Subtitles**: `.srt` and `.vtt` next to a video are decrypted and shown in the player, with a picker (`Film.en.srt` and the like; SRT is turned into WebVTT in the browser). Renaming a series' files takes its subtitles along
-- [ ] **Books**: an EPUB and comic (CBZ) reader, with reading progress kept in the encrypted app data
-- [ ] **Audiobooks and podcasts**: remember the position per file, chapters from MP4/M4B, and playback speed
+- [x] **Books**: an EPUB and comic (CBZ) reader, with reading progress kept in the encrypted app data. Opens in the preview; our own zip reader (bounds-checked, capped against zip bombs, fuzzed), EPUB chapters through DOMPurify with images from inside the book as blob: URLs and no styles, scripts or remote fetches. Arrow keys turn pages or chapters; where you were is saved a moment after you stop
+- [x] **Audiobooks and podcasts**: remember the position per file, chapters from MP4/M4B, and playback speed. Tracks over 20 minutes (and any .m4b) pick up where they were left, on any device (kept in the encrypted music data); chapters come from the Nero `chpl` box, which ffmpeg and most audiobook tools write
 - [x] **Tables**: CSV and TSV shown as a sortable table instead of plain text, with a Source toggle and editing as text
 - [ ] **Office previews**: DOCX, XLSX, ODT and PPTX rendered in the browser, loaded only when needed and sanitised like Markdown
 - [ ] **PDF tools**: merge, split, rotate and reorder pages in the browser, saved as a new encrypted file
-- [ ] **Notes view**: a folder of Markdown files as a notebook, with a list, search and pinned notes
+- [x] **Notes view**: a folder of Markdown files as a notebook, with a list, search and pinned notes. Saved as you type as new versions, with a choice when a note changed elsewhere; search reads notes' text in the browser; pins are kept in the encrypted app data
 
 ## Milestone 11: People and organisations
 
@@ -178,7 +178,7 @@ Smaller things:
 ## Milestone 12: Sync and scale
 
 - [ ] **Change feed**: `GET /api/changes?since=<cursor>` returns what changed in your trees and shares, so sync clients and the mount don't have to walk the whole tree
-- [ ] **Live updates**: open views refresh when something changes in a shared folder (Server-Sent Events carrying only node ids)
+- [x] **Live updates**: open views refresh when something changes in a shared folder (Server-Sent Events carrying only node ids). `GET /api/nodes/<id>/changes`, fed by the same hook as the activity history; access is checked again for each event. The browser reads it with fetch (the token stays in a header, not the URL) and reloads the folder quietly, waiting while the tab is hidden or a name is being edited
 - [ ] **Large folders**: paginated listings on the server and a virtualised file table, so a folder with 100,000 items stays fast
 - [ ] **PostgreSQL** as an alternative to SQLite for bigger installs
 - [ ] **Several server instances** behind a load balancer, sharing PostgreSQL and the S3 blob store

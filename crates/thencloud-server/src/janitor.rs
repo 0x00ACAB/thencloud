@@ -64,6 +64,7 @@ pub async fn run_once(state: &AppState) -> Result<()> {
     } else {
         0
     };
+    let activity = crate::routes::activity::prune(&state.db).await?;
     state.limiter.prune();
     if !expired.is_empty()
         || sessions.rows_affected() > 0
@@ -71,6 +72,7 @@ pub async fn run_once(state: &AppState) -> Result<()> {
         || !ended.is_empty()
         || trashed > 0
         || thinned > 0
+        || activity > 0
     {
         tracing::info!(
             uploads = expired.len(),
@@ -79,6 +81,7 @@ pub async fn run_once(state: &AppState) -> Result<()> {
             shares = ended.len(),
             trashed,
             thinned,
+            activity,
             "janitor cleaned up"
         );
     }
