@@ -130,7 +130,7 @@ Smaller things:
 
 ## Milestone 7: Clients and self-hosting
 
-- [ ] **Installable app (PWA)**: a manifest and icons, and on Android a share target, so "Share to thencloud" encrypts and uploads from any app
+- [x] **Installable app (PWA)**: a manifest and icons. No share target: its POST would reach the server with the plaintext files whenever the service worker isn't running
 - [ ] **Local WebDAV bridge** in the CLI (`thencloud serve`): serves your files decrypted on 127.0.0.1 only, so macOS Finder, Windows Explorer and iOS Files apps can use them while the server still sees only ciphertext
 - [ ] **Import from Nextcloud**: the CLI reads a Nextcloud account over WebDAV, encrypts locally and uploads, keeping folders and dates
 - [x] **Container image and release binaries**: a Dockerfile, a compose example with a reverse proxy, and binaries built in CI for each release. The image builds the web client like a release, so `verify-web` passes; `--trust-proxy` keeps rate limits per client behind the proxy
@@ -152,7 +152,7 @@ Smaller things:
 
 ## Milestone 9: Less metadata
 
-- [ ] **Coarse timestamps**: the server records created and changed times rounded to the hour (the exact times stay in the encrypted metadata)
+- [x] **Coarse timestamps**: the server records created and changed times rounded to the hour (the exact times stay in the encrypted metadata). Files show their exact time from the metadata
 - [ ] **Hide file vs folder**: store the node type in the encrypted metadata, so the server sees only nodes that have children or content
 - [ ] **Onion service**: document and test running thencloud as a Tor onion service, so the server doesn't learn clients' IP addresses
 - [ ] **Uniform upload sizes**: small files uploaded in batches padded to fixed sizes, so upload timing and count give away less

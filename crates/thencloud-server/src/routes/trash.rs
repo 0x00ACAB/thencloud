@@ -125,7 +125,7 @@ pub async fn restore(
     .bind(req.enc_metadata.as_ref().map(|m| m.0.clone()))
     .bind(retag)
     .bind(req.name_tag.as_ref().map(|t| t.0.clone()))
-    .bind(now())
+    .bind(coarse_now())
     .bind(&id)
     .execute(&state.db)
     .await
