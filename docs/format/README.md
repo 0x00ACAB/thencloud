@@ -111,6 +111,26 @@ KEK:
 kek = HKDF(salt: "thencloud/v1/passkey", ikm: prf_output, info: "thencloud/v1/passkey-kek")
 ```
 
+### Link passwords
+
+A public link with a password carries a random 32-byte `secret` after the
+`#`, not the node key. The password and the secret together make the keys:
+
+```
+salt     = first 16 bytes of SHA256("thencloud/v1/link-salt\0" || secret)
+a        = the password keys above, from (password, salt, default parameters)
+auth_key = HKDF(salt: none,   ikm: a.auth_key, info: "thencloud/v1/link-auth")
+kek      = HKDF(salt: secret, ikm: a.kek,      info: "thencloud/v1/link-kek")
+```
+
+The visitor sends `auth_key` to unlock the link (the server keeps only its
+hash), and gets back the node key wrapped under `kek`. The salt comes from
+the secret, so the server can't guess passwords before it has seen the link,
+and a server that skips the check still hands out nothing it or the visitor
+can open without the password. For an upload-only link, `secret` is the
+owner's identity from the link. Nothing is wrapped there; the password only
+gates uploads.
+
 ### Key pairs
 
 - **X25519**: the secret is 32 random bytes, used as is. The public key is the
@@ -145,6 +165,8 @@ Each of these is `seal(key, plaintext, aad)`:
 | `content-key` | file's node key | content key | `aad("content-key", node_id, version_id)` |
 | `private-data` | MK | any bytes | `aad("private-data", user_id, label)` |
 | `avatar` | the user's avatar key | the image | `aad("avatar", owner_user_id)` |
+| `link-key` | a link password's KEK | node key | `aad("link-key", node_id)` |
+| `link-secret` | the node key | the link's secret, so the owner can show the link again | `aad("link-secret", node_id)` |
 
 Private data labels in use: `contacts` (verified contacts), `avatar-key` (the
 owner's copy of their avatar key), `music`, `videos`, `files` and `notes`
@@ -258,10 +280,13 @@ shorter than that. A hybrid box can't be opened without the ML-KEM key.
 
 ## Public links
 
-A link is `/s/<token>#<base64url(node key)>`. Browsers never send what
-follows `#`, so the key stays on the client. The token only lets the visitor
-fetch the node's ciphertexts. A client must never put the key in a path,
-query string, header, body or log.
+A link is `/s/<token>#<base64url(node key)>`, or with a password
+`/s/<token>#p.<base64url(secret)>` (see [Link passwords](#link-passwords)).
+Browsers never send what follows `#`, so the key stays on the client. The
+token only lets the visitor fetch the node's ciphertexts. A client must
+never put the key, the secret or the password in a path, query string,
+header, body or log. A `p.` link that the server serves without asking for
+the password is refused: it has nothing that opens.
 
 An upload-only link carries the owner's **identity** after the `#` instead
 of a node key. That's 32 bytes, or 64 when the owner has an ML-KEM key. With

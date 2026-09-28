@@ -447,6 +447,69 @@ pub fn unwrap_master_key_passkey(kek: &Key, wrapped: &[u8], credential_id: &[u8]
 }
 
 // ---------------------------------------------------------------------------
+// Link passwords. A public link with a password carries a random secret
+// after `#` instead of the node key. The password and that secret together
+// make a KEK, and the server keeps the node key wrapped under it, handing it
+// out only once the password checks out. So neither the server (which never
+// sees the secret) nor someone with only the link (who doesn't know the
+// password) can open it. The visitor proves the password with an auth key,
+// never the password itself.
+//
+// Argon2's salt comes from the secret, so the server can't start guessing
+// passwords before it has seen the link. For an upload-only link the
+// "secret" is the owner's identity from the link: nothing is decrypted
+// there, so only the auth key is used.
+// ---------------------------------------------------------------------------
+
+/// The Argon2 salt for a link's password (see [`derive_link_keys`]).
+pub fn link_password_salt(secret: &[u8]) -> [u8; SALT_LEN] {
+    let h = Sha256::digest([b"thencloud/v1/link-salt\0".as_slice(), secret].concat());
+    h[..SALT_LEN].try_into().unwrap()
+}
+
+/// Turn the keys [`derive_account_keys`] made from a link's password (with
+/// [`link_password_salt`] and default parameters) into the link's auth key
+/// and KEK. Split from the Argon2 step so browsers can run that in a worker.
+pub fn derive_link_keys(secret: &[u8], from_password: &AccountKeys) -> AccountKeys {
+    let mut auth = [0u8; KEY_LEN];
+    let mut kek = [0u8; KEY_LEN];
+    Hkdf::<Sha256>::new(None, from_password.auth_key.as_bytes())
+        .expand(b"thencloud/v1/link-auth", &mut auth)
+        .expect("valid length");
+    Hkdf::<Sha256>::new(Some(secret), from_password.kek.as_bytes())
+        .expand(b"thencloud/v1/link-kek", &mut kek)
+        .expect("valid length");
+    AccountKeys {
+        auth_key: Key(auth),
+        kek: Key(kek),
+    }
+}
+
+/// Both steps of a link's password keys at once.
+pub fn derive_link_password_keys(secret: &[u8], password: &str) -> Result<AccountKeys> {
+    let k = derive_account_keys(password, &link_password_salt(secret), KdfParams::default())?;
+    Ok(derive_link_keys(secret, &k))
+}
+
+pub fn wrap_link_key(kek: &Key, node_key: &Key, node_id: &str) -> Vec<u8> {
+    seal(kek, node_key.as_bytes(), &aad("link-key", &[node_id]))
+}
+
+pub fn unwrap_link_key(kek: &Key, wrapped: &[u8], node_id: &str) -> Result<Key> {
+    open_key(kek, wrapped, &aad("link-key", &[node_id]))
+}
+
+/// The owner's copy of a link's secret, so the link can be shown again.
+/// Under the node key, like everything else about the node.
+pub fn encrypt_link_secret(node_key: &Key, secret: &Key, node_id: &str) -> Vec<u8> {
+    seal(node_key, secret.as_bytes(), &aad("link-secret", &[node_id]))
+}
+
+pub fn decrypt_link_secret(node_key: &Key, sealed: &[u8], node_id: &str) -> Result<Key> {
+    open_key(node_key, sealed, &aad("link-secret", &[node_id]))
+}
+
+// ---------------------------------------------------------------------------
 // Private account data (e.g. verified contacts): sealed under the master key
 // and bound to the user and a label, so the server can store it but not read
 // it, change it, or swap it with another user's or another kind of data.
@@ -962,6 +1025,27 @@ pub fn encrypt_content(content_key: &Key, version_id: &str, data: &[u8]) -> Vec<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn link_key_needs_password_and_secret() {
+        let (secret, other) = (Key::generate(), Key::generate());
+        let node_key = Key::generate();
+        let k = derive_link_password_keys(secret.as_bytes(), "hunter2").unwrap();
+        let wrapped = wrap_link_key(&k.kek, &node_key, "n1");
+        assert!(unwrap_link_key(&k.kek, &wrapped, "n1").unwrap() == node_key);
+        assert!(unwrap_link_key(&k.kek, &wrapped, "n2").is_err());
+        let wrong = derive_link_password_keys(secret.as_bytes(), "hunter3").unwrap();
+        assert!(unwrap_link_key(&wrong.kek, &wrapped, "n1").is_err());
+        let elsewhere = derive_link_password_keys(other.as_bytes(), "hunter2").unwrap();
+        assert!(unwrap_link_key(&elsewhere.kek, &wrapped, "n1").is_err());
+        // The auth key depends on the secret too, so the server can't
+        // check guesses without the link.
+        assert!(elsewhere.auth_key != k.auth_key);
+        assert!(k.auth_key != k.kek);
+        let sealed = encrypt_link_secret(&node_key, &secret, "n1");
+        assert!(decrypt_link_secret(&node_key, &sealed, "n1").unwrap() == secret);
+        assert!(decrypt_link_secret(&node_key, &sealed, "n2").is_err());
+    }
 
     #[test]
     fn name_tags() {

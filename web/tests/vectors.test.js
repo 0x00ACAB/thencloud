@@ -39,6 +39,8 @@ function openSymmetric(v) {
       return null;
     }
     case 'content-key': return tc.unwrap_content_key(k, sealed, c[0], c[1]);
+    case 'link-key': return tc.unwrap_link_key(k, sealed, c[0]);
+    case 'link-secret': return tc.decrypt_link_secret(k, sealed, c[0]);
     case 'chunk': return tc.decrypt_chunk(k, c[0], Number(c[1]), c[2] === 'last', sealed);
     default: throw new Error(`unknown format ${v.format}`);
   }
@@ -66,7 +68,7 @@ function checkAll(list, open) {
   }
 }
 
-test('vectors: keys derived from passwords, recovery keys, app passwords and passkeys', { skip }, () => {
+test('vectors: keys derived from passwords, recovery keys, app passwords, passkeys and link passwords', { skip }, () => {
   for (const v of vectors.account_keys) {
     const k = tc.derive_account_keys(v.password, bytes(v.salt), JSON.stringify(v.params));
     assert.equal(b64(k.auth_key), v.auth_key);
@@ -84,6 +86,14 @@ test('vectors: keys derived from passwords, recovery keys, app passwords and pas
     assert.deepEqual([b64(d.auth_key), b64(d.kek)], [v.auth_key, v.kek]);
   }
   for (const v of vectors.passkeys) assert.equal(b64(tc.passkey_prf_salt()), v.prf_salt);
+  // The browser splits a link's password keys: Argon2 (in a worker there), then the link step.
+  for (const v of vectors.link_passwords) {
+    const secret = bytes(v.secret);
+    assert.equal(b64(tc.link_password_salt(secret)), v.salt);
+    const a = tc.derive_account_keys(v.password, bytes(v.salt), tc.default_kdf_params());
+    const d = tc.derive_link_keys(secret, a.auth_key, a.kek);
+    assert.deepEqual([b64(d.auth_key), b64(d.kek)], [v.auth_key, v.kek]);
+  }
 });
 
 test('vectors: public keys, identities and fingerprints', { skip }, () => {

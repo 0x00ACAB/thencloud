@@ -5,9 +5,12 @@
   // location.hash here and used only for decryption in this page; it never
   // appears in any request URL, header or body. For a file drop (upload-only
   // link) the fragment holds the owner's public key instead, and files are
-  // sealed to it here before upload.
+  // sealed to it here before upload. A link with a password holds `p.` and
+  // a secret: the folder or file key comes from the server wrapped under the
+  // secret and the password together, and the password itself is never sent
+  // (only an auth key derived from it).
   import { request } from './lib/api.js';
-  import { tc, b64, unb64, encryptMeta, decryptMeta, decryptChildren, fetchFile, openFile, encryptPiece, saveBlob } from './lib/crypto.js';
+  import { tc, b64, unb64, encryptMeta, decryptMeta, decryptChildren, fetchFile, openFile, encryptPiece, saveBlob, deriveLinkKeys } from './lib/crypto.js';
   import { streamsAvailable, streamDownload } from './lib/stream.js';
   import { formatSize, sortEntries } from './lib/format.js';
   import { errorMessage, trackTransfer } from './lib/ui.svelte.js';
@@ -43,13 +46,18 @@
     phase = 'error';
   }
 
+  // With `p.`, the link's secret; the key is then unwrapped after unlocking.
+  const withPassword = location.hash.startsWith('#p.');
+  let linkKek = null;
+
   function readKey() {
-    const fragment = location.hash.slice(1);
+    const fragment = location.hash.slice(withPassword ? 3 : 1);
     if (!token || !fragment) return null;
     try {
       const k = unb64(fragment);
-      // A folder key, or for a file drop the owner's key (32 bytes) or its
-      // X25519 half and the hash of its ML-KEM half (64).
+      // A folder key or a link's secret, or for a file drop the owner's key
+      // (32 bytes) or its X25519 half and the hash of its ML-KEM half (64).
+      if (withPassword) return k.length === 32 ? k : null;
       return k.length === 32 || k.length === 64 ? k : null;
     } catch {
       return null;
@@ -95,13 +103,23 @@
       phase = 'drop';
       return;
     }
+    let nodeKey = rootKey;
+    if (withPassword) {
+      // A server that doesn't ask for the password has nothing we can open.
+      if (!linkKek || !info.enc_link_key) return (phase = 'password');
+      try {
+        nodeKey = tc.unwrap_link_key(linkKek, unb64(info.enc_link_key), info.node.id);
+      } catch {
+        return fail('The key in this link is wrong', 'The password was accepted, but it and the link together do not open this. Make sure you copied the whole link.');
+      }
+    }
     let meta;
     try {
-      meta = decryptMeta(rootKey, info.node);
+      meta = decryptMeta(nodeKey, info.node);
     } catch {
       return fail('The key in this link is wrong', 'The part after the # does not match. Make sure you copied the whole link.');
     }
-    trail = [{ node: info.node, key: rootKey, meta }];
+    trail = [{ node: info.node, key: nodeKey, meta }];
     phase = 'ready';
   }
 
@@ -110,8 +128,10 @@
     unlocking = true;
     unlockError = '';
     try {
-      const r = await request('POST', `${base}/unlock`, { body: { password } });
+      const k = await deriveLinkKeys(rootKey, password);
+      const r = await request('POST', `${base}/unlock`, { body: { auth: b64(k.auth) } });
       linkToken = r.link_token;
+      linkKek = k.kek;
       password = '';
       await load();
     } catch (err) {

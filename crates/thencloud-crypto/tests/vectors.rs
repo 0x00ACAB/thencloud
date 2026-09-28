@@ -110,6 +110,8 @@ fn open_symmetric(v: &Value) -> Result<Vec<u8>> {
             open(&k, &sealed, &aad("metadata", &c))?
         }
         "content-key" => bytes(unwrap_content_key(&k, &sealed, c[0], c[1])?),
+        "link-key" => bytes(unwrap_link_key(&k, &sealed, c[0])?),
+        "link-secret" => bytes(decrypt_link_secret(&k, &sealed, c[0])?),
         "chunk" => decrypt_chunk(&k, c[0], c[1].parse().unwrap(), c[2] == "last", &sealed)?,
         f => panic!("unknown format {f}"),
     })
@@ -188,6 +190,14 @@ fn vectors_match() {
         assert_eq!(passkey_prf_salt().to_vec(), raw(v, "prf_salt"));
         let kek = derive_passkey_kek(&raw(v, "prf_output")).unwrap();
         assert_eq!(kek.as_bytes().to_vec(), raw(v, "kek"));
+    }
+
+    for v in get(&file, "link_passwords").as_array().unwrap() {
+        let secret = raw(v, "secret");
+        assert_eq!(link_password_salt(&secret).to_vec(), raw(v, "salt"));
+        let d = derive_link_password_keys(&secret, text(v, "password")).unwrap();
+        assert_eq!(d.auth_key.as_bytes().to_vec(), raw(v, "auth_key"), "{v}");
+        assert_eq!(d.kek.as_bytes().to_vec(), raw(v, "kek"), "{v}");
     }
 
     for v in get(&file, "keypairs").as_array().unwrap() {
@@ -313,6 +323,24 @@ fn write_vectors() {
         "prf_output": b64(&prf_output),
         "kek": b64(passkey_kek.as_bytes()),
     })];
+
+    let link_secret = key("link secret");
+    let link_keys = derive_link_password_keys(link_secret.as_bytes(), "open sesame").unwrap();
+    let mut link_passwords = vec![];
+    for (secret, password) in [
+        (link_secret.as_bytes().to_vec(), "open sesame"),
+        // A file drop's fragment: an owner's identity (64 bytes here).
+        (bytes("file drop identity", 64), "drop it"),
+    ] {
+        let d = derive_link_password_keys(&secret, password).unwrap();
+        link_passwords.push(json!({
+            "secret": b64(&secret),
+            "password": password,
+            "salt": b64(&link_password_salt(&secret)),
+            "auth_key": b64(d.auth_key.as_bytes()),
+            "kek": b64(d.kek.as_bytes()),
+        }));
+    }
 
     let classic = KeyPair::from_secret(key("classic keypair"));
     let pq = PqKeyPair::from_seed(&bytes("hybrid keypair ml-kem seed", PQ_SEED_LEN)).unwrap();
@@ -509,6 +537,20 @@ fn write_vectors() {
             wrap_content_key(&node_key, &content_key, node, version),
         ),
         sym(
+            "link-key",
+            &link_keys.kek,
+            &[node],
+            node_key.as_bytes(),
+            wrap_link_key(&link_keys.kek, &node_key, node),
+        ),
+        sym(
+            "link-secret",
+            &node_key,
+            &[node],
+            link_secret.as_bytes(),
+            encrypt_link_secret(&node_key, &link_secret, node),
+        ),
+        sym(
             "chunk",
             &content_key,
             &[version, "0", "more"],
@@ -550,6 +592,11 @@ fn write_vectors() {
             &find(&symmetric, "chunk"),
             json!({ "context": [version, "1", "more"] }),
             "chunks swapped",
+        ),
+        reject(
+            &find(&symmetric, "link-key"),
+            json!({ "key": b64(derive_link_password_keys(link_secret.as_bytes(), "open says me").unwrap().kek.as_bytes()) }),
+            "a link's key with the wrong password",
         ),
         reject(
             &find(&symmetric, "private-data"),
@@ -643,6 +690,7 @@ fn write_vectors() {
         "recovery_keys": recovery_keys,
         "app_password_keys": app_password_keys,
         "passkeys": passkeys,
+        "link_passwords": link_passwords,
         "keypairs": keypairs,
         "name_tags": name_tags,
         "padding": padding,

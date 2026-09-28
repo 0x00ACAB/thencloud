@@ -7,7 +7,7 @@
 import { request } from './api.js';
 import {
   tc, b64, unb64, decryptMeta, encryptMeta, unwrapChild, decryptChildren,
-  deriveAccountKeys, fetchFile, openFile, encryptPiece, saveBlob,
+  deriveAccountKeys, deriveLinkKeys, fetchFile, openFile, encryptPiece, saveBlob,
 } from './crypto.js';
 import { sortEntries } from './format.js';
 import { rememberSession, rememberedSession, forgetSession } from './remember.js';
@@ -1251,10 +1251,13 @@ export const deleteShare = (id) => api('DELETE', `/api/shares/${id}`);
 
 /**
  * The key goes in the URL fragment (after #). Browsers never send the
- * fragment to the server, so it only ever exists on the client.
+ * fragment to the server, so it only ever exists on the client. A link with
+ * a password carries `p.` and a secret instead: the node key is wrapped
+ * under the secret and the password together, so the link alone opens
+ * nothing, and neither does a server that skips the password check.
  */
-export function linkUrl(token, nodeKey) {
-  return `${location.origin}/s/${token}#${b64(nodeKey)}`;
+export function linkUrl(token, fragment, withPassword = false) {
+  return `${location.origin}/s/${token}#${withPassword ? 'p.' : ''}${b64(fragment)}`;
 }
 
 /**
@@ -1263,12 +1266,31 @@ export function linkUrl(token, nodeKey) {
  * an ML-KEM key that's too long for a link, so it carries its hash: the
  * page gets the key from the server and checks it.
  */
-const urlFor = (link, entry) => (link.upload_only ? linkUrl(link.token, myIdentity()) : linkUrl(link.token, entry.key));
+function urlFor(link, entry) {
+  if (link.upload_only) return linkUrl(link.token, myIdentity());
+  if (!link.has_password) return linkUrl(link.token, entry.key);
+  // Password links made before passwords were part of the key have no secret.
+  if (!link.enc_link_secret) return null;
+  try {
+    return linkUrl(link.token, tc.decrypt_link_secret(entry.key, unb64(link.enc_link_secret), link.node_id), true);
+  } catch {
+    return null;
+  }
+}
 
 export async function createLink(entry, { password, expiresAt, uploadOnly = false, maxOpens = null }) {
-  const link = await api('POST', '/api/links', {
-    body: { node_id: entry.node.id, password: password || null, expires_at: expiresAt ?? null, upload_only: uploadOnly, max_opens: maxOpens },
-  });
+  const body = { node_id: entry.node.id, expires_at: expiresAt ?? null, upload_only: uploadOnly, max_opens: maxOpens };
+  if (password && uploadOnly) {
+    // Nothing to wrap in a file drop; the password only lets visitors in.
+    body.password_auth = b64((await deriveLinkKeys(myIdentity(), password)).auth);
+  } else if (password) {
+    const secret = tc.random_key();
+    const k = await deriveLinkKeys(secret, password);
+    body.password_auth = b64(k.auth);
+    body.enc_link_key = b64(tc.wrap_link_key(k.kek, entry.key, entry.node.id));
+    body.enc_link_secret = b64(tc.encrypt_link_secret(entry.key, secret, entry.node.id));
+  }
+  const link = await api('POST', '/api/links', { body });
   return { ...link, url: urlFor(link, entry) };
 }
 
