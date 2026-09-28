@@ -28,8 +28,13 @@ use crate::{Client, Entry, Error, now_ms};
 
 /// How long the kernel may cache names and attributes.
 const TTL: Duration = Duration::from_secs(1);
-/// How long a folder listing is reused before asking the server again.
+/// How often the change feed is checked. Listings are reused until it says
+/// something in them changed; without the feed (an older server, or it
+/// failing), they're reused for this long.
 const LIST_TTL: Duration = Duration::from_secs(5);
+/// More changes than this at once and every listing is asked for again,
+/// rather than looking up where each changed node is now.
+const FEED_LOOKUPS: usize = 64;
 const CACHED_CHUNKS: usize = 16;
 /// Renaming a file over another keeps the target's history by uploading the
 /// content as a new version of it, up to this size (editors save this way).
@@ -74,7 +79,11 @@ struct Buffer {
 struct State {
     inodes: HashMap<u64, Inode>,
     by_id: HashMap<String, u64>,
-    dirs: HashMap<u64, (Instant, Vec<u64>)>,
+    /// Folder listings: when fetched, the children, and whether they're known
+    /// to be out of date.
+    dirs: HashMap<u64, (Instant, Vec<u64>, bool)>,
+    /// The change feed's cursor and when it was last checked.
+    feed: Option<(i64, Instant)>,
     buffers: HashMap<u64, Buffer>,
     /// Open file handles to their inode.
     handles: HashMap<u64, u64>,
@@ -132,14 +141,14 @@ impl State {
 
     fn detach(&mut self, ino: u64) {
         if let Some(i) = self.inodes.get(&ino)
-            && let Some((_, kids)) = self.dirs.get_mut(&i.parent)
+            && let Some((_, kids, _)) = self.dirs.get_mut(&i.parent)
         {
             kids.retain(|k| *k != ino);
         }
     }
 
     fn attach(&mut self, ino: u64, parent: u64) {
-        if let Some((_, kids)) = self.dirs.get_mut(&parent) {
+        if let Some((_, kids, _)) = self.dirs.get_mut(&parent) {
             kids.push(ino);
         }
     }
@@ -147,7 +156,7 @@ impl State {
     /// Ask the server again on the next listing.
     fn stale(&mut self, dir: u64) {
         if let Some(d) = self.dirs.get_mut(&dir) {
-            d.0 = d.0.checked_sub(LIST_TTL).unwrap_or(d.0);
+            d.2 = true;
         }
     }
 
@@ -245,6 +254,11 @@ impl CloudFs {
                 unlinked: false,
             },
         );
+        // Where the feed stands now, before anything is listed.
+        st.feed = client
+            .changes(None)
+            .ok()
+            .map(|f| (f.cursor, Instant::now()));
         CloudFs {
             client,
             st: Mutex::new(st),
@@ -314,13 +328,71 @@ impl CloudFs {
         })
     }
 
+    /// Mark the listings the change feed says are out of date. Returns
+    /// whether the feed could be read (and so whether listings not marked
+    /// can be trusted).
+    fn follow_changes(&self) -> bool {
+        let Some((mut cursor, checked)) = self.lock().feed else {
+            return false;
+        };
+        if checked.elapsed() < LIST_TTL {
+            return true;
+        }
+        let mut changed = Vec::new();
+        let mut everything = false;
+        loop {
+            let Ok(page) = self.client.changes(Some(cursor)) else {
+                return false;
+            };
+            everything |= page.resync;
+            changed.extend(page.changes.into_iter().map(|c| c.node_id));
+            cursor = page.cursor;
+            if !page.more {
+                break;
+            }
+        }
+        changed.sort();
+        changed.dedup();
+        everything |= changed.len() > FEED_LOOKUPS;
+        // Where each changed node is now; where it was is in the inode table.
+        let mut now_in = Vec::new();
+        if !everything {
+            for id in &changed {
+                match self.client.parent_of(id) {
+                    Ok(p) => now_in.extend(p),
+                    Err(_) => return false,
+                }
+            }
+        }
+        let mut st = self.lock();
+        if everything {
+            for d in st.dirs.values_mut() {
+                d.2 = true;
+            }
+        } else {
+            for id in changed.iter().chain(&now_in) {
+                if let Some(&ino) = st.by_id.get(id) {
+                    let parent = st.inodes.get(&ino).map(|i| i.parent);
+                    st.stale(ino);
+                    if let Some(p) = parent {
+                        st.stale(p);
+                    }
+                }
+            }
+        }
+        st.feed = Some((cursor, Instant::now()));
+        true
+    }
+
     /// A folder's children, from the server if the cached listing is stale.
     fn children(&self, ino: u64, fresh: bool) -> Result<Vec<u64>, Errno> {
+        let following = !fresh && self.follow_changes();
         let folder = {
             let st = self.lock();
-            if let Some((t, kids)) = st.dirs.get(&ino)
+            if let Some((t, kids, stale)) = st.dirs.get(&ino)
                 && !fresh
-                && t.elapsed() < LIST_TTL
+                && !stale
+                && (following || t.elapsed() < LIST_TTL)
             {
                 return Ok(kids.clone());
             }
@@ -334,14 +406,14 @@ impl CloudFs {
         let mut st = self.lock();
         let mut kids: Vec<u64> = list.into_iter().map(|e| st.upsert(ino, e)).collect();
         // New files that aren't on the server yet.
-        if let Some((_, old)) = st.dirs.get(&ino) {
+        if let Some((_, old, _)) = st.dirs.get(&ino) {
             kids.extend(old.iter().filter(|k| {
                 st.inodes
                     .get(k)
                     .is_some_and(|i| i.remote.is_none() && !i.unlinked)
             }));
         }
-        st.dirs.insert(ino, (Instant::now(), kids.clone()));
+        st.dirs.insert(ino, (Instant::now(), kids.clone(), false));
         Ok(kids)
     }
 

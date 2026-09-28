@@ -13,7 +13,7 @@ use axum::response::sse::{Event as SseEvent, KeepAlive, Sse};
 use futures_core::Stream;
 use serde::Deserialize;
 use sqlx::SqlitePool;
-use thencloud_crypto::api::ActivityEvent;
+use thencloud_crypto::api::{ActivityEvent, ChangeFeed, ChangedNode};
 use tokio::sync::broadcast::error::RecvError;
 
 use crate::AppState;
@@ -22,9 +22,11 @@ use crate::auth::AuthUser;
 use crate::error::Result;
 use crate::util::{coarse_now, now};
 
-/// How long events are kept.
+/// How long events are kept (activity and the change feed).
 pub const KEEP_DAYS: i64 = 90;
 const PAGE: i64 = 100;
+/// Changes per page of the feed.
+const FEED_PAGE: i64 = 1000;
 
 #[derive(Clone, Copy)]
 pub enum Event {
@@ -89,8 +91,8 @@ async fn record(
     was_in: Option<&str>,
 ) -> Result<()> {
     let db = &state.db;
-    let Some((parent, is_folder)): Option<(Option<String>, bool)> =
-        sqlx::query_as("SELECT parent_id, kind = 'folder' FROM nodes WHERE id = ?")
+    let Some((parent, is_folder, owner)): Option<(Option<String>, bool, String)> =
+        sqlx::query_as("SELECT parent_id, kind = 'folder', owner_id FROM nodes WHERE id = ?")
             .bind(node_id)
             .fetch_optional(db)
             .await?
@@ -105,6 +107,7 @@ async fn record(
             }
         }
     }
+    feed(db, node_id, &owner, &folders).await?;
     let folders: Arc<[String]> = folders.into();
     // Nobody listening is fine.
     let _ = state.changes.send(Change {
@@ -139,6 +142,101 @@ async fn record(
             .await?;
     }
     Ok(())
+}
+
+/// Add a change to the feed, with every folder that held the node (and the
+/// node itself) as its scope. One transaction, so a reader never sees the
+/// change before its scope; SQLite runs one writer at a time, so changes are
+/// committed in `seq` order and a cursor never skips one still to come.
+async fn feed(db: &SqlitePool, node_id: &str, owner: &str, folders: &[String]) -> Result<()> {
+    let mut tx = db.begin().await?;
+    let seq: i64 = sqlx::query_scalar(
+        "INSERT INTO changes (node_id, owner_id, at) VALUES (?, ?, ?) RETURNING seq",
+    )
+    .bind(node_id)
+    .bind(owner)
+    .bind(coarse_now())
+    .fetch_one(&mut *tx)
+    .await?;
+    for f in folders.iter().map(String::as_str).chain([node_id]) {
+        sqlx::query("INSERT OR IGNORE INTO change_scope (folder_id, seq) VALUES (?, ?)")
+            .bind(f)
+            .bind(seq)
+            .execute(&mut *tx)
+            .await?;
+    }
+    tx.commit().await?;
+    Ok(())
+}
+
+#[derive(Deserialize)]
+pub struct Since {
+    /// The cursor from the last page; without it, just the current cursor
+    /// (take it before walking the tree, then follow changes from there).
+    pub since: Option<i64>,
+}
+
+/// What changed in the caller's tree, and under anything shared with them,
+/// after a cursor: node ids in order, a page at a time.
+pub async fn changes(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Query(q): Query<Since>,
+) -> Result<Json<ChangeFeed>> {
+    let db = &state.db;
+    let latest: i64 = sqlx::query_scalar(
+        "SELECT COALESCE((SELECT seq FROM sqlite_sequence WHERE name = 'changes'), 0)",
+    )
+    .fetch_one(db)
+    .await?;
+    let Some(since) = q.since else {
+        return Ok(Json(ChangeFeed {
+            cursor: latest,
+            ..Default::default()
+        }));
+    };
+    // Everything up to `floor` has been pruned (or never happened).
+    let floor: i64 = sqlx::query_scalar("SELECT COALESCE(MIN(seq) - 1, ?) FROM changes")
+        .bind(latest)
+        .fetch_one(db)
+        .await?;
+    if since < floor || since > latest {
+        return Ok(Json(ChangeFeed {
+            cursor: latest,
+            resync: true,
+            ..Default::default()
+        }));
+    }
+    let mut rows: Vec<(i64, String)> = sqlx::query_as(
+        "SELECT c.seq, c.node_id FROM changes c WHERE c.seq > ?1 AND (c.owner_id = ?2 \
+         OR EXISTS (SELECT 1 FROM change_scope s JOIN shares sh ON sh.node_id = s.folder_id \
+                    WHERE s.seq = c.seq AND sh.recipient_id = ?2 \
+                    AND (sh.expires_at IS NULL OR sh.expires_at > ?3))) \
+         ORDER BY c.seq LIMIT ?4",
+    )
+    .bind(since)
+    .bind(&user.id)
+    .bind(now())
+    .bind(FEED_PAGE + 1)
+    .fetch_all(db)
+    .await?;
+    let more = rows.len() as i64 > FEED_PAGE;
+    rows.truncate(FEED_PAGE as usize);
+    // A full page ends at its last change; otherwise everything up to now
+    // has been seen, including changes the caller can't see.
+    let cursor = match rows.last() {
+        Some((seq, _)) if more => *seq,
+        last => latest.max(since).max(last.map_or(0, |r| r.0)),
+    };
+    Ok(Json(ChangeFeed {
+        changes: rows
+            .into_iter()
+            .map(|(seq, node_id)| ChangedNode { seq, node_id })
+            .collect(),
+        cursor,
+        more,
+        resync: false,
+    }))
 }
 
 /// Live changes in a folder (and the folders in it), as Server-Sent Events:
@@ -229,11 +327,17 @@ pub async fn list(
     ))
 }
 
-/// Drop events older than [`KEEP_DAYS`]. Returns how many went.
+/// Drop events and feed changes older than [`KEEP_DAYS`]. Returns how
+/// many went. A cursor from before then gets `resync`.
 pub async fn prune(db: &SqlitePool) -> Result<u64> {
-    let r = sqlx::query("DELETE FROM activity WHERE at < ?")
-        .bind(now() - KEEP_DAYS * 86_400)
+    let cutoff = now() - KEEP_DAYS * 86_400;
+    let a = sqlx::query("DELETE FROM activity WHERE at < ?")
+        .bind(cutoff)
         .execute(db)
         .await?;
-    Ok(r.rows_affected())
+    let c = sqlx::query("DELETE FROM changes WHERE at < ?")
+        .bind(cutoff)
+        .execute(db)
+        .await?;
+    Ok(a.rows_affected() + c.rows_affected())
 }

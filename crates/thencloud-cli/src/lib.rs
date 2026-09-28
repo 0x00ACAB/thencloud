@@ -216,6 +216,26 @@ impl Client {
         Ok(Entry { node, key, meta })
     }
 
+    /// One page of the change feed: node ids that changed in our tree and
+    /// under anything shared with us after `since`. Without `since`, just
+    /// the current cursor (take it before walking the tree).
+    pub fn changes(&self, since: Option<i64>) -> Result<ChangeFeed> {
+        match since {
+            Some(s) => self.get_json(&format!("/api/changes?since={s}")),
+            None => self.get_json("/api/changes"),
+        }
+    }
+
+    /// The folder a node is in now, or `None` if it's gone (or no longer
+    /// ours to see).
+    pub fn parent_of(&self, id: &str) -> Result<Option<String>> {
+        match self.get_json::<Node>(&format!("/api/nodes/{id}")) {
+            Ok(n) => Ok(n.parent_id),
+            Err(Error::Api(404, ..)) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
     /// A folder's children, folders first, then by name.
     pub fn list(&self, folder: &Entry) -> Result<Vec<Entry>> {
         let nodes: Vec<Node> = self.get_json(&format!("/api/nodes/{}/children", folder.node.id))?;

@@ -948,6 +948,28 @@ pub struct ActivityEvent {
     pub at: i64,
 }
 
+/// One page of the change feed (`GET /api/changes?since=<cursor>`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ChangeFeed {
+    /// Nodes that changed after the cursor, oldest first. A node may appear
+    /// more than once. Only ids: fetch the node to see what it is now (a 404
+    /// means it's gone, or no longer yours to see).
+    pub changes: Vec<ChangedNode>,
+    /// Where to continue from next time.
+    pub cursor: i64,
+    /// More changes wait: ask again with `cursor` straight away.
+    pub more: bool,
+    /// The cursor is older than the history kept: walk the whole tree again,
+    /// then carry on from `cursor`.
+    pub resync: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChangedNode {
+    pub seq: i64,
+    pub node_id: String,
+}
+
 // ---------------------------------------------------------------------------
 // Comments (encrypted under the node key; see `encrypt_comment`)
 // ---------------------------------------------------------------------------
