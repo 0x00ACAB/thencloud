@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { session, changePassword, listSessions, revokeSession, revokeOtherSessions, removeRecoveryKey, listAppPasswords, deleteAppPassword, avatar, loadMyAvatar, setAvatar, removeAvatar, listContacts, forgetContact, forgetThisBrowser, listPasskeys, removePasskey, disableTotp, deleteAccount, verifyTree, resolvePath, exportAccount } from '../../lib/cloud.svelte.js';
+  import { session, changePassword, listSessions, revokeSession, revokeOtherSessions, removeRecoveryKey, listAppPasswords, deleteAppPassword, avatar, loadMyAvatar, setAvatar, removeAvatar, setDisplayName, cleanDisplayName, listContacts, forgetContact, forgetThisBrowser, listPasskeys, removePasskey, disableTotp, deleteAccount, verifyTree, resolvePath, exportAccount } from '../../lib/cloud.svelte.js';
   import { passkeysSupported } from '../../lib/passkeys.js';
   import TotpDialog from '../dialogs/TotpDialog.svelte';
   import PasskeyDialog from '../dialogs/PasskeyDialog.svelte';
@@ -12,6 +12,7 @@
   import { slide } from '../../lib/motion.js';
   import Icon from '../Icon.svelte';
   import Avatar from '../Avatar.svelte';
+  import PersonName from '../PersonName.svelte';
   import Time from '../Time.svelte';
   import FileIcon from '../FileIcon.svelte';
   import FolderIcon from '../FolderIcon.svelte';
@@ -84,9 +85,32 @@
     }
   }
 
-  // Profile picture.
+  // Profile picture and display name.
   let avatarBusy = $state(false);
-  onMount(() => loadMyAvatar().catch(() => {}));
+  let nameDraft = $state('');
+  let nameBusy = $state(false);
+  onMount(() =>
+    loadMyAvatar()
+      .then((a) => (nameDraft = a.name ?? ''))
+      .catch(() => {}),
+  );
+  const nameValid = $derived(!nameDraft.trim() || cleanDisplayName(nameDraft) !== null);
+  const nameChanged = $derived((nameDraft.trim() ? cleanDisplayName(nameDraft) : null) !== avatar.name);
+
+  async function saveName(e) {
+    e.preventDefault();
+    if (!nameValid || !nameChanged) return;
+    nameBusy = true;
+    try {
+      await setDisplayName(nameDraft);
+      nameDraft = avatar.name ?? '';
+      toast(avatar.name ? 'Display name saved' : 'Display name removed', { kind: 'success' });
+    } catch (err) {
+      toastError(err);
+    } finally {
+      nameBusy = false;
+    }
+  }
 
   async function pickAvatar(e) {
     const file = e.currentTarget.files?.[0];
@@ -234,7 +258,7 @@
       {#if avatar.url}
         <img src={avatar.url} alt="You" class="size-16 rounded-full object-cover" />
       {:else}
-        <span class="grid size-16 place-items-center rounded-full bg-muted text-xl font-semibold uppercase" aria-hidden="true">{session.me.username.slice(0, 1)}</span>
+        <span class="grid size-16 place-items-center rounded-full bg-muted text-xl font-semibold uppercase" aria-hidden="true">{[...(avatar.name ?? session.me.username)][0]}</span>
       {/if}
       <div class="grid gap-2">
         <div class="flex flex-wrap gap-2">
@@ -249,6 +273,19 @@
       </div>
     </div>
     <dl class="grid gap-3 text-sm sm:grid-cols-[10rem_1fr]">
+      <dt class="text-fg-muted"><label for="display-name">Display name</label></dt>
+      <dd class="grid max-w-sm gap-1.5">
+        <form class="flex gap-2" onsubmit={saveName}>
+          <input id="display-name" class="input" bind:value={nameDraft} maxlength="64" autocomplete="name" placeholder="None" aria-invalid={!nameValid} aria-describedby="display-name-hint" />
+          <button class="btn btn-secondary shrink-0" disabled={nameBusy || !nameValid || !nameChanged}>
+            {#if nameBusy}<Icon name="loader-circle" class="spinner" />{/if}
+            Save
+          </button>
+        </form>
+        <p id="display-name-hint" class="text-xs {nameValid ? 'text-fg-muted' : 'text-danger'}">
+          {nameValid ? 'Any script, up to 64 characters. Shown next to your username, to the same people who see your picture.' : "That name has characters that can't be used."}
+        </p>
+      </dd>
       <dt class="text-fg-muted">Username</dt>
       <dd class="font-medium">{session.me.username}{#if session.me.is_admin}<span class="badge ml-2">Admin</span>{/if}</dd>
       <dt class="text-fg-muted">Storage</dt>
@@ -287,7 +324,7 @@
           <li class="flex items-center gap-3 px-3 py-2.5" out:slide>
             <Avatar username={c.username} class="size-7 text-xs" />
             <div class="min-w-0 flex-1">
-              <p class="truncate text-sm font-medium">{c.username}</p>
+              <p class="truncate text-sm font-medium"><PersonName username={c.username} /></p>
               <p class="fingerprint truncate text-xs text-fg-muted">{c.fingerprint}</p>
             </div>
             <span class="hidden text-xs text-fg-faint sm:inline">Checked <Time ms={c.verifiedAt} relative /></span>

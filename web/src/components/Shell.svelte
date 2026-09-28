@@ -138,7 +138,7 @@
         <Wordmark />
       </button>
       <span class="text-line-strong select-none" aria-hidden="true">/</span>
-      <span class="truncate text-sm font-medium">{session.me.username}</span>
+      <span class="truncate text-sm font-medium" dir="auto">{avatar.name ?? session.me.username}</span>
       {#if session.me.is_admin}<span class="badge">Admin</span>{/if}
 
       <div class="ml-auto flex items-center gap-1">
@@ -166,7 +166,7 @@
             'sep',
             { label: 'Sign out', icon: 'log-out', onclick: logout },
           ]}>
-          {#snippet trigger()}{#if avatar.url}<img src={avatar.url} alt="" class="size-8 rounded-full object-cover" />{:else}{session.me.username.slice(0, 1)}{/if}{/snippet}
+          {#snippet trigger()}{#if avatar.url}<img src={avatar.url} alt="" class="size-8 rounded-full object-cover" />{:else}{[...(avatar.name ?? session.me.username)][0]}{/if}{/snippet}
         </Menu>
       </div>
     </div>

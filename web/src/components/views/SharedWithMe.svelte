@@ -4,6 +4,7 @@
   import { formatSize } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
   import Avatar from '../Avatar.svelte';
+  import PersonName from '../PersonName.svelte';
   import Time from '../Time.svelte';
   import FileIcon from '../FileIcon.svelte';
   import FolderIcon from '../FolderIcon.svelte';
@@ -87,7 +88,7 @@
               <div class="flex items-center gap-2.5">
                 <Avatar username={s.owner} class="size-7 text-xs" />
                 <div class="min-w-0">
-                  <p class="font-medium">{s.owner}</p>
+                  <p class="font-medium"><PersonName username={s.owner} /></p>
                   {#if s.ownerFingerprint}<p class="font-mono text-[11px] text-fg-faint" title="Owner's key fingerprint">{s.ownerFingerprint}</p>{/if}
                 </div>
               </div>

@@ -978,7 +978,11 @@ pub struct CreateCommentRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SetAvatar {
     /// The picture, encrypted under the avatar key.
-    pub data: B64,
+    #[serde(default)]
+    pub data: Option<B64>,
+    /// The display name, encrypted under the same key (`encrypt_display_name`).
+    #[serde(default)]
+    pub name: Option<B64>,
     /// The avatar key, encrypted under the master key.
     pub enc_key: B64,
 }
@@ -986,6 +990,8 @@ pub struct SetAvatar {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MyAvatar {
     pub data: Option<B64>,
+    #[serde(default)]
+    pub name: Option<B64>,
     pub enc_key: Option<B64>,
     /// Who has been given the avatar key.
     pub grantees: Vec<String>,
@@ -997,10 +1003,13 @@ pub struct AvatarGrant {
     pub sealed_key: B64,
 }
 
-/// Someone else's picture, for a user they gave their avatar key to.
+/// Someone else's picture and display name (either may be missing), for a
+/// user they gave their avatar key to.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserAvatar {
-    pub data: B64,
+    pub data: Option<B64>,
+    #[serde(default)]
+    pub name: Option<B64>,
     pub sealed_key: B64,
     pub updated_at: i64,
 }

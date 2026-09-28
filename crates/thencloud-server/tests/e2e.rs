@@ -2094,21 +2094,49 @@ async fn drafts_are_per_user_writers_only_and_opaque() {
 }
 
 #[tokio::test]
-async fn profile_pictures_are_encrypted_and_only_for_share_partners() {
+async fn profile_pictures_and_display_names_are_encrypted_and_only_for_share_partners() {
     let h = Harness::new().await;
     let alice = register(&h, "alice", "pw").await;
     let bob = register(&h, "bob", "pw").await;
     let carol = register(&h, "carol", "pw").await;
     let alice_id = alice.me(&h).await.user_id;
     let picture = b"AVATAR-PNG-SECRET-PIXELS";
+    let display_name = "Alice Pleasance Secretname";
     let ak = Key::generate();
+    let enc_key = B64(c::encrypt_private_data(
+        &alice.mk,
+        &alice_id,
+        "avatar-key",
+        ak.as_bytes(),
+    ));
+    // Nothing to set, or a name that isn't the fixed padded size: refused.
+    for bad in [
+        SetAvatar {
+            data: None,
+            name: None,
+            enc_key: enc_key.clone(),
+        },
+        SetAvatar {
+            data: None,
+            name: Some(B64(c::encrypt_avatar(&ak, "alice", b"short"))),
+            enc_key: enc_key.clone(),
+        },
+    ] {
+        let r = h
+            .call(Method::PUT, "/api/me/avatar", Some(&alice.token), Some(bad))
+            .await;
+        assert_eq!(r.status, StatusCode::BAD_REQUEST, "{r:?}");
+    }
     let r = h
         .call(
             Method::PUT,
             "/api/me/avatar",
             Some(&alice.token),
             Some(SetAvatar {
-                data: B64(c::encrypt_avatar(&ak, "alice", picture)),
+                data: Some(B64(c::encrypt_avatar(&ak, "alice", picture))),
+                name: Some(B64(
+                    c::encrypt_display_name(&ak, "alice", display_name).unwrap()
+                )),
                 enc_key: B64(c::encrypt_private_data(
                     &alice.mk,
                     &alice_id,
@@ -2175,7 +2203,14 @@ async fn profile_pictures_are_encrypted_and_only_for_share_partners() {
         .json::<Option<UserAvatar>>()
         .unwrap();
     let k = c::open_avatar_key(&bob.kp, &got.sealed_key, "alice", "bob").unwrap();
-    assert_eq!(c::decrypt_avatar(&k, "alice", &got.data).unwrap(), picture);
+    assert_eq!(
+        c::decrypt_avatar(&k, "alice", &got.data.unwrap()).unwrap(),
+        picture
+    );
+    assert_eq!(
+        c::decrypt_display_name(&k, "alice", &got.name.unwrap()).unwrap(),
+        display_name
+    );
     let none: Option<UserAvatar> = h.get("/api/users/alice/avatar", &carol.token).await.json();
     assert!(none.is_none());
     let mine: MyAvatar = h.get("/api/me/avatar", &alice.token).await.json();
@@ -2202,7 +2237,7 @@ async fn profile_pictures_are_encrypted_and_only_for_share_partners() {
     all_files(&h.dir.path().join("data"), &mut files);
     for p in &files {
         let bytes = std::fs::read(p).unwrap();
-        for n in [picture.as_slice(), ak.as_bytes()] {
+        for n in [picture.as_slice(), display_name.as_bytes(), ak.as_bytes()] {
             assert!(!contains(&bytes, n), "avatar data found in {}", p.display());
         }
     }
@@ -2220,7 +2255,7 @@ async fn profile_pictures_are_encrypted_and_only_for_share_partners() {
     let none: Option<UserAvatar> = h.get("/api/users/alice/avatar", &bob.token).await.json();
     assert!(none.is_none());
     let mine: MyAvatar = h.get("/api/me/avatar", &alice.token).await.json();
-    assert!(mine.data.is_none() && mine.grantees.is_empty());
+    assert!(mine.data.is_none() && mine.name.is_none() && mine.grantees.is_empty());
 }
 
 #[tokio::test]

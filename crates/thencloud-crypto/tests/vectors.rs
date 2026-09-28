@@ -99,6 +99,13 @@ fn open_symmetric(v: &Value) -> Result<Vec<u8>> {
         "pq-private-key" => unwrap_pq_private_key(&k, &sealed)?.seed().to_vec(),
         "private-data" => decrypt_private_data(&k, c[0], c[1], &sealed)?,
         "avatar" => decrypt_avatar(&k, c[0], &sealed)?,
+        "display-name" => {
+            let name = decrypt_display_name(&k, c[0], &sealed)?;
+            assert_eq!(name, text(v, "name"), "display name");
+            let mut b = name.into_bytes();
+            b.resize(DISPLAY_NAME_PADDED, 0);
+            b
+        }
         "node-key" => bytes(unwrap_node_key(&k, &sealed, c[0])?),
         "metadata" => {
             let meta = decrypt_metadata(&k, c[0], &sealed)?;
@@ -511,6 +518,15 @@ fn write_vectors() {
             b"\x89PNG not really",
             encrypt_avatar(&avatar_key, user, b"\x89PNG not really"),
         ),
+        {
+            let name = "Chlo\u{e9} \u{304f}\u{308d}\u{3048}";
+            let mut padded = name.as_bytes().to_vec();
+            padded.resize(DISPLAY_NAME_PADDED, 0);
+            let sealed = encrypt_display_name(&avatar_key, "chloe", name).unwrap();
+            let mut v = sym("display-name", &avatar_key, &["chloe"], &padded, sealed);
+            v["name"] = json!(name);
+            v
+        },
         sym(
             "node-key",
             &folder,
@@ -671,6 +687,23 @@ fn write_vectors() {
             json!({ "key": b64(mk.as_bytes()) }),
             "the wrong key",
         ),
+        reject(
+            &find(&symmetric, "display-name"),
+            json!({ "context": ["alice"] }),
+            "someone's display name shown as another person's",
+        ),
+        {
+            // Sealed properly, but not a name a client may show.
+            let mut pt = "alice\u{202e}gnp.exe".as_bytes().to_vec();
+            pt.resize(DISPLAY_NAME_PADDED, 0);
+            let sealed = seal(&avatar_key, &pt, &aad("display-name", &["chloe"]));
+            let v = sym("display-name", &avatar_key, &["chloe"], &pt, sealed);
+            reject(
+                &v,
+                json!({}),
+                "a display name with a right-to-left override",
+            )
+        },
         {
             let mut v = find(&symmetric, "avatar");
             let mut s = raw(&v, "sealed");

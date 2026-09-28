@@ -3,6 +3,7 @@
   import Modal from '../Modal.svelte';
   import Icon from '../Icon.svelte';
   import Avatar from '../Avatar.svelte';
+  import PersonName from '../PersonName.svelte';
   import { comments, addComment, deleteComment, session, MAX_COMMENT } from '../../lib/cloud.svelte.js';
   import { toastError } from '../../lib/ui.svelte.js';
   import { formatWhen, fullDate } from '../../lib/format.js';
@@ -78,7 +79,7 @@
           <Avatar username={c.author} class="mt-0.5 size-7 text-xs" />
           <div class="min-w-0 flex-1">
             <p class="flex items-baseline gap-2 text-[13px]">
-              <span class="font-medium">{c.author === session.me.username ? 'You' : c.author}</span>
+              <PersonName username={c.author} you class="font-medium" />
               <span class="text-xs text-fg-muted" title={fullDate(c.at)}>{formatWhen(c.at)}</span>
             </p>
             {#if c.text === null}

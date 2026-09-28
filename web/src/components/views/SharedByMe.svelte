@@ -3,6 +3,7 @@
   import { toast, toastError } from '../../lib/ui.svelte.js';
   import Icon from '../Icon.svelte';
   import Avatar from '../Avatar.svelte';
+  import PersonName from '../PersonName.svelte';
   import Time from '../Time.svelte';
   import FileIcon from '../FileIcon.svelte';
   import FolderIcon from '../FolderIcon.svelte';
@@ -77,7 +78,7 @@
             <td>
               <span class="flex items-center gap-2">
                 <Avatar username={s.recipient} class="size-6 text-[11px]" />
-                <span class="truncate">{s.recipient}</span>
+                <PersonName username={s.recipient} class="truncate" />
                 {#if s.expires_at}<span class="shrink-0 text-xs text-fg-muted"><Time ms={s.expires_at * 1000} prefix="until " /></span>{/if}
               </span>
             </td>
