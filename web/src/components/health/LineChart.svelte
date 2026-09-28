@@ -14,6 +14,7 @@
   const all = $derived(inRange.flatMap((s) => s.points));
 
   import { formatDateTime } from '../../lib/locale.svelte.js';
+  import { t } from '../../lib/i18n.svelte.js';
 
   // "Nice" ticks: 1, 2, 2.5 or 5 times a power of ten.
   function ticks(lo, hi, n = 4) {
@@ -69,7 +70,7 @@
 
 <div class="relative min-w-0" bind:clientWidth={width}>
   {#if !all.length}
-    <div class="grid place-items-center rounded-md border border-dashed border-line text-[13px] text-fg-muted" style:height="{height}px">Nothing logged in this period.</div>
+    <div class="grid place-items-center rounded-md border border-dashed border-line text-[13px] text-fg-muted" style:height="{height}px">{t('Nothing logged in this period.')}</div>
   {:else}
     <svg width="100%" {height} role="img" aria-label={label} class="block touch-none select-none" onpointermove={onmove} onpointerleave={() => (hover = null)}>
       {#each yTicks as v (v)}
