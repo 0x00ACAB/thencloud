@@ -24,9 +24,13 @@ pub fn now() -> i64 {
         .as_secs() as i64
 }
 
-/// Node and version times, rounded down to the hour; exact times live in the encrypted metadata.
+/// Now, rounded down to the hour: what the server records for when nodes
+/// and versions were made or changed. The exact times are only in the
+/// encrypted metadata, so the server can't line activity up with anything
+/// finer than that.
 pub fn coarse_now() -> i64 {
-    now() / 3600 * 3600
+    let t = now();
+    t - t.rem_euclid(3600)
 }
 
 pub fn random_token(bytes: usize) -> String {

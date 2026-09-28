@@ -91,8 +91,12 @@ impl FromRequestParts<AppState> for AuthUser {
 
 /// The client's address, for rate limiting only (it's never stored): the
 /// peer, or with `--trust-proxy` the last address a reverse proxy added to
-/// `X-Forwarded-For`.
-pub struct ClientIp(pub Option<IpAddr>);
+/// `X-Forwarded-For`. With `--limit-by-address false` (an onion service,
+/// where every visitor comes from the same place) there is none to use.
+pub struct ClientIp {
+    pub ip: Option<IpAddr>,
+    by_address: bool,
+}
 
 impl FromRequestParts<AppState> for ClientIp {
     type Rejection = Infallible;
@@ -117,20 +121,27 @@ impl FromRequestParts<AppState> for ClientIp {
                     .ok()
             })
             .flatten();
-        Ok(ClientIp(forwarded.or_else(|| {
-            parts
-                .extensions
-                .get::<ConnectInfo<SocketAddr>>()
-                .map(|c| c.0.ip())
-        })))
+        Ok(ClientIp {
+            ip: forwarded.or_else(|| {
+                parts
+                    .extensions
+                    .get::<ConnectInfo<SocketAddr>>()
+                    .map(|c| c.0.ip())
+            }),
+            by_address: state.config.limit_by_address,
+        })
     }
 }
 
 impl ClientIp {
-    pub fn key(&self) -> String {
-        self.0
-            .map(|ip| ip.to_string())
-            .unwrap_or_else(|| "unknown".into())
+    /// The rate-limiting key for this client, or None when limits by
+    /// address are off.
+    pub fn key(&self) -> Option<String> {
+        self.by_address.then(|| {
+            self.ip
+                .map(|ip| ip.to_string())
+                .unwrap_or_else(|| "unknown".into())
+        })
     }
 }
 

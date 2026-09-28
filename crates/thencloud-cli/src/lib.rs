@@ -259,6 +259,7 @@ impl Client {
             mime: None,
             size: 0,
             mtime: now_ms(),
+            changed: Some(now_ms()),
         };
         let req = CreateFolderRequest {
             id: id.clone(),
@@ -273,7 +274,8 @@ impl Client {
 
     /// Rename, move (to `parent`) or change the mtime: `meta` is the node's
     /// new metadata. Fails with 409 if someone else changed it meanwhile.
-    pub fn update(&self, e: &Entry, parent: &Entry, meta: Metadata) -> Result<Entry> {
+    pub fn update(&self, e: &Entry, parent: &Entry, mut meta: Metadata) -> Result<Entry> {
+        meta.changed = Some(now_ms());
         let moving = e.node.parent_id.as_deref() != Some(parent.node.id.as_str());
         let req = UpdateNodeRequest {
             enc_metadata: Some(B64(c::encrypt_metadata(&e.key, &e.node.id, &meta)?)),
@@ -398,6 +400,7 @@ impl Client {
             mime: None,
             size,
             mtime,
+            changed: Some(now_ms()),
         };
         let req = CreateUploadRequest {
             node_id: node_id.clone(),

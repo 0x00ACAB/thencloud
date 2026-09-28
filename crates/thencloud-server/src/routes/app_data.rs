@@ -1,7 +1,7 @@
-//! App data: the music and video libraries' playlists and edits, and the
-//! favourites and recent files, one blob per name, encrypted under the
-//! user's master key. The server keeps it and a revision number, and nothing
-//! else.
+//! App data: the music and video libraries' playlists and edits, the
+//! favourites and recent files, and pinned notes, one blob per name,
+//! encrypted under the user's master key. The server keeps it and a
+//! revision number, and nothing else.
 
 use axum::Json;
 use axum::extract::{Path, State};
@@ -12,7 +12,7 @@ use crate::auth::AuthUser;
 use crate::error::{AppError, Result};
 use crate::util::now;
 
-const NAMES: &[&str] = &["music", "videos", "files"];
+const NAMES: &[&str] = &["music", "videos", "files", "notes"];
 const MAX_BYTES: usize = 2 * 1024 * 1024;
 
 fn check(name: &str) -> Result<()> {

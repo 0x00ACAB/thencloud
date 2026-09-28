@@ -74,6 +74,13 @@ pub struct Config {
     #[arg(long, env = "THENCLOUD_TRUST_PROXY", default_value_t = false, action = ArgAction::Set)]
     pub trust_proxy: bool,
 
+    /// Rate-limit sign-in attempts by the client's address as well as by
+    /// account. Turn it off for an onion service, where every visitor comes
+    /// from the same address and one could lock everyone out; accounts and
+    /// link passwords are still limited.
+    #[arg(long, env = "THENCLOUD_LIMIT_BY_ADDRESS", default_value_t = true, action = ArgAction::Set)]
+    pub limit_by_address: bool,
+
     /// Serve Prometheus metrics at /api/metrics to requests that carry
     /// `Authorization: Bearer <this token>`. Off when unset.
     #[arg(long, env = "THENCLOUD_METRICS_TOKEN", hide_env_values = true)]
@@ -106,6 +113,7 @@ impl Config {
             downloader_public_only: true,
             metrics_token: None,
             trust_proxy: false,
+            limit_by_address: true,
         }
     }
 }

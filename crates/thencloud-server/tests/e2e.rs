@@ -156,6 +156,7 @@ fn meta(name: &str, size: u64) -> Metadata {
         mime: Some("application/octet-stream".into()),
         size,
         mtime: 1_700_000_000_000,
+        changed: None,
     }
 }
 
@@ -4904,5 +4905,94 @@ async fn behind_a_proxy_rate_limits_use_forwarded_for() {
             StatusCode::TOO_MANY_REQUESTS
         };
         assert_eq!(other, expected, "trust_proxy = {trust}");
+    }
+}
+
+#[tokio::test]
+async fn onion_services_limit_by_account_not_by_address() {
+    // Behind Tor every visitor arrives from the same address: failures
+    // from strangers mustn't lock everyone else out.
+    let h = Harness::with_config(|c| c.limit_by_address = false).await;
+    let frank = register(&h, "frank", "pw").await;
+    let bad = Key::generate();
+    for i in 0..15 {
+        let r = h
+            .call(
+                Method::POST,
+                "/api/auth/login",
+                None,
+                Some(LoginRequest {
+                    username: format!("stranger{i}"),
+                    auth_key: B64(bad.as_bytes().to_vec()),
+                    device_name: None,
+                }),
+            )
+            .await;
+        assert_eq!(r.status, StatusCode::UNAUTHORIZED);
+    }
+    assert!(login(&h, "frank", "pw").await.is_ok());
+
+    // Guessing one account's password is still limited.
+    for _ in 0..10 {
+        assert!(login(&h, "frank", "wrong").await.is_err());
+    }
+    assert_eq!(
+        login(&h, "frank", "pw").await.err().unwrap().status,
+        StatusCode::TOO_MANY_REQUESTS
+    );
+
+    // So is guessing a link's password: per link, as there are no addresses.
+    let (folder, _) = frank.mkdir(&h, &frank.root, "Shared").await;
+    let link: Link = h
+        .call(
+            Method::POST,
+            "/api/links",
+            Some(&frank.token),
+            Some(CreateLinkRequest {
+                node_id: folder,
+                password: Some("right".into()),
+                expires_at: None,
+                upload_only: false,
+                max_opens: None,
+            }),
+        )
+        .await
+        .json();
+    let unlock = |pw: &'static str| {
+        let uri = format!("/api/public/{}/unlock", link.token);
+        let h = &h;
+        async move {
+            h.call(Method::POST, &uri, None, Some(json!({ "password": pw })))
+                .await
+                .status
+        }
+    };
+    for _ in 0..10 {
+        assert_eq!(unlock("wrong").await, StatusCode::UNAUTHORIZED);
+    }
+    assert_eq!(unlock("right").await, StatusCode::TOO_MANY_REQUESTS);
+}
+
+#[tokio::test]
+async fn the_server_records_times_to_the_hour() {
+    let h = Harness::new().await;
+    let a = register(&h, "grace", "pw").await;
+    let (folder, _) = a.mkdir(&h, &a.root, "Timed").await;
+    let f = a.upload(&h, &folder, None, "t.txt", b"one").await.unwrap();
+    let f = a.upload(&h, "", Some(&f), "t.txt", b"two").await.unwrap();
+    for v in a.versions(&h, &f.id).await {
+        assert_eq!(v.created_at % 3600, 0);
+    }
+    a.delete(&h, &folder).await;
+    let rows: Vec<(i64, i64, Option<i64>)> =
+        sqlx::query_as("SELECT created_at, updated_at, trashed_at FROM nodes")
+            .fetch_all(&h.state.db)
+            .await
+            .unwrap();
+    assert_eq!(rows.len(), 3); // root, folder, file
+    for (created, updated, trashed) in rows {
+        assert_eq!(created % 3600, 0);
+        assert_eq!(updated % 3600, 0);
+        assert!(trashed.is_none_or(|t| t % 3600 == 0));
     }
 }

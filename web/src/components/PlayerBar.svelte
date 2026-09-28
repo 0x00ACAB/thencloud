@@ -4,7 +4,8 @@
   import { onDestroy } from 'svelte';
   import Icon from './Icon.svelte';
   import { fly, pop, portal } from '../lib/motion.js';
-  import { player, current, info, toggle, next, previous, seek, jump, removeFromQueue, setVolume, toggleMute, toggleShuffle, cycleRepeat, stop, formatTime, library, unloadMusic } from '../lib/music.svelte.js';
+  import { player, current, info, toggle, next, previous, seek, jump, removeFromQueue, setVolume, toggleMute, toggleShuffle, cycleRepeat, stop, formatTime, library, unloadMusic, RATES, setRate, chapterAt, longForm } from '../lib/music.svelte.js';
+  import Menu from './Menu.svelte';
 
   let { go } = $props();
 
@@ -19,6 +20,9 @@
   const shown = $derived(scrub ?? player.time);
   const pct = $derived(player.duration ? (shown / player.duration) * 100 : 0);
   const upNext = $derived(player.queue.slice(player.index + 1));
+  const chapter = $derived(player.chapters[chapterAt(shown)] ?? null);
+  const showSpeed = $derived(longForm() || player.rate !== 1);
+  const rateLabel = (r) => `${r}x`;
 
   onDestroy(unloadMusic);
 
@@ -115,8 +119,31 @@
   </div>
 {/snippet}
 
+{#snippet speed()}
+  <Menu
+    label="Playback speed"
+    buttonClass="btn btn-ghost h-8 px-2 text-xs font-medium tabular-nums {player.rate !== 1 ? 'text-accent-text hover:text-accent-text' : ''}"
+    items={RATES.map((r) => ({ label: r === 1 ? 'Normal' : rateLabel(r), checked: player.rate === r, onclick: () => setRate(r) }))}>
+    {#snippet trigger()}{rateLabel(player.rate)}{/snippet}
+  </Menu>
+{/snippet}
+
+{#snippet chapterList()}
+  {@const now = chapterAt(shown)}
+  <div>
+    <p class="px-2 pb-1 text-xs font-medium text-fg-muted">Chapters</p>
+    {#each player.chapters as c, i (i)}
+      <button type="button" class="flex w-full cursor-pointer items-baseline gap-3 rounded-md px-2 py-1.5 text-left hover:bg-muted" onclick={() => seek(c.start)}>
+        <span class="w-14 shrink-0 text-xs text-fg-muted tabular-nums">{formatTime(c.start)}</span>
+        <span class="truncate text-sm {i === now ? 'font-medium text-accent-text' : ''}">{c.title}</span>
+      </button>
+    {/each}
+  </div>
+{/snippet}
+
 {#snippet queueList()}
   <div class="grid gap-3">
+    {#if player.chapters.length}{@render chapterList()}{/if}
     <div>
       <p class="px-2 pb-1 text-xs font-medium text-fg-muted">Now playing</p>
       {@render row(track, player.index, true)}
@@ -162,14 +189,14 @@
           {@render art('size-10')}
           <span class="grid min-w-0">
             <span class="truncate text-sm font-medium">{it.title}</span>
-            <span class="truncate text-xs text-fg-muted">{it.artist}</span>
+            <span class="truncate text-xs text-fg-muted">{chapter?.title ?? it.artist}</span>
           </span>
         </button>
         <div class="hidden min-w-0 items-center gap-3 md:flex">
           {@render art('size-14')}
           <span class="grid min-w-0">
             <button type="button" class="cursor-pointer truncate text-left text-sm font-medium hover:underline" onclick={showAlbum}>{it.title}</button>
-            <span class="truncate text-xs text-fg-muted">{it.artist}</span>
+            <span class="truncate text-xs text-fg-muted">{chapter ? `${it.artist ? `${it.artist} · ` : ''}${chapter.title}` : it.artist}</span>
           </span>
         </div>
       </div>
@@ -180,6 +207,7 @@
       </div>
 
       <div class="hidden w-[30%] items-center justify-end gap-1 md:flex">
+        {#if showSpeed}{@render speed()}{/if}
         <button
           bind:this={queueBtn}
           type="button"
@@ -244,8 +272,9 @@
       <div class="grid gap-4">
         <button type="button" class="grid min-w-0 cursor-pointer text-left" onclick={showAlbum}>
           <span class="truncate text-lg font-semibold tracking-tight">{it.title}</span>
-          <span class="truncate text-sm text-fg-muted">{it.artist}{it.album ? ` · ${it.album}` : ''}</span>
+          <span class="truncate text-sm text-fg-muted">{chapter ? chapter.title : `${it.artist}${it.album ? ` · ${it.album}` : ''}`}</span>
         </button>
+        {#if showSpeed}<div class="-my-2 flex justify-end">{@render speed()}</div>{/if}
         {@render seekbar()}
         {@render controls(true)}
       </div>
