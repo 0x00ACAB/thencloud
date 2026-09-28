@@ -12,7 +12,7 @@ use crate::auth::AuthUser;
 use crate::error::{AppError, Result};
 use crate::util::now;
 
-const NAMES: &[&str] = &["music", "videos", "files", "notes"];
+const NAMES: &[&str] = &["music", "videos", "files", "notes", "books"];
 const MAX_BYTES: usize = 2 * 1024 * 1024;
 
 fn check(name: &str) -> Result<()> {

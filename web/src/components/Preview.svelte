@@ -14,6 +14,7 @@
   import TextView from './preview/TextView.svelte';
   import MarkdownView from './preview/MarkdownView.svelte';
   import PdfView from './preview/PdfView.svelte';
+  import BookView from './preview/BookView.svelte';
   import TableView from './preview/TableView.svelte';
   import SubtitlePicker from './SubtitlePicker.svelte';
   import { matchSubtitles, loadSubtitles, release as releaseSubtitles } from '../lib/subtitles.js';
@@ -28,7 +29,7 @@
   import { fade } from '../lib/motion.js';
 
   /** @type {{ entries: any[], start: number, fetch: (entry: any, onProgress: (p: number) => void) => Promise<{ blob: Blob }>, ondownload: (entry: any) => void, onclose: () => void, save?: ((entry: any, text: string) => Promise<any>) | null, onsaved?: (entry: any) => void, edit?: boolean, trail?: any[] | null, list?: ((folder: any) => Promise<any[]>) | null, drafts?: any, open?: ((entry: any) => any) | null }} */
-  let { entries, start, fetch, ondownload, onclose, save = null, onsaved, edit = false, trail = null, list = null, drafts = null, open = null } = $props();
+  let { entries, start, fetch, ondownload, onclose, save = null, onsaved, edit = false, trail = null, list = null, drafts = null, open = null, bookProgress = null } = $props();
 
   let dlg;
   let index = $state(untrack(() => start));
@@ -106,7 +107,7 @@
         const text = await readText(blob);
         if (my !== seq) return;
         set(text === null ? { status: 'binary', blob } : { status: 'ready', blob, text });
-      } else if (k.kind === 'pdf') {
+      } else if (k.kind === 'pdf' || k.kind === 'book') {
         set({ status: 'ready', blob });
       } else {
         url = URL.createObjectURL(blob);
@@ -427,6 +428,8 @@
             </div>
           {:else if kind.kind === 'pdf'}
             <PdfView blob={view.blob} />
+          {:else if kind.kind === 'book'}
+            {#key entry.node.id}<BookView blob={view.blob} {entry} format={kind.format} progress={bookProgress} />{/key}
           {:else if kind.kind === 'markdown' && editing}
             {#key editorKey}<MarkdownEditor text={editorText} onchange={onEdit} />{/key}
           {:else if kind.kind === 'text' && editing}

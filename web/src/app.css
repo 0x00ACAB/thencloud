@@ -477,6 +477,10 @@
 
 /* Rendered Markdown. */
 @layer components {
+  /* EPUB chapters: their own styles are dropped, so images just fit the column. */
+  .book img {
+    @apply mx-auto h-auto max-w-full;
+  }
   .prose {
     @apply text-[15px] leading-7 text-fg;
   }

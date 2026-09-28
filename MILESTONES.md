@@ -160,7 +160,7 @@ Smaller things:
 ## Milestone 10: More ways to open files
 
 - [x] **Subtitles**: `.srt` and `.vtt` next to a video are decrypted and shown in the player, with a picker (`Film.en.srt` and the like; SRT is turned into WebVTT in the browser). Renaming a series' files takes its subtitles along
-- [ ] **Books**: an EPUB and comic (CBZ) reader, with reading progress kept in the encrypted app data
+- [x] **Books**: an EPUB and comic (CBZ) reader, with reading progress kept in the encrypted app data. Opens in the preview; our own zip reader (bounds-checked, capped against zip bombs, fuzzed), EPUB chapters through DOMPurify with images from inside the book as blob: URLs and no styles, scripts or remote fetches. Arrow keys turn pages or chapters; where you were is saved a moment after you stop
 - [x] **Audiobooks and podcasts**: remember the position per file, chapters from MP4/M4B, and playback speed. Tracks over 20 minutes (and any .m4b) pick up where they were left, on any device (kept in the encrypted music data); chapters come from the Nero `chpl` box, which ffmpeg and most audiobook tools write
 - [x] **Tables**: CSV and TSV shown as a sortable table instead of plain text, with a Source toggle and editing as text
 - [ ] **Office previews**: DOCX, XLSX, ODT and PPTX rendered in the browser, loaded only when needed and sanitised like Markdown
