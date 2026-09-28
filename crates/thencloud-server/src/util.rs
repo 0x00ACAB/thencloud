@@ -24,6 +24,11 @@ pub fn now() -> i64 {
         .as_secs() as i64
 }
 
+/// Node and version times, rounded down to the hour; exact times live in the encrypted metadata.
+pub fn coarse_now() -> i64 {
+    now() / 3600 * 3600
+}
+
 pub fn random_token(bytes: usize) -> String {
     thencloud_crypto::b64_encode(&thencloud_crypto::random_bytes(bytes))
 }

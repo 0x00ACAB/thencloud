@@ -281,12 +281,10 @@ impl CloudFs {
             None => i.meta.size,
         };
         let mtime = ms_time(i.meta.mtime);
-        let (ctime, crtime) = i.remote.as_ref().map_or((mtime, mtime), |(n, _)| {
-            (
-                UNIX_EPOCH + Duration::from_secs(n.updated_at.max(0) as u64),
-                UNIX_EPOCH + Duration::from_secs(n.created_at.max(0) as u64),
-            )
+        let crtime = i.remote.as_ref().map_or(mtime, |(n, _)| {
+            mtime.min(UNIX_EPOCH + Duration::from_secs(n.created_at.max(0) as u64))
         });
+        let ctime = mtime;
         let ro = self.opts.read_only;
         Ok(FileAttr {
             ino: INodeNo(ino),
