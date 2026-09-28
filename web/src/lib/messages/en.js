@@ -24,4 +24,5 @@ export default {
   },
   'In {count} days': { one: 'In 1 day', other: 'In {count} days' },
   'After {count} opens': { one: 'After 1 open', other: 'After {count} opens' },
+  'picked {count} times lately': { one: 'picked once lately', other: 'picked {count} times lately' },
 };

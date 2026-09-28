@@ -5,6 +5,7 @@
 // goes away.
 import { loadAppData, saveAppData } from './cloud.svelte.js';
 import { unitSystem, formatNumber } from './locale.svelte.js';
+import { t } from './i18n.svelte.js';
 
 const KG_PER_LB = 0.45359237;
 const CM_PER_IN = 2.54;
@@ -14,13 +15,29 @@ const CM_PER_IN = 2.54;
  * length); `pair` means two values (blood pressure: systolic, diastolic).
  */
 export const KINDS = {
-  weight: { label: 'Weight', icon: 'scale', dim: 'mass', min: 1, max: 700, step: 0.1 },
-  height: { label: 'Height', icon: 'ruler', dim: 'length', min: 30, max: 280, step: 0.5 },
-  waist: { label: 'Waist', icon: 'ruler', dim: 'length', min: 20, max: 300, step: 0.5 },
-  fat: { label: 'Body fat', icon: 'activity', unit: '%', min: 1, max: 80, step: 0.1 },
-  pulse: { label: 'Resting heart rate', short: 'Heart rate', icon: 'heart-pulse', unit: 'bpm', min: 20, max: 250, step: 1 },
-  pressure: { label: 'Blood pressure', icon: 'activity', unit: 'mmHg', pair: ['Systolic', 'Diastolic'], min: 30, max: 300, step: 1 },
-  sleep: { label: 'Sleep', icon: 'moon', unit: 'h', min: 0, max: 24, step: 0.25 },
+  weight: { icon: 'scale', dim: 'mass', min: 1, max: 700, step: 0.1, get label() { return t('Weight'); } },
+  height: { icon: 'ruler', dim: 'length', min: 30, max: 280, step: 0.5, get label() { return t('Height'); } },
+  waist: { icon: 'ruler', dim: 'length', min: 20, max: 300, step: 0.5, get label() { return t('Waist'); } },
+  fat: { icon: 'activity', unit: '%', min: 1, max: 80, step: 0.1, get label() { return t('Body fat'); } },
+  pulse: {
+    icon: 'heart-pulse',
+    unit: 'bpm',
+    min: 20,
+    max: 250,
+    step: 1,
+    get label() { return t('Resting heart rate'); },
+    get short() { return t('Heart rate'); },
+  },
+  pressure: {
+    icon: 'activity',
+    unit: 'mmHg',
+    min: 30,
+    max: 300,
+    step: 1,
+    get label() { return t('Blood pressure'); },
+    get pair() { return [t('Systolic'), t('Diastolic')]; },
+  },
+  sleep: { icon: 'moon', unit: 'h', min: 0, max: 24, step: 0.25, get label() { return t('Sleep'); } },
 };
 
 export const health = $state({
@@ -125,8 +142,8 @@ export const bmi = (kg, cm) => (kg > 0 && cm > 0 ? kg / (cm / 100) ** 2 : null);
 
 /** The rough band a BMI falls in (the WHO's adult ranges). */
 export function bmiBand(v) {
-  if (v < 18.5) return 'Underweight';
-  if (v < 25) return 'Healthy range';
-  if (v < 30) return 'Overweight';
-  return 'Obese range';
+  if (v < 18.5) return t('Underweight');
+  if (v < 25) return t('Healthy range');
+  if (v < 30) return t('Overweight');
+  return t('Obese range');
 }
