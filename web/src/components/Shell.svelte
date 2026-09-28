@@ -29,6 +29,7 @@
   import HealthView from './views/HealthView.svelte';
   import { unloadHealth } from '../lib/health.svelte.js';
   import { modules, loadModules } from '../lib/modules.svelte.js';
+  import { t } from '../lib/i18n.svelte.js';
 
   const rootId = session.me.keys.root_node_id;
   loadMyAvatar().catch(() => {});
@@ -47,20 +48,20 @@
   });
 
   const nav = $derived([
-    { name: 'files', label: 'My files', short: 'Files', icon: 'folder', to: () => ({ name: 'files', folderId: rootId }) },
-    { name: 'recent', label: 'Recent', icon: 'clock', to: () => ({ name: 'recent' }) },
-    { name: 'favourites', label: 'Favourites', icon: 'star', to: () => ({ name: 'favourites' }) },
-    { name: 'shared-with-me', label: 'Shared with me', short: 'Shared', icon: 'inbox', to: () => ({ name: 'shared-with-me' }) },
-    { name: 'shared-by-me', label: 'Shared by me', icon: 'users', to: () => ({ name: 'shared-by-me' }) },
-    { name: 'links', label: 'Public links', icon: 'link', to: () => ({ name: 'links' }) },
-    { name: 'notes', label: 'Notes', icon: 'notebook-pen', to: () => ({ name: 'notes' }) },
-    { name: 'photos', label: 'Photos', icon: 'image', to: () => ({ name: 'photos' }) },
-    { name: 'music', label: 'Music', icon: 'music', to: () => ({ name: 'music' }) },
-    { name: 'videos', label: 'Videos', icon: 'clapperboard', to: () => ({ name: 'videos' }) },
-    ...(modules.health ? [{ name: 'health', label: 'Health', icon: 'heart-pulse', to: () => ({ name: 'health' }) }] : []),
-    { name: 'trash', label: 'Trash', icon: 'trash-2', to: () => ({ name: 'trash' }) },
-    { name: 'settings', label: 'Settings', icon: 'settings', to: () => ({ name: 'settings' }) },
-    ...(session.me.is_admin ? [{ name: 'admin', label: 'Admin', icon: 'shield-check', to: () => ({ name: 'admin' }) }] : []),
+    { name: 'files', label: t('My files'), short: t('Files'), icon: 'folder', to: () => ({ name: 'files', folderId: rootId }) },
+    { name: 'recent', label: t('Recent'), icon: 'clock', to: () => ({ name: 'recent' }) },
+    { name: 'favourites', label: t('Favourites'), icon: 'star', to: () => ({ name: 'favourites' }) },
+    { name: 'shared-with-me', label: t('Shared with me'), short: t('Shared'), icon: 'inbox', to: () => ({ name: 'shared-with-me' }) },
+    { name: 'shared-by-me', label: t('Shared by me'), icon: 'users', to: () => ({ name: 'shared-by-me' }) },
+    { name: 'links', label: t('Public links'), icon: 'link', to: () => ({ name: 'links' }) },
+    { name: 'notes', label: t('Notes'), icon: 'notebook-pen', to: () => ({ name: 'notes' }) },
+    { name: 'photos', label: t('Photos'), icon: 'image', to: () => ({ name: 'photos' }) },
+    { name: 'music', label: t('Music'), icon: 'music', to: () => ({ name: 'music' }) },
+    { name: 'videos', label: t('Videos'), icon: 'clapperboard', to: () => ({ name: 'videos' }) },
+    ...(modules.health ? [{ name: 'health', label: t('Health'), icon: 'heart-pulse', to: () => ({ name: 'health' }) }] : []),
+    { name: 'trash', label: t('Trash'), icon: 'trash-2', to: () => ({ name: 'trash' }) },
+    { name: 'settings', label: t('Settings'), icon: 'settings', to: () => ({ name: 'settings' }) },
+    ...(session.me.is_admin ? [{ name: 'admin', label: t('Admin'), icon: 'shield-check', to: () => ({ name: 'admin' }) }] : []),
   ]);
 
   // In-app navigation. Uses history.pushState so the browser's back button
@@ -131,25 +132,25 @@
 
   const usedPct = $derived(Math.min(100, (session.me.used_bytes / Math.max(1, session.me.quota_bytes)) * 100));
 
-  const themes = [
-    ['system', 'monitor', 'System'],
-    ['light', 'sun', 'Light'],
-    ['dark', 'moon', 'Dark'],
-  ];
+  const themes = $derived([
+    ['system', 'monitor', t('System')],
+    ['light', 'sun', t('Light')],
+    ['dark', 'moon', t('Dark')],
+  ]);
 </script>
 
 <div class="flex min-h-dvh flex-col">
   <header class="sticky top-0 z-30 border-b border-line bg-bg/80 backdrop-blur-md">
     <div class="flex h-14 items-center gap-3 px-4 md:px-6">
-      <button type="button" class="cursor-pointer" onclick={() => go(nav[0].to())} aria-label="thencloud home">
+      <button type="button" class="cursor-pointer" onclick={() => go(nav[0].to())} aria-label={t('thencloud home')}>
         <Wordmark />
       </button>
       <span class="text-line-strong select-none" aria-hidden="true">/</span>
       <span class="truncate text-sm font-medium" dir="auto">{avatar.name ?? session.me.username}</span>
-      {#if session.me.is_admin}<span class="badge">Admin</span>{/if}
+      {#if session.me.is_admin}<span class="badge">{t('Admin')}</span>{/if}
 
       <div class="ml-auto flex items-center gap-1">
-        <div class="mr-1 hidden items-center rounded-full border border-line p-0.5 sm:flex" role="radiogroup" aria-label="Theme">
+        <div class="mr-1 hidden items-center rounded-full border border-line p-0.5 sm:flex" role="radiogroup" aria-label={t('Theme')}>
           {#each themes as [value, icon, label] (value)}
             <button
               type="button"
@@ -166,12 +167,12 @@
           {/each}
         </div>
         <Menu
-          label="Account"
+          label={t('Account')}
           buttonClass="grid size-8 cursor-pointer place-items-center rounded-full bg-accent text-xs font-semibold text-accent-fg uppercase ring-offset-2 ring-offset-bg hover:ring-2 hover:ring-line-strong"
           items={[
-            { label: 'Settings', icon: 'settings', onclick: () => go({ name: 'settings' }) },
+            { label: t('Settings'), icon: 'settings', onclick: () => go({ name: 'settings' }) },
             'sep',
-            { label: 'Sign out', icon: 'log-out', onclick: logout },
+            { label: t('Sign out'), icon: 'log-out', onclick: logout },
           ]}>
           {#snippet trigger()}{#if avatar.url}<img src={avatar.url} alt="" class="size-8 rounded-full object-cover" />{:else}{[...(avatar.name ?? session.me.username)][0]}{/if}{/snippet}
         </Menu>
@@ -182,7 +183,7 @@
 
   <div class="flex flex-1">
     <aside class="sticky top-14 hidden h-[calc(100dvh-3.5rem-var(--player-bar))] w-60 shrink-0 flex-col border-r border-line px-3 py-4 md:flex">
-      <nav class="grid gap-0.5" aria-label="Sections">
+      <nav class="grid gap-0.5" aria-label={t('Sections')}>
         {#each nav as item (item.name)}
           <button type="button" class="nav-item" aria-current={current === item.name ? 'page' : undefined} onclick={() => go(item.to())}>
             <Icon name={item.icon} />{item.label}
@@ -206,12 +207,12 @@
 
       <div class="mt-auto grid gap-2 px-2">
         <div class="flex items-baseline justify-between text-xs">
-          <span class="font-medium">Storage</span>
-          <span class="text-fg-muted tabular-nums">{formatSize(session.me.used_bytes)} of {formatSize(session.me.quota_bytes)}</span>
+          <span class="font-medium">{t('Storage')}</span>
+          <span class="text-fg-muted tabular-nums">{t('{used} of {quota}', { used: formatSize(session.me.used_bytes), quota: formatSize(session.me.quota_bytes) })}</span>
         </div>
         <div class="progress"><div style:width="{usedPct}%"></div></div>
         <p class="mt-2 flex items-center gap-1.5 text-xs text-fg-muted">
-          <Icon name="lock" class="size-3.5" /> End-to-end encrypted
+          <Icon name="lock" class="size-3.5" /> {t('End-to-end encrypted')}
         </p>
       </div>
     </aside>
@@ -241,7 +242,7 @@
           {#if modules.health}
             <HealthView />
           {:else if modules.loaded}
-            <p class="text-[13px] text-fg-muted">Health is turned off. You can turn it on in <button type="button" class="link" onclick={() => go({ name: 'settings' })}>Settings</button>.</p>
+            <p class="text-[13px] text-fg-muted">{t('Health is turned off. You can turn it on in Settings, under Modules.')} <button type="button" class="link" onclick={() => go({ name: 'settings' })}>{t('Open Settings')}</button></p>
           {/if}
         {:else if view.name === 'trash'}
           <TrashView {go} />
@@ -259,7 +260,7 @@
 <!-- Phones: the main sections as a bottom tab bar; the rest under More. -->
 <nav
   class="fixed inset-x-0 bottom-0 z-30 flex border-t border-line bg-bg/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden"
-  aria-label="Sections">
+  aria-label={t('Sections')}>
   {#each nav.filter((n) => MOBILE_TABS.includes(n.name)) as item (item.name)}
     <button
       type="button"
@@ -270,13 +271,13 @@
     </button>
   {/each}
   <Menu
-    label="More sections"
+    label={t('More sections')}
     align="end"
     buttonClass="tab-item {MOBILE_TABS.includes(current) ? '' : 'text-fg'}"
     items={nav
       .filter((n) => !MOBILE_TABS.includes(n.name))
       .map((n) => ({ label: n.label, icon: n.icon, onclick: () => go(n.to()) }))}>
-    {#snippet trigger()}<Icon name="ellipsis" class="size-5" />More{/snippet}
+    {#snippet trigger()}<Icon name="ellipsis" class="size-5" />{t('More')}{/snippet}
   </Menu>
 </nav>
 

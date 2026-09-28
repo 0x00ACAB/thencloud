@@ -1,5 +1,6 @@
 import { previewKind } from './preview.js';
 import { formatDateTime, relativeTime } from './locale.svelte.js';
+import { t } from './i18n.svelte.js';
 
 /**
  * When a node last changed, in ms: the exact time from its encrypted
@@ -25,7 +26,7 @@ export function formatWhen(ms) {
   if (!ms) return '';
   const s = Math.round((ms - Date.now()) / 1000);
   const abs = Math.abs(s);
-  if (abs < 45) return 'just now';
+  if (abs < 45) return t('just now');
   if (abs < 3600) return relativeTime(Math.round(s / 60), 'minute');
   if (abs < 86400) return relativeTime(Math.round(s / 3600), 'hour');
   if (abs < 7 * 86400) return relativeTime(Math.round(s / 86400), 'day');
