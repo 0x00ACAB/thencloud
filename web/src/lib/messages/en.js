@@ -25,4 +25,8 @@ export default {
   'In {count} days': { one: 'In 1 day', other: 'In {count} days' },
   'After {count} opens': { one: 'After 1 open', other: 'After {count} opens' },
   'picked {count} times lately': { one: 'picked once lately', other: 'picked {count} times lately' },
+  '{name}. Up to {count} versions are kept, and the oldest go first when you run out of space.': {
+    one: '{name}. Up to {count} version is kept, and the oldest goes first when you run out of space.',
+    other: '{name}. Up to {count} versions are kept, and the oldest go first when you run out of space.',
+  },
 };
