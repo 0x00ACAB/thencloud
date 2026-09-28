@@ -181,8 +181,10 @@ client could have written it; clients show it next to the username, never
 instead of it.
 
 Private data labels in use: `contacts` (verified contacts), `avatar-key` (the
-owner's copy of their avatar key), `music`, `videos`, `files` and `notes`
-(library data, JSON) and `draft:<node id>` (unsaved text). The server keeps
+owner's copy of their avatar key), `music`, `videos`, `files`, `notes`,
+`books`, `search`, `health` (the Health module's measurements and moods) and
+`prefs` (which optional modules are on) (app data, JSON) and
+`draft:<node id>` (unsaved text). The server keeps
 each under its label and user, and the associated data stops it from handing
 one back as another.
 

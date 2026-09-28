@@ -1,4 +1,5 @@
 <script>
+  import { MODULES, modules, loadModules, setModule } from '../../lib/modules.svelte.js';
   import { onMount } from 'svelte';
   import { session, changePassword, listSessions, revokeSession, revokeOtherSessions, removeRecoveryKey, listAppPasswords, deleteAppPassword, avatar, loadMyAvatar, setAvatar, removeAvatar, setDisplayName, cleanDisplayName, listContacts, forgetContact, forgetThisBrowser, listPasskeys, removePasskey, disableTotp, deleteAccount, verifyTree, resolvePath, exportAccount } from '../../lib/cloud.svelte.js';
   import { passkeysSupported } from '../../lib/passkeys.js';
@@ -82,6 +83,17 @@
       error = err?.code === 'invalid_credentials' ? 'Your current password is wrong.' : errorMessage(err);
     } finally {
       busy = false;
+    }
+  }
+
+  // Optional modules.
+  onMount(() => loadModules().catch(() => {}));
+  async function toggleModule(m, on) {
+    try {
+      await setModule(m.name, on);
+      toast(on ? `${m.label} is on. It's in the sidebar.` : `${m.label} is off`, { kind: on ? 'success' : 'info' });
+    } catch (err) {
+      toastError(err);
     }
   }
 
@@ -689,6 +701,24 @@
       {#if exporting}<Icon name="loader-circle" class="spinner" />{:else}<Icon name="download" />{/if} Export
     </button>
   {/snippet}
+  {#snippet modulesBody()}
+    <ul class="grid gap-2">
+      {#each MODULES as m (m.name)}
+        <li>
+          <label class="flex cursor-pointer items-start gap-3 rounded-md border border-line p-3 hover:bg-subtle">
+            <input type="checkbox" class="mt-0.5 size-4 accent-accent" checked={modules[m.name]} disabled={!modules.loaded} onchange={(e) => toggleModule(m, e.currentTarget.checked)} />
+            <span class="grid gap-0.5">
+              <span class="flex items-center gap-1.5 text-sm font-medium"><Icon name={m.icon} class="size-4" />{m.label}</span>
+              <span class="text-xs text-fg-muted">{m.description}</span>
+            </span>
+          </label>
+        </li>
+      {/each}
+    </ul>
+    <p class="text-xs text-fg-muted">Turning one off only hides it; what you logged stays, encrypted, until you turn it on again.</p>
+  {/snippet}
+  {@render section('Modules', 'Optional parts of thencloud. Which ones are on is saved encrypted with your account, so it follows you to other devices.', modulesBody)}
+
   {@render section('Export your data', null, exportBody, exportFooter)}
 
   {#snippet checkBody()}

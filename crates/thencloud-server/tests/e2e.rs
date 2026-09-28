@@ -3372,10 +3372,30 @@ async fn app_data_is_opaque_to_the_server() {
     let theirs: PrivateData = h.get("/api/me/data/music", &other.token).await.json();
     assert!(theirs.data.is_none());
 
+    // The health log is app data like the rest: stored, never readable.
+    let health = br#"{"measures":[{"kind":"weight","value":81.5,"note":"mira-marker-weight"}]}"#;
+    let r = h
+        .call(
+            Method::PUT,
+            "/api/me/data/health",
+            Some(&lea.token),
+            Some(put(
+                c::encrypt_private_data(&lea.mk, &me.user_id, "health", health),
+                0,
+            )),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+
     let mut files = Vec::new();
     all_files(&h.dir.path().join("data"), &mut files);
     for p in &files {
         let bytes = std::fs::read(p).unwrap();
+        assert!(
+            !contains(&bytes, b"mira-marker-weight"),
+            "health data plaintext in {}",
+            p.display()
+        );
         assert!(
             !contains(&bytes, b"mira-marker-playlist"),
             "app data plaintext in {}",
