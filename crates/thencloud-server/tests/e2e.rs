@@ -3548,9 +3548,17 @@ async fn video_downloader_is_opt_in_streamed_and_cleaned_up() {
         1600
     );
 
-    // Scratch directories are gone.
+    // Scratch directories are gone. They're removed as the stream ends,
+    // which may be just after the last byte arrives here.
     let mut files = Vec::new();
-    all_files(&h.dir.path().join("data/downloads"), &mut files);
+    for _ in 0..50 {
+        files.clear();
+        all_files(&h.dir.path().join("data/downloads"), &mut files);
+        if files.is_empty() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
     assert!(files.is_empty(), "left behind: {files:?}");
 }
 
