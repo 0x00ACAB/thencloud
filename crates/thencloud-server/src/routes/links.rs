@@ -1,7 +1,9 @@
 //! Public links, managed by the owner.
 //!
-//! A link is `https://host/s/<token>#<node key>`. The server only knows the
-//! token; the key after `#` is never sent in any HTTP request.
+//! A link is `https://host/s/<token>#<node key>`, or with a password
+//! `#p.<secret>`, where the node key is only reachable with both the secret
+//! and the password. The server only knows the token; what follows `#` is
+//! never sent in any HTTP request.
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
@@ -41,9 +43,30 @@ pub async fn create(
     if req.expires_at.is_some_and(|e| e <= t) {
         return Err(AppError::bad("expires_at must be in the future"));
     }
-    let password_hash = match req.password.as_deref().filter(|p| !p.is_empty()) {
-        Some(p) if p.len() > 1024 => return Err(AppError::bad("password is too long")),
-        Some(p) => Some(hash_secret(p.as_bytes().to_vec()).await?),
+    // A password comes as an auth key derived from it. Links to content
+    // also carry the node key wrapped under the password (see
+    // `derive_link_password_keys`); a file drop has nothing to wrap.
+    let with_key = req.password_auth.is_some() && !req.upload_only;
+    if req.password_auth.as_ref().is_some_and(|a| a.len() != 32) {
+        return Err(AppError::bad("password_auth must be 32 bytes"));
+    }
+    for field in [&req.enc_link_key, &req.enc_link_secret] {
+        match field {
+            Some(k) if !with_key || k.len() > 256 => {
+                return Err(AppError::bad(
+                    "enc_link_key and enc_link_secret go with a password",
+                ));
+            }
+            None if with_key => {
+                return Err(AppError::bad(
+                    "a link with a password needs enc_link_key and enc_link_secret",
+                ));
+            }
+            _ => {}
+        }
+    }
+    let password_hash = match &req.password_auth {
+        Some(a) => Some(hash_secret(a.0.clone()).await?),
         None => None,
     };
     let link = Link {
@@ -56,10 +79,11 @@ pub async fn create(
         upload_only: req.upload_only,
         max_opens: req.max_opens,
         opens: 0,
+        enc_link_secret: req.enc_link_secret.clone(),
     };
     sqlx::query(
         "INSERT INTO public_links (id, token, node_id, owner_id, password_hash, expires_at, created_at, \
-         upload_only, max_opens) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         upload_only, max_opens, enc_link_key, enc_link_secret) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&link.id)
     .bind(&link.token)
@@ -70,6 +94,8 @@ pub async fn create(
     .bind(t)
     .bind(link.upload_only)
     .bind(link.max_opens)
+    .bind(req.enc_link_key.map(|k| k.0))
+    .bind(req.enc_link_secret.map(|k| k.0))
     .execute(&state.db)
     .await?;
     Ok((StatusCode::CREATED, Json(link)))
@@ -86,6 +112,7 @@ struct LinkRow {
     upload_only: bool,
     max_opens: Option<i64>,
     opens: i64,
+    enc_link_secret: Option<Vec<u8>>,
 }
 
 pub async fn list(
@@ -95,7 +122,7 @@ pub async fn list(
 ) -> Result<Json<Vec<Link>>> {
     let rows: Vec<LinkRow> = sqlx::query_as(
         "SELECT id, token, node_id, password_hash IS NOT NULL AS has_password, expires_at, created_at, upload_only, \
-         max_opens, opens FROM public_links \
+         max_opens, opens, enc_link_secret FROM public_links \
          WHERE owner_id = ? AND (? IS NULL OR node_id = ?) ORDER BY created_at",
     )
     .bind(&user.id)
@@ -122,6 +149,7 @@ pub async fn list(
                 upload_only: r.upload_only,
                 max_opens: r.max_opens,
                 opens: r.opens,
+                enc_link_secret: r.enc_link_secret.map(B64),
             })
             .collect(),
     ))

@@ -11,7 +11,7 @@ thencloud is an open-source, end-to-end encrypted alternative to Nextcloud. Read
 **No key, password or plaintext may ever reach the server.**
 - All encryption and decryption happens in `crates/thencloud-crypto`, which runs natively and in the browser via WASM (`crates/thencloud-wasm`).
 - The server only stores and serves ciphertext, wrapped keys and public keys.
-- Public links are `/s/<token>#<key>`. The key lives only in the URL fragment and must never be put into a path, query string, header, request body or log.
+- Public links are `/s/<token>#<key>` (with a password, `#p.<secret>`: the key is wrapped under the secret and the password, see `derive_link_password_keys`). The key, secret and link password live only in the browser and must never be put into a path, query string, header, request body or log; unlocking sends an auth key derived from the password.
 - New ciphertext formats must bind their context (node id, version id, etc.) as AEAD associated data, like the existing ones in `thencloud-crypto/src/lib.rs`. Describe them in `docs/format/README.md` and add vectors (`crates/thencloud-crypto/tests/vectors.rs` writes `docs/format/vectors.json`; checked by the Rust tests and by `web/tests/vectors.test.js` against the WASM build). Existing vectors must keep passing: never change a format in place.
 - Any new server feature must be added to the zero-knowledge scan in `crates/thencloud-server/tests/e2e.rs`, which checks the DB and blob store for plaintext. New browser flows belong in `web/e2e/`, whose `watchRequests` fails a test if any request carries a name, contents, a password or a key.
 - New parsers of untrusted files go in `web/tests/` (browser) or `fuzz/` (Rust) with a fuzz test.

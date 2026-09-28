@@ -180,7 +180,7 @@ As a result, a malicious server cannot swap files, move ciphertexts between node
 
 **Public links** look like `https://host/s/<token>#<key>`. Browsers never send the part after `#` in any HTTP request, so the server only ever sees `<token>`. The share page reads the key from `location.hash` and decrypts locally. Other defences:
 - `Referrer-Policy: no-referrer` and a strict same-origin CSP keep the URL from leaking to third parties.
-- The optional link password is a separate server-side gate. It is not derived from the key.
+- An optional password is part of the key. The link then carries a random secret after `#` instead of the key, and the key is wrapped under the secret and the password together (Argon2id in the browser). Visitors prove the password with a key derived from it, so the server never sees the password, and a server that skipped the check would still hand out nothing anyone can open without it.
 
 ### Threat model
 

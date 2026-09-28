@@ -470,6 +470,30 @@ fn names(nodes: &[Node], parent_key: &Key) -> Vec<String> {
     v
 }
 
+/// What a browser sends for a link with a password, and the secret that
+/// goes after `#`. Upload-only links derive from the fragment they carry
+/// (the owner's identity) and wrap nothing.
+fn link_with_password(node_id: &str, node_key: &Key, password: &str) -> (CreateLinkRequest, Key) {
+    let secret = Key::generate();
+    let k = c::derive_link_password_keys(secret.as_bytes(), password).unwrap();
+    let req = CreateLinkRequest {
+        node_id: node_id.into(),
+        password_auth: Some(B64(k.auth_key.as_bytes().to_vec())),
+        enc_link_key: Some(B64(c::wrap_link_key(&k.kek, node_key, node_id))),
+        enc_link_secret: Some(B64(c::encrypt_link_secret(node_key, &secret, node_id))),
+        expires_at: None,
+        upload_only: false,
+        max_opens: None,
+    };
+    (req, secret)
+}
+
+/// The body of an unlock request: the auth key, never the password.
+fn unlock_body(secret: &Key, password: &str) -> serde_json::Value {
+    let k = c::derive_link_password_keys(secret.as_bytes(), password).unwrap();
+    json!({ "auth": k.auth_key.to_b64() })
+}
+
 fn find_by_name<'a>(nodes: &'a [Node], parent_key: &Key, name: &str) -> &'a Node {
     nodes
         .iter()
@@ -723,25 +747,32 @@ async fn full_lifecycle_is_zero_knowledge() {
     assert_eq!(p.share.unwrap().permission, Permission::Write);
 
     // --- public link with password -----------------------------------------
+    let (req, secret) = link_with_password(&other, &other_key, "letmein");
+    // Every part of it goes together.
+    let mut half = req.clone();
+    half.enc_link_key = None;
     let r = h
-        .call(
-            Method::POST,
-            "/api/links",
-            Some(&alice.token),
-            Some(CreateLinkRequest {
-                node_id: other.clone(),
-                password: Some("letmein".into()),
-                expires_at: None,
-                upload_only: false,
-                max_opens: None,
-            }),
-        )
+        .call(Method::POST, "/api/links", Some(&alice.token), Some(half))
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    let r = h
+        .call(Method::POST, "/api/links", Some(&alice.token), Some(req))
         .await;
     assert_eq!(r.status, StatusCode::CREATED);
     let link: Link = r.json();
     assert!(link.has_password);
-    // What the browser would have: /s/<token>#<key>. Only the token is sent.
-    let fragment_key = other_key.to_b64();
+    // The owner can show the link again: the secret is sealed under the node key.
+    let listed: Vec<Link> = h
+        .get(&format!("/api/links?node_id={other}"), &alice.token)
+        .await
+        .json();
+    let again = listed.iter().find(|l| l.id == link.id).unwrap();
+    assert!(
+        c::decrypt_link_secret(&other_key, again.enc_link_secret.as_ref().unwrap(), &other)
+            .unwrap()
+            == secret
+    );
+    // What the browser would have: /s/<token>#p.<secret>. Only the token is sent.
     let base = format!("/api/public/{}", link.token);
     let r = h
         .raw(Method::GET, &base, None, &[], Body::empty(), None)
@@ -753,7 +784,7 @@ async fn full_lifecycle_is_zero_knowledge() {
             Method::POST,
             &format!("{base}/unlock"),
             None,
-            Some(json!({"password": "nope"})),
+            Some(unlock_body(&secret, "nope")),
         )
         .await;
     assert_eq!(r.status, StatusCode::UNAUTHORIZED);
@@ -762,7 +793,7 @@ async fn full_lifecycle_is_zero_knowledge() {
             Method::POST,
             &format!("{base}/unlock"),
             None,
-            Some(json!({"password": "letmein"})),
+            Some(unlock_body(&secret, "letmein")),
         )
         .await;
     assert_eq!(r.status, StatusCode::OK);
@@ -772,8 +803,15 @@ async fn full_lifecycle_is_zero_knowledge() {
         .raw(Method::GET, &base, None, &lt, Body::empty(), None)
         .await
         .json();
-    let lk = Key::from_b64(&fragment_key).unwrap();
+    // The node key comes wrapped under the password and the secret: without
+    // either, it doesn't open.
+    let wrapped = info.enc_link_key.unwrap();
     let info_node = info.node.unwrap();
+    let wrong = c::derive_link_password_keys(secret.as_bytes(), "nope").unwrap();
+    assert!(c::unwrap_link_key(&wrong.kek, &wrapped, &info_node.id).is_err());
+    let k = c::derive_link_password_keys(secret.as_bytes(), "letmein").unwrap();
+    let lk = c::unwrap_link_key(&k.kek, &wrapped, &info_node.id).unwrap();
+    assert!(lk == other_key);
     assert_eq!(
         c::decrypt_metadata(&lk, &info_node.id, &info_node.enc_metadata)
             .unwrap()
@@ -1456,7 +1494,9 @@ async fn file_drop_links_are_upload_only_and_zero_knowledge() {
         .unwrap();
     let mk_link = |node_id: String, upload_only: bool| CreateLinkRequest {
         node_id,
-        password: None,
+        password_auth: None,
+        enc_link_key: None,
+        enc_link_secret: None,
         expires_at: None,
         upload_only,
         max_opens: None,
@@ -2413,7 +2453,9 @@ async fn drop_visitors_cannot_prune_the_owners_versions() {
             Some(&alice.token),
             Some(CreateLinkRequest {
                 node_id: inbox.clone(),
-                password: None,
+                password_auth: None,
+                enc_link_key: None,
+                enc_link_secret: None,
                 expires_at: None,
                 upload_only: true,
                 max_opens: None,
@@ -2552,7 +2594,9 @@ async fn trash_hides_restores_and_purges() {
             Some(&alice.token),
             Some(CreateLinkRequest {
                 node_id: folder.clone(),
-                password: None,
+                password_auth: None,
+                enc_link_key: None,
+                enc_link_secret: None,
                 expires_at: None,
                 upload_only: false,
                 max_opens: None,
@@ -4342,7 +4386,9 @@ async fn post_quantum_keys_seal_shares_and_drops() {
             Some(&alice.token),
             Some(CreateLinkRequest {
                 node_id: inbox.clone(),
-                password: None,
+                password_auth: None,
+                enc_link_key: None,
+                enc_link_secret: None,
                 expires_at: None,
                 upload_only: true,
                 max_opens: None,
@@ -4391,12 +4437,21 @@ async fn links_with_limited_opens() {
         .upload(&h, &folder, None, "note.txt", b"read me once")
         .await
         .unwrap();
-    let create = |max_opens, password: Option<&str>, upload_only| CreateLinkRequest {
-        node_id: folder.clone(),
-        password: password.map(Into::into),
-        expires_at: None,
-        upload_only,
-        max_opens,
+    let (with_password, secret) = link_with_password(&folder, &folder_key, "sesame");
+    let create = |max_opens, password: Option<&str>, upload_only| match password {
+        Some(_) => CreateLinkRequest {
+            max_opens,
+            ..with_password.clone()
+        },
+        None => CreateLinkRequest {
+            node_id: folder.clone(),
+            password_auth: None,
+            enc_link_key: None,
+            enc_link_secret: None,
+            expires_at: None,
+            upload_only,
+            max_opens,
+        },
     };
     for bad in [create(Some(0), None, false), create(Some(3), None, true)] {
         let r = h
@@ -4496,7 +4551,7 @@ async fn links_with_limited_opens() {
             Method::POST,
             &format!("{base}/unlock"),
             None,
-            Some(json!({"password": "sesame"})),
+            Some(unlock_body(&secret, "sesame")),
         )
         .await
         .json();
@@ -4942,35 +4997,22 @@ async fn onion_services_limit_by_account_not_by_address() {
     );
 
     // So is guessing a link's password: per link, as there are no addresses.
-    let (folder, _) = frank.mkdir(&h, &frank.root, "Shared").await;
+    let (folder, folder_key) = frank.mkdir(&h, &frank.root, "Shared").await;
+    let (req, secret) = link_with_password(&folder, &folder_key, "right");
     let link: Link = h
-        .call(
-            Method::POST,
-            "/api/links",
-            Some(&frank.token),
-            Some(CreateLinkRequest {
-                node_id: folder,
-                password: Some("right".into()),
-                expires_at: None,
-                upload_only: false,
-                max_opens: None,
-            }),
-        )
+        .call(Method::POST, "/api/links", Some(&frank.token), Some(req))
         .await
         .json();
-    let unlock = |pw: &'static str| {
+    let (wrong, right) = (unlock_body(&secret, "wrong"), unlock_body(&secret, "right"));
+    let unlock = |body: &serde_json::Value| {
         let uri = format!("/api/public/{}/unlock", link.token);
-        let h = &h;
-        async move {
-            h.call(Method::POST, &uri, None, Some(json!({ "password": pw })))
-                .await
-                .status
-        }
+        let (h, body) = (&h, body.clone());
+        async move { h.call(Method::POST, &uri, None, Some(body)).await.status }
     };
     for _ in 0..10 {
-        assert_eq!(unlock("wrong").await, StatusCode::UNAUTHORIZED);
+        assert_eq!(unlock(&wrong).await, StatusCode::UNAUTHORIZED);
     }
-    assert_eq!(unlock("right").await, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(unlock(&right).await, StatusCode::TOO_MANY_REQUESTS);
 }
 
 #[tokio::test]

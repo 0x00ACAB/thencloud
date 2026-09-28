@@ -621,11 +621,19 @@ pub struct OutgoingShare {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateLinkRequest {
     pub node_id: String,
-    /// Optional access password. This is a server-side gate only; the
-    /// decryption key lives in the URL fragment and never reaches the
+    /// For a link with a password: the auth key from
+    /// `derive_link_password_keys`. The password itself never reaches the
     /// server.
     #[serde(default)]
-    pub password: Option<String>,
+    pub password_auth: Option<B64>,
+    /// With a password (except upload-only links): the node key wrapped
+    /// under the link's KEK (`wrap_link_key`), handed to visitors who give
+    /// the password, and the link's secret under the node key
+    /// (`encrypt_link_secret`) so the owner can show the link again.
+    #[serde(default)]
+    pub enc_link_key: Option<B64>,
+    #[serde(default)]
+    pub enc_link_secret: Option<B64>,
     /// Unix seconds.
     #[serde(default)]
     pub expires_at: Option<i64>,
@@ -654,11 +662,15 @@ pub struct Link {
     pub max_opens: Option<i64>,
     #[serde(default)]
     pub opens: i64,
+    /// For a link with a password: its secret, sealed under the node key.
+    #[serde(default)]
+    pub enc_link_secret: Option<B64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UnlockLinkRequest {
-    pub password: String,
+    /// The auth key from `derive_link_password_keys`, not the password.
+    pub auth: B64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -689,6 +701,11 @@ pub struct PublicLinkInfo {
     /// pass back in the `X-Link-Token` header.
     #[serde(default)]
     pub link_token: Option<String>,
+    /// For a link with a password, once it's given: the node key wrapped
+    /// under the link's KEK, which needs the password and the secret after
+    /// `#` to open.
+    #[serde(default)]
+    pub enc_link_key: Option<B64>,
 }
 
 /// A file added through an upload-only link, waiting for the folder owner
