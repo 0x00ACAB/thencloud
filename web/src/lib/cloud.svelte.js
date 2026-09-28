@@ -4,7 +4,7 @@
 // in this module. Nothing is written to localStorage or sessionStorage, so a
 // reload signs you out.
 
-import { request } from './api.js';
+import { request, allChildren } from './api.js';
 import {
   tc, b64, unb64, decryptMeta, encryptMeta, unwrapChild, decryptChildren,
   deriveAccountKeys, deriveLinkKeys, fetchFile, openFile, encryptPiece, saveBlob,
@@ -541,9 +541,12 @@ export async function keyOf(id) {
   return keyCache.get(id);
 }
 
+/** A folder's child nodes (still encrypted), however many there are. */
+const children = (id) => allChildren((p) => api('GET', p), `/api/nodes/${id}/children`);
+
 export async function listFolder(id, key) {
   await adoptDrops();
-  const nodes = await api('GET', `/api/nodes/${id}/children`);
+  const nodes = await children(id);
   const rows = decryptChildren(key, nodes);
   for (const r of rows) keyCache.set(r.node.id, r.key);
   index.set(id, { at: Date.now(), rows });
@@ -561,7 +564,7 @@ const tagFor = (folderKey, name) => b64(tc.name_tag(folderKey, name));
 /** Lower-cased names already in a folder (straight from the server, no adoption). */
 async function namesIn(folderId, folderKey) {
   try {
-    const nodes = await api('GET', `/api/nodes/${folderId}/children`);
+    const nodes = await children(folderId);
     return new Set(decryptChildren(folderKey, nodes).map((r) => r.meta.name.toLowerCase()));
   } catch {
     return new Set();
@@ -640,7 +643,7 @@ export async function verifyTree(top, { signal, onProgress, onProblem } = {}) {
     const { entry, location } = queue.shift();
     let nodes;
     try {
-      nodes = await api('GET', `/api/nodes/${entry.node.id}/children`);
+      nodes = await children(entry.node.id);
     } catch (e) {
       problem(location.slice(0, -1), entry.node, entry.meta.name, e);
       continue;

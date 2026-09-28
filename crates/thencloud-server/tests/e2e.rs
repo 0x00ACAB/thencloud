@@ -5726,3 +5726,77 @@ async fn the_change_feed_lists_what_changed_after_a_cursor() {
     .unwrap();
     assert_eq!(orphans, 0);
 }
+
+#[tokio::test]
+async fn big_folders_are_listed_a_page_at_a_time() {
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "pw").await;
+    let (big, _) = alice.mkdir(&h, &alice.root, "Big").await;
+    for i in 0..6 {
+        alice.mkdir(&h, &big, &format!("dir {i}")).await;
+    }
+    for i in 0..11 {
+        alice
+            .upload(&h, &big, None, &format!("f{i}.txt"), b"x")
+            .await
+            .unwrap();
+    }
+    let all: Vec<Node> = h
+        .get(&format!("/api/nodes/{big}/children"), &alice.token)
+        .await
+        .json();
+    assert_eq!(all.len(), 17);
+
+    // Pages of 5 add up to the whole listing, in the same order.
+    let mut paged = Vec::new();
+    let mut after: Option<String> = None;
+    let mut pages = 0;
+    loop {
+        let uri = match &after {
+            Some(a) => format!("/api/nodes/{big}/children?limit=5&after={a}"),
+            None => format!("/api/nodes/{big}/children?limit=5"),
+        };
+        let r = h.get(&uri, &alice.token).await;
+        assert_eq!(r.status, StatusCode::OK, "{r:?}");
+        let page: NodePage = r.json();
+        assert!(page.nodes.len() <= 5);
+        paged.extend(page.nodes);
+        pages += 1;
+        match page.next {
+            Some(n) => after = Some(n),
+            None => break,
+        }
+    }
+    assert_eq!(pages, 4);
+    let ids = |v: &[Node]| v.iter().map(|n| n.id.clone()).collect::<Vec<_>>();
+    assert_eq!(ids(&paged), ids(&all));
+
+    // Nonsense cursors are refused, not guessed at.
+    for bad in ["x", "file.notanumber.id"] {
+        let r = h
+            .get(
+                &format!("/api/nodes/{big}/children?limit=5&after={bad}"),
+                &alice.token,
+            )
+            .await;
+        assert_eq!(r.status, StatusCode::BAD_REQUEST, "{bad}");
+    }
+
+    // A page is read from the index in order, not sorted afterwards.
+    let plan: Vec<(i64, i64, i64, String)> = sqlx::query_as(
+        "EXPLAIN QUERY PLAN SELECT id FROM nodes n WHERE n.parent_id = ?1 AND n.trashed_at IS NULL \
+         AND n.dropped = 0 AND (?2 = 0 OR n.kind < ?3) ORDER BY n.kind DESC, n.created_at, n.id LIMIT 5",
+    )
+    .bind(&big)
+    .bind(false)
+    .bind("")
+    .fetch_all(&h.state.db)
+    .await
+    .unwrap();
+    let plan: Vec<&str> = plan.iter().map(|p| p.3.as_str()).collect();
+    assert!(
+        plan.iter().any(|p| p.contains("nodes_children")),
+        "{plan:?}"
+    );
+    assert!(!plan.iter().any(|p| p.contains("TEMP B-TREE")), "{plan:?}");
+}

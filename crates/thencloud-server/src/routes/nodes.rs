@@ -1,12 +1,12 @@
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use thencloud_crypto::api::*;
 
 use crate::access::{self, Access};
 use crate::auth::AuthUser;
-use crate::db::{NodeRow, get_children, get_node};
+use crate::db::{ChildrenQuery, NodeRow, children_response, get_node};
 use crate::error::{AppError, Result, is_unique_violation, name_conflict};
 use crate::routes::activity::{self, Event};
 use crate::util::*;
@@ -26,14 +26,14 @@ pub async fn children(
     State(state): State<AppState>,
     user: AuthUser,
     Path(id): Path<String>,
-) -> Result<Json<Vec<Node>>> {
+    Query(q): Query<ChildrenQuery>,
+) -> Result<Response> {
     access::require(&state.db, &user.id, &id, Access::Read).await?;
     let node = get_node(&state.db, &id).await?.ok_or(AppError::NotFound)?;
     if !node.is_folder() {
         return Err(AppError::bad("not a folder"));
     }
-    let kids = get_children(&state.db, &id).await?;
-    Ok(Json(kids.into_iter().map(NodeRow::into_api).collect()))
+    children_response(&state.db, &id, q).await
 }
 
 /// The chain of nodes the caller needs to derive this node's key: from
