@@ -1,5 +1,5 @@
 <script>
-  import { session, resolvePath, listFolder, createFolder, rename, move, trash, untrash, download, downloadZip, fetchEntry, upload, saveText, refreshMe, toolsInfo, loadDraft, storeDraft, dropDraft, searchTree, openEntry, strayDrops, bookProgress } from '../../lib/cloud.svelte.js';
+  import { session, resolvePath, listFolder, createFolder, rename, move, trash, untrash, download, downloadZip, fetchEntry, upload, saveText, refreshMe, toolsInfo, loadDraft, storeDraft, dropDraft, searchTree, openEntry, strayDrops, bookProgress, watchFolder } from '../../lib/cloud.svelte.js';
   import { toast, toastError, trackTransfer, errorMessage, sort, sortBy, photoDetails, fileView, setFileView } from '../../lib/ui.svelte.js';
   import { fileInfo, hasDetails, stripFile } from '../../lib/exif.js';
   import Modal from '../Modal.svelte';
@@ -53,7 +53,8 @@
   const canWrite = $derived(!share || share.permission === 'write');
   const isOwner = $derived(!share);
 
-  async function load(id = folderId) {
+  /** `reopen`: show the file named in the URL, as on the first load. */
+  async function load(id = folderId, reopen = true) {
     loadError = '';
     try {
       const p = await resolvePath(id);
@@ -65,13 +66,28 @@
       rows = list;
       // Opened from a search result: show that file.
       const wanted = openId && rows.find((r) => r.node.id === openId && r.node.kind === 'file');
-      if (wanted && !dialog) untrack(() => preview(wanted));
+      if (reopen && wanted && !dialog) untrack(() => preview(wanted));
     } catch (e) {
       loadError = errorMessage(e);
     } finally {
       loading = false;
     }
   }
+
+  // Live updates: someone else (or another tab) changed something here.
+  // Reloaded quietly a moment later, and not while a name is being edited.
+  $effect(() => {
+    const id = folderId;
+    let timer = null;
+    const stop = watchFolder(id, () => {
+      clearTimeout(timer);
+      timer = setTimeout(function again() {
+        if (renaming || document.hidden) return (timer = setTimeout(again, 1000));
+        load(id, false);
+      }, 600);
+    });
+    return () => (stop(), clearTimeout(timer));
+  });
 
   $effect(() => {
     loading = true;

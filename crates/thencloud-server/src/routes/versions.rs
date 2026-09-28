@@ -127,7 +127,7 @@ pub async fn restore(
             "the file was modified by someone else; reload and retry".into(),
         ));
     }
-    activity::note(&state.db, &user.id, &id, Event::Changed, None).await;
+    activity::note(&state, &user.id, &id, Event::Changed, None).await;
     Ok(Json(
         get_node(&state.db, &id)
             .await?

@@ -1417,6 +1417,62 @@ export async function links(nodeId) {
 export const deleteLink = (id) => api('DELETE', `/api/links/${id}`);
 
 // ---------------------------------------------------------------------------
+// Live updates: the server streams the ids of nodes that change in a folder
+// (Server-Sent Events). Read with fetch, not EventSource, so the session
+// token goes in a header rather than the URL.
+// ---------------------------------------------------------------------------
+
+/**
+ * Call `onChange(nodeId)` whenever something changes in folder `id` or
+ * below (`nodeId` is null when some were missed). Reconnects after errors,
+ * slower each time. Returns a function that stops watching.
+ */
+export function watchFolder(id, onChange) {
+  const ctl = new AbortController();
+  (async () => {
+    let wait = 2000;
+    while (!ctl.signal.aborted) {
+      try {
+        const res = await fetch(`/api/nodes/${id}/changes`, {
+          headers: { Authorization: `Bearer ${session.token}` },
+          cache: 'no-store',
+          signal: ctl.signal,
+        });
+        // Signed out, or the folder is gone or no longer ours to see.
+        if ([401, 403, 404].includes(res.status)) return;
+        if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+        wait = 2000;
+        const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+        let buf = '';
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += value;
+          let end;
+          while ((end = buf.indexOf('\n\n')) >= 0) {
+            const block = buf.slice(0, end);
+            buf = buf.slice(end + 2);
+            if (!/^event: change$/m.test(block)) continue;
+            let nodeId = null;
+            try {
+              nodeId = JSON.parse(block.match(/^data: (.*)$/m)?.[1] ?? '{}').node_id ?? null;
+            } catch {
+              /* a change all the same */
+            }
+            onChange(nodeId);
+          }
+        }
+      } catch {
+        if (ctl.signal.aborted) return;
+      }
+      await new Promise((r) => setTimeout(r, wait));
+      wait = Math.min(wait * 2, 60_000);
+    }
+  })();
+  return () => ctl.abort();
+}
+
+// ---------------------------------------------------------------------------
 // Activity: who added, changed, renamed, moved, trashed or restored what in a
 // folder. The server keeps node ids; names are found and decrypted here, for
 // the items we can still reach.

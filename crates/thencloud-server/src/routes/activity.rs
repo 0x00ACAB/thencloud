@@ -4,11 +4,17 @@
 //! node ids are kept: the browser finds and decrypts the names, so the
 //! server learns nothing it didn't already see.
 
+use std::convert::Infallible;
+use std::sync::Arc;
+
 use axum::Json;
 use axum::extract::{Path, Query, State};
+use axum::response::sse::{Event as SseEvent, KeepAlive, Sse};
+use futures_core::Stream;
 use serde::Deserialize;
 use sqlx::SqlitePool;
 use thencloud_crypto::api::ActivityEvent;
+use tokio::sync::broadcast::error::RecvError;
 
 use crate::AppState;
 use crate::access::{self, Access};
@@ -43,22 +49,46 @@ impl Event {
     }
 }
 
-/// Note an event. Best effort: a failure is logged, never passed on, since
+/// A change to a node, sent to live listeners: its id and every folder it
+/// was in (for a move, both before and after), nothing else.
+#[derive(Clone, Debug)]
+pub struct Change {
+    pub node_id: String,
+    pub folders: Arc<[String]>,
+}
+
+/// Note an event: tell whoever is watching its folders, and keep it in
+/// their history. Best effort: a failure is logged, never passed on, since
 /// what it records has already happened. `was_in` is the folder a moved
 /// item came from, so the move shows there too.
-pub async fn note(db: &SqlitePool, actor: &str, node_id: &str, what: Event, was_in: Option<&str>) {
-    if let Err(e) = record(db, actor, node_id, what, was_in).await {
+pub async fn note(state: &AppState, actor: &str, node_id: &str, what: Event, was_in: Option<&str>) {
+    if let Err(e) = record(state, actor, node_id, what, was_in).await {
         tracing::warn!(error = %e, "couldn't record activity");
     }
 }
 
+/// Every folder at or above `start`.
+async fn folders_above(db: &SqlitePool, start: &str) -> Result<Vec<String>> {
+    Ok(sqlx::query_scalar(
+        "WITH RECURSIVE anc(id, parent_id) AS ( \
+            SELECT id, parent_id FROM nodes WHERE id = ? \
+            UNION ALL \
+            SELECT n.id, n.parent_id FROM nodes n JOIN anc ON n.id = anc.parent_id \
+         ) SELECT id FROM anc",
+    )
+    .bind(start)
+    .fetch_all(db)
+    .await?)
+}
+
 async fn record(
-    db: &SqlitePool,
+    state: &AppState,
     actor: &str,
     node_id: &str,
     what: Event,
     was_in: Option<&str>,
 ) -> Result<()> {
+    let db = &state.db;
     let Some((parent, is_folder)): Option<(Option<String>, bool)> =
         sqlx::query_as("SELECT parent_id, kind = 'folder' FROM nodes WHERE id = ?")
             .bind(node_id)
@@ -67,6 +97,20 @@ async fn record(
     else {
         return Ok(());
     };
+    let mut folders = Vec::new();
+    for start in [parent.as_deref(), was_in].into_iter().flatten() {
+        for f in folders_above(db, start).await? {
+            if !folders.contains(&f) {
+                folders.push(f);
+            }
+        }
+    }
+    let folders: Arc<[String]> = folders.into();
+    // Nobody listening is fine.
+    let _ = state.changes.send(Change {
+        node_id: node_id.into(),
+        folders: folders.clone(),
+    });
     let at = coarse_now();
     // The same thing by the same person in the same hour is one event:
     // saving a note every few seconds shouldn't fill the history.
@@ -87,21 +131,53 @@ async fn record(
     .fetch_optional(db)
     .await?;
     let Some(id) = id else { return Ok(()) };
-    for start in [parent.as_deref(), was_in].into_iter().flatten() {
-        sqlx::query(
-            "WITH RECURSIVE anc(id, parent_id) AS ( \
-                SELECT id, parent_id FROM nodes WHERE id = ? \
-                UNION ALL \
-                SELECT n.id, n.parent_id FROM nodes n JOIN anc ON n.id = anc.parent_id \
-             ) \
-             INSERT OR IGNORE INTO activity_scope (folder_id, event_id) SELECT id, ? FROM anc",
-        )
-        .bind(start)
-        .bind(id)
-        .execute(db)
-        .await?;
+    for f in folders.iter() {
+        sqlx::query("INSERT OR IGNORE INTO activity_scope (folder_id, event_id) VALUES (?, ?)")
+            .bind(f)
+            .bind(id)
+            .execute(db)
+            .await?;
     }
     Ok(())
+}
+
+/// Live changes in a folder (and the folders in it), as Server-Sent Events:
+/// `event: change`, `data: {"node_id": ...}`. Only ids: the client reloads
+/// what it shows. Access is checked again for every event, so a share that
+/// ends ends the stream.
+pub async fn live(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<String>,
+) -> Result<Sse<impl Stream<Item = std::result::Result<SseEvent, Infallible>>>> {
+    access::require(&state.db, &user.id, &id, Access::Read).await?;
+    let rx = state.changes.subscribe();
+    let stream = futures_util::stream::unfold(
+        (rx, state, user.id, id),
+        |(mut rx, state, user_id, folder)| async move {
+            loop {
+                match rx.recv().await {
+                    Ok(c) if c.folders.contains(&folder) => {
+                        access::access(&state.db, &user_id, &folder)
+                            .await
+                            .ok()
+                            .flatten()?;
+                        let data = serde_json::json!({ "node_id": c.node_id }).to_string();
+                        let ev = SseEvent::default().event("change").data(data);
+                        return Some((Ok(ev), (rx, state, user_id, folder)));
+                    }
+                    Ok(_) => continue,
+                    // Missed some: tell the client to reload everything.
+                    Err(RecvError::Lagged(_)) => {
+                        let ev = SseEvent::default().event("change").data("{}");
+                        return Some((Ok(ev), (rx, state, user_id, folder)));
+                    }
+                    Err(RecvError::Closed) => return None,
+                }
+            }
+        },
+    );
+    Ok(Sse::new(stream).keep_alive(KeepAlive::default()))
 }
 
 #[derive(Deserialize)]

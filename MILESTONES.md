@@ -178,7 +178,7 @@ Smaller things:
 ## Milestone 12: Sync and scale
 
 - [ ] **Change feed**: `GET /api/changes?since=<cursor>` returns what changed in your trees and shares, so sync clients and the mount don't have to walk the whole tree
-- [ ] **Live updates**: open views refresh when something changes in a shared folder (Server-Sent Events carrying only node ids)
+- [x] **Live updates**: open views refresh when something changes in a shared folder (Server-Sent Events carrying only node ids). `GET /api/nodes/<id>/changes`, fed by the same hook as the activity history; access is checked again for each event. The browser reads it with fetch (the token stays in a header, not the URL) and reloads the folder quietly, waiting while the tab is hidden or a name is being edited
 - [ ] **Large folders**: paginated listings on the server and a virtualised file table, so a folder with 100,000 items stays fast
 - [ ] **PostgreSQL** as an alternative to SQLite for bigger installs
 - [ ] **Several server instances** behind a load balancer, sharing PostgreSQL and the S3 blob store
