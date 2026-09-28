@@ -1391,6 +1391,38 @@ export async function links(nodeId) {
 export const deleteLink = (id) => api('DELETE', `/api/links/${id}`);
 
 // ---------------------------------------------------------------------------
+// Activity: who added, changed, renamed, moved, trashed or restored what in a
+// folder. The server keeps node ids; names are found and decrypted here, for
+// the items we can still reach.
+// ---------------------------------------------------------------------------
+
+/**
+ * A page of a folder's activity, newest first: [{ ...event, name, parentId }]
+ * with `name` null for items that are gone or out of reach.
+ */
+export async function activity(folder, before = null) {
+  const q = before ? `?before=${before}` : '';
+  const events = await api('GET', `/api/nodes/${folder.node.id}/activity${q}`);
+  const ids = [...new Set(events.map((e) => e.node_id))];
+  const found = new Map();
+  // A few at a time: each is a request.
+  for (let i = 0; i < ids.length; i += 6) {
+    await Promise.all(
+      ids.slice(i, i + 6).map(async (id) => {
+        try {
+          const { items } = await resolvePath(id);
+          const it = items[items.length - 1];
+          found.set(id, { name: it.meta.name, parentId: it.node.parent_id });
+        } catch {
+          found.set(id, null);
+        }
+      }),
+    );
+  }
+  return events.map((e) => ({ ...e, name: found.get(e.node_id)?.name ?? null, parentId: found.get(e.node_id)?.parentId ?? null }));
+}
+
+// ---------------------------------------------------------------------------
 // Comments: encrypted under the node key, so whoever can open the node can
 // read them. Each is bound to the node, its id and its author, so the server
 // can't move one or put it in someone else's name.

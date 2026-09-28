@@ -6,6 +6,7 @@
 //! the original parent. Items belong to the tree owner's trash, even when a
 //! share recipient deleted them, and are purged after `--trash-days`.
 
+use crate::routes::activity::{self, Event};
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -130,6 +131,7 @@ pub async fn restore(
     .execute(&state.db)
     .await
     .map_err(crate::error::name_conflict)?;
+    activity::note(&state.db, &user.id, &id, Event::Restored, None).await;
     Ok(Json(
         get_node(&state.db, &id)
             .await?
