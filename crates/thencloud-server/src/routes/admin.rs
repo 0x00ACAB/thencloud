@@ -6,6 +6,7 @@
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
+use sqlx::AssertSqlSafe;
 use thencloud_crypto::api::*;
 
 use crate::AppState;
@@ -44,18 +45,20 @@ fn to_admin_user(t: UserTuple) -> AdminUser {
 }
 
 async fn admin_user(state: &AppState, id: &str) -> Result<AdminUser> {
-    let row: Option<UserTuple> = sqlx::query_as(&format!("{USER_QUERY} WHERE u.id = ?"))
-        .bind(id)
-        .fetch_optional(&state.db)
-        .await?;
+    let row: Option<UserTuple> =
+        sqlx::query_as(AssertSqlSafe(format!("{USER_QUERY} WHERE u.id = ?")))
+            .bind(id)
+            .fetch_optional(&state.db)
+            .await?;
     row.map(to_admin_user).ok_or(AppError::NotFound)
 }
 
 pub async fn users(State(state): State<AppState>, user: AuthUser) -> Result<Json<Vec<AdminUser>>> {
     require_admin(&user)?;
-    let rows: Vec<UserTuple> = sqlx::query_as(&format!("{USER_QUERY} ORDER BY u.created_at"))
-        .fetch_all(&state.db)
-        .await?;
+    let rows: Vec<UserTuple> =
+        sqlx::query_as(AssertSqlSafe(format!("{USER_QUERY} ORDER BY u.created_at")))
+            .fetch_all(&state.db)
+            .await?;
     Ok(Json(rows.into_iter().map(to_admin_user).collect()))
 }
 
