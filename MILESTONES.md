@@ -138,7 +138,7 @@ Smaller things:
 - [x] **Health and metrics**: a health check and Prometheus metrics with the same counts the admin view shows, nothing more (`/api/health`; `/api/metrics` only with `--metrics-token`)
 - [x] **Integrity check**: the server checks every blob it expects exists with the right size; the client can verify that everything decrypts and flags what doesn't (`thencloud-server check`, and Settings > Check your files)
 - [ ] **Translations**: move UI strings into message files and pick the language from the browser
-- [ ] **Accessibility pass**: screen reader labels, focus handling in dialogs and menus, and colour contrast checked in both themes and with the tint on
+- [x] **Accessibility pass**: screen reader labels, focus handling in dialogs and menus, and colour contrast checked in both themes and with the tint on. Every text element on the main pages and dialogs measured in the browser against WCAG AA in dark, light and both tinted themes: the faint grey and danger buttons were below 4.5:1 and are fixed. Menus take Home/End, and Tab closes them; icon-only buttons all have names
 
 ## Milestone 8: Hardening
 
