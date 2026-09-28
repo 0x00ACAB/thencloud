@@ -26,12 +26,17 @@
   import FolderIcon from './FolderIcon.svelte';
   import FileIcon from './FileIcon.svelte';
   import { places, loadPlaces, resolvePlaces } from '../lib/places.svelte.js';
+  import HealthView from './views/HealthView.svelte';
+  import { unloadHealth } from '../lib/health.svelte.js';
+  import { modules, loadModules } from '../lib/modules.svelte.js';
 
   const rootId = session.me.keys.root_node_id;
   loadMyAvatar().catch(() => {});
   onDestroy(unloadVideos);
   onDestroy(unloadNotes);
   onDestroy(unloadPhotos);
+  onDestroy(unloadHealth);
+  loadModules().catch(() => {});
 
   // Phones get a bottom tab bar; fixed things (toasts, the transfer tray,
   // the selection bar, the + button) sit above it, and the music player,
@@ -41,7 +46,7 @@
     return () => document.documentElement.classList.remove('has-bottom-bar');
   });
 
-  const nav = [
+  const nav = $derived([
     { name: 'files', label: 'My files', short: 'Files', icon: 'folder', to: () => ({ name: 'files', folderId: rootId }) },
     { name: 'recent', label: 'Recent', icon: 'clock', to: () => ({ name: 'recent' }) },
     { name: 'favourites', label: 'Favourites', icon: 'star', to: () => ({ name: 'favourites' }) },
@@ -52,10 +57,11 @@
     { name: 'photos', label: 'Photos', icon: 'image', to: () => ({ name: 'photos' }) },
     { name: 'music', label: 'Music', icon: 'music', to: () => ({ name: 'music' }) },
     { name: 'videos', label: 'Videos', icon: 'clapperboard', to: () => ({ name: 'videos' }) },
+    ...(modules.health ? [{ name: 'health', label: 'Health', icon: 'heart-pulse', to: () => ({ name: 'health' }) }] : []),
     { name: 'trash', label: 'Trash', icon: 'trash-2', to: () => ({ name: 'trash' }) },
     { name: 'settings', label: 'Settings', icon: 'settings', to: () => ({ name: 'settings' }) },
     ...(session.me.is_admin ? [{ name: 'admin', label: 'Admin', icon: 'shield-check', to: () => ({ name: 'admin' }) }] : []),
-  ];
+  ]);
 
   // In-app navigation. Uses history.pushState so the browser's back button
   // works, and keeps the section and folder after the # so a reload lands in
@@ -74,7 +80,8 @@
     if (name === 'files') return { name, folderId: id(a) ?? rootId };
     if (name === 'music' && a === 'album' && id(b)) return { name, album: b };
     if (name === 'music' && a === 'playlist' && id(b)) return { name, playlist: b };
-    if (nav.some((n) => n.name === name)) return { name };
+    // Optional modules aren't known to be on yet at first; their views check.
+    if (nav.some((n) => n.name === name) || name === 'health') return { name };
     return null;
   }
 
@@ -230,6 +237,12 @@
           <MusicView album={view.album} playlist={view.playlist} {go} />
         {:else if view.name === 'videos'}
           <VideosView series={view.series} play={view.play} {go} />
+        {:else if view.name === 'health'}
+          {#if modules.health}
+            <HealthView />
+          {:else if modules.loaded}
+            <p class="text-[13px] text-fg-muted">Health is turned off. You can turn it on in <button type="button" class="link" onclick={() => go({ name: 'settings' })}>Settings</button>.</p>
+          {/if}
         {:else if view.name === 'trash'}
           <TrashView {go} />
         {:else if view.name === 'settings'}

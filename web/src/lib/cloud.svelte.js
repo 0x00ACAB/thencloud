@@ -1055,7 +1055,7 @@ export async function exportAccount(onProgress) {
     return { node: { kind: 'file' }, meta: { name, size: bytes.length, mtime: now }, bytes };
   };
   const data = [];
-  for (const name of ['music', 'videos', 'files', 'notes', 'books']) {
+  for (const name of ['music', 'videos', 'files', 'notes', 'books', 'health', 'prefs']) {
     const d = await loadAppData(name);
     if (Object.keys(d).length) data.push(json(`${name}.json`, d));
   }
