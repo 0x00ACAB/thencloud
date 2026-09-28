@@ -138,8 +138,8 @@ pub async fn login(
     ip: ClientIp,
     Json(req): Json<AppLoginRequest>,
 ) -> Result<Json<AppLoginResponse>> {
-    let ikey = format!("app-login-ip:{}", ip.key());
-    if state.limiter.blocked(&ikey) {
+    let ikey = ip.key().map(|k| format!("app-login-ip:{k}"));
+    if ikey.as_deref().is_some_and(|k| state.limiter.blocked(k)) {
         return Err(AppError::RateLimited);
     }
     let row: Option<(String, String, String, Vec<u8>)> = sqlx::query_as(
@@ -149,7 +149,9 @@ pub async fn login(
     .fetch_optional(&state.db)
     .await?;
     let Some((id, user_id, scope, enc_master_key)) = row else {
-        state.limiter.fail(&ikey);
+        if let Some(k) = &ikey {
+            state.limiter.fail(k);
+        }
         return Err(AppError::InvalidCredentials);
     };
     let u = user_by_id(&state, &user_id).await?;

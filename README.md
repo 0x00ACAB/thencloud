@@ -75,6 +75,19 @@ THENCLOUD_DOMAIN=cloud.example.com docker compose -f deploy/compose.yaml up -d
 
 The image builds the web client the same way releases do, so `thencloud verify-web` can check it against a signed release. Each release also has server and CLI binaries for Linux (x86_64, arm64) and macOS (arm64); the server needs the release's web client unpacked next to it (`--web-dir`).
 
+### As a Tor onion service
+
+Run thencloud behind a Tor onion service and the server never learns its users' IP addresses (`deploy/onion/torrc` has the lines to add):
+
+```sh
+thencloud-server --bind 127.0.0.1:8080 --limit-by-address false
+```
+
+- Every visitor reaches the server from Tor's own address, so `--limit-by-address false` limits sign-in attempts per account (and link passwords per link) instead. Otherwise one person's wrong guesses would lock everyone out.
+- Onion addresses are plain `http://`, and that's fine: Tor encrypts the connection end to end and the address itself authenticates the server. Tor Browser treats onion pages as secure contexts, which the web client needs. The server accepts passkeys made on an onion address, if the browser offers them there. Tor Browser forgets site data when it closes, so "Keep me signed in" only lasts until then.
+- Keep the server's port bound to 127.0.0.1 only; if it's reachable directly as well, that way in shows addresses again.
+- The CLI knows nothing about Tor; run it under `torsocks`.
+
 ### Server options
 
 Every flag can also be set as an environment variable.

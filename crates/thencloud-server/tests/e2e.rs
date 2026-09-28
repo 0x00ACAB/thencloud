@@ -4906,3 +4906,68 @@ async fn behind_a_proxy_rate_limits_use_forwarded_for() {
         assert_eq!(other, expected, "trust_proxy = {trust}");
     }
 }
+
+#[tokio::test]
+async fn onion_services_limit_by_account_not_by_address() {
+    // Behind Tor every visitor arrives from the same address: failures
+    // from strangers mustn't lock everyone else out.
+    let h = Harness::with_config(|c| c.limit_by_address = false).await;
+    let frank = register(&h, "frank", "pw").await;
+    let bad = Key::generate();
+    for i in 0..15 {
+        let r = h
+            .call(
+                Method::POST,
+                "/api/auth/login",
+                None,
+                Some(LoginRequest {
+                    username: format!("stranger{i}"),
+                    auth_key: B64(bad.as_bytes().to_vec()),
+                    device_name: None,
+                }),
+            )
+            .await;
+        assert_eq!(r.status, StatusCode::UNAUTHORIZED);
+    }
+    assert!(login(&h, "frank", "pw").await.is_ok());
+
+    // Guessing one account's password is still limited.
+    for _ in 0..10 {
+        assert!(login(&h, "frank", "wrong").await.is_err());
+    }
+    assert_eq!(
+        login(&h, "frank", "pw").await.err().unwrap().status,
+        StatusCode::TOO_MANY_REQUESTS
+    );
+
+    // So is guessing a link's password: per link, as there are no addresses.
+    let (folder, _) = frank.mkdir(&h, &frank.root, "Shared").await;
+    let link: Link = h
+        .call(
+            Method::POST,
+            "/api/links",
+            Some(&frank.token),
+            Some(CreateLinkRequest {
+                node_id: folder,
+                password: Some("right".into()),
+                expires_at: None,
+                upload_only: false,
+                max_opens: None,
+            }),
+        )
+        .await
+        .json();
+    let unlock = |pw: &'static str| {
+        let uri = format!("/api/public/{}/unlock", link.token);
+        let h = &h;
+        async move {
+            h.call(Method::POST, &uri, None, Some(json!({ "password": pw })))
+                .await
+                .status
+        }
+    };
+    for _ in 0..10 {
+        assert_eq!(unlock("wrong").await, StatusCode::UNAUTHORIZED);
+    }
+    assert_eq!(unlock("right").await, StatusCode::TOO_MANY_REQUESTS);
+}
