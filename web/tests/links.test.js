@@ -70,3 +70,10 @@ test(`zip: random names stay inside and unique (seed ${SEED})`, async () => {
     assert.equal(new Set(names.map((n) => n.toLowerCase())).size, names.length, 'names are unique');
   }
 });
+
+test("zip: an export's data folder doesn't clash with a folder of the same name", async () => {
+  const data = { ...folder('thencloud-data'), children: [file('music.json')] };
+  const names = zipNames(await zip([folder('thencloud-data'), data], (e) => e.children ?? [file('mine.txt')]));
+  assert.equal(new Set(names).size, names.length, 'names are unique');
+  assert.ok(names.some((n) => n.endsWith('/music.json')) && names.some((n) => n.endsWith('/mine.txt')));
+});
