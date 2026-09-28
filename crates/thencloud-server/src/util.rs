@@ -24,6 +24,15 @@ pub fn now() -> i64 {
         .as_secs() as i64
 }
 
+/// Now, rounded down to the hour: what the server records for when nodes
+/// and versions were made or changed. The exact times are only in the
+/// encrypted metadata, so the server can't line activity up with anything
+/// finer than that.
+pub fn coarse_now() -> i64 {
+    let t = now();
+    t - t.rem_euclid(3600)
+}
+
 pub fn random_token(bytes: usize) -> String {
     thencloud_crypto::b64_encode(&thencloud_crypto::random_bytes(bytes))
 }

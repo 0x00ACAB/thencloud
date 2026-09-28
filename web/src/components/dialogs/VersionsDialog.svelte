@@ -9,6 +9,9 @@
 
   let { entry, canWrite, onchanged, onclose } = $props();
 
+  // Exact from the version's encrypted metadata; the server's is to the hour.
+  const versionAt = (v) => v.meta?.changed ?? v.created_at * 1000;
+
   // Local copy, kept current after a restore so revision checks pass.
   let file = $state(untrack(() => entry));
   let list = $state(null);
@@ -41,7 +44,7 @@
     try {
       const node = await restoreVersion(file, v);
       file = { ...file, node, meta: { ...file.meta, size: v.meta.size, mtime: v.meta.mtime } };
-      toast(`Restored the version from ${formatWhen(v.created_at * 1000)}`, { kind: 'success' });
+      toast(`Restored the version from ${formatWhen(versionAt(v))}`, { kind: 'success' });
       onchanged?.();
       await load();
     } catch (e) {
@@ -84,7 +87,7 @@
         <li class="flex items-center gap-3 px-3 py-2.5" out:slide>
           <div class="min-w-0 flex-1">
             <p class="flex items-center gap-2 text-sm">
-              <span class="font-medium" title={fullDate(v.created_at * 1000)}>{formatWhen(v.created_at * 1000)}</span>
+              <span class="font-medium" title={fullDate(versionAt(v))}>{formatWhen(versionAt(v))}</span>
               {#if v.current}<span class="badge badge-accent">Current</span>{/if}
             </p>
             <p class="mt-0.5 truncate text-xs text-fg-muted">

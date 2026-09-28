@@ -1,5 +1,12 @@
 import { previewKind } from './preview.js';
 
+/**
+ * When a node last changed, in ms: the exact time from its encrypted
+ * metadata, or for items from before that was kept, the server's (which
+ * is only to the hour).
+ */
+export const changedAt = (entry) => entry.meta?.changed ?? entry.node.updated_at * 1000;
+
 export function formatSize(n) {
   if (n == null) return '';
   if (n < 1024) return `${n} B`;
@@ -59,7 +66,7 @@ export function sortEntries(rows, { key = 'name', dir = 'asc' } = {}) {
   const sign = dir === 'desc' ? -1 : 1;
   const value = {
     size: (r) => (r.node.kind === 'folder' ? 0 : r.meta.size),
-    modified: (r) => r.node.updated_at,
+    modified: changedAt,
   }[key];
   return rows.sort((a, b) => {
     if (a.node.kind !== b.node.kind) return a.node.kind === 'folder' ? -1 : 1;

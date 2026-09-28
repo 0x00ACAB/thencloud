@@ -152,7 +152,7 @@ Smaller things:
 
 ## Milestone 9: Less metadata
 
-- [ ] **Coarse timestamps**: the server records created and changed times rounded to the hour (the exact times stay in the encrypted metadata)
+- [x] **Coarse timestamps**: the server records created and changed times rounded to the hour (the exact times stay in the encrypted metadata). Nodes, versions and the trash; the metadata's new `changed` field holds the exact time, and items from before fall back to the server's
 - [ ] **Hide file vs folder**: store the node type in the encrypted metadata, so the server sees only nodes that have children or content
 - [x] **Onion service**: document and test running thencloud as a Tor onion service, so the server doesn't learn clients' IP addresses. `--limit-by-address false` keeps one visitor's wrong guesses from locking everyone out (all arrive from Tor's address); passkeys work on `http://…onion`; the browser tests run through Tor with `THENCLOUD_E2E_URL` and `THENCLOUD_E2E_PROXY`
 - [ ] **Uniform upload sizes**: small files uploaded in batches padded to fixed sizes, so upload timing and count give away less
