@@ -269,7 +269,9 @@ fn write_vectors() {
     let mut account_keys = vec![];
     for (password, salt) in [
         ("correct horse battery staple", "salt-1"),
-        ("pässwörd", "salt-2"),
+        ("p\u{e4}ssw\u{f6}rd", "salt-2"),
+        // The same password with combining accents: the same keys.
+        ("pa\u{308}sswo\u{308}rd", "salt-2"),
     ] {
         let salt = bytes(salt, SALT_LEN);
         let k = derive_account_keys(password, &salt, fast).unwrap();
@@ -336,16 +338,23 @@ fn write_vectors() {
     ];
 
     let folder = key("folder key");
-    let name_tags: Vec<Value> = ["Report.pdf", "report.PDF", "Ünïcode ßtraße.txt", "notes"]
-        .iter()
-        .map(|name| {
-            json!({
-                "folder_key": b64(folder.as_bytes()),
-                "name": name,
-                "tag": b64(&name_tag(&folder, name)),
-            })
+    let name_tags: Vec<Value> = [
+        "Report.pdf",
+        "report.PDF",
+        "Caf\u{e9}.txt",
+        "CAFE\u{301}.TXT",
+        "Ünïcode ßtraße.txt",
+        "notes",
+    ]
+    .iter()
+    .map(|name| {
+        json!({
+            "folder_key": b64(folder.as_bytes()),
+            "name": name,
+            "tag": b64(&name_tag(&folder, name)),
         })
-        .collect();
+    })
+    .collect();
 
     let padding: Vec<Value> = [
         0u64,
