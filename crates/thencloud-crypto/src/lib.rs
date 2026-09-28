@@ -180,6 +180,19 @@ fn open_key(key: &Key, sealed: &[u8], aad: &[u8]) -> Result<Key> {
     k
 }
 
+/// Unicode NFC, so text typed as one character or as a letter and a
+/// combining accent is the same.
+#[cfg(not(target_arch = "wasm32"))]
+fn nfc(s: &str) -> String {
+    use unicode_normalization::UnicodeNormalization as _;
+    s.nfc().collect()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn nfc(s: &str) -> String {
+    js_sys::JsString::from(s).normalize("NFC").into()
+}
+
 // Associated-data labels. Versioned so the formats can evolve.
 fn aad(label: &str, parts: &[&str]) -> Vec<u8> {
     let mut v = format!("thencloud/v1/{label}").into_bytes();
@@ -232,13 +245,17 @@ pub struct AccountKeys {
     pub kek: Key,
 }
 
+/// The password is taken in Unicode NFC, so "é" typed as one character or
+/// as "e" and a combining accent is the same password on every device.
 pub fn derive_account_keys(password: &str, salt: &[u8], params: KdfParams) -> Result<AccountKeys> {
     let p = argon2::Params::new(params.m_cost, params.t_cost, params.p_cost, Some(KEY_LEN))
         .map_err(|_| Error::KdfParams)?;
     let a2 = argon2::Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, p);
+    let mut password = nfc(password);
     let mut root = [0u8; KEY_LEN];
-    a2.hash_password_into(password.as_bytes(), salt, &mut root)
-        .map_err(|_| Error::KdfParams)?;
+    let derived = a2.hash_password_into(password.as_bytes(), salt, &mut root);
+    password.zeroize();
+    derived.map_err(|_| Error::KdfParams)?;
     let hk = Hkdf::<Sha256>::new(None, &root);
     let mut auth = [0u8; KEY_LEN];
     let mut kek = [0u8; KEY_LEN];
@@ -778,13 +795,14 @@ pub fn unwrap_node_key(parent_key: &Key, wrapped: &[u8], node_id: &str) -> Resul
 }
 
 /// A tag for a name in a folder: the same for names that differ only in
-/// case, different in every folder, and meaningless without the folder
-/// key. The server stores it with the node so it can refuse duplicate
-/// names without learning them.
+/// case or Unicode composition, different in every folder, and meaningless
+/// without the folder key. The server stores it with the node so it can
+/// refuse duplicate names without learning them.
 pub fn name_tag(folder_key: &Key, name: &str) -> Vec<u8> {
     let hk = Hkdf::<Sha256>::new(Some(b"thencloud/v1/name-index"), folder_key.as_bytes());
+    let folded = nfc(&name.to_lowercase());
     let mut tag = vec![0u8; 32];
-    hk.expand(name.to_lowercase().as_bytes(), &mut tag)
+    hk.expand(folded.as_bytes(), &mut tag)
         .expect("valid length");
     tag
 }
@@ -949,6 +967,7 @@ mod tests {
     fn name_tags() {
         let (a, b) = (Key::generate(), Key::generate());
         assert_eq!(name_tag(&a, "Report.PDF"), name_tag(&a, "report.pdf"));
+        assert_eq!(name_tag(&a, "Caf\u{e9}"), name_tag(&a, "CAFE\u{301}"));
         assert_ne!(name_tag(&a, "report.pdf"), name_tag(&a, "report2.pdf"));
         assert_ne!(name_tag(&a, "report.pdf"), name_tag(&b, "report.pdf"));
     }

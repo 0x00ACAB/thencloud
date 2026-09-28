@@ -19,3 +19,11 @@ hkdf = "0.13"
 argon2 = { version = "0.5", default-features = false, features = ["alloc"] }
 zeroize = { version = "1", features = ["derive"] }
 ml-kem = { version = "0.3", features = ["zeroize", "hazmat"] }
+
+# NFC for passwords and name tags. The browser has it built in, which keeps
+# the tables out of the WASM.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+unicode-normalization = "0.1"
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+js-sys = "0.3"

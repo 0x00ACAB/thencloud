@@ -14,9 +14,9 @@ A new client should pass it too.
 
 - **Bytes on the wire and in links** are base64url without padding
   (RFC 4648 §5). Decoders drop trailing `=` first, so padded input is accepted.
-- **Strings** are UTF-8. Passwords go into Argon2 as their UTF-8 bytes,
-  without Unicode normalisation: `pässwörd` typed with a combining accent is
-  a different password. The vectors include a non-ASCII one.
+- **Strings** are UTF-8. Passwords are put in Unicode NFC before Argon2,
+  so `ä` typed as one character or as `a` plus a combining accent is the same
+  password. The vectors have both spellings.
 - **Ids** (users, nodes, versions, app passwords) are lowercase UUID strings.
   Node and version ids are chosen by the client, since they're bound into
   ciphertexts before the server has seen them.
@@ -64,7 +64,7 @@ All symmetric keys are 32 random bytes.
 ### From a password
 
 ```
-root     = Argon2id v1.3 (password, salt, m_cost KiB, t_cost, p_cost) → 32 bytes
+root     = Argon2id v1.3 (NFC(password), salt, m_cost KiB, t_cost, p_cost) → 32 bytes
 auth_key = HKDF(salt: none, ikm: root, info: "thencloud/v1/auth")
 kek      = HKDF(salt: none, ikm: root, info: "thencloud/v1/kek")
 ```
@@ -183,12 +183,13 @@ The server refuses a second node with the same name in a folder without
 learning names. It does this by comparing a tag:
 
 ```
-tag = HKDF(salt: "thencloud/v1/name-index", ikm: folder_key, info: lowercase(name))
+tag = HKDF(salt: "thencloud/v1/name-index", ikm: folder_key, info: NFC(lowercase(name)))
 ```
 
 `lowercase` is Unicode's full lowercase mapping, the same in every locale
-(Rust's `str::to_lowercase`). Tags differ per folder and mean nothing without
-the folder key.
+(Rust's `str::to_lowercase`). So `Café.txt` and `CAFE` plus a combining accent
+and `.TXT` get the same tag. Tags differ per folder and mean nothing without
+the folder key. The name itself is stored as typed.
 
 ## File content
 
