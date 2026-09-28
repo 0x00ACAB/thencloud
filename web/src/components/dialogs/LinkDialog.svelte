@@ -1,4 +1,5 @@
 <script>
+  import { t } from '../../lib/i18n.svelte.js';
   import Modal from '../Modal.svelte';
   import Icon from '../Icon.svelte';
   import PhotoLocationNotice from '../PhotoLocationNotice.svelte';
@@ -18,26 +19,29 @@
   let kind = $state('view');
   const folder = $derived(entry.node.kind === 'folder');
 
-  const kinds = [
-    ['view', 'View and download', 'Visitors can open everything in the folder.'],
-    ['drop', 'File drop', "Visitors can add files but can't see what's in it."],
-  ];
+  const kinds = $derived([
+    ['view', t('View and download'), t('Visitors can open everything in the folder.')],
+    ['drop', t('File drop'), t("Visitors can add files but can't see what's in it.")],
+  ]);
 
-  const expiries = [
-    ['never', 'Never'],
-    ['1', 'In 1 day'],
-    ['7', 'In 7 days'],
-    ['30', 'In 30 days'],
-  ];
+  const expiries = $derived([
+    ['never', t('Never')],
+    ['1', t('In {count} days', { count: 1 })],
+    ['7', t('In {count} days', { count: 7 })],
+    ['30', t('In {count} days', { count: 30 })],
+  ]);
 
   // An open is one visit to the link page; that visit can then browse and
   // download everything.
-  const openLimits = [
-    ['any', 'No limit'],
-    ['1', 'After the first open'],
-    ['5', 'After 5 opens'],
-    ['25', 'After 25 opens'],
-  ];
+  const openLimits = $derived([
+    ['any', t('No limit')],
+    ['1', t('After the first open')],
+    ['5', t('After {count} opens', { count: 5 })],
+    ['25', t('After {count} opens', { count: 25 })],
+  ]);
+
+  // Text with the # of the link shown as code: the translation keeps {hash}.
+  const hashParts = (text) => text.split('{hash}');
 
   async function load() {
     try {
@@ -62,7 +66,7 @@
       created = await createLink(entry, { password, expiresAt, uploadOnly: drop, maxOpens });
       password = '';
       await load();
-      copyText(created.url, 'Link created and copied');
+      copyText(created.url, t('Link created and copied'));
     } catch (e) {
       error = errorMessage(e);
     } finally {
@@ -81,18 +85,16 @@
   }
 </script>
 
-<Modal title="Public link" description="Anyone with the link can use {entry.meta.name}, no account needed." {onclose} onsubmit={submit} class="max-w-lg">
+<Modal title={t('Public link')} description={t('Anyone with the link can use {name}, no account needed.', { name: entry.meta.name })} {onclose} onsubmit={submit} class="max-w-lg">
   <div class="flex gap-2.5 rounded-md border border-line bg-subtle p-3 text-[13px] text-fg-muted">
     <Icon name="key-round" class="mt-0.5 size-4 shrink-0 text-fg" />
     {#if kind === 'drop'}
       <p>
-        A file drop link carries your public key after the <code class="font-mono text-fg">#</code>. Files are encrypted to you in the visitor's browser,
-        and only you can open them. Anyone with the link can add files, so they count toward your storage.
+        {#each hashParts(t("A file drop link carries your public key after the {hash}. Files are encrypted to you in the visitor's browser, and only you can open them. Anyone with the link can add files, so they count toward your storage.")) as part, i (i)}{#if i}<code class="font-mono text-fg">#</code>{/if}{part}{/each}
       </p>
     {:else}
       <p>
-        The decryption key is the part of the link after <code class="font-mono text-fg">#</code>. Browsers never send that part to the server, so thencloud
-        can't read what you share. Treat the whole link like a password.
+        {#each hashParts(t("The decryption key is the part of the link after {hash}. Browsers never send that part to the server, so thencloud can't read what you share. Treat the whole link like a password.")) as part, i (i)}{#if i}<code class="font-mono text-fg">#</code>{/if}{part}{/each}
       </p>
     {/if}
   </div>
@@ -101,7 +103,7 @@
 
   {#if existing?.length}
     <div class="space-y-2">
-      <h3 class="text-[13px] font-medium">Active links</h3>
+      <h3 class="text-[13px] font-medium">{t('Active links')}</h3>
       <ul class="divide-y divide-line rounded-md border border-line">
         {#each existing as l (l.id)}
           <li class="flex items-center gap-2 px-3 py-2">
@@ -109,22 +111,22 @@
               {#if l.url}
                 <p class="truncate font-mono text-[13px] {created?.id === l.id ? 'text-accent-text' : ''}">{l.url}</p>
               {:else}
-                <p class="text-[13px] text-fg-muted">Made before link passwords were part of the key. It can't be opened; delete it and make a new one.</p>
+                <p class="text-[13px] text-fg-muted">{t("Made before link passwords were part of the key. It can't be opened; delete it and make a new one.")}</p>
               {/if}
               <p class="mt-0.5 flex flex-wrap gap-x-3 text-xs text-fg-muted">
-                <span><Time ms={l.created_at * 1000} prefix="Created " /></span>
-                {#if l.upload_only}<span class="inline-flex items-center gap-1"><Icon name="inbox" class="size-3" />File drop</span>{/if}
-                {#if l.has_password}<span class="inline-flex items-center gap-1"><Icon name="lock" class="size-3" />Password</span>{/if}
-                <span>{#if l.expires_at}<Time ms={l.expires_at * 1000} prefix="Expires " />{:else}No expiry{/if}</span>
+                <span><Time ms={l.created_at * 1000} prefix={t('Created') + ' '} /></span>
+                {#if l.upload_only}<span class="inline-flex items-center gap-1"><Icon name="inbox" class="size-3" />{t('File drop')}</span>{/if}
+                {#if l.has_password}<span class="inline-flex items-center gap-1"><Icon name="lock" class="size-3" />{t('Password')}</span>{/if}
+                <span>{#if l.expires_at}<Time ms={l.expires_at * 1000} prefix={t('Expires') + ' '} />{:else}{t('No expiry')}{/if}</span>
                 {#if l.max_opens}<span>{l.opens} of {l.max_opens} {l.max_opens === 1 ? 'open' : 'opens'} used</span>{/if}
               </p>
             </div>
             {#if l.url}
-              <button type="button" class="btn btn-ghost btn-icon" aria-label="Copy link" title="Copy link" onclick={() => copyText(l.url, 'Link copied')}>
+              <button type="button" class="btn btn-ghost btn-icon" aria-label={t('Copy link')} title={t('Copy link')} onclick={() => copyText(l.url, t('Link copied'))}>
                 <Icon name="copy" />
               </button>
             {/if}
-            <button type="button" class="btn btn-ghost btn-icon" aria-label="Delete link" title="Delete link" onclick={() => remove(l)}>
+            <button type="button" class="btn btn-ghost btn-icon" aria-label={t('Delete link')} title={t('Delete link')} onclick={() => remove(l)}>
               <Icon name="trash-2" />
             </button>
           </li>
@@ -134,7 +136,7 @@
   {/if}
 
   {#if folder}
-    <div class="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Link type">
+    <div class="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label={t('Link type')}>
       {#each kinds as [value, label, text] (value)}
         <button
           type="button"
@@ -151,32 +153,32 @@
 
   <div class="grid gap-3 sm:grid-cols-2">
     <div class="field">
-      <label class="label" for="link-password">Password <span class="font-normal text-fg-muted">(optional)</span></label>
+      <label class="label" for="link-password">{t('Password')} <span class="font-normal text-fg-muted">{t('(optional)')}</span></label>
       <input id="link-password" class="input" type="password" bind:value={password} autocomplete="new-password" />
     </div>
     <div class="field">
-      <label class="label" for="link-expiry">Expires</label>
+      <label class="label" for="link-expiry">{t('Expires')}</label>
       <select id="link-expiry" class="input" bind:value={expiry}>
         {#each expiries as [value, label] (value)}<option {value}>{label}</option>{/each}
       </select>
     </div>
     {#if kind !== 'drop'}
       <div class="field sm:col-span-2">
-        <label class="label" for="link-opens">Stops working</label>
+        <label class="label" for="link-opens">{t('Stops working')}</label>
         <select id="link-opens" class="input" bind:value={opens}>
           {#each openLimits as [value, label] (value)}<option {value}>{label}</option>{/each}
         </select>
-        <p class="text-xs text-fg-muted">Each visit to the link counts once, however many files are downloaded during it.</p>
+        <p class="text-xs text-fg-muted">{t('Each visit to the link counts once, however many files are downloaded during it.')}</p>
       </div>
     {/if}
   </div>
   {#if error}<p class="text-[13px] text-danger">{error}</p>{/if}
 
   {#snippet footer()}
-    <button type="button" class="btn btn-secondary" onclick={onclose}>Done</button>
+    <button type="button" class="btn btn-secondary" onclick={onclose}>{t('Done')}</button>
     <button class="btn btn-primary" disabled={busy}>
       {#if busy}<Icon name="loader-circle" class="spinner" />{:else}<Icon name="link" />{/if}
-      Create link
+      {t('Create link')}
     </button>
   {/snippet}
 </Modal>
