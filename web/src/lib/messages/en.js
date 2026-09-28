@@ -22,4 +22,6 @@ export default {
     one: "1 item will be deleted permanently. This can't be undone.",
     other: "{count} items will be deleted permanently. This can't be undone.",
   },
+  'In {count} days': { one: 'In 1 day', other: 'In {count} days' },
+  'After {count} opens': { one: 'After 1 open', other: 'After {count} opens' },
 };
