@@ -428,6 +428,7 @@ fn write_vectors() {
         size: 1234,
         mtime: 1_790_000_000_000,
         changed: Some(1_790_000_123_456),
+        taken: None,
     };
     let meta_sealed = encrypt_metadata(&node_key, node, &meta).unwrap();
     let meta_padded = open_raw(&node_key, &meta_sealed, &aad("metadata", &[node]));
@@ -437,6 +438,7 @@ fn write_vectors() {
         size: 0,
         mtime: 0,
         changed: None,
+        taken: None,
     };
     let old_meta_sealed = encrypt_metadata(&node_key, other_node, &old_meta).unwrap();
     let old_meta_padded = open_raw(&node_key, &old_meta_sealed, &aad("metadata", &[other_node]));

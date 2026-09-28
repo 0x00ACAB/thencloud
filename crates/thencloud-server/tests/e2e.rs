@@ -157,6 +157,7 @@ fn meta(name: &str, size: u64) -> Metadata {
         size,
         mtime: 1_700_000_000_000,
         changed: None,
+        taken: None,
     }
 }
 

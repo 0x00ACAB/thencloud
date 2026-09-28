@@ -887,6 +887,11 @@ pub struct Metadata {
     /// hour. Missing on items from before it was added.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub changed: Option<i64>,
+    /// When a photo was taken, in milliseconds, from its EXIF data at
+    /// upload (read as the uploader's local time). Only kept when the
+    /// uploaded file still carries it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub taken: Option<i64>,
 }
 
 impl Metadata {
@@ -1157,6 +1162,7 @@ mod tests {
                 size: 1,
                 mtime: 0,
                 changed: None,
+                taken: None,
             },
         )
         .unwrap();
@@ -1169,6 +1175,7 @@ mod tests {
                 size: 1,
                 mtime: 0,
                 changed: None,
+                taken: None,
             },
         )
         .unwrap();
@@ -1220,6 +1227,7 @@ mod tests {
             size: 3,
             mtime: 1,
             changed: None,
+            taken: None,
         };
         let ct = encrypt_metadata(&k, &id, &m).unwrap();
         assert_eq!(decrypt_metadata(&k, &id, &ct).unwrap(), m);

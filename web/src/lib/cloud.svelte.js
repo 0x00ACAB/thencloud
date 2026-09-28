@@ -11,6 +11,7 @@ import {
 } from './crypto.js';
 import { sortEntries } from './format.js';
 import { canThumbnail, makeThumbnail, isJpeg } from './thumbnail.js';
+import { photoTaken } from './exif.js';
 import { rememberSession, rememberedSession, forgetSession } from './remember.js';
 import { streamsAvailable, streamDownload } from './stream.js';
 import { createPasskey, usePasskey, passkeysSupported } from './passkeys.js';
@@ -997,6 +998,10 @@ export async function upload(file, { parentId, parentKey, existing }, onProgress
     size: file.size,
     mtime: file.lastModified || Date.now(),
   };
+  // When a photo was taken, for the Photos timeline. Read from the file as
+  // uploaded: a photo whose details were removed keeps no date either.
+  const taken = file.type.startsWith('image/') ? await photoTaken(file) : null;
+  if (taken) meta.taken = taken;
 
   const start = () =>
     api('POST', '/api/uploads', {

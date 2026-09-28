@@ -85,6 +85,7 @@ fn start() -> Server {
         size: 0,
         mtime: 0,
         changed: None,
+        taken: None,
     };
     let session: SessionResponse = call(
         &format!("{url}/api/auth/register"),

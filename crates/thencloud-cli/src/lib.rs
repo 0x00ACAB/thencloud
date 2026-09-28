@@ -261,6 +261,7 @@ impl Client {
             size: 0,
             mtime: now_ms(),
             changed: Some(now_ms()),
+            taken: None,
         };
         let req = CreateFolderRequest {
             id: id.clone(),
@@ -402,6 +403,7 @@ impl Client {
             size,
             mtime,
             changed: Some(now_ms()),
+            taken: None,
         };
         let req = CreateUploadRequest {
             node_id: node_id.clone(),

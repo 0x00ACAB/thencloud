@@ -29,20 +29,41 @@ function ascii(b, at, n) {
 // ------------------------------------------------------------------- TIFF
 
 /**
- * What an EXIF (TIFF) block says: { gps, camera, orientation }. `gps` is
- * true when it has a GPS section, `camera` when it names a make or model.
+ * "2024:07:14 18:03:59", as EXIF writes dates, in ms. EXIF has no time
+ * zone, so it's read as local time, as the camera's clock was set.
+ */
+function exifDate(s) {
+  const m = /^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/.exec(s);
+  if (!m) return null;
+  const [y, mo, d, h, mi, se] = m.slice(1).map(Number);
+  if (y < 1900 || y > 2200 || mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || se > 60) return null;
+  return new Date(y, mo - 1, d, h, mi, se).getTime();
+}
+
+/**
+ * What an EXIF (TIFF) block says: { gps, camera, orientation, taken }.
+ * `gps` is true when it has a GPS section, `camera` when it names a make or
+ * model, `taken` is when the photo was taken (ms) or null.
  */
 export function readTiff(t) {
-  const out = { gps: false, camera: false, orientation: 1 };
+  const out = { gps: false, camera: false, orientation: 1, taken: null };
   if (t.length < 8) return out;
   const le = t[0] === 0x49 && t[1] === 0x49;
   if (!le && !(t[0] === 0x4d && t[1] === 0x4d)) return out;
   const v = new DataView(t.buffer, t.byteOffset, t.byteLength);
   const u16 = (o) => (o + 2 <= t.length ? v.getUint16(o, le) : null);
   const u32 = (o) => (o + 4 <= t.length ? v.getUint32(o, le) : null);
+  // An ASCII date entry's value: 20 bytes, so always at an offset.
+  const dateAt = (e) => {
+    const n = u32(e + 4);
+    const at = u32(e + 8);
+    return n !== null && n >= 19 && n <= 64 && at !== null ? exifDate(ascii(t, at, 19)) : null;
+  };
   const ifd = u32(4);
   const count = ifd === null ? null : u16(ifd);
   if (count === null) return out;
+  let changed = null;
+  let exifIfd = null;
   for (let i = 0; i < count; i++) {
     const e = ifd + 2 + i * 12;
     const tag = u16(e);
@@ -52,8 +73,20 @@ export function readTiff(t) {
     else if (tag === 0x0112) {
       const o = u16(e + 8);
       if (o >= 1 && o <= 8) out.orientation = o;
+    } else if (tag === 0x0132) changed = dateAt(e);
+    else if (tag === 0x8769) exifIfd = u32(e + 8);
+  }
+  // DateTimeOriginal lives in the Exif sub-IFD; DateTime in IFD0 is when
+  // the file was last changed, the next best thing.
+  const sub = exifIfd === null || exifIfd === ifd ? null : u16(exifIfd);
+  for (let i = 0; sub !== null && i < Math.min(sub, 1000); i++) {
+    const e = exifIfd + 2 + i * 12;
+    if (u16(e) === 0x9003) {
+      out.taken = dateAt(e);
+      break;
     }
   }
+  out.taken ??= changed;
   return out;
 }
 
@@ -90,7 +123,7 @@ function jpegInfo(b) {
   const segs = jpegSegments(b);
   if (!segs) return null;
   const exif = segs.find(isExif);
-  const tiff = exif ? readTiff(exif.body.subarray(6)) : { gps: false, camera: false, orientation: 1 };
+  const tiff = exif ? readTiff(exif.body.subarray(6)) : { gps: false, camera: false, orientation: 1, taken: null };
   return { ...tiff, other: segs.some((s) => isXmp(s) || isIptc(s)), strip: () => stripJpeg(b, segs, tiff.orientation) };
 }
 
@@ -148,7 +181,7 @@ function pngInfo(b) {
   const chunks = pngChunks(b);
   if (!chunks) return null;
   const exif = chunks.find((c) => c.type === 'eXIf');
-  const tiff = exif ? readTiff(exif.body) : { gps: false, camera: false, orientation: 1 };
+  const tiff = exif ? readTiff(exif.body) : { gps: false, camera: false, orientation: 1, taken: null };
   return { ...tiff, other: chunks.some((c) => PNG_META.has(c.type) && c.type !== 'eXIf'), strip: () => stripPng(b, chunks, tiff.orientation) };
 }
 
@@ -196,7 +229,7 @@ function webpInfo(b) {
   const exif = chunks.find((c) => c.type === 'EXIF');
   // Some writers keep the "Exif\0\0" prefix inside the chunk.
   const body = exif && EXIF_HEADER.every((c, k) => exif.body[k] === c) ? exif.body.subarray(6) : exif?.body;
-  const tiff = body ? readTiff(body) : { gps: false, camera: false, orientation: 1 };
+  const tiff = body ? readTiff(body) : { gps: false, camera: false, orientation: 1, taken: null };
   return { ...tiff, other: chunks.some((c) => c.type === 'XMP '), strip: () => stripWebp(b, chunks, tiff.orientation) };
 }
 
@@ -267,10 +300,19 @@ export async function fileInfo(file) {
   const head = file.size > HEAD ? new Uint8Array(await file.slice(0, HEAD).arrayBuffer()) : null;
   if (head && photoFormat(head) === JPEG) {
     const info = photoInfo(head);
-    if (info) return { gps: info.gps, camera: info.camera, other: info.other };
+    if (info) return { gps: info.gps, camera: info.camera, other: info.other, taken: info.taken };
   }
   const info = photoInfo(new Uint8Array(await file.arrayBuffer()));
-  return info && { gps: info.gps, camera: info.camera, other: info.other };
+  return info && { gps: info.gps, camera: info.camera, other: info.other, taken: info.taken };
+}
+
+/** When a photo file says it was taken (ms), or null. */
+export async function photoTaken(file) {
+  try {
+    return (await fileInfo(file))?.taken ?? null;
+  } catch {
+    return null;
+  }
 }
 
 const HEAD = 512 * 1024;
