@@ -1,4 +1,5 @@
 <script>
+  import { t } from '../lib/i18n.svelte.js';
   import { fly, flip, flipParams } from '../lib/motion.js';
   import { toasts, dismissToast } from '../lib/ui.svelte.js';
   import Icon from './Icon.svelte';
@@ -7,24 +8,24 @@
 </script>
 
 <div class="pointer-events-none fixed inset-x-0 bottom-[calc(var(--bottom-bar)+5rem)] z-[60] md:bottom-[calc(var(--bottom-bar)+1rem)] flex flex-col items-center gap-2 px-4" aria-live="polite">
-  {#each toasts as t (t.id)}
+  {#each toasts as toast (toast.id)}
     <div
       in:fly={{ y: 12 }}
       out:fly={{ y: 6, duration: 120 }}
       animate:flip={flipParams()}
       class="pointer-events-auto flex max-w-md items-start gap-2.5 rounded-lg bg-fg px-3.5 py-2.5 text-[13px] text-bg shadow-lg shadow-black/10 dark:border dark:border-line-strong dark:bg-muted dark:text-fg dark:shadow-black/50">
-      <Icon name={t.icon ?? icons[t.kind]} class="mt-px size-4 shrink-0 {t.kind === 'error' ? 'text-danger' : t.kind === 'success' ? 'text-success' : 'opacity-70'}" />
-      <span class="leading-5">{t.message}</span>
-      {#if t.action}
+      <Icon name={toast.icon ?? icons[toast.kind]} class="mt-px size-4 shrink-0 {toast.kind === 'error' ? 'text-danger' : toast.kind === 'success' ? 'text-success' : 'opacity-70'}" />
+      <span class="leading-5">{toast.message}</span>
+      {#if toast.action}
         <button
           type="button"
           class="-my-0.5 ml-2 cursor-pointer rounded px-1.5 py-0.5 font-medium underline-offset-4 hover:underline"
           onclick={() => {
-            dismissToast(t.id);
-            t.action.onclick();
-          }}>{t.action.label}</button>
+            dismissToast(toast.id);
+            toast.action.onclick();
+          }}>{toast.action.label}</button>
       {/if}
-      <button type="button" class="-mr-1 ml-1 cursor-pointer rounded opacity-60 hover:opacity-100" aria-label="Dismiss" onclick={() => dismissToast(t.id)}>
+      <button type="button" class="-mr-1 ml-1 cursor-pointer rounded opacity-60 hover:opacity-100" aria-label={t('Dismiss')} onclick={() => dismissToast(toast.id)}>
         <Icon name="x" class="size-4" />
       </button>
     </div>

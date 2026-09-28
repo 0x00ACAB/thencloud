@@ -3,7 +3,7 @@
   import { toast, toastError, trackTransfer, errorMessage, sort, sortBy, photoDetails, fileView, setFileView } from '../../lib/ui.svelte.js';
   import { fileInfo, hasDetails, stripFile } from '../../lib/exif.js';
   import Modal from '../Modal.svelte';
-  import { formatSize, formatWhen, fullDate, plural, sortEntries, nameError, changedAt } from '../../lib/format.js';
+  import { formatSize, formatWhen, fullDate, sortEntries, nameError, changedAt } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
   import FileIcon from '../FileIcon.svelte';
   import FolderIcon from '../FolderIcon.svelte';
@@ -26,6 +26,7 @@
   import VideoDownloadDialog from '../dialogs/VideoDownloadDialog.svelte';
   import { onMount, tick, untrack } from 'svelte';
   import { sourceKind } from '../../lib/convert.js';
+  import { t } from '../../lib/i18n.svelte.js';
   import PdfToolsDialog from '../dialogs/PdfToolsDialog.svelte';
   // Kept here: pdfedit.js pulls in pdf-lib, which loads only with the dialog.
   const isPdf = (meta) => meta.mime === 'application/pdf' || /\.pdf$/i.test(meta.name);
@@ -111,6 +112,8 @@
   });
 
   const open = (id) => go({ name: 'files', folderId: id });
+  // The root folder's own name was set when the account was made; show it in the current language.
+  const folderName = (e) => (e?.node.id === session.me.keys.root_node_id ? t('My files') : e?.meta.name);
 
   // Big folders. The list keeps only the rows near the screen in the page,
   // with a spacer above and below standing in for the rest, and the grid
@@ -312,17 +315,17 @@
     if (!jobs.length) return;
     if (!(await checkPhotos(jobs))) return;
     const one = async ({ file, dest, label, clean }) => {
-      const t = trackTransfer('upload', label, file.size);
+      const job = trackTransfer('upload', label, file.size);
       try {
         if (clean) {
           file = await stripFile(file);
-          t.size = file.size;
+          job.size = file.size;
         }
-        await upload(file, dest, (p) => (t.progress = p));
-        t.status = 'done';
+        await upload(file, dest, (p) => (job.progress = p));
+        job.status = 'done';
       } catch (e) {
-        t.status = 'error';
-        t.error = e?.code === 'quota_exceeded' ? 'Not enough storage left' : errorMessage(e);
+        job.status = 'error';
+        job.error = e?.code === 'quota_exceeded' ? t('Not enough storage left') : errorMessage(e);
       }
     };
     // Three files at a time; each file's chunks go up sequentially.
@@ -411,8 +414,8 @@
   // Paste to upload: a screenshot or files copied in the file manager.
   function onPaste(e) {
     if (!canWrite || !here || dialog || document.querySelector('dialog[open]')) return;
-    const t = e.target;
-    if (t instanceof HTMLElement && (t.isContentEditable || t.closest('input, textarea, select'))) return;
+    const target = e.target;
+    if (target instanceof HTMLElement && (target.isContentEditable || target.closest('input, textarea, select'))) return;
     const files = [...(e.clipboardData?.files ?? [])];
     if (!files.length) return;
     e.preventDefault();
@@ -425,7 +428,7 @@
     const d = new Date();
     const pad = (n) => String(n).padStart(2, '0');
     const stamp = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}.${pad(d.getMinutes())}.${pad(d.getSeconds())}`;
-    return new File([file], `Pasted image ${stamp}${file.name.slice(file.name.lastIndexOf('.'))}`, { type: file.type, lastModified: file.lastModified });
+    return new File([file], `${t('Pasted image')} ${stamp}${file.name.slice(file.name.lastIndexOf('.'))}`, { type: file.type, lastModified: file.lastModified });
   }
 
   // ---------------------------------------------------------- drag to move
@@ -470,10 +473,10 @@
         await move(entry, target.node.id, target.key);
         done++;
       } catch (err) {
-        toast(`Couldn't move ${entry.meta.name}: ${errorMessage(err)}`, { kind: 'error' });
+        toast(t("Couldn't move {name}: {error}", { name: entry.meta.name, error: errorMessage(err) }), { kind: 'error' });
       }
     }
-    if (done) toast(done > 1 ? `Moved ${done} items to ${target.meta.name}` : `Moved ${list[0].meta.name} to ${target.meta.name}`, { kind: 'success' });
+    if (done) toast(done > 1 ? t('Moved {count} items to {folder}', { count: done, folder: target.meta.name }) : t('Moved {name} to {folder}', { name: list[0].meta.name, folder: target.meta.name }), { kind: 'success' });
     selected.clear();
     load();
   }
@@ -482,13 +485,13 @@
 
   async function downloadEntry(entry) {
     noteRecent(entry.node.id);
-    const t = trackTransfer('download', entry.meta.name, entry.meta.size);
+    const job = trackTransfer('download', entry.meta.name, entry.meta.size);
     try {
-      await download(entry, (p) => (t.progress = p));
-      t.status = 'done';
+      await download(entry, (p) => (job.progress = p));
+      job.status = 'done';
     } catch (e) {
-      t.status = 'error';
-      t.error = errorMessage(e);
+      job.status = 'error';
+      job.error = errorMessage(e);
     }
   }
 
@@ -498,10 +501,10 @@
       rows = rows.filter((r) => r.node.id !== entry.node.id);
       const name = entry.meta.name;
       if (isOwner) {
-        toast(`Moved ${name} to the trash`, {
+        toast(t('Moved {name} to the trash', { name }), {
           icon: 'trash-2',
           action: {
-            label: 'Undo',
+            label: t('Undo'),
             onclick: async () => {
               try {
                 await untrash(entry);
@@ -513,7 +516,7 @@
           },
         });
       } else {
-        toast(`Deleted ${name}. ${here.node.owner} can restore it from their trash.`, { icon: 'trash-2' });
+        toast(t('Deleted {name}. {owner} can restore it from their trash.', { name, owner: here.node.owner }), { icon: 'trash-2' });
       }
     } catch (e) {
       toastError(e);
@@ -588,13 +591,13 @@
   }
 
   async function zipEntries(list, name) {
-    const t = trackTransfer('download', name, null);
+    const job = trackTransfer('download', name, null);
     try {
-      await downloadZip(list, name, (p) => (t.progress = p));
-      t.status = 'done';
+      await downloadZip(list, name, (p) => (job.progress = p));
+      job.status = 'done';
     } catch (e) {
-      t.status = 'error';
-      t.error = errorMessage(e);
+      job.status = 'error';
+      job.error = errorMessage(e);
     }
   }
 
@@ -613,12 +616,12 @@
     const gone = new Set(done.map((d) => d.node.id));
     rows = rows.filter((r) => !gone.has(r.node.id));
     if (!done.length) return;
-    const what = done.length === 1 ? done[0].meta.name : plural(done.length, 'item');
-    if (!isOwner) return toast(`Deleted ${what}. ${here.node.owner} can restore them from their trash.`, { icon: 'trash-2' });
-    toast(`Moved ${what} to the trash`, {
+    const what = done.length === 1 ? done[0].meta.name : t('{count} items', { count: done.length });
+    if (!isOwner) return toast(t('Deleted {name}. {owner} can restore it from their trash.', { name: what, owner: here.node.owner }), { icon: 'trash-2' });
+    toast(t('Moved {name} to the trash', { name: what }), {
       icon: 'trash-2',
       action: {
-        label: 'Undo',
+        label: t('Undo'),
         onclick: async () => {
           try {
             for (const entry of done) await untrash(entry);
@@ -685,7 +688,7 @@
   async function star(entry) {
     try {
       const on = await toggleFavourite(entry.node.id);
-      toast(on ? `Added ${entry.meta.name} to favourites` : `Removed ${entry.meta.name} from favourites`, { icon: on ? 'star' : 'star-off' });
+      toast(on ? t('Added {name} to favourites', { name: entry.meta.name }) : t('Removed {name} from favourites', { name: entry.meta.name }), { icon: on ? 'star' : 'star-off' });
     } catch (e) {
       toastError(e);
     }
@@ -693,7 +696,7 @@
 
   // Server-side tools this user may use (the video downloader is opt-in).
   let tools = $state({ video_downloader: false });
-  onMount(() => toolsInfo().then((t) => (tools = t)));
+  onMount(() => toolsInfo().then((info) => (tools = info)));
 
   /** Upload a new file (converted, or downloaded) here, under a name that's free. */
   async function saveNewFile(file, onProgress) {
@@ -711,7 +714,7 @@
   function untitledName() {
     const taken = new Set(rows.map((r) => r.meta.name.toLowerCase()));
     for (let i = 1; ; i++) {
-      const name = i === 1 ? 'Untitled.md' : `Untitled ${i}.md`;
+      const name = i === 1 ? `${t('Untitled')}.md` : `${t('Untitled')} ${i}.md`;
       if (!taken.has(name.toLowerCase())) return name;
     }
   }
@@ -743,42 +746,42 @@
     const folder = entry.node.kind === 'folder';
     return [
       folder
-        ? { label: 'Open', icon: 'folder-open', onclick: () => open(entry.node.id) }
-        : { label: 'Preview', icon: 'eye', onclick: () => preview(entry) },
+        ? { label: t('Open'), icon: 'folder-open', onclick: () => open(entry.node.id) }
+        : { label: t('Preview'), icon: 'eye', onclick: () => preview(entry) },
       ...(isAudio(entry)
         ? [
-            { label: 'Play', icon: 'play', onclick: () => playFrom(entry) },
-            { label: 'Add to queue', icon: 'list-end', onclick: () => (enqueue([asTrack(entry)]), toast(`Added ${entry.meta.name} to the queue`)) },
+            { label: t('Play'), icon: 'play', onclick: () => playFrom(entry) },
+            { label: t('Add to queue'), icon: 'list-end', onclick: () => (enqueue([asTrack(entry)]), toast(t('Added {name} to the queue', { name: entry.meta.name }))) },
           ]
         : []),
       folder
-        ? { label: 'Download as zip', icon: 'download', onclick: () => zipEntries([entry], `${entry.meta.name}.zip`) }
-        : { label: 'Download', icon: 'download', onclick: () => downloadEntry(entry) },
+        ? { label: t('Download as zip'), icon: 'download', onclick: () => zipEntries([entry], `${entry.meta.name}.zip`) }
+        : { label: t('Download'), icon: 'download', onclick: () => downloadEntry(entry) },
       isFavourite(entry.node.id)
-        ? { label: 'Remove from favourites', icon: 'star-off', onclick: () => star(entry) }
-        : { label: 'Add to favourites', icon: 'star', onclick: () => star(entry) },
+        ? { label: t('Remove from favourites'), icon: 'star-off', onclick: () => star(entry) }
+        : { label: t('Add to favourites'), icon: 'star', onclick: () => star(entry) },
       ...(isOwner
         ? [
-            { label: 'Share', icon: 'share-2', onclick: () => (dialog = { type: 'share', entry }) },
-            { label: 'Public link', icon: 'link', onclick: () => (dialog = { type: 'link', entry }) },
+            { label: t('Share'), icon: 'share-2', onclick: () => (dialog = { type: 'share', entry }) },
+            { label: t('Public link'), icon: 'link', onclick: () => (dialog = { type: 'link', entry }) },
           ]
         : []),
       ...(canWrite
         ? [
             'sep',
-            { label: 'Rename', icon: 'pencil', onclick: () => startRename(entry) },
-            { label: 'Move', icon: 'move', onclick: () => (dialog = { type: 'move', entry }) },
+            { label: t('Rename'), icon: 'pencil', onclick: () => startRename(entry) },
+            { label: t('Move'), icon: 'move', onclick: () => (dialog = { type: 'move', entry }) },
             ...(!folder
-              ? [{ label: 'Upload new version', icon: 'file-up', onclick: () => ((versionTarget = entry), versionInput.click()) }]
+              ? [{ label: t('Upload new version'), icon: 'file-up', onclick: () => ((versionTarget = entry), versionInput.click()) }]
               : []),
           ]
         : []),
-      ...(!folder && sourceKind(entry.meta) ? [{ label: 'Convert', icon: 'file-cog', onclick: () => (dialog = { type: 'convert', entry }) }] : []),
-      ...(!folder && isPdf(entry.meta) ? [{ label: 'PDF tools', icon: 'file-stack', onclick: () => (dialog = { type: 'pdf', entries: [entry] }) }] : []),
-      ...(!folder ? [{ label: 'Version history', icon: 'refresh-cw', onclick: () => (dialog = { type: 'versions', entry }) }] : []),
-      { label: 'Comments', icon: 'message-square', onclick: () => (dialog = { type: 'comments', entry }) },
-      ...(folder ? [{ label: 'Activity', icon: 'history', onclick: () => (dialog = { type: 'activity', entry }) }] : []),
-      ...(canWrite ? ['sep', { label: 'Move to trash', icon: 'trash-2', danger: true, onclick: () => moveToTrash(entry) }] : []),
+      ...(!folder && sourceKind(entry.meta) ? [{ label: t('Convert'), icon: 'file-cog', onclick: () => (dialog = { type: 'convert', entry }) }] : []),
+      ...(!folder && isPdf(entry.meta) ? [{ label: t('PDF tools'), icon: 'file-stack', onclick: () => (dialog = { type: 'pdf', entries: [entry] }) }] : []),
+      ...(!folder ? [{ label: t('Version history'), icon: 'refresh-cw', onclick: () => (dialog = { type: 'versions', entry }) }] : []),
+      { label: t('Comments'), icon: 'message-square', onclick: () => (dialog = { type: 'comments', entry }) },
+      ...(folder ? [{ label: t('Activity'), icon: 'history', onclick: () => (dialog = { type: 'activity', entry }) }] : []),
+      ...(canWrite ? ['sep', { label: t('Move to trash'), icon: 'trash-2', danger: true, onclick: () => moveToTrash(entry) }] : []),
     ];
   }
 
@@ -810,14 +813,14 @@
   function onkeydown(e) {
     if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
     if (dialog || document.querySelector('dialog[open]')) return;
-    const t = e.target;
-    const typing = t instanceof HTMLElement && (t.isContentEditable || !!t.closest('input, textarea, select'));
+    const target = e.target;
+    const typing = target instanceof HTMLElement && (target.isContentEditable || !!target.closest('input, textarea, select'));
     if (e.key === 'Escape' && selected.size && !typing) {
       selected.clear();
       e.preventDefault();
       return;
     }
-    if (t === searchInput) {
+    if (target === searchInput) {
       if (e.key === 'Escape') {
         query = '';
         searchInput.blur();
@@ -847,7 +850,7 @@
     e.preventDefault();
   }
 
-  const sortLabel = { name: 'Name', size: 'Size', modified: 'Modified' };
+  const sortLabel = $derived({ name: t('Name'), size: t('Size'), modified: t('Modified') });
 
   const close = () => (dialog = null);
   const reload = () => load();
@@ -862,15 +865,15 @@
 <div class="flex flex-wrap items-start gap-x-4 gap-y-3">
   <!-- Wide enough for a name; past that the toolbar wraps below instead. -->
   <div class="min-w-[min(100%,12rem)] flex-1">
-    <nav class="flex min-h-8 flex-wrap items-center gap-1 text-sm" aria-label="Folder path">
+    <nav class="flex min-h-8 flex-wrap items-center gap-1 text-sm" aria-label={t('Folder path')}>
       {#if share}
-        <button type="button" class="cursor-pointer rounded px-1 text-fg-muted hover:text-fg" onclick={() => go({ name: 'shared-with-me' })}>Shared with me</button>
+        <button type="button" class="cursor-pointer rounded px-1 text-fg-muted hover:text-fg" onclick={() => go({ name: 'shared-with-me' })}>{t('Shared with me')}</button>
         <Icon name="chevron-right" class="size-4 text-fg-faint" />
       {/if}
       {#each path as crumb, i (crumb.node.id)}
         {#if i}<Icon name="chevron-right" class="size-4 text-fg-faint" />{/if}
         {#if i === path.length - 1}
-          <h1 class="truncate px-1 text-xl font-semibold tracking-tight">{crumb.meta.name}</h1>
+          <h1 class="truncate px-1 text-xl font-semibold tracking-tight">{folderName(crumb)}</h1>
         {:else}
           <button
             type="button"
@@ -878,35 +881,35 @@
             onclick={() => open(crumb.node.id)}
             ondragover={(e) => dragOverFolder(e, crumb.node.id)}
             ondragleave={(e) => dragLeaveFolder(e, crumb.node.id)}
-            ondrop={(e) => dropOnFolder(e, crumb)}>{crumb.meta.name}</button>
+            ondrop={(e) => dropOnFolder(e, crumb)}>{folderName(crumb)}</button>
         {/if}
       {/each}
     </nav>
     {#if share}
       <p class="mt-1 flex flex-wrap items-center gap-2 px-1 text-[13px] text-fg-muted">
-        <span>Shared by <span class="font-medium text-fg">{here?.node.owner}</span></span>
-        <span class="badge {share.permission === 'write' ? 'badge-accent' : ''}">{share.permission === 'write' ? 'Can edit' : 'View only'}</span>
+        <span>{t('Shared by')} <span class="font-medium text-fg">{here?.node.owner}</span></span>
+        <span class="badge {share.permission === 'write' ? 'badge-accent' : ''}">{share.permission === 'write' ? t('Can edit') : t('View only')}</span>
       </p>
     {/if}
   </div>
   <div class="flex w-full flex-wrap gap-2 md:w-auto">
     {#if rows.length}
       <label class="relative block flex-1 md:flex-none">
-        <span class="sr-only">Search this folder</span>
+        <span class="sr-only">{t('Search this folder')}</span>
         <Icon name="search" class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-fg-faint" />
         <input
           bind:this={searchInput}
           bind:value={query}
           type="search"
           class="input h-8 w-full pr-8 pl-8 md:w-56"
-          placeholder="Search"
+          placeholder={t('Search')}
           autocomplete="off"
           spellcheck="false" />
         {#if !query}<kbd class="kbd pointer-events-none absolute top-1/2 right-2 -translate-y-1/2">/</kbd>{/if}
       </label>
       {#if query.trim() && path.length}
-        <div class="flex h-8 rounded-md border border-line p-0.5" role="radiogroup" aria-label="Search in">
-          {#each [['folder', 'This folder'], ['all', share ? 'Whole share' : 'Everywhere'], ['contents', 'Inside files']] as [value, label] (value)}
+        <div class="flex h-8 rounded-md border border-line p-0.5" role="radiogroup" aria-label={t('Search in')}>
+          {#each [['folder', t('This folder')], ['all', share ? t('Whole share') : t('Everywhere')], ['contents', t('Inside files')]] as [value, label] (value)}
             <button
               type="button"
               role="radio"
@@ -917,11 +920,11 @@
         </div>
       {/if}
     {/if}
-    <button type="button" class="btn btn-ghost btn-icon" aria-label="Activity in this folder" title="Activity" disabled={!here} onclick={() => (dialog = { type: 'activity', entry: here })}>
+    <button type="button" class="btn btn-ghost btn-icon" aria-label={t('Activity in this folder')} title={t('Activity')} disabled={!here} onclick={() => (dialog = { type: 'activity', entry: here })}>
       <Icon name="history" />
     </button>
-    <div class="flex h-8 rounded-md border border-line p-0.5" role="radiogroup" aria-label="Show files as">
-      {#each [['list', 'list', 'List'], ['grid', 'layout-grid', 'Grid']] as [value, icon, label] (value)}
+    <div class="flex h-8 rounded-md border border-line p-0.5" role="radiogroup" aria-label={t('Show files as')}>
+      {#each [['list', 'list', t('List')], ['grid', 'layout-grid', t('Grid')]] as [value, icon, label] (value)}
         <button
           type="button"
           role="radio"
@@ -936,20 +939,20 @@
       <!-- On phones these live in the + button instead. -->
       <div class="hidden gap-2 md:flex">
         <button type="button" class="btn btn-secondary" disabled={!here} onclick={() => (dialog = { type: 'note' })}>
-          <Icon name="file-plus" /> New note
+          <Icon name="file-plus" /> {t('New note')}
         </button>
         <button type="button" class="btn btn-secondary" disabled={!here} onclick={() => (dialog = { type: 'mkdir' })}>
-          <Icon name="folder-plus" /> New folder
+          <Icon name="folder-plus" /> {t('New folder')}
         </button>
         <Menu
-          label="Upload"
+          label={t('Upload')}
           buttonClass="btn btn-primary"
           items={[
-            { label: 'Files', icon: 'file-up', onclick: () => fileInput.click() },
-            { label: 'Folder', icon: 'folder-up', onclick: () => folderInput.click() },
-            ...(tools.video_downloader ? ['sep', { label: 'From a video link', icon: 'link', onclick: () => (dialog = { type: 'video' }) }] : []),
+            { label: t('Files'), icon: 'file-up', onclick: () => fileInput.click() },
+            { label: t('Folder'), icon: 'folder-up', onclick: () => folderInput.click() },
+            ...(tools.video_downloader ? ['sep', { label: t('From a video link'), icon: 'link', onclick: () => (dialog = { type: 'video' }) }] : []),
           ]}>
-          {#snippet trigger()}<Icon name="upload" /> Upload<Icon name="chevron-down" class="-mr-1 size-3.5 opacity-70" />{/snippet}
+          {#snippet trigger()}<Icon name="upload" /> {t('Upload')}<Icon name="chevron-down" class="-mr-1 size-3.5 opacity-70" />{/snippet}
         </Menu>
       </div>
     {/if}
@@ -960,15 +963,15 @@
   <div class="mt-4 flex flex-wrap items-center gap-3 rounded-md border border-line bg-subtle px-4 py-2.5 text-[13px]" role="status">
     <Icon name="inbox" class="size-4 shrink-0 text-fg-muted" />
     <p class="min-w-0 flex-1">
-      {strayDrops.list.length === 1 ? '1 file was' : `${strayDrops.list.length} files were`} dropped through a link that no longer exists.
+      {t('{count} files were dropped through a link that no longer exists.', { count: strayDrops.list.length })}
     </p>
-    <button type="button" class="btn btn-secondary h-7 px-2.5 text-[13px]" onclick={() => (dialog = { type: 'stray-drops' })}>Review</button>
+    <button type="button" class="btn btn-secondary h-7 px-2.5 text-[13px]" onclick={() => (dialog = { type: 'stray-drops' })}>{t('Review')}</button>
   </div>
 {/if}
 
 <div class="card relative mt-6 overflow-hidden">
   {#if loading}
-    <div aria-busy="true" aria-label="Loading">
+    <div aria-busy="true" aria-label={t('Loading')}>
       <div class="h-9 border-b border-line"></div>
       {#each [44, 32, 56, 38] as w, i (i)}
         <div class="flex h-12 items-center gap-3 border-b border-line px-4 last:border-b-0">
@@ -982,17 +985,17 @@
       <Icon name="circle-alert" class="size-6 text-danger" />
       <p class="text-fg-muted">{loadError}</p>
       <div class="flex gap-2">
-        <button type="button" class="btn btn-secondary" onclick={reload}><Icon name="refresh-cw" /> Try again</button>
-        <button type="button" class="btn btn-ghost" onclick={() => open(session.me.keys.root_node_id)}>Back to my files</button>
+        <button type="button" class="btn btn-secondary" onclick={reload}><Icon name="refresh-cw" /> {t('Try again')}</button>
+        <button type="button" class="btn btn-ghost" onclick={() => open(session.me.keys.root_node_id)}>{t('Back to my files')}</button>
       </div>
     </div>
   {:else if scope !== 'folder' && query.trim()}
     <table class="table animate-enter">
       <thead>
         <tr>
-          <th>Name</th>
-          <th class="hidden md:table-cell">Location</th>
-          <th class="hidden w-28 text-right sm:table-cell">Size</th>
+          <th>{t('Name')}</th>
+          <th class="hidden md:table-cell">{t('Location')}</th>
+          <th class="hidden w-28 text-right sm:table-cell">{t('Size')}</th>
         </tr>
       </thead>
       <tbody>
@@ -1027,7 +1030,7 @@
       {#if path.length === 1 && !share}
         <!-- A brand moment: the very first, empty "My files". -->
         <img src="/img/logo.webp" alt="" width="715" height="349" class="mb-4 h-auto w-40 select-none" draggable="false" />
-        <p class="font-medium">Nothing here yet</p>
+        <p class="font-medium">{t('Nothing here yet')}</p>
         <p class="max-w-sm text-[13px] text-fg-muted">
           Drop files or whole folders anywhere on this page, or use Upload. Everything is encrypted before it leaves your device.
         </p>
@@ -1035,9 +1038,9 @@
         <div class="mb-3 grid size-11 place-items-center rounded-lg border border-line bg-subtle">
           <Icon name={canWrite ? 'upload' : 'folder-open'} class="size-5 text-fg-muted" />
         </div>
-        <p class="font-medium">This folder is empty</p>
+        <p class="font-medium">{t('This folder is empty')}</p>
         <p class="text-[13px] text-fg-muted">
-          {canWrite ? 'Drop files anywhere on this page, or use Upload. They are encrypted before they leave your device.' : 'Nothing has been added here yet.'}
+          {canWrite ? t('Drop files anywhere on this page, or use Upload. They are encrypted before they leave your device.') : t('Nothing has been added here yet.')}
         </p>
       {/if}
     </div>
@@ -1045,7 +1048,7 @@
     <ul class="grid animate-enter grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-1 p-2" bind:this={tbody}>
       {#if !visible.length}
         <li class="col-span-full grid h-24 place-items-center text-[13px] text-fg-muted">
-          <span>Nothing in this folder matches "{query.trim()}". <button type="button" class="link" onclick={() => (query = '')}>Clear search</button></span>
+          <span>{t('Nothing in this folder matches "{query}".', { query: query.trim() })} <button type="button" class="link" onclick={() => (query = '')}>{t('Clear search')}</button></span>
         </li>
       {/if}
       {#each gridShown as entry (entry.node.id)}
@@ -1078,7 +1081,7 @@
               <input
                 use:selectName={entry.meta.name}
                 class="input h-7 px-2 text-[13px] font-medium"
-                aria-label="New name for {entry.meta.name}"
+                aria-label={t('New name for {name}', { name: entry.meta.name })}
                 bind:value={renameValue}
                 spellcheck="false"
                 onkeydown={(e) => e.key === 'Escape' && (e.preventDefault(), e.stopPropagation(), finishRename(entry, false))}
@@ -1105,14 +1108,14 @@
           <input
             type="checkbox"
             class="absolute top-3.5 left-3.5 size-4 cursor-pointer accent-accent transition-opacity focus-visible:opacity-100 {selected.size ? '' : 'opacity-0 group-hover:opacity-100'}"
-            aria-label="Select {entry.meta.name}"
+            aria-label={t('Select {name}', { name: entry.meta.name })}
             checked={isSelected}
             onclick={(e) => {
               e.preventDefault();
               toggle(entry, e);
             }} />
           <div class="absolute top-2.5 right-2.5 rounded-md bg-bg/90 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 max-md:opacity-100">
-            <Menu items={menuFor(entry)} label="Actions for {entry.meta.name}" />
+            <Menu items={menuFor(entry)} label={t('Actions for {name}', { name: entry.meta.name })} />
           </div>
         </li>
       {/each}
@@ -1129,7 +1132,7 @@
             <input
               type="checkbox"
               class="size-4 cursor-pointer align-middle accent-accent"
-              aria-label="Select all"
+              aria-label={t('Select all')}
               checked={allVisibleSelected}
               indeterminate={!allVisibleSelected && visible.some((r) => selected.has(r.node.id))}
               onchange={toggleAll} />
@@ -1145,14 +1148,14 @@
           {@render sortHeader('name')}
           {@render sortHeader('size', 'hidden w-28 text-right sm:table-cell')}
           {@render sortHeader('modified', 'hidden w-40 md:table-cell')}
-          <th class="w-12"><span class="sr-only">Actions</span></th>
+          <th class="w-12"><span class="sr-only">{t('Actions')}</span></th>
         </tr>
       </thead>
       <tbody bind:this={tbody}>
         {#if !visible.length}
           <tr>
             <td colspan="5" class="h-24 text-center text-[13px] text-fg-muted">
-              Nothing in this folder matches "{query.trim()}". <button type="button" class="link" onclick={() => (query = '')}>Clear search</button>
+              {t('Nothing in this folder matches "{query}".', { query: query.trim() })} <button type="button" class="link" onclick={() => (query = '')}>{t('Clear search')}</button>
             </td>
           </tr>
         {/if}
@@ -1179,7 +1182,7 @@
               <input
                 type="checkbox"
                 class="size-4 cursor-pointer align-middle accent-accent transition-opacity focus-visible:opacity-100 {selected.size ? '' : 'opacity-0 group-hover:opacity-100'}"
-                aria-label="Select {entry.meta.name}"
+                aria-label={t('Select {name}', { name: entry.meta.name })}
                 checked={isSelected}
                 onclick={(e) => {
                   e.preventDefault();
@@ -1198,7 +1201,7 @@
                   <input
                     use:selectName={entry.meta.name}
                     class="input h-7 max-w-md px-2 font-medium"
-                    aria-label="New name for {entry.meta.name}"
+                    aria-label={t('New name for {name}', { name: entry.meta.name })}
                     bind:value={renameValue}
                     spellcheck="false"
                     onkeydown={(e) => e.key === 'Escape' && (e.preventDefault(), e.stopPropagation(), finishRename(entry, false))}
@@ -1226,7 +1229,7 @@
             </td>
             <td class="hidden text-right text-fg-muted tabular-nums sm:table-cell">{folder ? '' : formatSize(entry.meta.size)}</td>
             <td class="hidden text-fg-muted md:table-cell" title={fullDate(changedAt(entry))}>{formatWhen(changedAt(entry))}</td>
-            <td class="text-right"><Menu items={menuFor(entry)} label="Actions for {entry.meta.name}" /></td>
+            <td class="text-right"><Menu items={menuFor(entry)} label={t('Actions for {name}', { name: entry.meta.name })} /></td>
           </tr>
         {/each}
         {#if windowed && win.end < visible.length}
@@ -1238,7 +1241,7 @@
 
   {#if dragging}
     <div class="pointer-events-none absolute inset-0 grid place-items-center rounded-lg border-2 border-dashed border-accent bg-accent-soft/80">
-      <p class="flex items-center gap-2 font-medium text-accent-text"><Icon name="upload" /> Drop to encrypt and upload to {here?.meta.name}</p>
+      <p class="flex items-center gap-2 font-medium text-accent-text"><Icon name="upload" /> {t('Drop to encrypt and upload to {folder}', { folder: folderName(here) })}</p>
     </div>
   {/if}
 </div>
@@ -1246,42 +1249,42 @@
 {#if rows.length}
   <div class="mt-3 flex items-center justify-between gap-4 px-1 text-xs text-fg-faint">
     <p>
-      {#if query.trim() && scope !== 'folder'}{found.length} found{reading ? `, reading ${reading.done} of ${reading.total} files` : searching ? ' so far' : ''} ·{:else if query.trim()}{visible.length} of {rows.length} shown ·{/if}
-      {plural(rows.filter((r) => r.node.kind === 'folder').length, 'folder')}, {plural(rows.filter((r) => r.node.kind === 'file').length, 'file')}
+      {#if query.trim() && scope !== 'folder'}{reading ? t('{count} found, reading {done} of {total} files', { count: found.length, done: reading.done, total: reading.total }) : searching ? t('{count} found so far', { count: found.length }) : t('{count} found', { count: found.length })} ·{:else if query.trim()}{t('{shown} of {total} shown', { shown: visible.length, total: rows.length })} ·{/if}
+      {t('{count} folders', { count: rows.filter((r) => r.node.kind === 'folder').length })}, {t('{count} files', { count: rows.filter((r) => r.node.kind === 'file').length })}
     </p>
     <button type="button" class="hidden cursor-pointer items-center gap-1.5 hover:text-fg-muted sm:flex" onclick={() => (dialog = { type: 'shortcuts' })}>
-      <Icon name="keyboard" class="size-3.5" /> Press <kbd class="kbd">?</kbd> for shortcuts
+      <Icon name="keyboard" class="size-3.5" /> {t('Keyboard shortcuts')} <kbd class="kbd">?</kbd>
     </button>
   </div>
 {/if}
 
 {#if selected.size && chosen.length}
   <div class="fixed inset-x-0 bottom-[calc(var(--bottom-bar)+1rem)] z-40 flex justify-center px-4 md:bottom-[calc(var(--bottom-bar)+1.5rem)]" transition:fly={{ y: 12 }}>
-    <div class="flex items-center gap-1 rounded-lg border border-line bg-bg p-1.5 pl-3 shadow-lg shadow-black/5 dark:shadow-black/40" role="toolbar" aria-label="Selection">
-      <span class="mr-2 text-sm font-medium tabular-nums">{chosen.length} selected</span>
+    <div class="flex items-center gap-1 rounded-lg border border-line bg-bg p-1.5 pl-3 shadow-lg shadow-black/5 dark:shadow-black/40" role="toolbar" aria-label={t('Selection')}>
+      <span class="mr-2 text-sm font-medium tabular-nums">{t('{count} selected', { count: chosen.length })}</span>
       <button type="button" class="btn btn-ghost" onclick={downloadChosen} disabled={!chosen.some((r) => r.node.kind === 'file')}>
-        <Icon name="download" /><span class="hidden sm:inline">Download</span>
+        <Icon name="download" /><span class="hidden sm:inline">{t('Download')}</span>
       </button>
       {#if chosen.length > 1 && chosen.every((r) => r.node.kind === 'file' && sourceKind(r.meta))}
         <button type="button" class="btn btn-ghost" onclick={() => (dialog = { type: 'convert-many', entries: [...chosen] })}>
-          <Icon name="file-cog" /><span class="hidden sm:inline">Convert</span>
+          <Icon name="file-cog" /><span class="hidden sm:inline">{t('Convert')}</span>
         </button>
       {/if}
       {#if chosen.length > 1 && chosen.every((r) => r.node.kind === 'file' && isPdf(r.meta))}
         <button type="button" class="btn btn-ghost" onclick={() => (dialog = { type: 'pdf', entries: [...chosen] })}>
-          <Icon name="file-stack" /><span class="hidden sm:inline">Merge PDFs</span>
+          <Icon name="file-stack" /><span class="hidden sm:inline">{t('Merge PDFs')}</span>
         </button>
       {/if}
       {#if canWrite}
         <button type="button" class="btn btn-ghost" onclick={() => (dialog = { type: 'move', entries: [...chosen] })}>
-          <Icon name="move" /><span class="hidden sm:inline">Move</span>
+          <Icon name="move" /><span class="hidden sm:inline">{t('Move')}</span>
         </button>
         <button type="button" class="btn btn-ghost text-danger hover:text-danger" onclick={trashChosen}>
-          <Icon name="trash-2" /><span class="hidden sm:inline">Move to trash</span>
+          <Icon name="trash-2" /><span class="hidden sm:inline">{t('Move to trash')}</span>
         </button>
       {/if}
       <span class="mx-1 h-5 w-px bg-line" aria-hidden="true"></span>
-      <button type="button" class="btn btn-ghost btn-icon" aria-label="Clear selection" title="Clear selection (Esc)" onclick={() => selected.clear()}>
+      <button type="button" class="btn btn-ghost btn-icon" aria-label={t('Clear selection')} title={t('Clear selection (Esc)')} onclick={() => selected.clear()}>
         <Icon name="x" />
       </button>
     </div>
@@ -1292,15 +1295,15 @@
 {#if canWrite && here && !selected.size}
   <div class="fixed right-4 bottom-[calc(var(--bottom-bar)+1rem)] z-30 md:hidden" transition:fly={{ y: 12 }}>
     <Menu
-      label="Add"
+      label={t('Add')}
       buttonClass="grid size-14 cursor-pointer place-items-center rounded-full bg-accent text-accent-fg shadow-lg shadow-black/25 transition-transform active:scale-95"
       items={[
-        { label: 'Upload files', icon: 'file-up', onclick: () => fileInput.click() },
-        { label: 'Upload a folder', icon: 'folder-up', onclick: () => folderInput.click() },
-        ...(tools.video_downloader ? [{ label: 'From a video link', icon: 'link', onclick: () => (dialog = { type: 'video' }) }] : []),
+        { label: t('Upload files'), icon: 'file-up', onclick: () => fileInput.click() },
+        { label: t('Upload a folder'), icon: 'folder-up', onclick: () => folderInput.click() },
+        ...(tools.video_downloader ? [{ label: t('From a video link'), icon: 'link', onclick: () => (dialog = { type: 'video' }) }] : []),
         'sep',
-        { label: 'New folder', icon: 'folder-plus', onclick: () => (dialog = { type: 'mkdir' }) },
-        { label: 'New note', icon: 'file-plus', onclick: () => (dialog = { type: 'note' }) },
+        { label: t('New folder'), icon: 'folder-plus', onclick: () => (dialog = { type: 'mkdir' }) },
+        { label: t('New note'), icon: 'file-plus', onclick: () => (dialog = { type: 'note' }) },
       ]}>
       {#snippet trigger()}<Icon name="plus" class="size-6" />{/snippet}
     </Menu>
@@ -1310,21 +1313,21 @@
 {#if dialog?.type === 'photo-details'}
   {@const answer = dialog.resolve}
   <Modal
-    title={dialog.located === 1 ? 'This photo has a location' : `${dialog.located} photos have a location`}
-    description="Photos from phones and cameras often record where they were taken, and on what. Anyone you share them with could read it."
+    title={t('{count} photos have a location', { count: dialog.located })}
+    description={t('Photos from phones and cameras often record where they were taken, and on what. Anyone you share them with could read it.')}
     onclose={() => answer('cancel')}
     onsubmit={() => answer('remove')}>
-    <p class="text-[13px] text-fg-muted">Removing it also drops the camera details. The pictures themselves don't change. You can choose what happens every time in Settings.</p>
+    <p class="text-[13px] text-fg-muted">{t("Removing it also drops the camera details. The pictures themselves don't change. You can choose what happens every time in Settings.")}</p>
     {#snippet footer()}
-      <button type="button" class="btn btn-secondary mr-auto" onclick={() => answer('cancel')}>Cancel</button>
-      <button type="button" class="btn btn-secondary" onclick={() => answer('keep')}>Keep it</button>
-      <button class="btn btn-primary">Remove location</button>
+      <button type="button" class="btn btn-secondary mr-auto" onclick={() => answer('cancel')}>{t('Cancel')}</button>
+      <button type="button" class="btn btn-secondary" onclick={() => answer('keep')}>{t('Keep it')}</button>
+      <button class="btn btn-primary">{t('Remove location')}</button>
     {/snippet}
   </Modal>
 {:else if dialog?.type === 'mkdir'}
   <NameDialog
-    title="New folder"
-    confirmLabel="Create"
+    title={t('New folder')}
+    confirmLabel={t('Create')}
     onsave={async (name) => {
       await createFolder(here.node.id, here.key, name);
       await load();
@@ -1352,9 +1355,9 @@
   <ShortcutsDialog onclose={close} />
 {:else if dialog?.type === 'note'}
   <NameDialog
-    title="New note"
+    title={t('New note')}
     initial={untitledName()}
-    confirmLabel="Create"
+    confirmLabel={t('Create')}
     create
     onsave={newNote}
     onclose={() => dialog?.type === 'note' && close()} />
@@ -1364,7 +1367,7 @@
     root={path[0]}
     currentFolderId={folderId}
     onmoved={(dest, count) => {
-      toast(count > 1 ? `Moved ${count} items to ${dest}` : `Moved to ${dest}`, { kind: 'success' });
+      toast(count > 1 ? t('Moved {count} items to {folder}', { count, folder: dest }) : t('Moved to {folder}', { folder: dest }), { kind: 'success' });
       selected.clear();
       load();
     }}

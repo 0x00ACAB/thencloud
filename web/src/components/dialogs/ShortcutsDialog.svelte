@@ -1,37 +1,38 @@
 <script>
   import Modal from '../Modal.svelte';
+  import { t } from '../../lib/i18n.svelte.js';
 
   let { onclose } = $props();
 
-  const groups = [
+  const groups = $derived([
     [
-      'Files',
+      t('Files'),
       [
-        [['/'], 'Search this folder'],
-        [['j', '↓'], 'Next item'],
-        [['k', '↑'], 'Previous item'],
-        [['Enter'], 'Open or preview'],
-        [['x'], 'Select or unselect'],
-        [['Esc'], 'Clear the selection'],
-        [['F2'], 'Rename'],
-        [['Backspace'], 'Up to the parent folder'],
-        [['n'], 'New folder'],
-        [['u'], 'Upload files'],
-        [['Delete'], 'Move the selection, or this item, to trash'],
+        [['/'], t('Search this folder')],
+        [['j', '↓'], t('Next item')],
+        [['k', '↑'], t('Previous item')],
+        [['Enter'], t('Open or preview')],
+        [['x'], t('Select or unselect')],
+        [['Esc'], t('Clear the selection')],
+        [['F2'], t('Rename')],
+        [['Backspace'], t('Up to the parent folder')],
+        [['n'], t('New folder')],
+        [['u'], t('Upload files')],
+        [['Delete'], t('Move the selection, or this item, to trash')],
       ],
     ],
     [
-      'Preview',
+      t('Preview'),
       [
-        [['←', '→'], 'Previous or next file'],
-        [['Ctrl', 'S'], 'Save while editing'],
-        [['Esc'], 'Close'],
+        [['←', '→'], t('Previous or next file')],
+        [['Ctrl', 'S'], t('Save while editing')],
+        [['Esc'], t('Close')],
       ],
     ],
-  ];
+  ]);
 </script>
 
-<Modal title="Keyboard shortcuts" {onclose}>
+<Modal title={t('Keyboard shortcuts')} {onclose}>
   <div class="grid gap-5">
     {#each groups as [title, items] (title)}
       <section class="grid gap-2">
@@ -50,6 +51,6 @@
     {/each}
   </div>
   {#snippet footer()}
-    <button type="button" class="btn btn-secondary" onclick={onclose}>Done</button>
+    <button type="button" class="btn btn-secondary" onclick={onclose}>{t('Done')}</button>
   {/snippet}
 </Modal>

@@ -2,8 +2,7 @@
 // setting can follow the browser ("auto"). Kept in localStorage so pages
 // show the right format before sign-in (it's no secret), and in the
 // encrypted "prefs" app data so it follows the account to other devices.
-// The interface itself is English for now; `language` is where a language
-// switcher will go.
+// `language` picks the interface's language (see i18n.svelte.js).
 
 const KEY = 'format';
 
@@ -27,13 +26,13 @@ export const REGIONS = [
   ['zh-CN', '中文 (中国)'],
 ];
 
-const DEFAULTS = { language: 'en', region: 'auto', clock: 'auto', units: 'auto' };
+const DEFAULTS = { language: 'auto', region: 'auto', clock: 'auto', units: 'auto' };
 
 function stored() {
   try {
     const v = JSON.parse(localStorage.getItem(KEY) ?? '{}');
     return {
-      language: 'en',
+      language: ['en', 'pl', 'de'].includes(v.language) ? v.language : 'auto',
       region: REGIONS.some(([r]) => r === v.region) ? v.region : 'auto',
       clock: ['12', '24'].includes(v.clock) ? v.clock : 'auto',
       units: ['metric', 'imperial'].includes(v.units) ? v.units : 'auto',
@@ -43,11 +42,22 @@ function stored() {
   }
 }
 
-/** { language, region: 'auto' | tag, clock: 'auto' | '12' | '24', units: 'auto' | 'metric' | 'imperial' } */
+/** { language: 'auto' | 'en' | 'pl' | 'de', region: 'auto' | tag, clock: 'auto' | '12' | '24', units: 'auto' | 'metric' | 'imperial' } */
 export const format = $state(stored());
 
-/** The locale tag dates and numbers are formatted in. */
-export const regionTag = () => (format.region === 'auto' ? navigator.language || 'en-US' : format.region);
+/**
+ * The locale tag dates and numbers are formatted in. "auto" is the
+ * browser's, unless a different interface language was chosen: then that
+ * language's (so Polish words don't sit in American dates).
+ */
+export const regionTag = () => (format.region === 'auto' ? autoRegionTag() : format.region);
+
+/** What "auto" stands for at the moment. */
+export function autoRegionTag() {
+  const browser = navigator.language || 'en-US';
+  const lang = format.language;
+  return lang !== 'auto' && browser.slice(0, 2).toLowerCase() !== lang ? lang : browser;
+}
 
 /** Countries that measure in pounds and inches day to day. */
 const IMPERIAL = new Set(['US', 'LR', 'MM']);

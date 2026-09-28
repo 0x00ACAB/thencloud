@@ -3,13 +3,18 @@
 // every device and the server doesn't learn it.
 import { loadAppData, saveAppData } from './cloud.svelte.js';
 import { applyAccountFormat } from './locale.svelte.js';
+import { t } from './i18n.svelte.js';
 
 export const MODULES = [
   {
     name: 'health',
-    label: 'Health',
     icon: 'heart-pulse',
-    description: 'A log of weight, height, blood pressure and other measurements with charts, and a mood meter. Encrypted like your files.',
+    get label() {
+      return t('Health');
+    },
+    get description() {
+      return t('A log of weight, height, blood pressure and other measurements with charts, and a mood meter. Encrypted like your files.');
+    },
   },
 ];
 

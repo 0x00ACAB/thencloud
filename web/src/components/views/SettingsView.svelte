@@ -1,6 +1,7 @@
 <script>
   import { MODULES, modules, loadModules, setModule } from '../../lib/modules.svelte.js';
-  import { format, setFormat, REGIONS, unitSystem, formatDateTime, formatNumber } from '../../lib/locale.svelte.js';
+  import { t, LANGUAGES, language } from '../../lib/i18n.svelte.js';
+  import { format, setFormat, REGIONS, autoRegionTag, unitSystem, formatDateTime, formatNumber } from '../../lib/locale.svelte.js';
   import { onMount } from 'svelte';
   import { session, changePassword, listSessions, revokeSession, revokeOtherSessions, removeRecoveryKey, listAppPasswords, deleteAppPassword, avatar, loadMyAvatar, setAvatar, removeAvatar, setDisplayName, cleanDisplayName, listContacts, forgetContact, forgetThisBrowser, myTransfer, listPasskeys, removePasskey, disableTotp, deleteAccount, verifyTree, resolvePath, exportAccount, saveAppData } from '../../lib/cloud.svelte.js';
   import { passkeysSupported } from '../../lib/passkeys.js';
@@ -95,12 +96,16 @@
   onMount(() => loadModules().catch(() => {}));
 
   // Language and region.
-  let browserRegion = $state('');
-  try {
-    browserRegion = new Intl.DisplayNames([navigator.language], { type: 'language' }).of(navigator.language) ?? navigator.language;
-  } catch {
-    browserRegion = navigator.language;
-  }
+  // What "Automatic" means right now, named in the interface's language.
+  const browserRegion = $derived.by(() => {
+    format.language;
+    const tag = autoRegionTag();
+    try {
+      return new Intl.DisplayNames([language()], { type: 'language' }).of(tag) ?? tag;
+    } catch {
+      return tag;
+    }
+  });
   function changeFormat(change) {
     setFormat(change, (f) => saveAppData('prefs', f))?.catch(toastError);
   }
@@ -114,7 +119,7 @@
   async function toggleModule(m, on) {
     try {
       await setModule(m.name, on);
-      toast(on ? `${m.label} is on. It's in the sidebar.` : `${m.label} is off`, { kind: on ? 'success' : 'info' });
+      toast(on ? t("{name} is on. It's in the sidebar.", { name: m.label }) : t('{name} is off', { name: m.label }), { kind: on ? 'success' : 'info' });
     } catch (err) {
       toastError(err);
     }
@@ -139,7 +144,7 @@
     try {
       await setDisplayName(nameDraft);
       nameDraft = avatar.name ?? '';
-      toast(avatar.name ? 'Display name saved' : 'Display name removed', { kind: 'success' });
+      toast(avatar.name ? t('Display name saved') : t('Display name removed'), { kind: 'success' });
     } catch (err) {
       toastError(err);
     } finally {
@@ -254,11 +259,11 @@
 
   const deviceIcon = (name) => (/Android|iOS/.test(name) ? 'smartphone' : 'laptop');
 
-  const themes = [
-    ['system', 'monitor', 'System'],
-    ['light', 'sun', 'Light'],
-    ['dark', 'moon', 'Dark'],
-  ];
+  const themes = $derived([
+    ['system', 'monitor', t('System')],
+    ['light', 'sun', t('Light')],
+    ['dark', 'moon', t('Dark')],
+  ]);
 
   const SAMPLES = ['main.rs', 'index.ts', 'README.md', 'package.json', 'photo.jpg', 'report.pdf', 'backup.zip', 'song.mp3'].map((name) => ({
     name,
@@ -285,7 +290,7 @@
   </section>
 {/snippet}
 
-<h1 class="text-xl font-semibold tracking-tight">Settings</h1>
+<h1 class="text-xl font-semibold tracking-tight">{t('Settings')}</h1>
 
 <div class="mt-6 grid grid-cols-1 gap-6">
   {#snippet accountBody()}
@@ -299,46 +304,46 @@
         <div class="flex flex-wrap gap-2">
           <label class="btn btn-secondary {avatarBusy ? 'pointer-events-none opacity-60' : ''}">
             {#if avatarBusy}<Icon name="loader-circle" class="spinner" />{:else}<Icon name="upload" />{/if}
-            {avatar.url ? 'Change picture' : 'Add a picture'}
+            {avatar.url ? t('Change picture') : t('Add a picture')}
             <input type="file" accept="image/*" class="sr-only" onchange={pickAvatar} />
           </label>
-          {#if avatar.url}<button type="button" class="btn btn-ghost" disabled={avatarBusy} onclick={dropAvatar}>Remove</button>{/if}
+          {#if avatar.url}<button type="button" class="btn btn-ghost" disabled={avatarBusy} onclick={dropAvatar}>{t('Remove')}</button>{/if}
         </div>
-        <p class="max-w-md text-xs text-fg-muted">Encrypted in this browser. Only people you share with, or who share with you, can see it; the server can't.</p>
+        <p class="max-w-md text-xs text-fg-muted">{t("Encrypted in this browser. Only people you share with, or who share with you, can see it; the server can't.")}</p>
       </div>
     </div>
     <dl class="grid gap-3 text-sm sm:grid-cols-[10rem_1fr]">
-      <dt class="text-fg-muted"><label for="display-name">Display name</label></dt>
+      <dt class="text-fg-muted"><label for="display-name">{t('Display name')}</label></dt>
       <dd class="grid max-w-sm gap-1.5">
         <form class="flex gap-2" onsubmit={saveName}>
-          <input id="display-name" class="input" bind:value={nameDraft} maxlength="64" autocomplete="name" placeholder="None" aria-invalid={!nameValid} aria-describedby="display-name-hint" />
+          <input id="display-name" class="input" bind:value={nameDraft} maxlength="64" autocomplete="name" placeholder={t('None')} aria-invalid={!nameValid} aria-describedby="display-name-hint" />
           <button class="btn btn-secondary shrink-0" disabled={nameBusy || !nameValid || !nameChanged}>
             {#if nameBusy}<Icon name="loader-circle" class="spinner" />{/if}
-            Save
+            {t('Save')}
           </button>
         </form>
         <p id="display-name-hint" class="text-xs {nameValid ? 'text-fg-muted' : 'text-danger'}">
-          {nameValid ? 'Any script, up to 64 characters. Shown next to your username, to the same people who see your picture.' : "That name has characters that can't be used."}
+          {nameValid ? t('Any script, up to 64 characters. Shown next to your username, to the same people who see your picture.') : t("That name has characters that can't be used.")}
         </p>
       </dd>
-      <dt class="text-fg-muted">Username</dt>
-      <dd class="font-medium">{session.me.username}{#if session.me.is_admin}<span class="badge ml-2">Admin</span>{/if}</dd>
-      <dt class="text-fg-muted">Storage</dt>
+      <dt class="text-fg-muted">{t('Username')}</dt>
+      <dd class="font-medium">{session.me.username}{#if session.me.is_admin}<span class="badge ml-2">{t('Admin')}</span>{/if}</dd>
+      <dt class="text-fg-muted">{t('Storage')}</dt>
       <dd class="grid max-w-sm gap-2">
-        <span class="tabular-nums">{formatSize(session.me.used_bytes)} of {formatSize(session.me.quota_bytes)} used</span>
+        <span class="tabular-nums">{t('{used} of {quota} used', { used: formatSize(session.me.used_bytes), quota: formatSize(session.me.quota_bytes) })}</span>
         <div class="progress"><div style:width="{usedPct}%"></div></div>
       </dd>
       {#if transfer && (transfer.daily_download_limit || transfer.daily_upload_limit)}
-        <dt class="text-fg-muted">Today's transfers</dt>
+        <dt class="text-fg-muted">{t("Today's transfers")}</dt>
         <dd class="grid max-w-sm gap-0.5 text-[13px] tabular-nums">
-          {#if transfer.daily_download_limit}<span>{formatSize(transfer.downloaded_today)} of {formatSize(transfer.daily_download_limit)} downloaded</span>{/if}
-          {#if transfer.daily_upload_limit}<span>{formatSize(transfer.uploaded_today)} of {formatSize(transfer.daily_upload_limit)} uploaded</span>{/if}
-          <span class="text-xs text-fg-muted">Limits set by your server's admin. They start again at midnight UTC.</span>
+          {#if transfer.daily_download_limit}<span>{t('{used} of {limit} downloaded', { used: formatSize(transfer.downloaded_today), limit: formatSize(transfer.daily_download_limit) })}</span>{/if}
+          {#if transfer.daily_upload_limit}<span>{t('{used} of {limit} uploaded', { used: formatSize(transfer.uploaded_today), limit: formatSize(transfer.daily_upload_limit) })}</span>{/if}
+          <span class="text-xs text-fg-muted">{t("Limits set by your server's admin. They start again at midnight UTC.")}</span>
         </dd>
       {/if}
     </dl>
   {/snippet}
-  {@render section('Account', null, accountBody)}
+  {@render section(t('Account'), null, accountBody)}
 
   {#snippet keyBody()}
     <div class="flex flex-wrap items-center gap-2">
@@ -349,8 +354,8 @@
     </div>
   {/snippet}
   {@render section(
-    'Your key fingerprint',
-    'When someone shares with you, they see this fingerprint. Read it to them over a call or in person so they can check it matches. That proves the server gave them your real key.',
+    t('Your key fingerprint'),
+    t('When someone shares with you, they see this fingerprint. Read it to them over a call or in person so they can check it matches. That proves the server gave them your real key.'),
     keyBody,
   )}
 
@@ -378,8 +383,8 @@
     {/if}
   {/snippet}
   {@render section(
-    'Verified contacts',
-    "Keys you've checked by fingerprint. If the server ever gives you a different key for one of these people, sharing with them is stopped until you check again. This list is encrypted; the server can't read or change it.",
+    t('Verified contacts'),
+    t("Keys you've checked by fingerprint. If the server ever gives you a different key for one of these people, sharing with them is stopped until you check again. This list is encrypted; the server can't read or change it."),
     contactsBody,
   )}
 
@@ -407,7 +412,7 @@
       Change password
     </button>
   {/snippet}
-  {@render section('Password', 'Changing it signs out your other devices. If you forget it, only your recovery key can get you back in.', passwordBody, passwordFooter)}
+  {@render section(t('Password'), t('Changing it signs out your other devices. If you forget it, only your recovery key can get you back in.'), passwordBody, passwordFooter)}
 
   {#snippet recoveryBody()}
     {#if session.me.recovery_created_at}
@@ -429,8 +434,8 @@
     </button>
   {/snippet}
   {@render section(
-    'Recovery key',
-    'A printable key that lets you set a new password if you forget yours, without losing your files. Keep it somewhere safe, away from this device.',
+    t('Recovery key'),
+    t('A printable key that lets you set a new password if you forget yours, without losing your files. Keep it somewhere safe, away from this device.'),
     recoveryBody,
     recoveryFooter,
   )}
@@ -490,8 +495,8 @@
     {/if}
   {/snippet}
   {@render section(
-    'Two-step sign-in',
-    'With an authenticator app or a passkey set up, signing in with your password also asks for one of them, so a leaked password alone isn\'t enough.',
+    t('Two-step sign-in'),
+    t("With an authenticator app or a passkey set up, signing in with your password also asks for one of them, so a leaked password alone isn't enough."),
     twoStepBody,
     twoStepFooter,
   )}
@@ -547,8 +552,8 @@
     </button>
   {/snippet}
   {@render section(
-    'Devices',
-    'Where you are signed in. Signing a device out ends its session, and its keys are gone from memory the next time it tries to do anything.',
+    t('Devices'),
+    t('Where you are signed in. Signing a device out ends its session, and its keys are gone from memory the next time it tries to do anything.'),
     devicesBody,
     devicesFooter,
   )}
@@ -584,14 +589,14 @@
     <button type="button" class="btn btn-secondary" onclick={() => (appDialog = true)}><Icon name="plus" />New app password</button>
   {/snippet}
   {@render section(
-    'App passwords',
-    'Sign in sync clients and other devices without giving them your account password. Each one can be read only, and revoking it signs that device out.',
+    t('App passwords'),
+    t('Sign in sync clients and other devices without giving them your account password. Each one can be read only, and revoking it signs that device out.'),
     appBody,
     appFooter,
   )}
 
   {#snippet themeBody()}
-    <div class="grid max-w-md grid-cols-3 gap-2" role="radiogroup" aria-label="Theme">
+    <div class="grid max-w-md grid-cols-3 gap-2" role="radiogroup" aria-label={t('Theme')}>
       {#each themes as [value, icon, label] (value)}
         <button
           type="button"
@@ -608,12 +613,17 @@
   {/snippet}
   {#snippet regionBody()}
     <dl class="grid gap-4 text-sm sm:grid-cols-[10rem_1fr] sm:items-center">
-      <dt class="text-fg-muted">Language</dt>
-      <dd>English <span class="text-xs text-fg-muted">More languages will be added here.</span></dd>
-      <dt class="text-fg-muted"><label for="region-format">Dates and numbers</label></dt>
+      <dt class="text-fg-muted"><label for="ui-language">{t('Language')}</label></dt>
+      <dd>
+        <select id="ui-language" class="input h-9 max-w-sm" value={format.language} onchange={(e) => changeFormat({ language: e.currentTarget.value })}>
+          <option value="auto">{t('Automatic ({name})', { name: LANGUAGES.find(([c]) => c === language())?.[1] ?? 'English' })}</option>
+          {#each LANGUAGES as [code, name] (code)}<option value={code}>{name}</option>{/each}
+        </select>
+      </dd>
+      <dt class="text-fg-muted"><label for="region-format">{t('Dates and numbers')}</label></dt>
       <dd>
         <select id="region-format" class="input h-9 max-w-sm" value={format.region} onchange={(e) => changeFormat({ region: e.currentTarget.value })}>
-          <option value="auto">Automatic ({browserRegion})</option>
+          <option value="auto">{t('Automatic ({name})', { name: browserRegion })}</option>
           {#each REGIONS as [tag, label] (tag)}<option value={tag}>{label}</option>{/each}
         </select>
       </dd>
@@ -624,17 +634,17 @@
           {/each}
         </div>
       {/snippet}
-      <dt class="text-fg-muted">Time</dt>
-      <dd>{@render choice('clock', [['auto', 'Automatic'], ['12', '12-hour'], ['24', '24-hour']], 'Time format')}</dd>
-      <dt class="text-fg-muted">Units</dt>
-      <dd>{@render choice('units', [['auto', 'Automatic'], ['metric', 'Metric'], ['imperial', 'Imperial']], 'Units')}</dd>
-      <dt class="text-fg-muted">Looks like</dt>
+      <dt class="text-fg-muted">{t('Time')}</dt>
+      <dd>{@render choice('clock', [['auto', t('Automatic')], ['12', t('12-hour')], ['24', t('24-hour')]], t('Time format'))}</dd>
+      <dt class="text-fg-muted">{t('Units')}</dt>
+      <dd>{@render choice('units', [['auto', t('Automatic')], ['metric', t('Metric')], ['imperial', t('Imperial')]], t('Units'))}</dd>
+      <dt class="text-fg-muted">{t('Looks like')}</dt>
       <dd class="text-fg-muted tabular-nums">{example}</dd>
     </dl>
   {/snippet}
-  {@render section('Language and region', 'How dates, times, numbers and measurements are shown. Saved with your account, so your other devices use it too.', regionBody)}
+  {@render section(t('Language and region'), t('The language of thencloud, and how dates, times, numbers and measurements are shown. Saved with your account, so your other devices use it too.'), regionBody)}
 
-  {@render section('Appearance', null, themeBody)}
+  {@render section(t('Appearance'), null, themeBody)}
 
   {#snippet accentBody()}
     <div class="grid gap-4">
@@ -688,7 +698,7 @@
     <p class="mr-auto text-xs text-fg-muted">Saved on this device only.</p>
     <button type="button" class="btn btn-secondary" disabled={accent.value === DEFAULT_ACCENT} onclick={() => setAccent(DEFAULT_ACCENT)}>Reset to blue</button>
   {/snippet}
-  {@render section('Accent colour', 'Used for buttons, links, folders and highlights, and optionally to tint everything else.', accentBody, accentFooter)}
+  {@render section(t('Accent colour'), t('Used for buttons, links, folders and highlights, and optionally to tint everything else.'), accentBody, accentFooter)}
 
   {#snippet iconsBody()}
     <div class="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="File icons">
@@ -725,7 +735,7 @@
     </label>
     {#if !hasFolderIcons(iconPack.value)}<p class="-mt-2 text-xs text-fg-muted">Material and Symbols have icons for common folder names.</p>{/if}
   {/snippet}
-  {@render section('File icons', 'Icons for files by type, and optionally for folders by name.', iconsBody)}
+  {@render section(t('File icons'), t('Icons for files by type, and optionally for folders by name.'), iconsBody)}
 
   {#snippet photosBody()}
     <div class="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Location and camera details in photos">
@@ -742,7 +752,7 @@
       {/each}
     </div>
   {/snippet}
-  {@render section('Location in photos', 'JPEG, PNG and WebP photos often record where they were taken and on what camera. This is checked on this device when you upload; the orientation is always kept.', photosBody)}
+  {@render section(t('Location in photos'), t('JPEG, PNG and WebP photos often record where they were taken and on what camera. This is checked on this device when you upload; the orientation is always kept.'), photosBody)}
 
 
   {#snippet exportBody()}
@@ -774,11 +784,11 @@
         </li>
       {/each}
     </ul>
-    <p class="text-xs text-fg-muted">Turning one off only hides it; what you logged stays, encrypted, until you turn it on again.</p>
+    <p class="text-xs text-fg-muted">{t('Turning one off only hides it; what you logged stays, encrypted, until you turn it on again.')}</p>
   {/snippet}
-  {@render section('Modules', 'Optional parts of thencloud. Which ones are on is saved encrypted with your account, so it follows you to other devices.', modulesBody)}
+  {@render section(t('Modules'), t('Optional parts of thencloud. Which ones are on is saved encrypted with your account, so it follows you to other devices.'), modulesBody)}
 
-  {@render section('Export your data', null, exportBody, exportFooter)}
+  {@render section(t('Export your data'), null, exportBody, exportFooter)}
 
   {#snippet checkBody()}
     <p class="text-[13px] text-fg-muted">
@@ -821,7 +831,7 @@
       <button type="button" class="btn btn-secondary" onclick={checkFiles}><Icon name="shield-check" /> Check files</button>
     {/if}
   {/snippet}
-  {@render section('Check your files', null, checkBody, checkFooter)}
+  {@render section(t('Check your files'), null, checkBody, checkFooter)}
 
   {#snippet deleteBody()}
     <p class="text-[13px] text-fg-muted">
@@ -834,7 +844,7 @@
       <Icon name="trash-2" /> Delete account
     </button>
   {/snippet}
-  {@render section('Delete account', null, deleteBody, deleteFooter)}
+  {@render section(t('Delete account'), null, deleteBody, deleteFooter)}
 
   {#snippet aboutBody()}
     <div class="grid gap-2 text-[13px] text-fg-muted">
@@ -848,7 +858,7 @@
       </p>
     </div>
   {/snippet}
-  {@render section('About', null, aboutBody)}
+  {@render section(t('About'), null, aboutBody)}
 </div>
 
 {#if deleting}
