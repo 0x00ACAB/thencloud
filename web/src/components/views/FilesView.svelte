@@ -3,7 +3,7 @@
   import { toast, toastError, trackTransfer, errorMessage, sort, sortBy, photoDetails } from '../../lib/ui.svelte.js';
   import { fileInfo, hasDetails, stripFile } from '../../lib/exif.js';
   import Modal from '../Modal.svelte';
-  import { formatSize, formatWhen, fullDate, plural, sortEntries, nameError } from '../../lib/format.js';
+  import { formatSize, formatWhen, fullDate, plural, sortEntries, nameError, modifiedAt } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
   import FileIcon from '../FileIcon.svelte';
   import FolderIcon from '../FolderIcon.svelte';
@@ -1019,14 +1019,14 @@
                   <span class="grid min-w-0">
                     <span class="truncate font-medium group-hover:underline group-hover:underline-offset-4 group-hover:decoration-line-strong">{entry.meta.name}</span>
                     <span class="truncate text-xs text-fg-muted md:hidden">
-                      {#if !folder}<span class="sm:hidden">{formatSize(entry.meta.size)}{' · '}</span>{/if}{formatWhen(entry.node.updated_at * 1000)}
+                      {#if !folder}<span class="sm:hidden">{formatSize(entry.meta.size)}{' · '}</span>{/if}{formatWhen(modifiedAt(entry))}
                     </span>
                   </span>
                 </button>
               {/if}
             </td>
             <td class="hidden text-right text-fg-muted tabular-nums sm:table-cell">{folder ? '' : formatSize(entry.meta.size)}</td>
-            <td class="hidden text-fg-muted md:table-cell" title={fullDate(entry.node.updated_at * 1000)}>{formatWhen(entry.node.updated_at * 1000)}</td>
+            <td class="hidden text-fg-muted md:table-cell" title={fullDate(modifiedAt(entry))}>{formatWhen(modifiedAt(entry))}</td>
             <td class="text-right"><Menu items={menuFor(entry)} label="Actions for {entry.meta.name}" /></td>
           </tr>
         {/each}

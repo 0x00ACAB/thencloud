@@ -119,7 +119,7 @@ pub async fn get_node<'e, E: sqlx::SqliteExecutor<'e>>(e: E, id: &str) -> Result
 
 pub async fn get_children(db: &SqlitePool, parent_id: &str) -> Result<Vec<NodeRow>> {
     let sql = format!(
-        "{NODE_SELECT} WHERE n.parent_id = ? AND n.trashed_at IS NULL AND n.dropped = 0 ORDER BY n.kind DESC, n.created_at"
+        "{NODE_SELECT} WHERE n.parent_id = ? AND n.trashed_at IS NULL AND n.dropped = 0 ORDER BY n.kind DESC, n.created_at, n.id"
     );
     Ok(sqlx::query_as::<_, NodeRow>(&sql)
         .bind(parent_id)

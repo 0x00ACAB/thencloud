@@ -97,7 +97,7 @@ pub async fn create_folder(
     if !parent.is_folder() {
         return Err(AppError::bad("parent is not a folder"));
     }
-    let t = now();
+    let t = coarse_now();
     let res = sqlx::query(
         "INSERT INTO nodes (id, owner_id, created_by, parent_id, kind, enc_key, enc_metadata, created_at, updated_at, \
          name_tag) VALUES (?, ?, ?, ?, 'folder', ?, ?, ?, ?, ?)",
@@ -204,7 +204,7 @@ pub async fn update(
     .bind(req.name_tag.as_ref().map(|t| t.0.clone()))
     .bind(req.name_tag.as_ref().map(|t| t.0.clone()))
     .bind(renamed_or_moved)
-    .bind(now())
+    .bind(coarse_now())
     .bind(&id)
     .bind(expected)
     .execute(&state.db)
