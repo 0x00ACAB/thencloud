@@ -5,6 +5,7 @@
 // reload signs you out.
 
 import { request, allChildren } from './api.js';
+import { t } from './i18n.svelte.js';
 import {
   tc, b64, unb64, decryptMeta, encryptMeta, unwrapChild, decryptChildren,
   deriveAccountKeys, deriveLinkKeys, fetchFile, openFile, encryptPiece, saveBlob,
@@ -543,6 +544,12 @@ export async function keyOf(id) {
   return keyCache.get(id);
 }
 
+/**
+ * A folder's name as shown: the root folder's own name was set in English
+ * when the account was made, so it's shown in the current language.
+ */
+export const folderLabel = (e) => (e.node.id === session.me?.keys.root_node_id ? t('My files') : e.meta.name);
+
 /** A folder's child nodes (still encrypted), however many there are. */
 const children = (id) => allChildren((p) => api('GET', p), `/api/nodes/${id}/children`);
 
@@ -605,7 +612,7 @@ const INDEX_TTL = 2 * 60 * 1000;
  * Unreadable folders are skipped; stops early when `signal` aborts.
  */
 export async function walkTree(top, { onEntry, signal } = {}) {
-  const queue = [{ entry: top, location: [top.meta.name] }];
+  const queue = [{ entry: top, location: [folderLabel(top)] }];
   const worker = async () => {
     while (queue.length && !signal?.aborted) {
       const { entry, location } = queue.shift();
@@ -637,7 +644,7 @@ export async function walkTree(top, { onEntry, signal } = {}) {
  * error })` for each item that fails; `name` is null when it can't be read.
  */
 export async function verifyTree(top, { signal, onProgress, onProblem } = {}) {
-  const queue = [{ entry: top, location: [top.meta.name] }];
+  const queue = [{ entry: top, location: [folderLabel(top)] }];
   const done = { files: 0, folders: 0, bytes: 0 };
   const problem = (location, node, name, e) =>
     onProblem?.({ location, name, id: node.id, error: typeof e === 'string' ? e : String(e?.message || e) });
@@ -930,7 +937,7 @@ export async function trashItems() {
         return { node, key, meta: decryptMeta(key, node) };
       });
       const entry = chain[chain.length - 1];
-      return { ...it, entry, chain, location: chain.slice(0, -1).map((c) => c.meta.name) };
+      return { ...it, entry, chain, location: chain.slice(0, -1).map(folderLabel) };
     } catch (e) {
       return { ...it, error: String(e?.message || e) };
     }

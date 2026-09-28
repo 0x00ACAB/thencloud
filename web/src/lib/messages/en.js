@@ -12,4 +12,14 @@ export default {
   },
   '{count} photos have a location': { one: 'This photo has a location', other: '{count} photos have a location' },
   'Moved {count} items to {folder}': { one: 'Moved 1 item to {folder}', other: 'Moved {count} items to {folder}' },
+  'Move {count} items': { one: 'Move 1 item', other: 'Move {count} items' },
+  'Deleted items stay here for {count} days, then they\'re gone for good. They still count toward your storage until then.': {
+    one: 'Deleted items stay here for 1 day, then they\'re gone for good. They still count toward your storage until then.',
+    other: 'Deleted items stay here for {count} days, then they\'re gone for good. They still count toward your storage until then.',
+  },
+  '{count} days left': { one: '1 day left', other: '{count} days left' },
+  "{count} items will be deleted permanently. This can't be undone.": {
+    one: "1 item will be deleted permanently. This can't be undone.",
+    other: "{count} items will be deleted permanently. This can't be undone.",
+  },
 };
