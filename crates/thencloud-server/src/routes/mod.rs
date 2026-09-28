@@ -84,7 +84,10 @@ pub fn router(state: AppState) -> Router {
             "/me/data/{name}",
             get(app_data::get)
                 .put(app_data::put)
-                .layer(DefaultBodyLimit::max(4 * 1024 * 1024)),
+                // Base64 of the largest blob (the search index), and the JSON around it.
+                .layer(DefaultBodyLimit::max(
+                    app_data::MAX_SEARCH_BYTES / 3 * 4 + 64 * 1024,
+                )),
         )
         .route(
             "/me/avatar",

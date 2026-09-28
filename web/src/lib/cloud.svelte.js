@@ -12,6 +12,8 @@ import {
 import { sortEntries } from './format.js';
 import { canThumbnail, makeThumbnail, isJpeg } from './thumbnail.js';
 import { photoTaken } from './exif.js';
+import { wordsOf, queryWords, matchesWords } from './fulltext.js';
+import { previewKind } from './preview.js';
 import { rememberSession, rememberedSession, forgetSession } from './remember.js';
 import { streamsAvailable, streamDownload } from './stream.js';
 import { createPasskey, usePasskey, passkeysSupported } from './passkeys.js';
@@ -193,6 +195,7 @@ function startWithMasterKey(s, masterKey) {
   keyCache.clear();
   contacts = null;
   appData.clear();
+  contentIndex = null;
   session.token = s.token;
   session.me = s.me;
   session.fingerprint = tc.fingerprint(myIdentity());
@@ -681,6 +684,100 @@ export function searchTree(top, query, { onResult, signal } = {}) {
   return walkTree(top, { signal, onEntry: (r) => r.meta.name.toLowerCase().includes(q) && onResult?.(r) });
 }
 
+// ---------------------------------------------------------------------------
+// Searching inside files. The words in each text, Markdown and PDF file are
+// kept in the encrypted "search" app data (see fulltext.js), by node id and
+// the version they came from. Text is indexed when it's uploaded, when we
+// have it anyway; anything else is read when a search needs it. The server
+// never sees a word.
+// ---------------------------------------------------------------------------
+
+/** Files bigger than this aren't read just to index them. */
+const INDEX_TEXT_MAX = 2 * 1024 * 1024;
+const INDEX_PDF_MAX = 30 * 1024 * 1024;
+/** Keep the index under the server's limit for it, with room for the encryption. */
+const INDEX_MAX_CHARS = 8 * 1024 * 1024;
+
+let contentIndex = null; // { docs: { [nodeId]: { v: version id, w: words, t: when indexed } } }
+let indexSave = null;
+
+/** How a file's words are read, or null if it isn't indexed. */
+function indexKind(meta) {
+  const k = previewKind(meta)?.kind;
+  if ((k === 'text' || k === 'markdown') && meta.size <= INDEX_TEXT_MAX) return 'text';
+  if (k === 'pdf' && meta.size <= INDEX_PDF_MAX) return 'pdf';
+  return null;
+}
+
+async function loadIndex() {
+  contentIndex ??= { docs: (await loadAppData('search')).docs ?? {} };
+  return contentIndex;
+}
+
+function saveIndexSoon() {
+  clearTimeout(indexSave);
+  indexSave = setTimeout(() => {
+    const docs = contentIndex?.docs;
+    if (!docs) return;
+    // Oldest first out, until it fits.
+    let size = JSON.stringify(docs).length;
+    if (size > INDEX_MAX_CHARS) {
+      for (const [id, d] of Object.entries(docs).sort((a, b) => a[1].t - b[1].t)) {
+        if (size <= INDEX_MAX_CHARS) break;
+        size -= d.w.length + id.length + 80;
+        delete docs[id];
+      }
+    }
+    saveAppData('search', (d) => (d.docs = docs)).catch(() => {});
+  }, 3000);
+}
+
+/** Read and keep the words of `entry` (a file), from `blob` if we have it. */
+async function indexFile(entry, blob = null) {
+  const kind = indexKind(entry.meta);
+  if (!kind || !entry.node.version) return null;
+  blob ??= (await fetchEntry(entry)).blob;
+  let text;
+  if (kind === 'pdf') {
+    const { pdfText } = await import('./pdf.js');
+    text = await pdfText(new Uint8Array(await blob.arrayBuffer()));
+  } else {
+    text = await blob.text();
+  }
+  const idx = await loadIndex();
+  const doc = { v: entry.node.version.id, w: wordsOf(text), t: Date.now() };
+  idx.docs[entry.node.id] = doc;
+  saveIndexSoon();
+  return doc;
+}
+
+/**
+ * Files under `top` with every word of `query` in them. Files not yet in the
+ * index, or changed since, are downloaded and read first: `onProgress(done,
+ * total)` counts them. A full search of My files also drops what's gone.
+ */
+export async function searchContents(top, query, { onResult, onProgress, signal } = {}) {
+  const q = queryWords(query);
+  if (!q.length) return;
+  const idx = await loadIndex();
+  const files = [];
+  await walkTree(top, { signal, onEntry: (r) => r.node.kind === 'file' && indexKind(r.meta) && files.push(r) });
+  if (signal?.aborted) return;
+  let done = 0;
+  for (const r of files) {
+    if (signal?.aborted) return;
+    let doc = idx.docs[r.node.id];
+    if (doc?.v !== r.node.version?.id) doc = await indexFile(r).catch(() => null);
+    if (doc && matchesWords(doc.w, q)) onResult?.(r);
+    onProgress?.(++done, files.length);
+  }
+  if (top.node.id === session.me.keys.root_node_id) {
+    const here = new Set(files.map((r) => r.node.id));
+    for (const id of Object.keys(idx.docs)) if (!here.has(id)) delete idx.docs[id];
+    saveIndexSoon();
+  }
+}
+
 // Files dropped through upload-only links arrive with their key sealed to
 // our public key. Open it, wrap it under the folder key and take the file in.
 let dropsChecked = 0;
@@ -1048,6 +1145,8 @@ export async function upload(file, { parentId, parentKey, existing }, onProgress
     throw e;
   }
   keyCache.set(nodeId, nodeKey);
+  // We have the text now: index it for searching inside files.
+  if (indexKind(meta) === 'text') indexFile({ node, key: nodeKey, meta }, file).catch(() => {});
   if (canThumbnail(file) && (await uploadThumbnail(file, node, nodeKey))) {
     node = { ...node, version: { ...node.version, has_thumbnail: true } };
   }
