@@ -1,5 +1,5 @@
 <script>
-  import { session, resolvePath, listFolder, createFolder, rename, move, trash, untrash, download, downloadZip, fetchEntry, upload, saveText, refreshMe, toolsInfo, loadDraft, storeDraft, dropDraft, searchTree, openEntry, strayDrops, bookProgress, watchFolder } from '../../lib/cloud.svelte.js';
+  import { session, resolvePath, listFolder, createFolder, rename, move, trash, untrash, download, downloadZip, fetchEntry, upload, saveText, refreshMe, toolsInfo, loadDraft, storeDraft, dropDraft, searchTree, searchContents, openEntry, strayDrops, bookProgress, watchFolder } from '../../lib/cloud.svelte.js';
   import { toast, toastError, trackTransfer, errorMessage, sort, sortBy, photoDetails, fileView, setFileView } from '../../lib/ui.svelte.js';
   import { fileInfo, hasDetails, stripFile } from '../../lib/exif.js';
   import Modal from '../Modal.svelte';
@@ -110,30 +110,39 @@
   const open = (id) => go({ name: 'files', folderId: id });
 
   // Search everywhere below the top of this tree (My files, or the shared
-  // folder we're in), not just this folder.
-  let scope = $state('folder'); // folder | all
+  // folder we're in), not just this folder; "Inside files" also looks in
+  // text, Markdown and PDF files' words (decrypted here, see fulltext.js).
+  let scope = $state('folder'); // folder | all | contents
   let found = $state([]);
   let searching = $state(false);
+  let reading = $state(null); // { done, total } while files are read to search inside them
   let searchRun = null;
   $effect(() => {
     const q = query.trim();
     const top = path[0];
     searchRun?.abort();
     found = [];
-    if (scope !== 'all' || !q || !top) return;
+    reading = null;
+    if (scope === 'folder' || !q || !top) return;
     const run = (searchRun = new AbortController());
     const timer = setTimeout(async () => {
       searching = true;
-      const hits = [];
-      await searchTree(top, q, {
-        signal: run.signal,
-        onResult: (r) => {
-          hits.push(r);
-          if (hits.length <= 500) found = sortEntries([...hits], sort);
-        },
-      });
+      const hits = new Map();
+      const onResult = (r) => {
+        if (hits.has(r.node.id)) return;
+        hits.set(r.node.id, r);
+        if (hits.size <= 500) found = sortEntries([...hits.values()], sort);
+      };
+      await searchTree(top, q, { signal: run.signal, onResult });
+      if (scope === 'contents' && !run.signal.aborted) {
+        await searchContents(top, q, {
+          signal: run.signal,
+          onResult,
+          onProgress: (done, total) => !run.signal.aborted && (reading = done < total ? { done, total } : null),
+        }).catch((e) => toastError(e));
+      }
       if (!run.signal.aborted) searching = false;
-    }, 200);
+    }, 300);
     return () => {
       clearTimeout(timer);
       run.abort();
@@ -781,7 +790,8 @@
 <input bind:this={versionInput} type="file" hidden onchange={onPickVersion} />
 
 <div class="flex flex-wrap items-start gap-x-4 gap-y-3">
-  <div class="min-w-0 flex-1">
+  <!-- Wide enough for a name; past that the toolbar wraps below instead. -->
+  <div class="min-w-[min(100%,12rem)] flex-1">
     <nav class="flex min-h-8 flex-wrap items-center gap-1 text-sm" aria-label="Folder path">
       {#if share}
         <button type="button" class="cursor-pointer rounded px-1 text-fg-muted hover:text-fg" onclick={() => go({ name: 'shared-with-me' })}>Shared with me</button>
@@ -826,7 +836,7 @@
       </label>
       {#if query.trim() && path.length}
         <div class="flex h-8 rounded-md border border-line p-0.5" role="radiogroup" aria-label="Search in">
-          {#each [['folder', 'This folder'], ['all', share ? 'Whole share' : 'Everywhere']] as [value, label] (value)}
+          {#each [['folder', 'This folder'], ['all', share ? 'Whole share' : 'Everywhere'], ['contents', 'Inside files']] as [value, label] (value)}
             <button
               type="button"
               role="radio"
@@ -906,7 +916,7 @@
         <button type="button" class="btn btn-ghost" onclick={() => open(session.me.keys.root_node_id)}>Back to my files</button>
       </div>
     </div>
-  {:else if scope === 'all' && query.trim()}
+  {:else if scope !== 'folder' && query.trim()}
     <table class="table animate-enter">
       <thead>
         <tr>
@@ -919,7 +929,7 @@
         {#if !found.length}
           <tr>
             <td colspan="3" class="h-24 text-center text-[13px] text-fg-muted">
-              {#if searching}<Icon name="loader-circle" class="spinner mr-1.5 inline size-4 align-[-3px]" />Looking through your folders{:else}Nothing matches "{query.trim()}".{/if}
+              {#if reading}<Icon name="loader-circle" class="spinner mr-1.5 inline size-4 align-[-3px]" />Reading files to search inside them ({reading.done} of {reading.total}){:else if searching}<Icon name="loader-circle" class="spinner mr-1.5 inline size-4 align-[-3px]" />Looking through your folders{:else}Nothing matches "{query.trim()}".{/if}
             </td>
           </tr>
         {/if}
@@ -1156,7 +1166,7 @@
 {#if rows.length}
   <div class="mt-3 flex items-center justify-between gap-4 px-1 text-xs text-fg-faint">
     <p>
-      {#if query.trim() && scope === 'all'}{found.length} found{searching ? ' so far' : ''} ·{:else if query.trim()}{visible.length} of {rows.length} shown ·{/if}
+      {#if query.trim() && scope !== 'folder'}{found.length} found{reading ? `, reading ${reading.done} of ${reading.total} files` : searching ? ' so far' : ''} ·{:else if query.trim()}{visible.length} of {rows.length} shown ·{/if}
       {plural(rows.filter((r) => r.node.kind === 'folder').length, 'folder')}, {plural(rows.filter((r) => r.node.kind === 'file').length, 'file')}
     </p>
     <button type="button" class="hidden cursor-pointer items-center gap-1.5 hover:text-fg-muted sm:flex" onclick={() => (dialog = { type: 'shortcuts' })}>

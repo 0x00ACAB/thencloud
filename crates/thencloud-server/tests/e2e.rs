@@ -5523,3 +5523,33 @@ async fn live_changes_reach_those_watching_the_folder() {
     }
     assert!(got.contains(&made), "{got}");
 }
+
+#[tokio::test]
+async fn the_search_index_may_be_bigger_than_other_app_data() {
+    let h = Harness::new().await;
+    let ada = register(&h, "ada", "pw").await;
+    let big = vec![7u8; 3 * 1024 * 1024];
+    let put = |name: &str| {
+        let (h, uri, token, big) = (
+            &h,
+            format!("/api/me/data/{name}"),
+            ada.token.clone(),
+            big.clone(),
+        );
+        async move {
+            h.call(
+                Method::PUT,
+                &uri,
+                Some(&token),
+                Some(PutPrivateData {
+                    data: B64(big),
+                    if_revision: 0,
+                }),
+            )
+            .await
+            .status
+        }
+    };
+    assert_eq!(put("music").await, StatusCode::BAD_REQUEST);
+    assert_eq!(put("search").await, StatusCode::OK);
+}

@@ -1,5 +1,6 @@
 //! App data: the music and video libraries' playlists and edits, the
-//! favourites and recent files, and pinned notes, one blob per name,
+//! favourites and recent files, pinned notes, where books were left and the
+//! index for searching inside files, one blob per name,
 //! encrypted under the user's master key. The server keeps it and a
 //! revision number, and nothing else.
 
@@ -12,8 +13,11 @@ use crate::auth::AuthUser;
 use crate::error::{AppError, Result};
 use crate::util::now;
 
-const NAMES: &[&str] = &["music", "videos", "files", "notes", "books"];
+const NAMES: &[&str] = &["music", "videos", "files", "notes", "books", "search"];
 const MAX_BYTES: usize = 2 * 1024 * 1024;
+/// The search index (the words in each text file, for searching inside
+/// them) is bigger than the libraries.
+pub const MAX_SEARCH_BYTES: usize = 12 * 1024 * 1024;
 
 fn check(name: &str) -> Result<()> {
     if NAMES.contains(&name) {
@@ -54,7 +58,12 @@ pub async fn put(
     Json(req): Json<PutPrivateData>,
 ) -> Result<Json<PrivateData>> {
     check(&name)?;
-    if req.data.0.len() > MAX_BYTES {
+    let max = if name == "search" {
+        MAX_SEARCH_BYTES
+    } else {
+        MAX_BYTES
+    };
+    if req.data.0.len() > max {
         return Err(AppError::bad("the library data is too large"));
     }
     let r = if req.if_revision == 0 {

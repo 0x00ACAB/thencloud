@@ -44,3 +44,19 @@ export async function drawText(page, container) {
 }
 
 export { pageLinks } from './pdflinks.js';
+
+/** The text of a PDF's first `maxPages` pages, for searching inside it. */
+export async function pdfText(bytes, maxPages = 200) {
+  const task = openPdf(bytes);
+  try {
+    const doc = await task.promise;
+    let out = '';
+    for (let n = 1; n <= Math.min(doc.numPages, maxPages); n++) {
+      const content = await (await doc.getPage(n)).getTextContent();
+      out += content.items.map((i) => i.str ?? '').join(' ') + '\n';
+    }
+    return out;
+  } finally {
+    task.destroy();
+  }
+}
