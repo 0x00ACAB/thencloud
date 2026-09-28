@@ -246,6 +246,94 @@ fn upload_download_push_and_pull() {
     assert_no_plaintext(&s, &[MARKER, b"Quarterly secrets", b"deep.txt"]);
 }
 
+#[test]
+fn backup_restores_to_another_server() {
+    let (a, b) = (start(), start());
+    let (ca, cb) = (client(&a), client(&b));
+    let root = ca.root().unwrap();
+    let docs = ca.mkdir(&root, "Quarterly secrets").unwrap();
+    let deep = ca.mkdir(&ca.mkdir(&docs, "a").unwrap(), "b").unwrap();
+    ca.mkdir(&docs, "empty").unwrap();
+    // Bigger than a data record, so a file spans several.
+    let big = content(9 * 1024 * 1024 + 7, 5);
+    let small = content(100, 6);
+    ca.upload_from(
+        &mut &big[..],
+        big.len() as u64,
+        1_700_000_000_000,
+        &docs,
+        "big.bin",
+        None,
+    )
+    .unwrap();
+    ca.upload_from(
+        &mut &small[..],
+        small.len() as u64,
+        0,
+        &deep,
+        "deep.txt",
+        None,
+    )
+    .unwrap();
+    ca.upload_from(&mut &b""[..], 0, 0, &deep, "nothing.txt", None)
+        .unwrap();
+
+    let key = Key::generate();
+    let mut file = Vec::new();
+    let s = ca
+        .backup(&docs, &mut file, key.clone(), &mut |_| {})
+        .unwrap();
+    assert_eq!(s.transferred, 3);
+    assert!(
+        !file.windows(MARKER.len()).any(|w| w == MARKER),
+        "the backup is sealed"
+    );
+    assert!(!file.windows(8).any(|w| w == b"deep.txt"));
+
+    // Restored on the other server, twice: the second time as new versions.
+    let target = cb.mkdir(&cb.root().unwrap(), "From A").unwrap();
+    for _ in 0..2 {
+        let s = cb
+            .restore(&file[..], key.clone(), &target, &mut |_| {})
+            .unwrap();
+        assert_eq!(s.transferred, 3);
+    }
+    let got = cb.resolve("From A/big.bin").unwrap();
+    assert_eq!(fetch(&cb, &got), big);
+    assert_eq!(got.meta.mtime, 1_700_000_000_000);
+    assert_eq!(
+        fetch(&cb, &cb.resolve("From A/a/b/deep.txt").unwrap()),
+        small
+    );
+    assert_eq!(
+        fetch(&cb, &cb.resolve("From A/a/b/nothing.txt").unwrap()),
+        b""
+    );
+    assert!(cb.resolve("From A/empty").unwrap().is_folder());
+    assert_eq!(
+        cb.list(&target).unwrap().len(),
+        3,
+        "folders reused, not doubled"
+    );
+
+    // The wrong key, or a backup cut short, restores nothing more.
+    let other = cb.mkdir(&cb.root().unwrap(), "Broken").unwrap();
+    let err = cb
+        .restore(&file[..], Key::generate(), &other, &mut |_| {})
+        .err()
+        .unwrap();
+    assert!(err.to_string().contains("doesn't open"), "{err}");
+    let err = cb
+        .restore(&file[..file.len() - 40], key.clone(), &other, &mut |_| {})
+        .err()
+        .unwrap();
+    assert!(err.to_string().contains("damaged"), "{err}");
+
+    ca.logout().unwrap();
+    cb.logout().unwrap();
+    assert_no_plaintext(&b, &[MARKER, b"Quarterly secrets", b"deep.txt", b"From A"]);
+}
+
 fn fuse_available() -> bool {
     let ok = Path::new("/dev/fuse").exists()
         && std::env::var_os("PATH").is_some_and(|p| {

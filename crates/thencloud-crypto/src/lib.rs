@@ -1004,6 +1004,33 @@ pub fn decrypt_chunk(
     open(content_key, sealed, &chunk_aad(version_id, index, is_last))
 }
 
+// ---------------------------------------------------------------------------
+// Backups (`thencloud backup`): a file of records sealed under a random
+// backup key that only the user holds, each bound to the backup's random id
+// and its position, so records can't be dropped, reordered or mixed in from
+// another backup. What a record holds is up to the client (the CLI's
+// `backup.rs`, described in docs/format).
+// ---------------------------------------------------------------------------
+
+/// The first bytes of a backup file, before its id.
+pub const BACKUP_MAGIC: &[u8; 8] = b"thncbk01";
+pub const BACKUP_ID_LEN: usize = 16;
+
+pub fn seal_backup_record(key: &Key, backup_id: &[u8], index: u64, record: &[u8]) -> Vec<u8> {
+    let (id, i) = (b64_encode(backup_id), index.to_string());
+    seal(key, record, &aad("backup", &[&id, &i]))
+}
+
+pub fn open_backup_record(
+    key: &Key,
+    backup_id: &[u8],
+    index: u64,
+    sealed: &[u8],
+) -> Result<Vec<u8>> {
+    let (id, i) = (b64_encode(backup_id), index.to_string());
+    open(key, sealed, &aad("backup", &[&id, &i]))
+}
+
 /// Encrypt a whole in-memory buffer into chunks, padded with zeros to
 /// `padded_size`.
 pub fn encrypt_content(content_key: &Key, version_id: &str, data: &[u8]) -> Vec<Vec<u8>> {

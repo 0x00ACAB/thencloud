@@ -111,7 +111,7 @@ Smaller things:
 - [x] **Link passwords in the key**: optionally derive part of a public link's key from its password, so the server can't skip the password check. Links with a password carry `#p.<secret>`; the node key is wrapped under a KEK from the secret and the password, and visitors unlock with an auth key derived from the password, which never reaches the server
 - [x] **One-time and counted links**: a download limit on public links, and "expires after first open". An open is one visit to the link page, counted by the server, which hands that visit a signed token for the rest of it (browsing, downloads, streaming); once they're used up the link is gone for new visitors, while visits under way can finish
 - [x] **Delete my account** from Settings, with the password and a typed confirmation. Not from an app password, and the only admin can't leave others without one
-- [ ] **Account export**: everything decrypted into a zip in the browser (streamed), plus an encrypted backup the CLI can restore to another server. The zip is done (Settings, "Export your data": My files plus library data and contacts as JSON); the CLI backup is still to do
+- [x] **Account export**: everything decrypted into a zip in the browser (streamed), plus an encrypted backup the CLI can restore to another server. Settings, "Export your data": My files plus library data and contacts as JSON. `thencloud backup <folder> <file>` writes one file under a new backup key shown once; `thencloud restore <file> <folder>` puts it back on any server, encrypted afresh there
 
 ## Milestone 6: Everyday files
 
