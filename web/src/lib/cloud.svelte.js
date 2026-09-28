@@ -938,6 +938,38 @@ export async function downloadZip(entries, name, onProgress) {
   await saveZip(entries, name, { list: (e) => listFolder(e.node.id, e.key), open: openEntry, onProgress });
 }
 
+/**
+ * Everything you own, decrypted into one zip: My files as they are, and a
+ * `thencloud-data` folder with your library data (playlists, pins, where
+ * you left off) and verified contacts as JSON. Shared-with-me items belong
+ * to someone else and aren't included. Streamed to disk where possible.
+ */
+export async function exportAccount(onProgress) {
+  const { items } = await resolvePath(session.me.keys.root_node_id);
+  const root = items[0];
+  const now = Date.now();
+  const json = (name, value) => {
+    const bytes = enc.encode(JSON.stringify(value, null, 2));
+    return { node: { kind: 'file' }, meta: { name, size: bytes.length, mtime: now }, bytes };
+  };
+  const data = [];
+  for (const name of ['music', 'videos', 'files', 'notes']) {
+    const d = await loadAppData(name);
+    if (Object.keys(d).length) data.push(json(`${name}.json`, d));
+  }
+  const { data: pinned } = await loadContacts();
+  if (Object.keys(pinned).length) data.push(json('contacts.json', pinned));
+  const entries = await listFolder(root.node.id, root.key);
+  if (data.length) entries.push({ node: { kind: 'folder' }, meta: { name: 'thencloud-data', mtime: now }, children: data });
+  const { saveZip } = await import('./zip.js');
+  const day = new Date(now).toISOString().slice(0, 10);
+  await saveZip(entries, `thencloud-${session.me.username}-${day}.zip`, {
+    list: (e) => e.children ?? listFolder(e.node.id, e.key),
+    open: (e) => (e.bytes ? { count: 1, read: async () => e.bytes } : openEntry(e)),
+    onProgress,
+  });
+}
+
 /** Files larger than this are streamed to disk instead of decrypted into memory first. */
 const STREAM_FROM = 16 * 1024 * 1024;
 
