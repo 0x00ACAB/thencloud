@@ -115,8 +115,8 @@ pub async fn verify(
     ip: ClientIp,
     Json(req): Json<SecondFactorRequest>,
 ) -> Result<Json<SessionResponse>> {
-    let ikey = format!("2fa-ip:{}", ip.key());
-    if state.limiter.blocked(&ikey) {
+    let ikey = ip.key().map(|k| format!("2fa-ip:{k}"));
+    if ikey.as_deref().is_some_and(|k| state.limiter.blocked(k)) {
         return Err(AppError::RateLimited);
     }
     let ch = get_challenge(&state, &req.ticket, "login").await?;
@@ -135,7 +135,9 @@ pub async fn verify(
     };
     if !ok {
         state.limiter.fail(&ukey);
-        state.limiter.fail(&ikey);
+        if let Some(k) = &ikey {
+            state.limiter.fail(k);
+        }
         return Err(AppError::InvalidSecondFactor);
     }
     state.limiter.clear(&ukey);

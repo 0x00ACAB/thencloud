@@ -1,8 +1,10 @@
+pub mod activity;
 pub mod admin;
 pub mod app_data;
 pub mod app_passwords;
 pub mod auth;
 pub mod avatars;
+pub mod comments;
 pub mod contacts;
 pub mod drafts;
 pub mod drops;
@@ -13,6 +15,7 @@ pub mod passkeys;
 pub mod public;
 pub mod sessions;
 pub mod shares;
+pub mod thumbnails;
 pub mod tools;
 pub mod trash;
 pub mod two_factor;
@@ -81,7 +84,10 @@ pub fn router(state: AppState) -> Router {
             "/me/data/{name}",
             get(app_data::get)
                 .put(app_data::put)
-                .layer(DefaultBodyLimit::max(4 * 1024 * 1024)),
+                // Base64 of the largest blob (the search index), and the JSON around it.
+                .layer(DefaultBodyLimit::max(
+                    app_data::MAX_SEARCH_BYTES / 3 * 4 + 64 * 1024,
+                )),
         )
         .route(
             "/me/avatar",
@@ -123,6 +129,20 @@ pub fn router(state: AppState) -> Router {
         .route("/nodes/{id}/path", get(nodes::path))
         .route("/nodes/{id}/name-tags", post(nodes::tag_names))
         .route("/nodes/{id}/chunks/{idx}", get(nodes::chunk))
+        .route(
+            "/nodes/{id}/comments",
+            get(comments::list).post(comments::create),
+        )
+        .route("/comments/{id}", delete(comments::delete))
+        .route("/nodes/{id}/thumbnail", get(thumbnails::get))
+        .route("/nodes/{id}/activity", get(activity::list))
+        .route("/nodes/{id}/changes", get(activity::live))
+        .route(
+            "/nodes/{id}/versions/{vid}/thumbnail",
+            put(thumbnails::put).layer(DefaultBodyLimit::max(
+                thumbnails::MAX_THUMBNAIL_BYTES + 1024,
+            )),
+        )
         .route(
             "/nodes/{id}/draft",
             get(drafts::get)
@@ -166,6 +186,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/public/{token}/nodes/{id}/chunks/{idx}",
             get(public::chunk),
+        )
+        .route(
+            "/public/{token}/nodes/{id}/thumbnail",
+            get(public::thumbnail),
         )
         .route("/public/{token}/uploads", post(public::upload_create))
         .route("/public/{token}/uploads/{id}", delete(public::upload_abort))

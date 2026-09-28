@@ -6,6 +6,7 @@
 //! under the file's node key and bound to (node id, version id), so the
 //! client can decrypt any of them without re-encryption.
 
+use crate::routes::activity::{self, Event};
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
@@ -126,6 +127,7 @@ pub async fn restore(
             "the file was modified by someone else; reload and retry".into(),
         ));
     }
+    activity::note(&state, &user.id, &id, Event::Changed, None).await;
     Ok(Json(
         get_node(&state.db, &id)
             .await?

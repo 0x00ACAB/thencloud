@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
-import { photoInfo, hasDetails } from '../src/lib/exif.js';
+import { photoInfo, hasDetails, readTiff } from '../src/lib/exif.js';
 import { random, mutate, timed, concat, be32, le32, RUNS, SEED } from './fuzz.js';
 
 const TIFF = () =>
@@ -64,4 +64,19 @@ test(`photos: mutated input never throws, and cleaning always cleans (seed ${SEE
     // What comes out must parse and have nothing left to remove.
     if (again) assert.ok(!hasDetails(again), 'details left after cleaning');
   }
+});
+
+test('the date a photo was taken comes from DateTimeOriginal, else DateTime', () => {
+  // IFD0 at 8 with DateTime (0x0132) and an Exif IFD pointer (0x8769); the
+  // Exif IFD at 38 with DateTimeOriginal (0x9003); the strings at 52 and 72.
+  const tiff = (withOriginal) =>
+    concat('MM', [0, 42], be32(8), [0, 2],
+      [0x01, 0x32, 0, 2], be32(20), be32(52),
+      [0x87, 0x69, 0, 4], be32(1), be32(withOriginal ? 38 : 0),
+      be32(0),
+      [0, 1], [0x90, 0x03, 0, 2], be32(20), be32(72),
+      '2021:01:02 03:04:05\0', '2019:07:14 18:03:59\0');
+  assert.equal(readTiff(tiff(true)).taken, new Date(2019, 6, 14, 18, 3, 59).getTime());
+  assert.equal(readTiff(tiff(false)).taken, new Date(2021, 0, 2, 3, 4, 5).getTime());
+  assert.equal(readTiff(TIFF()).taken, null);
 });

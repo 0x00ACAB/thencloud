@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { session, changePassword, listSessions, revokeSession, revokeOtherSessions, removeRecoveryKey, listAppPasswords, deleteAppPassword, avatar, loadMyAvatar, setAvatar, removeAvatar, listContacts, forgetContact, forgetThisBrowser, listPasskeys, removePasskey, disableTotp, deleteAccount, verifyTree, resolvePath } from '../../lib/cloud.svelte.js';
+  import { session, changePassword, listSessions, revokeSession, revokeOtherSessions, removeRecoveryKey, listAppPasswords, deleteAppPassword, avatar, loadMyAvatar, setAvatar, removeAvatar, listContacts, forgetContact, forgetThisBrowser, listPasskeys, removePasskey, disableTotp, deleteAccount, verifyTree, resolvePath, exportAccount } from '../../lib/cloud.svelte.js';
   import { passkeysSupported } from '../../lib/passkeys.js';
   import TotpDialog from '../dialogs/TotpDialog.svelte';
   import PasskeyDialog from '../dialogs/PasskeyDialog.svelte';
@@ -38,6 +38,21 @@
     }
     run.done = true;
     run.stopped = ctl.signal.aborted;
+  }
+
+  // Everything decrypted into one zip.
+  let exporting = $state(null); // { progress } while running
+
+  async function exportData() {
+    const run = (exporting = { progress: 0 });
+    try {
+      await exportAccount((p) => (run.progress = p));
+      toast('Export finished', { kind: 'success' });
+    } catch (e) {
+      toastError(e);
+    } finally {
+      exporting = null;
+    }
   }
 
   let deleting = $state(false);
@@ -621,6 +636,23 @@
   {/snippet}
   {@render section('Location in photos', 'JPEG, PNG and WebP photos often record where they were taken and on what camera. This is checked on this device when you upload; the orientation is always kept.', photosBody)}
 
+
+  {#snippet exportBody()}
+    <p class="text-[13px] text-fg-muted">
+      Everything in My files, decrypted in this browser into one zip, with your playlists, pinned notes and verified contacts as JSON in a
+      <code class="font-mono text-fg">thencloud-data</code> folder. The zip is not encrypted, so keep it somewhere safe. Items others shared with you
+      aren't included.
+    </p>
+    {#if exporting}
+      <div class="progress"><div style:width="{Math.round(exporting.progress * 100)}%"></div></div>
+    {/if}
+  {/snippet}
+  {#snippet exportFooter()}
+    <button type="button" class="btn btn-secondary" onclick={exportData} disabled={!!exporting}>
+      {#if exporting}<Icon name="loader-circle" class="spinner" />{:else}<Icon name="download" />{/if} Export
+    </button>
+  {/snippet}
+  {@render section('Export your data', null, exportBody, exportFooter)}
 
   {#snippet checkBody()}
     <p class="text-[13px] text-fg-muted">

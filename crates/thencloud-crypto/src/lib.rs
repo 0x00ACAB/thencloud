@@ -180,6 +180,19 @@ fn open_key(key: &Key, sealed: &[u8], aad: &[u8]) -> Result<Key> {
     k
 }
 
+/// Unicode NFC, so text typed as one character or as a letter and a
+/// combining accent is the same.
+#[cfg(not(target_arch = "wasm32"))]
+fn nfc(s: &str) -> String {
+    use unicode_normalization::UnicodeNormalization as _;
+    s.nfc().collect()
+}
+
+#[cfg(target_arch = "wasm32")]
+fn nfc(s: &str) -> String {
+    js_sys::JsString::from(s).normalize("NFC").into()
+}
+
 // Associated-data labels. Versioned so the formats can evolve.
 fn aad(label: &str, parts: &[&str]) -> Vec<u8> {
     let mut v = format!("thencloud/v1/{label}").into_bytes();
@@ -232,13 +245,17 @@ pub struct AccountKeys {
     pub kek: Key,
 }
 
+/// The password is taken in Unicode NFC, so "é" typed as one character or
+/// as "e" and a combining accent is the same password on every device.
 pub fn derive_account_keys(password: &str, salt: &[u8], params: KdfParams) -> Result<AccountKeys> {
     let p = argon2::Params::new(params.m_cost, params.t_cost, params.p_cost, Some(KEY_LEN))
         .map_err(|_| Error::KdfParams)?;
     let a2 = argon2::Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, p);
+    let mut password = nfc(password);
     let mut root = [0u8; KEY_LEN];
-    a2.hash_password_into(password.as_bytes(), salt, &mut root)
-        .map_err(|_| Error::KdfParams)?;
+    let derived = a2.hash_password_into(password.as_bytes(), salt, &mut root);
+    password.zeroize();
+    derived.map_err(|_| Error::KdfParams)?;
     let hk = Hkdf::<Sha256>::new(None, &root);
     let mut auth = [0u8; KEY_LEN];
     let mut kek = [0u8; KEY_LEN];
@@ -427,6 +444,69 @@ pub fn unwrap_master_key_passkey(kek: &Key, wrapped: &[u8], credential_id: &[u8]
         wrapped,
         &aad("master-key-passkey", &[&b64_encode(credential_id)]),
     )
+}
+
+// ---------------------------------------------------------------------------
+// Link passwords. A public link with a password carries a random secret
+// after `#` instead of the node key. The password and that secret together
+// make a KEK, and the server keeps the node key wrapped under it, handing it
+// out only once the password checks out. So neither the server (which never
+// sees the secret) nor someone with only the link (who doesn't know the
+// password) can open it. The visitor proves the password with an auth key,
+// never the password itself.
+//
+// Argon2's salt comes from the secret, so the server can't start guessing
+// passwords before it has seen the link. For an upload-only link the
+// "secret" is the owner's identity from the link: nothing is decrypted
+// there, so only the auth key is used.
+// ---------------------------------------------------------------------------
+
+/// The Argon2 salt for a link's password (see [`derive_link_keys`]).
+pub fn link_password_salt(secret: &[u8]) -> [u8; SALT_LEN] {
+    let h = Sha256::digest([b"thencloud/v1/link-salt\0".as_slice(), secret].concat());
+    h[..SALT_LEN].try_into().unwrap()
+}
+
+/// Turn the keys [`derive_account_keys`] made from a link's password (with
+/// [`link_password_salt`] and default parameters) into the link's auth key
+/// and KEK. Split from the Argon2 step so browsers can run that in a worker.
+pub fn derive_link_keys(secret: &[u8], from_password: &AccountKeys) -> AccountKeys {
+    let mut auth = [0u8; KEY_LEN];
+    let mut kek = [0u8; KEY_LEN];
+    Hkdf::<Sha256>::new(None, from_password.auth_key.as_bytes())
+        .expand(b"thencloud/v1/link-auth", &mut auth)
+        .expect("valid length");
+    Hkdf::<Sha256>::new(Some(secret), from_password.kek.as_bytes())
+        .expand(b"thencloud/v1/link-kek", &mut kek)
+        .expect("valid length");
+    AccountKeys {
+        auth_key: Key(auth),
+        kek: Key(kek),
+    }
+}
+
+/// Both steps of a link's password keys at once.
+pub fn derive_link_password_keys(secret: &[u8], password: &str) -> Result<AccountKeys> {
+    let k = derive_account_keys(password, &link_password_salt(secret), KdfParams::default())?;
+    Ok(derive_link_keys(secret, &k))
+}
+
+pub fn wrap_link_key(kek: &Key, node_key: &Key, node_id: &str) -> Vec<u8> {
+    seal(kek, node_key.as_bytes(), &aad("link-key", &[node_id]))
+}
+
+pub fn unwrap_link_key(kek: &Key, wrapped: &[u8], node_id: &str) -> Result<Key> {
+    open_key(kek, wrapped, &aad("link-key", &[node_id]))
+}
+
+/// The owner's copy of a link's secret, so the link can be shown again.
+/// Under the node key, like everything else about the node.
+pub fn encrypt_link_secret(node_key: &Key, secret: &Key, node_id: &str) -> Vec<u8> {
+    seal(node_key, secret.as_bytes(), &aad("link-secret", &[node_id]))
+}
+
+pub fn decrypt_link_secret(node_key: &Key, sealed: &[u8], node_id: &str) -> Result<Key> {
+    open_key(node_key, sealed, &aad("link-secret", &[node_id]))
 }
 
 // ---------------------------------------------------------------------------
@@ -778,13 +858,14 @@ pub fn unwrap_node_key(parent_key: &Key, wrapped: &[u8], node_id: &str) -> Resul
 }
 
 /// A tag for a name in a folder: the same for names that differ only in
-/// case, different in every folder, and meaningless without the folder
-/// key. The server stores it with the node so it can refuse duplicate
-/// names without learning them.
+/// case or Unicode composition, different in every folder, and meaningless
+/// without the folder key. The server stores it with the node so it can
+/// refuse duplicate names without learning them.
 pub fn name_tag(folder_key: &Key, name: &str) -> Vec<u8> {
     let hk = Hkdf::<Sha256>::new(Some(b"thencloud/v1/name-index"), folder_key.as_bytes());
+    let folded = nfc(&name.to_lowercase());
     let mut tag = vec![0u8; 32];
-    hk.expand(name.to_lowercase().as_bytes(), &mut tag)
+    hk.expand(folded.as_bytes(), &mut tag)
         .expect("valid length");
     tag
 }
@@ -801,6 +882,16 @@ pub struct Metadata {
     /// Modification time, milliseconds since the Unix epoch.
     #[serde(default)]
     pub mtime: i64,
+    /// When this node was last changed (made, uploaded, renamed), in
+    /// milliseconds: the exact time, which the server only knows to the
+    /// hour. Missing on items from before it was added.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changed: Option<i64>,
+    /// When a photo was taken, in milliseconds, from its EXIF data at
+    /// upload (read as the uploader's local time). Only kept when the
+    /// uploaded file still carries it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub taken: Option<i64>,
 }
 
 impl Metadata {
@@ -918,6 +1009,87 @@ pub fn decrypt_chunk(
     open(content_key, sealed, &chunk_aad(version_id, index, is_last))
 }
 
+// ---------------------------------------------------------------------------
+// Thumbnails: a small image made in the browser when a file is uploaded,
+// under the file's node key and bound to the version it shows, so an old
+// thumbnail can't be passed off as the current file's.
+// ---------------------------------------------------------------------------
+
+pub fn encrypt_thumbnail(node_key: &Key, node_id: &str, version_id: &str, image: &[u8]) -> Vec<u8> {
+    seal(node_key, image, &aad("thumbnail", &[node_id, version_id]))
+}
+
+pub fn decrypt_thumbnail(
+    node_key: &Key,
+    node_id: &str,
+    version_id: &str,
+    sealed: &[u8],
+) -> Result<Vec<u8>> {
+    open(node_key, sealed, &aad("thumbnail", &[node_id, version_id]))
+}
+
+// ---------------------------------------------------------------------------
+// Comments on files and folders: under the node key, so everyone who can
+// open the node can read them and no one else can. Bound to the node, the
+// comment's id and its author, so the server can't move a comment to
+// another file or put it in someone else's name.
+// ---------------------------------------------------------------------------
+
+pub fn encrypt_comment(
+    node_key: &Key,
+    node_id: &str,
+    comment_id: &str,
+    author_id: &str,
+    body: &[u8],
+) -> Vec<u8> {
+    seal(
+        node_key,
+        body,
+        &aad("comment", &[node_id, comment_id, author_id]),
+    )
+}
+
+pub fn decrypt_comment(
+    node_key: &Key,
+    node_id: &str,
+    comment_id: &str,
+    author_id: &str,
+    sealed: &[u8],
+) -> Result<Vec<u8>> {
+    open(
+        node_key,
+        sealed,
+        &aad("comment", &[node_id, comment_id, author_id]),
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Backups (`thencloud backup`): a file of records sealed under a random
+// backup key that only the user holds, each bound to the backup's random id
+// and its position, so records can't be dropped, reordered or mixed in from
+// another backup. What a record holds is up to the client (the CLI's
+// `backup.rs`, described in docs/format).
+// ---------------------------------------------------------------------------
+
+/// The first bytes of a backup file, before its id.
+pub const BACKUP_MAGIC: &[u8; 8] = b"thncbk01";
+pub const BACKUP_ID_LEN: usize = 16;
+
+pub fn seal_backup_record(key: &Key, backup_id: &[u8], index: u64, record: &[u8]) -> Vec<u8> {
+    let (id, i) = (b64_encode(backup_id), index.to_string());
+    seal(key, record, &aad("backup", &[&id, &i]))
+}
+
+pub fn open_backup_record(
+    key: &Key,
+    backup_id: &[u8],
+    index: u64,
+    sealed: &[u8],
+) -> Result<Vec<u8>> {
+    let (id, i) = (b64_encode(backup_id), index.to_string());
+    open(key, sealed, &aad("backup", &[&id, &i]))
+}
+
 /// Encrypt a whole in-memory buffer into chunks, padded with zeros to
 /// `padded_size`.
 pub fn encrypt_content(content_key: &Key, version_id: &str, data: &[u8]) -> Vec<Vec<u8>> {
@@ -941,9 +1113,31 @@ mod tests {
     use super::*;
 
     #[test]
+    fn link_key_needs_password_and_secret() {
+        let (secret, other) = (Key::generate(), Key::generate());
+        let node_key = Key::generate();
+        let k = derive_link_password_keys(secret.as_bytes(), "hunter2").unwrap();
+        let wrapped = wrap_link_key(&k.kek, &node_key, "n1");
+        assert!(unwrap_link_key(&k.kek, &wrapped, "n1").unwrap() == node_key);
+        assert!(unwrap_link_key(&k.kek, &wrapped, "n2").is_err());
+        let wrong = derive_link_password_keys(secret.as_bytes(), "hunter3").unwrap();
+        assert!(unwrap_link_key(&wrong.kek, &wrapped, "n1").is_err());
+        let elsewhere = derive_link_password_keys(other.as_bytes(), "hunter2").unwrap();
+        assert!(unwrap_link_key(&elsewhere.kek, &wrapped, "n1").is_err());
+        // The auth key depends on the secret too, so the server can't
+        // check guesses without the link.
+        assert!(elsewhere.auth_key != k.auth_key);
+        assert!(k.auth_key != k.kek);
+        let sealed = encrypt_link_secret(&node_key, &secret, "n1");
+        assert!(decrypt_link_secret(&node_key, &sealed, "n1").unwrap() == secret);
+        assert!(decrypt_link_secret(&node_key, &sealed, "n2").is_err());
+    }
+
+    #[test]
     fn name_tags() {
         let (a, b) = (Key::generate(), Key::generate());
         assert_eq!(name_tag(&a, "Report.PDF"), name_tag(&a, "report.pdf"));
+        assert_eq!(name_tag(&a, "Caf\u{e9}"), name_tag(&a, "CAFE\u{301}"));
         assert_ne!(name_tag(&a, "report.pdf"), name_tag(&a, "report2.pdf"));
         assert_ne!(name_tag(&a, "report.pdf"), name_tag(&b, "report.pdf"));
     }
@@ -967,6 +1161,8 @@ mod tests {
                 mime: None,
                 size: 1,
                 mtime: 0,
+                changed: None,
+                taken: None,
             },
         )
         .unwrap();
@@ -978,6 +1174,8 @@ mod tests {
                 mime: None,
                 size: 1,
                 mtime: 0,
+                changed: None,
+                taken: None,
             },
         )
         .unwrap();
@@ -1028,6 +1226,8 @@ mod tests {
             mime: Some("text/plain".into()),
             size: 3,
             mtime: 1,
+            changed: None,
+            taken: None,
         };
         let ct = encrypt_metadata(&k, &id, &m).unwrap();
         assert_eq!(decrypt_metadata(&k, &id, &ct).unwrap(), m);

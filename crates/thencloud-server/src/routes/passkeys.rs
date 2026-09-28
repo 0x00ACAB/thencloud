@@ -271,8 +271,8 @@ pub async fn login(
     ip: ClientIp,
     Json(req): Json<PasskeyLoginRequest>,
 ) -> Result<Json<PasskeyLoginResponse>> {
-    let ikey = format!("passkey-ip:{}", ip.key());
-    if state.limiter.blocked(&ikey) {
+    let ikey = ip.key().map(|k| format!("passkey-ip:{k}"));
+    if ikey.as_deref().is_some_and(|k| state.limiter.blocked(k)) {
         return Err(AppError::RateLimited);
     }
     let c = &req.challenge.0;
@@ -281,7 +281,9 @@ pub async fn login(
     {
         Ok(r) => r,
         Err(e) => {
-            state.limiter.fail(&ikey);
+            if let Some(k) = &ikey {
+                state.limiter.fail(k);
+            }
             return Err(e);
         }
     };

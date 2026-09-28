@@ -19,6 +19,15 @@ thencloud logout
 
 The server and app password are saved in `~/.config/thencloud/config.json`, readable only by you. Anyone who can read that file can read your files, so revoke the app password in Settings if the machine is lost.
 
+## Backups
+
+```sh
+thencloud backup "" ~/thencloud.backup     # everything in My files, into one encrypted file
+THENCLOUD_BACKUP_KEY=... thencloud restore ~/thencloud.backup "From backup"   # on any server
+```
+
+`backup` makes a new backup key for each backup and shows it once, in the same format as a recovery key. Keep it with the file: nothing else opens the backup, and it isn't stored anywhere. `restore` puts the files back into a folder in whatever account you're signed in to, on this server or another one, encrypting them afresh there. Folders already there are reused, and files with the same name get a new version. A damaged or incomplete backup stops the restore at the damage. The format is in [docs/format](../../docs/format/README.md#backups).
+
 ## Mounting as a drive (Linux)
 
 `thencloud mount` shows My files, or one folder, as a normal folder on your machine through FUSE, so Dolphin, Nautilus, editors and the shell can use it directly.

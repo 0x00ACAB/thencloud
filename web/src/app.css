@@ -73,12 +73,15 @@
   --line-strong: #d9d9d9;
   --fg: #171717;
   --fg-muted: #666666;
-  --fg-faint: #8f8f8f;
+  /* The faintest text that still reads (4.5:1 on bg, subtle and muted). */
+  --fg-faint: #6e6e6e;
   --accent: var(--accent-base);
   --accent-hover: color-mix(in oklab, var(--accent-base) 86%, black);
   --accent-soft: color-mix(in oklab, var(--accent-base) 9%, white);
   --accent-text: color-mix(in oklab, var(--accent-base) 82%, black);
   --danger: #d93036;
+  /* Behind white text (danger buttons). */
+  --danger-strong: #d93036;
   --danger-soft: #fff0f0;
   --success: #1a7f37;
   --ring: color-mix(in srgb, var(--accent-base) 35%, transparent);
@@ -93,12 +96,13 @@
   --line-strong: #333333;
   --fg: #ededed;
   --fg-muted: #a1a1a1;
-  --fg-faint: #707070;
+  --fg-faint: #838383;
   --accent: var(--accent-base);
   --accent-hover: color-mix(in oklab, var(--accent-base) 85%, white);
   --accent-soft: color-mix(in oklab, var(--accent-base) 20%, var(--bg));
   --accent-text: color-mix(in oklab, var(--accent-base) 55%, white);
   --danger: #ff6166;
+  --danger-strong: #c62a30;
   --danger-soft: #2a1113;
   --success: #3fb950;
   --ring: color-mix(in srgb, var(--accent-base) 45%, transparent);
@@ -118,7 +122,7 @@
     --line-strong: oklch(from var(--accent-base) 0.87 min(c * 0.1, 0.024) h);
     --fg: oklch(from var(--accent-base) 0.21 min(c * 0.1, 0.024) h);
     --fg-muted: oklch(from var(--accent-base) 0.5 min(c * 0.12, 0.028) h);
-    --fg-faint: oklch(from var(--accent-base) 0.64 min(c * 0.1, 0.024) h);
+    --fg-faint: oklch(from var(--accent-base) 0.55 min(c * 0.1, 0.024) h);
   }
   :root.tinted.dark {
     --bg: oklch(from var(--accent-base) 0.16 min(c * 0.08, 0.018) h);
@@ -128,7 +132,7 @@
     --line-strong: oklch(from var(--accent-base) 0.335 min(c * 0.1, 0.026) h);
     --fg: oklch(from var(--accent-base) 0.945 min(c * 0.05, 0.012) h);
     --fg-muted: oklch(from var(--accent-base) 0.72 min(c * 0.08, 0.02) h);
-    --fg-faint: oklch(from var(--accent-base) 0.56 min(c * 0.08, 0.02) h);
+    --fg-faint: oklch(from var(--accent-base) 0.63 min(c * 0.08, 0.02) h);
   }
 }
 
@@ -149,6 +153,7 @@
   --color-accent-soft: var(--accent-soft);
   --color-accent-text: var(--accent-text);
   --color-danger: var(--danger);
+  --color-danger-strong: var(--danger-strong);
   --color-danger-soft: var(--danger-soft);
   --color-success: var(--success);
   --color-ring: var(--ring);
@@ -225,7 +230,7 @@
     @apply text-fg-muted hover:bg-muted hover:text-fg;
   }
   .btn-danger {
-    @apply bg-danger text-white hover:bg-danger/90;
+    @apply bg-danger-strong text-white hover:bg-danger-strong/90;
   }
   .btn-icon {
     @apply w-8 px-0;
@@ -477,6 +482,10 @@
 
 /* Rendered Markdown. */
 @layer components {
+  /* EPUB chapters: their own styles are dropped, so images just fit the column. */
+  .book img {
+    @apply mx-auto h-auto max-w-full;
+  }
   .prose {
     @apply text-[15px] leading-7 text-fg;
   }

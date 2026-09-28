@@ -1,15 +1,18 @@
 <script>
-  import { session, resolvePath, listFolder, createFolder, rename, move, trash, untrash, download, downloadZip, fetchEntry, upload, saveText, refreshMe, toolsInfo, loadDraft, storeDraft, dropDraft, searchTree, openEntry, strayDrops } from '../../lib/cloud.svelte.js';
-  import { toast, toastError, trackTransfer, errorMessage, sort, sortBy, photoDetails } from '../../lib/ui.svelte.js';
+  import { session, resolvePath, listFolder, createFolder, rename, move, trash, untrash, download, downloadZip, fetchEntry, upload, saveText, refreshMe, toolsInfo, loadDraft, storeDraft, dropDraft, searchTree, searchContents, openEntry, strayDrops, bookProgress, watchFolder } from '../../lib/cloud.svelte.js';
+  import { toast, toastError, trackTransfer, errorMessage, sort, sortBy, photoDetails, fileView, setFileView } from '../../lib/ui.svelte.js';
   import { fileInfo, hasDetails, stripFile } from '../../lib/exif.js';
   import Modal from '../Modal.svelte';
-  import { formatSize, formatWhen, fullDate, plural, sortEntries, nameError, modifiedAt } from '../../lib/format.js';
+  import { formatSize, formatWhen, fullDate, plural, sortEntries, nameError, changedAt } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
   import FileIcon from '../FileIcon.svelte';
   import FolderIcon from '../FolderIcon.svelte';
+  import Thumb from '../Thumb.svelte';
   import Menu from '../Menu.svelte';
   import NameDialog from '../dialogs/NameDialog.svelte';
   import VersionsDialog from '../dialogs/VersionsDialog.svelte';
+  import CommentsDialog from '../dialogs/CommentsDialog.svelte';
+  import ActivityDialog from '../dialogs/ActivityDialog.svelte';
   import { fade, fly, flip, flipParams } from '../../lib/motion.js';
   import { SvelteSet } from 'svelte/reactivity';
   import MoveDialog from '../dialogs/MoveDialog.svelte';
@@ -50,7 +53,8 @@
   const canWrite = $derived(!share || share.permission === 'write');
   const isOwner = $derived(!share);
 
-  async function load(id = folderId) {
+  /** `reopen`: show the file named in the URL, as on the first load. */
+  async function load(id = folderId, reopen = true) {
     loadError = '';
     try {
       const p = await resolvePath(id);
@@ -62,13 +66,28 @@
       rows = list;
       // Opened from a search result: show that file.
       const wanted = openId && rows.find((r) => r.node.id === openId && r.node.kind === 'file');
-      if (wanted && !dialog) untrack(() => preview(wanted));
+      if (reopen && wanted && !dialog) untrack(() => preview(wanted));
     } catch (e) {
       loadError = errorMessage(e);
     } finally {
       loading = false;
     }
   }
+
+  // Live updates: someone else (or another tab) changed something here.
+  // Reloaded quietly a moment later, and not while a name is being edited.
+  $effect(() => {
+    const id = folderId;
+    let timer = null;
+    const stop = watchFolder(id, () => {
+      clearTimeout(timer);
+      timer = setTimeout(function again() {
+        if (renaming || document.hidden) return (timer = setTimeout(again, 1000));
+        load(id, false);
+      }, 600);
+    });
+    return () => (stop(), clearTimeout(timer));
+  });
 
   $effect(() => {
     loading = true;
@@ -91,30 +110,39 @@
   const open = (id) => go({ name: 'files', folderId: id });
 
   // Search everywhere below the top of this tree (My files, or the shared
-  // folder we're in), not just this folder.
-  let scope = $state('folder'); // folder | all
+  // folder we're in), not just this folder; "Inside files" also looks in
+  // text, Markdown and PDF files' words (decrypted here, see fulltext.js).
+  let scope = $state('folder'); // folder | all | contents
   let found = $state([]);
   let searching = $state(false);
+  let reading = $state(null); // { done, total } while files are read to search inside them
   let searchRun = null;
   $effect(() => {
     const q = query.trim();
     const top = path[0];
     searchRun?.abort();
     found = [];
-    if (scope !== 'all' || !q || !top) return;
+    reading = null;
+    if (scope === 'folder' || !q || !top) return;
     const run = (searchRun = new AbortController());
     const timer = setTimeout(async () => {
       searching = true;
-      const hits = [];
-      await searchTree(top, q, {
-        signal: run.signal,
-        onResult: (r) => {
-          hits.push(r);
-          if (hits.length <= 500) found = sortEntries([...hits], sort);
-        },
-      });
+      const hits = new Map();
+      const onResult = (r) => {
+        if (hits.has(r.node.id)) return;
+        hits.set(r.node.id, r);
+        if (hits.size <= 500) found = sortEntries([...hits.values()], sort);
+      };
+      await searchTree(top, q, { signal: run.signal, onResult });
+      if (scope === 'contents' && !run.signal.aborted) {
+        await searchContents(top, q, {
+          signal: run.signal,
+          onResult,
+          onProgress: (done, total) => !run.signal.aborted && (reading = done < total ? { done, total } : null),
+        }).catch((e) => toastError(e));
+      }
       if (!run.signal.aborted) searching = false;
-    }, 200);
+    }, 300);
     return () => {
       clearTimeout(timer);
       run.abort();
@@ -685,6 +713,8 @@
         : []),
       ...(!folder && sourceKind(entry.meta) ? [{ label: 'Convert', icon: 'file-cog', onclick: () => (dialog = { type: 'convert', entry }) }] : []),
       ...(!folder ? [{ label: 'Version history', icon: 'refresh-cw', onclick: () => (dialog = { type: 'versions', entry }) }] : []),
+      { label: 'Comments', icon: 'message-square', onclick: () => (dialog = { type: 'comments', entry }) },
+      ...(folder ? [{ label: 'Activity', icon: 'history', onclick: () => (dialog = { type: 'activity', entry }) }] : []),
       ...(canWrite ? ['sep', { label: 'Move to trash', icon: 'trash-2', danger: true, onclick: () => moveToTrash(entry) }] : []),
     ];
   }
@@ -760,7 +790,8 @@
 <input bind:this={versionInput} type="file" hidden onchange={onPickVersion} />
 
 <div class="flex flex-wrap items-start gap-x-4 gap-y-3">
-  <div class="min-w-0 flex-1">
+  <!-- Wide enough for a name; past that the toolbar wraps below instead. -->
+  <div class="min-w-[min(100%,12rem)] flex-1">
     <nav class="flex min-h-8 flex-wrap items-center gap-1 text-sm" aria-label="Folder path">
       {#if share}
         <button type="button" class="cursor-pointer rounded px-1 text-fg-muted hover:text-fg" onclick={() => go({ name: 'shared-with-me' })}>Shared with me</button>
@@ -805,7 +836,7 @@
       </label>
       {#if query.trim() && path.length}
         <div class="flex h-8 rounded-md border border-line p-0.5" role="radiogroup" aria-label="Search in">
-          {#each [['folder', 'This folder'], ['all', share ? 'Whole share' : 'Everywhere']] as [value, label] (value)}
+          {#each [['folder', 'This folder'], ['all', share ? 'Whole share' : 'Everywhere'], ['contents', 'Inside files']] as [value, label] (value)}
             <button
               type="button"
               role="radio"
@@ -816,6 +847,21 @@
         </div>
       {/if}
     {/if}
+    <button type="button" class="btn btn-ghost btn-icon" aria-label="Activity in this folder" title="Activity" disabled={!here} onclick={() => (dialog = { type: 'activity', entry: here })}>
+      <Icon name="history" />
+    </button>
+    <div class="flex h-8 rounded-md border border-line p-0.5" role="radiogroup" aria-label="Show files as">
+      {#each [['list', 'list', 'List'], ['grid', 'layout-grid', 'Grid']] as [value, icon, label] (value)}
+        <button
+          type="button"
+          role="radio"
+          aria-checked={fileView.value === value}
+          aria-label={label}
+          title={label}
+          class="grid w-7 cursor-pointer place-items-center rounded transition-colors {fileView.value === value ? 'bg-muted text-fg' : 'text-fg-muted hover:text-fg'}"
+          onclick={() => setFileView(value)}><Icon name={icon} class="size-4" /></button>
+      {/each}
+    </div>
     {#if canWrite}
       <!-- On phones these live in the + button instead. -->
       <div class="hidden gap-2 md:flex">
@@ -870,7 +916,7 @@
         <button type="button" class="btn btn-ghost" onclick={() => open(session.me.keys.root_node_id)}>Back to my files</button>
       </div>
     </div>
-  {:else if scope === 'all' && query.trim()}
+  {:else if scope !== 'folder' && query.trim()}
     <table class="table animate-enter">
       <thead>
         <tr>
@@ -883,7 +929,7 @@
         {#if !found.length}
           <tr>
             <td colspan="3" class="h-24 text-center text-[13px] text-fg-muted">
-              {#if searching}<Icon name="loader-circle" class="spinner mr-1.5 inline size-4 align-[-3px]" />Looking through your folders{:else}Nothing matches "{query.trim()}".{/if}
+              {#if reading}<Icon name="loader-circle" class="spinner mr-1.5 inline size-4 align-[-3px]" />Reading files to search inside them ({reading.done} of {reading.total}){:else if searching}<Icon name="loader-circle" class="spinner mr-1.5 inline size-4 align-[-3px]" />Looking through your folders{:else}Nothing matches "{query.trim()}".{/if}
             </td>
           </tr>
         {/if}
@@ -925,6 +971,82 @@
         </p>
       {/if}
     </div>
+  {:else if fileView.value === 'grid'}
+    <ul class="grid animate-enter grid-cols-[repeat(auto-fill,minmax(9rem,1fr))] gap-1 p-2" bind:this={tbody}>
+      {#if !visible.length}
+        <li class="col-span-full grid h-24 place-items-center text-[13px] text-fg-muted">
+          <span>Nothing in this folder matches "{query.trim()}". <button type="button" class="link" onclick={() => (query = '')}>Clear search</button></span>
+        </li>
+      {/if}
+      {#each visible as entry (entry.node.id)}
+        {@const folder = entry.node.kind === 'folder'}
+        {@const isSelected = selected.has(entry.node.id)}
+        <li
+          class="group relative rounded-lg transition-colors {isSelected ? 'bg-accent-soft/60 ring-1 ring-accent/40' : 'hover:bg-subtle'} {dropTarget === entry.node.id ? 'bg-accent-soft ring-1 ring-accent' : ''}"
+          draggable={canWrite && !touch && renaming !== entry.node.id}
+          ondragstart={(e) => rowDragStart(e, entry)}
+          ondragend={rowDragEnd}
+          ondragover={folder ? (e) => dragOverFolder(e, entry.node.id) : undefined}
+          ondragleave={folder ? (e) => dragLeaveFolder(e, entry.node.id) : undefined}
+          ondrop={folder ? (e) => dropOnFolder(e, entry) : undefined}
+          in:fade
+          out:fade={{ duration: 120 }}
+          animate:flip={flipParams()}>
+          {#snippet tile()}
+            <span class="grid aspect-square w-full place-items-center overflow-hidden rounded-md border border-line bg-subtle">
+              {#if folder}<FolderIcon name={entry.meta.name} class="size-12" />{:else}<Thumb {entry} />{/if}
+            </span>
+          {/snippet}
+          {#if renaming === entry.node.id}
+            <form
+              class="grid gap-2 p-2"
+              onsubmit={(e) => {
+                e.preventDefault();
+                finishRename(entry);
+              }}>
+              {@render tile()}
+              <input
+                use:selectName={entry.meta.name}
+                class="input h-7 px-2 text-[13px] font-medium"
+                aria-label="New name for {entry.meta.name}"
+                bind:value={renameValue}
+                spellcheck="false"
+                onkeydown={(e) => e.key === 'Escape' && (e.preventDefault(), e.stopPropagation(), finishRename(entry, false))}
+                onblur={() => finishRename(entry)} />
+            </form>
+          {:else}
+            <button
+              type="button"
+              class="row-open grid w-full cursor-pointer gap-2 p-2 text-left select-none"
+              title={entry.meta.name}
+              onclick={() => rowTap(entry)}
+              onpointerdown={(e) => pressStart(e, entry)}
+              onpointerup={pressEnd}
+              onpointercancel={pressEnd}
+              onpointermove={pressMove}
+              oncontextmenu={(e) => e.pointerType !== 'mouse' && touch && e.preventDefault()}>
+              {@render tile()}
+              <span class="grid min-w-0 px-0.5">
+                <span class="truncate text-[13px] font-medium">{entry.meta.name}</span>
+                <span class="truncate text-xs text-fg-muted">{#if !folder}{formatSize(entry.meta.size)}{' · '}{/if}{formatWhen(changedAt(entry))}</span>
+              </span>
+            </button>
+          {/if}
+          <input
+            type="checkbox"
+            class="absolute top-3.5 left-3.5 size-4 cursor-pointer accent-accent transition-opacity focus-visible:opacity-100 {selected.size ? '' : 'opacity-0 group-hover:opacity-100'}"
+            aria-label="Select {entry.meta.name}"
+            checked={isSelected}
+            onclick={(e) => {
+              e.preventDefault();
+              toggle(entry, e);
+            }} />
+          <div class="absolute top-2.5 right-2.5 rounded-md bg-bg/90 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 max-md:opacity-100">
+            <Menu items={menuFor(entry)} label="Actions for {entry.meta.name}" />
+          </div>
+        </li>
+      {/each}
+    </ul>
   {:else}
     <table class="table animate-enter">
       <thead>
@@ -1019,14 +1141,14 @@
                   <span class="grid min-w-0">
                     <span class="truncate font-medium group-hover:underline group-hover:underline-offset-4 group-hover:decoration-line-strong">{entry.meta.name}</span>
                     <span class="truncate text-xs text-fg-muted md:hidden">
-                      {#if !folder}<span class="sm:hidden">{formatSize(entry.meta.size)}{' · '}</span>{/if}{formatWhen(modifiedAt(entry))}
+                      {#if !folder}<span class="sm:hidden">{formatSize(entry.meta.size)}{' · '}</span>{/if}{formatWhen(changedAt(entry))}
                     </span>
                   </span>
                 </button>
               {/if}
             </td>
             <td class="hidden text-right text-fg-muted tabular-nums sm:table-cell">{folder ? '' : formatSize(entry.meta.size)}</td>
-            <td class="hidden text-fg-muted md:table-cell" title={fullDate(modifiedAt(entry))}>{formatWhen(modifiedAt(entry))}</td>
+            <td class="hidden text-fg-muted md:table-cell" title={fullDate(changedAt(entry))}>{formatWhen(changedAt(entry))}</td>
             <td class="text-right"><Menu items={menuFor(entry)} label="Actions for {entry.meta.name}" /></td>
           </tr>
         {/each}
@@ -1044,7 +1166,7 @@
 {#if rows.length}
   <div class="mt-3 flex items-center justify-between gap-4 px-1 text-xs text-fg-faint">
     <p>
-      {#if query.trim() && scope === 'all'}{found.length} found{searching ? ' so far' : ''} ·{:else if query.trim()}{visible.length} of {rows.length} shown ·{/if}
+      {#if query.trim() && scope !== 'folder'}{found.length} found{reading ? `, reading ${reading.done} of ${reading.total} files` : searching ? ' so far' : ''} ·{:else if query.trim()}{visible.length} of {rows.length} shown ·{/if}
       {plural(rows.filter((r) => r.node.kind === 'folder').length, 'folder')}, {plural(rows.filter((r) => r.node.kind === 'file').length, 'file')}
     </p>
     <button type="button" class="hidden cursor-pointer items-center gap-1.5 hover:text-fg-muted sm:flex" onclick={() => (dialog = { type: 'shortcuts' })}>
@@ -1160,6 +1282,16 @@
       load();
     }}
     onclose={close} />
+{:else if dialog?.type === 'activity'}
+  <ActivityDialog
+    entry={dialog.entry}
+    onopen={(e) => {
+      close();
+      open(e.folder ? e.node_id : e.parentId);
+    }}
+    onclose={close} />
+{:else if dialog?.type === 'comments'}
+  <CommentsDialog entry={dialog.entry} {isOwner} onclose={close} />
 {:else if dialog?.type === 'versions'}
   <VersionsDialog entry={dialog.entry} {canWrite} onchanged={() => (load(), refreshMe().catch(() => {}))} onclose={close} />
 {:else if dialog?.type === 'preview'}
@@ -1169,6 +1301,7 @@
     edit={dialog.edit}
     fetch={fetchEntry}
     open={openEntry}
+    {bookProgress}
     trail={path}
     list={(f) => listFolder(f.node.id, f.key)}
     save={canWrite ? saveText : null}

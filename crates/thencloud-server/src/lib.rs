@@ -39,6 +39,8 @@ pub struct AppState {
     pub dummy_hash: Arc<String>,
     /// The optional video downloader (see downloader.rs).
     pub downloader: Arc<downloader::Downloader>,
+    /// Changes to nodes, as they happen, for live updates (see routes/activity.rs).
+    pub changes: tokio::sync::broadcast::Sender<routes::activity::Change>,
 }
 
 impl AppState {
@@ -62,6 +64,7 @@ impl AppState {
             limiter: Arc::new(limiter::Limiter::new(10, 15 * 60)),
             dummy_hash: Arc::new(dummy_hash),
             downloader: Arc::new(downloader),
+            changes: tokio::sync::broadcast::channel(1024).0,
         })
     }
 }

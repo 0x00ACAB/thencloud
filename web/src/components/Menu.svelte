@@ -1,6 +1,7 @@
 <script>
   // Dropdown menu anchored to a trigger button. `items` is a list of
-  // { label, icon, onclick, danger } or 'sep' for a separator.
+  // { label, icon, onclick, danger, checked } or 'sep' for a separator; items
+  // with `checked` (true or false) show a check mark or the space for one.
   import { tick } from 'svelte';
   import Icon from './Icon.svelte';
   import { pop, fade, portal } from '../lib/motion.js';
@@ -39,6 +40,15 @@
       const all = [...menu.querySelectorAll('button')];
       const i = all.indexOf(document.activeElement);
       all[(i + (e.key === 'ArrowDown' ? 1 : -1) + all.length) % all.length]?.focus({ preventScroll: true });
+    } else if (e.key === 'Home' || e.key === 'End') {
+      e.preventDefault();
+      const all = [...menu.querySelectorAll('button')];
+      all[e.key === 'Home' ? 0 : all.length - 1]?.focus({ preventScroll: true });
+    } else if (e.key === 'Tab') {
+      // Tabbing out closes it, and focus carries on from the button.
+      e.preventDefault();
+      open = false;
+      btn.focus();
     }
   }
 
@@ -68,7 +78,7 @@
         <div class="menu-sep" role="separator"></div>
       {:else}
         <button type="button" role="menuitem" class="menu-item" class:danger={item.danger} onclick={() => choose(item)}>
-          {#if item.icon}<Icon name={item.icon} />{/if}
+          {#if item.icon}<Icon name={item.icon} />{:else if item.checked !== undefined}<span class="grid size-4 place-items-center">{#if item.checked}<Icon name="check" />{/if}</span>{/if}
           {item.label}
         </button>
       {/if}

@@ -42,7 +42,7 @@ Files, folder names and keys are encrypted and decrypted **in your browser**. Th
 - **Converting:** images, video and audio to other formats in the browser with canvas encoders and ffmpeg.wasm.
 - **Music:** pick a folder and play it as a library of albums, with a queue, shuffle, cover art and media keys. Tracks are decrypted as they stream; tags are read in the browser.
 - **Accounts:** two-step sign-in with an authenticator app or passkeys (which can also sign in without the password), an optional recovery key, session and device list, and an admin view that counts things but can't read them.
-- **Command line and Linux drive:** a native client that signs in with an app password, syncs folders, and mounts your files as a drive (FUSE) for Dolphin, Nautilus or the shell. See [crates/thencloud-cli](crates/thencloud-cli/README.md).
+- **Command line and Linux drive:** a native client that signs in with an app password, syncs folders, makes encrypted backups you can restore to any server, and mounts your files as a drive (FUSE) for Dolphin, Nautilus or the shell. See [crates/thencloud-cli](crates/thencloud-cli/README.md).
 - **Self-hosted and small:** one Rust binary, SQLite and a folder of encrypted blobs. Nothing loads from a CDN.
 
 ## Quick start
@@ -74,6 +74,19 @@ THENCLOUD_DOMAIN=cloud.example.com docker compose -f deploy/compose.yaml up -d
 ```
 
 The image builds the web client the same way releases do, so `thencloud verify-web` can check it against a signed release. Each release also has server and CLI binaries for Linux (x86_64, arm64) and macOS (arm64); the server needs the release's web client unpacked next to it (`--web-dir`).
+
+### As a Tor onion service
+
+Run thencloud behind a Tor onion service and the server never learns its users' IP addresses (`deploy/onion/torrc` has the lines to add):
+
+```sh
+thencloud-server --bind 127.0.0.1:8080 --limit-by-address false
+```
+
+- Every visitor reaches the server from Tor's own address, so `--limit-by-address false` limits sign-in attempts per account (and link passwords per link) instead. Otherwise one person's wrong guesses would lock everyone out.
+- Onion addresses are plain `http://`, and that's fine: Tor encrypts the connection end to end and the address itself authenticates the server. Tor Browser treats onion pages as secure contexts, which the web client needs. The server accepts passkeys made on an onion address, if the browser offers them there. Tor Browser forgets site data when it closes, so "Keep me signed in" only lasts until then.
+- Keep the server's port bound to 127.0.0.1 only; if it's reachable directly as well, that way in shows addresses again.
+- The CLI knows nothing about Tor; run it under `torsocks`.
 
 ### Server options
 
@@ -119,6 +132,7 @@ crates/thencloud-wasm     wasm-bindgen bindings used by the web client
 crates/thencloud-server   axum + SQLite server, local blob store
 crates/thencloud-cli      command-line client and FUSE mount (`thencloud`)
 web/                      browser client: Svelte 5 + Vite + Tailwind CSS
+docs/format               the ciphertext formats and key derivations, with test vectors
 ```
 
 ## How the encryption works
@@ -135,6 +149,8 @@ folder key ──wraps──► child node keys
 node key   ──seals──► metadata {name, mime, size, mtime}
 file key   ──wraps──► per-version content key ──seals──► 4 MiB chunks
 ```
+
+Every byte of this is written down in [`docs/format`](docs/format/README.md), with test vectors that the Rust crate and the WASM build are checked against, so other clients can be written from the spec.
 
 Primitives:
 - **AEAD:** XChaCha20-Poly1305.
@@ -164,7 +180,7 @@ As a result, a malicious server cannot swap files, move ciphertexts between node
 
 **Public links** look like `https://host/s/<token>#<key>`. Browsers never send the part after `#` in any HTTP request, so the server only ever sees `<token>`. The share page reads the key from `location.hash` and decrypts locally. Other defences:
 - `Referrer-Policy: no-referrer` and a strict same-origin CSP keep the URL from leaking to third parties.
-- The optional link password is a separate server-side gate. It is not derived from the key.
+- An optional password is part of the key. The link then carries a random secret after `#` instead of the key, and the key is wrapped under the secret and the password together (Argon2id in the browser). Visitors prove the password with a key derived from it, so the server never sees the password, and a server that skipped the check would still hand out nothing anyone can open without it.
 
 ### Threat model
 

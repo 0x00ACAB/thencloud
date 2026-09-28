@@ -76,6 +76,38 @@ test('a public link opens without an account, and its key stays after the #', as
   for (const r of [requests, visitorRequests]) await r.expectNone([SECRET, NAME, PASSWORD, key]);
 });
 
+test('a link password is part of the key, and never leaves the browser', async ({ page, context, browser }) => {
+  const LINK_PASSWORD = 'link password 7f3a91';
+  const requests = watchRequests(context);
+  await signUp(page, uniqueName('locker'), PASSWORD);
+  await upload(page, { [NAME]: SECRET });
+
+  await rowMenu(page, NAME, 'Public link');
+  const dialog = page.locator('dialog[open]');
+  await dialog.locator('#link-password').fill(LINK_PASSWORD);
+  await dialog.getByRole('button', { name: 'Create link' }).click();
+  const url = (await dialog.locator('.font-mono', { hasText: '/s/' }).first().textContent()).trim();
+  // A secret, not the key: the key needs the password too.
+  const secret = url.split('#p.')[1];
+  expect(secret?.length).toBeGreaterThan(20);
+
+  const visitor = await browser.newContext({ colorScheme: 'dark' });
+  const visitorRequests = watchRequests(visitor);
+  const v = await visitor.newPage();
+  await v.goto(url);
+  await v.getByLabel('Password').fill('not the password');
+  await v.getByRole('button', { name: 'Unlock' }).click();
+  await expect(v.getByText('That password is not right.')).toBeVisible();
+  await v.getByLabel('Password').fill(LINK_PASSWORD);
+  await v.getByRole('button', { name: 'Unlock' }).click();
+  await expect(v.getByRole('heading', { name: NAME })).toBeVisible();
+  await v.getByRole('button', { name: 'Preview' }).click();
+  await expect(v.locator('dialog.preview').getByText(SECRET)).toBeVisible();
+  await visitor.close();
+
+  for (const r of [requests, visitorRequests]) await r.expectNone([SECRET, NAME, PASSWORD, LINK_PASSWORD, 'not the password', secret]);
+});
+
 test('sharing with another person checks the fingerprint, and they can open it', async ({ page, context, browser }) => {
   const requests = watchRequests(context);
   const bobName = uniqueName('bob');
