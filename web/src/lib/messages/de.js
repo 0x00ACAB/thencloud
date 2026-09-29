@@ -1313,4 +1313,46 @@ export default {
   'Save {count} pages on their own': { one: '{count} Seite einzeln speichern', other: '{count} Seiten einzeln speichern' },
   'Download {count} pages on their own': { one: '{count} Seite einzeln herunterladen', other: '{count} Seiten einzeln herunterladen' },
   'Save as new file': 'Als neue Datei speichern',
+
+  // Video downloader
+  Best: 'Beste',
+  'You already have a download running. Wait for it to finish.': 'Bei dir läuft schon ein Download. Warte, bis er fertig ist.',
+  'No video to download': 'Kein Video zum Herunterladen',
+  'No audio to download': 'Kein Audio zum Herunterladen',
+  'Too large for this server': 'Zu groß für diesen Server',
+  'Download from a video link': 'Von einem Videolink herunterladen',
+  'This server downloads it for you, so it sees the link and the video.': 'Dieser Server lädt es für dich herunter und sieht dabei Link und Video.',
+  'Nothing is kept there: the video comes straight to this browser, which encrypts it like any upload.':
+    'Dort bleibt nichts: Das Video kommt direkt in diesen Browser, der es wie jeden Upload verschlüsselt.',
+  'Look up': 'Abrufen',
+  'Links to a video or a playlist on YouTube, Vimeo and most other video sites work.':
+    'Links zu einem Video oder einer Playlist auf YouTube, Vimeo und den meisten anderen Videoseiten funktionieren.',
+  '{count} videos': { one: '{count} Video', other: '{count} Videos' },
+  '{n} of {total} selected': '{n} von {total} ausgewählt',
+  'Select none': 'Keine auswählen',
+  Get: 'Holen',
+  'Up to': 'Bis',
+  'Videos are fetched one at a time. Any that fail are skipped and listed at the end.':
+    'Videos werden nacheinander geholt. Fehlgeschlagene werden übersprungen und am Ende aufgelistet.',
+  'about {size}': 'etwa {size}',
+  'Not available': 'Nicht verfügbar',
+  'Not offered as one file': 'Nicht als eine Datei angeboten',
+  Default: 'Standard',
+  "That's larger than this server allows ({size}).": 'Das ist größer, als dieser Server erlaubt ({size}).',
+  'Video is saved as MP4, put together as it streams, so nothing is written to the server. Above 1080p it is usually VP9 or AV1, which not every player can open.':
+    'Video wird als MP4 gespeichert und beim Streamen zusammengesetzt, auf dem Server wird also nichts geschrieben. Über 1080p ist es meist VP9 oder AV1, das nicht jeder Player öffnen kann.',
+  'Video is saved as MP4, put together as it streams, so nothing is written to the server.':
+    'Video wird als MP4 gespeichert und beim Streamen zusammengesetzt, auf dem Server wird also nichts geschrieben.',
+  'This server can only save videos a site offers as one file, and YouTube rarely does. Audio only usually works.':
+    'Dieser Server kann nur Videos speichern, die eine Seite als eine Datei anbietet, und YouTube tut das selten. Nur Audio klappt meist.',
+  'Video {n} of {total}: {name}': 'Video {n} von {total}: {name}',
+  'Downloading {size} of about {total}': 'Lädt {size} von etwa {total}',
+  'Downloading {size}': 'Lädt {size}',
+  'Saved {n} of {total} videos before you stopped': '{n} von {total} Videos gespeichert, bevor du angehalten hast',
+  'Saved {n} of {total} videos': '{n} von {total} Videos gespeichert',
+  'Downloaded {n} of {total} videos before you stopped': '{n} von {total} Videos heruntergeladen, bevor du angehalten hast',
+  'Downloaded {n} of {total} videos': '{n} von {total} Videos heruntergeladen',
+  'Download and save {count}': '{count} herunterladen und speichern',
+  'Download {count}': '{count} herunterladen',
+  'Download and save': 'Herunterladen und speichern',
 };

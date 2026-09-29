@@ -1368,4 +1368,46 @@ export default {
   'Save {count} pages on their own': { one: 'Zapisz osobno {count} stronę', few: 'Zapisz osobno {count} strony', many: 'Zapisz osobno {count} stron', other: 'Zapisz osobno {count} strony' },
   'Download {count} pages on their own': { one: 'Pobierz osobno {count} stronę', few: 'Pobierz osobno {count} strony', many: 'Pobierz osobno {count} stron', other: 'Pobierz osobno {count} strony' },
   'Save as new file': 'Zapisz jako nowy plik',
+
+  // Video downloader
+  Best: 'Najlepsza',
+  'You already have a download running. Wait for it to finish.': 'Masz już trwające pobieranie. Poczekaj, aż się skończy.',
+  'No video to download': 'Brak wideo do pobrania',
+  'No audio to download': 'Brak dźwięku do pobrania',
+  'Too large for this server': 'Za duże dla tego serwera',
+  'Download from a video link': 'Pobierz z linku do wideo',
+  'This server downloads it for you, so it sees the link and the video.': 'Ten serwer pobiera je za ciebie, więc widzi link i film.',
+  'Nothing is kept there: the video comes straight to this browser, which encrypts it like any upload.':
+    'Nic tam nie zostaje: film trafia prosto do tej przeglądarki, która szyfruje go jak każde wysyłanie.',
+  'Look up': 'Sprawdź',
+  'Links to a video or a playlist on YouTube, Vimeo and most other video sites work.':
+    'Działają linki do filmu lub playlisty na YouTube, Vimeo i większości innych serwisów wideo.',
+  '{count} videos': { one: '{count} film', few: '{count} filmy', many: '{count} filmów', other: '{count} filmu' },
+  '{n} of {total} selected': 'Zaznaczono {n} z {total}',
+  'Select none': 'Odznacz wszystko',
+  Get: 'Pobierz',
+  'Up to': 'Do',
+  'Videos are fetched one at a time. Any that fail are skipped and listed at the end.':
+    'Filmy są pobierane po kolei. Te, które się nie uda, zostaną pominięte i wymienione na końcu.',
+  'about {size}': 'około {size}',
+  'Not available': 'Niedostępne',
+  'Not offered as one file': 'Niedostępne jako jeden plik',
+  Default: 'Domyślna',
+  "That's larger than this server allows ({size}).": 'To więcej, niż pozwala ten serwer ({size}).',
+  'Video is saved as MP4, put together as it streams, so nothing is written to the server. Above 1080p it is usually VP9 or AV1, which not every player can open.':
+    'Wideo jest zapisywane jako MP4, składane w trakcie strumieniowania, więc nic nie trafia na dysk serwera. Powyżej 1080p to zwykle VP9 albo AV1, których nie otworzy każdy odtwarzacz.',
+  'Video is saved as MP4, put together as it streams, so nothing is written to the server.':
+    'Wideo jest zapisywane jako MP4, składane w trakcie strumieniowania, więc nic nie trafia na dysk serwera.',
+  'This server can only save videos a site offers as one file, and YouTube rarely does. Audio only usually works.':
+    'Ten serwer zapisze tylko filmy, które serwis udostępnia jako jeden plik, a YouTube rzadko to robi. Sam dźwięk zwykle działa.',
+  'Video {n} of {total}: {name}': 'Film {n} z {total}: {name}',
+  'Downloading {size} of about {total}': 'Pobieranie: {size} z około {total}',
+  'Downloading {size}': 'Pobieranie: {size}',
+  'Saved {n} of {total} videos before you stopped': 'Zapisano {n} z {total} filmów przed zatrzymaniem',
+  'Saved {n} of {total} videos': 'Zapisano {n} z {total} filmów',
+  'Downloaded {n} of {total} videos before you stopped': 'Pobrano {n} z {total} filmów przed zatrzymaniem',
+  'Downloaded {n} of {total} videos': 'Pobrano {n} z {total} filmów',
+  'Download and save {count}': 'Pobierz i zapisz ({count})',
+  'Download {count}': 'Pobierz ({count})',
+  'Download and save': 'Pobierz i zapisz',
 };
