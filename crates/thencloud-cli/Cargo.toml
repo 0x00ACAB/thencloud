@@ -19,6 +19,12 @@ sha2.workspace = true
 minisign-verify = "0.3"
 clap = { version = "4", features = ["derive", "env"] }
 tempfile = "3"
+dav-server = { version = "0.11", default-features = false }
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net"] }
+futures-util = "0.3"
+bytes = "1"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 fuser = "0.18"
@@ -30,5 +36,4 @@ ring = "0.17"
 blake2 = "0.11"
 base64.workspace = true
 thencloud-server = { path = "../thencloud-server" }
-tokio = { version = "1", features = ["rt-multi-thread", "net"] }
 axum = "0.8"

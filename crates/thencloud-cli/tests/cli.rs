@@ -664,3 +664,150 @@ fn verify_web_checks_signature_and_every_encoding() {
             .all(|p| p.starts_with("/sw.js") && p.ends_with("HTTP 404"))
     );
 }
+
+/// A WebDAV request to a bridge; the status and body.
+fn dav(method: &str, url: &str, headers: &[(&str, &str)], body: &[u8]) -> (u16, Vec<u8>) {
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .allow_non_standard_methods(true)
+        .build()
+        .into();
+    let mut req = ureq::http::Request::builder().method(method).uri(url);
+    for (k, v) in headers {
+        req = req.header(*k, *v);
+    }
+    let mut res = agent.run(req.body(body.to_vec()).unwrap()).unwrap();
+    let status = res.status().as_u16();
+    (status, res.body_mut().read_to_vec().unwrap())
+}
+
+fn bridge(s: &Server, password: &Key) -> thencloud_cli::serve::Bridge {
+    let cl = Client::login(&s.url, password, "test").unwrap();
+    let root = cl.root().unwrap();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    thencloud_cli::serve::spawn(
+        cl,
+        root,
+        listener,
+        thencloud_cli::serve::ServeOptions {
+            read_only: false,
+            temp_dir: std::env::temp_dir(),
+        },
+    )
+    .unwrap()
+}
+
+#[test]
+fn webdav_bridge_reads_writes_and_moves() {
+    let s = start();
+    let cl = client(&s);
+    let root = cl.root().unwrap();
+    let b = bridge(&s, &s.app_password);
+    let base = b.url();
+
+    // Put a file bigger than a chunk, and read it back, whole and in part.
+    let big = content(c::CHUNK_SIZE + 12345, 3);
+    let (st, _) = dav("MKCOL", &format!("{base}Secret%20plans"), &[], b"");
+    assert_eq!(st, 201);
+    let file = format!("{base}Secret%20plans/big%20file.bin");
+    assert_eq!(dav("PUT", &file, &[], &big).0, 201);
+    let (st, got) = dav("GET", &file, &[], b"");
+    assert_eq!(st, 200);
+    assert!(got == big, "downloaded content differs");
+    let range = format!("bytes={}-{}", c::CHUNK_SIZE - 10, c::CHUNK_SIZE + 9);
+    let (st, part) = dav("GET", &file, &[("Range", &range)], b"");
+    assert_eq!(st, 206);
+    assert_eq!(part, &big[c::CHUNK_SIZE - 10..c::CHUNK_SIZE + 10]);
+
+    // Listing shows the decrypted names.
+    let (st, xml) = dav(
+        "PROPFIND",
+        &format!("{base}Secret%20plans/"),
+        &[("Depth", "1")],
+        b"",
+    );
+    assert_eq!(st, 207);
+    let xml = String::from_utf8(xml).unwrap();
+    assert!(xml.contains("big%20file.bin"), "{xml}");
+    assert!(
+        xml.contains(&format!("<D:getcontentlength>{}<", big.len())),
+        "{xml}"
+    );
+
+    // Writing over it makes a new version rather than a new file.
+    assert_eq!(dav("PUT", &file, &[], b"second draft").0, 204);
+    let folder = child(&cl, &root, "Secret plans").unwrap();
+    let e = child(&cl, &folder, "big file.bin").unwrap();
+    assert_eq!(fetch(&cl, &e), b"second draft");
+    let versions: Vec<VersionInfo> = get(&s, &format!("/api/nodes/{}/versions", e.node.id));
+    assert_eq!(versions.len(), 2);
+
+    // Move and copy.
+    let dest = format!("{base}renamed.txt");
+    let (st, _) = dav("MOVE", &file, &[("Destination", &dest)], b"");
+    assert_eq!(st, 201);
+    assert!(child(&cl, &folder, "big file.bin").is_none());
+    let moved = child(&cl, &root, "renamed.txt").unwrap();
+    assert_eq!(moved.node.id, e.node.id);
+    let copy = format!("{base}Secret%20plans/copy.txt");
+    assert_eq!(dav("COPY", &dest, &[("Destination", &copy)], b"").0, 201);
+    assert_eq!(dav("GET", &copy, &[], b"").1, b"second draft");
+
+    // Deleting a folder puts it in the trash, as one item.
+    assert_eq!(
+        dav("DELETE", &format!("{base}Secret%20plans/"), &[], b"").0,
+        204
+    );
+    assert!(child(&cl, &root, "Secret plans").is_none());
+    let trash: Vec<TrashItem> = get(&s, "/api/trash");
+    assert_eq!(trash.len(), 1, "one trash item for the folder");
+    assert_eq!(dav("GET", &copy, &[], b"").0, 404);
+
+    // Without the secret, or from another host name, nothing.
+    let bare = format!("http://{}/", b.addr);
+    assert_eq!(dav("PROPFIND", &bare, &[("Depth", "1")], b"").0, 404);
+    assert_eq!(dav("GET", &format!("{bare}renamed.txt"), &[], b"").0, 404);
+    let wrong = format!("http://{}/{}x/renamed.txt", b.addr, b.secret);
+    assert_eq!(dav("GET", &wrong, &[], b"").0, 404);
+    let rebound = dav(
+        "GET",
+        &format!("{base}renamed.txt"),
+        &[("Host", "evil.example:80")],
+        b"",
+    );
+    assert_eq!(rebound.0, 403);
+    // Windows asks the root what it supports.
+    assert_eq!(dav("OPTIONS", &bare, &[], b"").0, 200);
+
+    cl.logout().unwrap();
+    assert_no_plaintext(
+        &s,
+        &[MARKER, b"second draft", b"Secret plans", b"renamed.txt"],
+    );
+}
+
+#[test]
+fn webdav_bridge_with_read_only_password_refuses_changes() {
+    let s = start();
+    let cl = client(&s);
+    let root = cl.root().unwrap();
+    let local = tempfile::tempdir().unwrap();
+    fs::write(local.path().join("a.txt"), b"keep me").unwrap();
+    cl.upload(&local.path().join("a.txt"), &root, "a.txt", None)
+        .unwrap();
+
+    let b = bridge(&s, &s.read_only_password);
+    let base = b.url();
+    assert_eq!(dav("GET", &format!("{base}a.txt"), &[], b"").1, b"keep me");
+    for (method, path) in [
+        ("PUT", "a.txt"),
+        ("PUT", "b.txt"),
+        ("MKCOL", "dir"),
+        ("DELETE", "a.txt"),
+    ] {
+        let (st, _) = dav(method, &format!("{base}{path}"), &[], b"x");
+        assert!(st == 403 || st == 405, "{method} {path}: {st}");
+    }
+    assert_eq!(fetch(&cl, &child(&cl, &root, "a.txt").unwrap()), b"keep me");
+    assert!(child(&cl, &root, "b.txt").is_none());
+}
