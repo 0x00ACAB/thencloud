@@ -931,4 +931,86 @@ export default {
 
   // Episodes
   'Episode {n}': 'Odcinek {n}',
+
+  // Account security dialogs
+  'Location removed. Older versions were deleted too.': 'Usunięto lokalizację. Starsze wersje też zostały usunięte.',
+  'This photo records where it was taken': 'To zdjęcie zapisuje, gdzie je zrobiono',
+  'Anyone you share it with could read the location and the camera it was taken on.':
+    'Każdy, komu je udostępnisz, może odczytać lokalizację i aparat, którym je zrobiono.',
+  'Anyone you share it with could read the location.': 'Każdy, komu je udostępnisz, może odczytać lokalizację.',
+  'Full access': 'Pełny dostęp',
+  'Read, upload, change and delete files.': 'Odczyt, wysyłanie, zmienianie i usuwanie plików.',
+  'Read only': 'Tylko odczyt',
+  'Browse and download. Good for backups.': 'Przeglądanie i pobieranie. Dobre do kopii zapasowych.',
+  'That password is wrong.': 'To hasło jest nieprawidłowe.',
+  'Your app password': 'Twoje hasło aplikacji',
+  'New app password': 'Nowe hasło aplikacji',
+  "Enter it in {name} to sign in. It won't be shown again.": 'Wpisz je w {name}, aby się zalogować. Nie zostanie pokazane ponownie.',
+  'For a sync client or another device, so it never needs your account password.':
+    'Dla klienta synchronizacji lub innego urządzenia, żeby nigdy nie potrzebowało hasła do konta.',
+  'Laptop sync': 'Synchronizacja laptopa',
+  'Your account password': 'Hasło do twojego konta',
+  'The app password is made in this browser. The server keeps your master key locked with it and a hash to recognise it, never the password itself.':
+    'Hasło aplikacji powstaje w tej przeglądarce. Serwer przechowuje zablokowany nim klucz główny i skrót, by je rozpoznać, nigdy samo hasło.',
+  'App password copied': 'Skopiowano hasło aplikacji',
+  Copy: 'Kopiuj',
+  'It opens your files (read only), so treat it like a password. You can revoke it here at any time.':
+    'Otwiera twoje pliki (tylko do odczytu), więc traktuj je jak hasło. Możesz je tu w każdej chwili unieważnić.',
+  'It opens your files, so treat it like a password. You can revoke it here at any time.':
+    'Otwiera twoje pliki, więc traktuj je jak hasło. Możesz je tu w każdej chwili unieważnić.',
+  'Android phone': 'Telefon z Androidem',
+  'That passkey is already added.': 'Ten klucz dostępu jest już dodany.',
+  'That took too long. Try again.': 'To trwało za długo. Spróbuj ponownie.',
+  'Add a passkey': 'Dodaj klucz dostępu',
+  "Your phone, computer or security key confirms it's you with a fingerprint, face or PIN.":
+    'Twój telefon, komputer lub klucz bezpieczeństwa potwierdza, że to ty, odciskiem palca, twarzą albo PIN-em.',
+  'Laptop, YubiKey...': 'Laptop, YubiKey...',
+  'Your password': 'Twoje hasło',
+  "If your passkey supports it, it also gets its own locked copy of your master key, so it can sign you in without your password. The browser unlocks that copy; the server can't.":
+    'Jeśli twój klucz dostępu to obsługuje, dostaje też własną zablokowaną kopię twojego klucza głównego, więc może cię zalogować bez hasła. Tę kopię odblokowuje przeglądarka, serwer nie może.',
+  'thencloud recovery key': 'Klucz odzyskiwania thencloud',
+  'Account: {name}': 'Konto: {name}',
+  'Server: {address}': 'Serwer: {address}',
+  'Created: {when}': 'Utworzono: {when}',
+  'With this key you can set a new password if you forget yours.': 'Tym kluczem ustawisz nowe hasło, jeśli zapomnisz swojego.',
+  'Anyone who has it and your username can do the same, so keep it private.':
+    'Każdy, kto go ma i zna twoją nazwę użytkownika, może zrobić to samo, więc trzymaj go w tajemnicy.',
+  'Your recovery key': 'Twój klucz odzyskiwania',
+  'Replace your recovery key': 'Zastąp klucz odzyskiwania',
+  'Create a recovery key': 'Utwórz klucz odzyskiwania',
+  "Write it down or save it somewhere safe, away from this device. It won't be shown again.":
+    'Zapisz go na kartce albo w bezpiecznym miejscu, z dala od tego urządzenia. Nie zostanie pokazany ponownie.',
+  'The old key stops working as soon as the new one is made.': 'Stary klucz przestaje działać, gdy tylko powstanie nowy.',
+  'If you forget your password, this key lets you set a new one without losing your files.':
+    'Jeśli zapomnisz hasła, ten klucz pozwoli ustawić nowe bez utraty plików.',
+  "The key is made in this browser. The server only stores your master key locked with it, so it can't use the key or see it.":
+    'Klucz powstaje w tej przeglądarce. Serwer przechowuje tylko zablokowany nim klucz główny, więc nie może go użyć ani zobaczyć.',
+  'Recovery key copied': 'Skopiowano klucz odzyskiwania',
+  'Save as a text file': 'Zapisz jako plik tekstowy',
+  'Anyone with this key and your username can take over your account, so keep it as private as your password.':
+    'Każdy, kto ma ten klucz i zna twoją nazwę użytkownika, może przejąć twoje konto, więc chroń go jak hasło.',
+  "I've stored it somewhere safe": { feminine: 'Zapisałam go w bezpiecznym miejscu', masculine: 'Zapisałem go w bezpiecznym miejscu', neuter: 'Zapisałom go w bezpiecznym miejscu', other: 'Zapisałem(-am) go w bezpiecznym miejscu' },
+  'Replace key': 'Zastąp klucz',
+  'Create key': 'Utwórz klucz',
+  'Dropped files waiting for you': 'Upuszczone pliki czekają na ciebie',
+  'These came in through a file drop link that has since expired or been deleted. Keep only files you expect: anyone with the old link could have added them.':
+    'Przyszły przez link do upuszczania plików, który wygasł albo został usunięty. Zachowaj tylko pliki, których się spodziewasz: każdy ze starym linkiem mógł je dodać.',
+  "Can't be opened": 'Nie da się otworzyć',
+  'Its key is damaged or not meant for you.': 'Jego klucz jest uszkodzony albo nie jest przeznaczony dla ciebie.',
+  Keep: 'Zachowaj',
+  "That code didn't match. Check the time on your phone is right, and use the newest code.":
+    'Ten kod się nie zgadza. Sprawdź, czy telefon ma dobrą godzinę, i użyj najnowszego kodu.',
+  'That took too long. Close this and start again.': 'To trwało za długo. Zamknij to okno i zacznij od nowa.',
+  'Set up an authenticator app': 'Skonfiguruj aplikację uwierzytelniającą',
+  'Scan this with an app like Aegis, 2FAS, Google Authenticator or 1Password, then enter the code it shows.':
+    'Zeskanuj to aplikacją taką jak Aegis, 2FAS, Google Authenticator lub 1Password, a potem wpisz pokazany kod.',
+  'After this, signing in with your password also asks for a six-digit code from the app.':
+    'Potem logowanie hasłem będzie też prosić o sześciocyfrowy kod z aplikacji.',
+  "The code is checked by the server before it lets you in. It doesn't encrypt anything, so losing the app never costs you files.":
+    'Kod sprawdza serwer, zanim cię wpuści. Nic nim nie jest szyfrowane, więc utrata aplikacji nigdy nie kosztuje cię plików.',
+  'Authenticator app setup code': 'Kod konfiguracji aplikacji uwierzytelniającej',
+  'Copy the secret': 'Skopiuj sekret',
+  'Secret copied': 'Skopiowano sekret',
+  'Code from the app': 'Kod z aplikacji',
+  'Turn on': 'Włącz',
 };
