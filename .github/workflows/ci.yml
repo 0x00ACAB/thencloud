@@ -1,9 +1,16 @@
 name: CI
 
+# Pull requests only: a merge to main is the code its pull request already
+# tested, so it isn't run again (CI minutes are limited). Changes to
+# documentation alone don't run it.
 on:
-  push:
-    branches: [main]
   pull_request:
+    paths-ignore:
+      - '**.md'
+      - docs/**
+      - LICENSE
+      - .github/scripts/roadmap.js
+      - .github/workflows/roadmap.yml
   workflow_dispatch:
 
 permissions:

@@ -1,9 +1,11 @@
+# Monthly, grouped: every update pull request runs CI, and minutes are
+# limited. Security updates don't wait for this schedule.
 version: 2
 updates:
   - package-ecosystem: cargo
     directory: /
     schedule:
-      interval: weekly
+      interval: monthly
     groups:
       cargo:
         update-types: [minor, patch]
@@ -11,7 +13,7 @@ updates:
   - package-ecosystem: npm
     directory: /web
     schedule:
-      interval: weekly
+      interval: monthly
     groups:
       npm:
         update-types: [minor, patch]
