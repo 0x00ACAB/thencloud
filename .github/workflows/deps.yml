@@ -1,12 +1,18 @@
 name: Dependencies
 
-# Known vulnerabilities and licences in Rust and npm dependencies. Also runs
-# weekly, since new advisories appear without any change here.
+# Known vulnerabilities and licences in Rust and npm dependencies: on pull
+# requests that change them, and weekly, since new advisories appear without
+# any change here.
 
 on:
-  push:
-    branches: [main]
   pull_request:
+    paths:
+      - Cargo.lock
+      - '**/Cargo.toml'
+      - deny.toml
+      - web/package.json
+      - web/package-lock.json
+      - .github/workflows/deps.yml
   schedule:
     - cron: '17 6 * * 1'
   workflow_dispatch:
