@@ -1395,4 +1395,9 @@ export default {
 
   // Public link page title
   'Shared with you': 'Mit dir geteilt',
+
+  // Cropping
+  'Image to crop': 'Zuzuschneidendes Bild',
+  'Crop area, {width} by {height} pixels. Arrow keys move it.': 'Zuschnitt, {width} mal {height} Pixel. Mit den Pfeiltasten verschieben.',
+  'as is': 'wie es ist',
 };

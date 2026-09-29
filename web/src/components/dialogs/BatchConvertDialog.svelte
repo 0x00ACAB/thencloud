@@ -139,7 +139,7 @@
     {#if onlyImages}
       <div class="field">
         <label class="label" for="b-side">{t('Longest side at most')} <span class="font-normal text-fg-muted">{t('(optional, pixels)')}</span></label>
-        <input id="b-side" class="input h-8 w-32 tabular-nums" inputmode="numeric" placeholder="as is" bind:value={maxSide} />
+        <input id="b-side" class="input h-8 w-32 tabular-nums" inputmode="numeric" placeholder={t('as is')} bind:value={maxSide} />
         {#if sideError}<p class="text-[13px] text-danger">{sideError}</p>{/if}
       </div>
     {/if}
