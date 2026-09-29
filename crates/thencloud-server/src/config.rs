@@ -114,6 +114,26 @@ pub struct Config {
     #[arg(long, env = "THENCLOUD_METRICS_TOKEN", hide_env_values = true)]
     pub metrics_token: Option<String>,
 
+    /// Cloudflare Turnstile site key. With the secret, sign-in (and
+    /// registration while it's open to everyone) first asks for a Turnstile
+    /// check, run on its own page (`/auth`) so Cloudflare's script never
+    /// shares a page with the password or any key. Off when unset.
+    #[arg(long, env = "THENCLOUD_TURNSTILE_SITE_KEY")]
+    pub turnstile_site_key: Option<String>,
+
+    /// Cloudflare Turnstile secret key, for checking tokens with Siteverify.
+    #[arg(long, env = "THENCLOUD_TURNSTILE_SECRET", hide_env_values = true)]
+    pub turnstile_secret: Option<String>,
+
+    /// Host names the Turnstile check may come from, comma-separated
+    /// [default: the host the sign-in request was sent to].
+    #[arg(long, env = "THENCLOUD_TURNSTILE_HOSTNAMES", value_delimiter = ',')]
+    pub turnstile_hostnames: Vec<String>,
+
+    /// Where tokens are checked; tests point this at a stand-in.
+    #[arg(skip = String::from(crate::turnstile::SITEVERIFY))]
+    pub turnstile_verify_url: String,
+
     /// Refuse downloader links that point at private or local addresses.
     /// Always on outside tests.
     #[arg(skip = true)]
@@ -146,6 +166,10 @@ impl Config {
             downloader_max_bytes: 2 * 1024 * 1024 * 1024,
             downloader_public_only: true,
             metrics_token: None,
+            turnstile_site_key: None,
+            turnstile_secret: None,
+            turnstile_hostnames: Vec::new(),
+            turnstile_verify_url: crate::turnstile::SITEVERIFY.into(),
             trust_proxy: false,
             limit_by_address: true,
         }

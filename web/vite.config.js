@@ -98,11 +98,12 @@ export default defineConfig({
       },
     },
     {
-      // Mirror the server's `/s/<token>` route in dev.
+      // Mirror the server's `/s/<token>` and `/auth` routes in dev.
       name: 'thencloud-share-route',
       configureServer(server) {
         server.middlewares.use((req, _res, next) => {
           if (req.url?.startsWith('/s/')) req.url = '/share.html';
+          else if (req.url === '/auth' || req.url?.startsWith('/auth?')) req.url = '/auth.html';
           next();
         });
       },
@@ -114,7 +115,7 @@ export default defineConfig({
     assetsInlineLimit: 0,
     modulePreload: { polyfill: false },
     rollupOptions: {
-      input: { index: 'index.html', share: 'share.html' },
+      input: { index: 'index.html', share: 'share.html', auth: 'auth.html' },
     },
   },
   worker: { format: 'es' },
