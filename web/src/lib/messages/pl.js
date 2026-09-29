@@ -96,11 +96,11 @@ export default {
   Dismiss: 'Zamknij',
 
   // Transfers
-  'Encrypting and transferring {count} files': {
-    one: 'Szyfrowanie i przesyłanie 1 pliku',
-    few: 'Szyfrowanie i przesyłanie {count} plików',
-    many: 'Szyfrowanie i przesyłanie {count} plików',
-    other: 'Szyfrowanie i przesyłanie {count} pliku',
+  'Transferring {count} files': {
+    one: 'Przesyłanie 1 pliku',
+    few: 'Przesyłanie {count} plików',
+    many: 'Przesyłanie {count} plików',
+    other: 'Przesyłanie {count} pliku',
   },
   '{count} failed': {
     one: '{count} nieudany',
@@ -212,8 +212,7 @@ export default {
   Location: 'Miejsce',
   'Nothing here yet': 'Nic tu jeszcze nie ma',
   'This folder is empty': 'Ten folder jest pusty',
-  'Drop files anywhere on this page, or use Upload. They are encrypted before they leave your device.':
-    'Upuść pliki w dowolnym miejscu tej strony albo użyj przycisku Wyślij. Zostaną zaszyfrowane, zanim opuszczą twoje urządzenie.',
+  'Drop files anywhere on this page, or use Upload.': 'Upuść pliki w dowolnym miejscu tej strony albo użyj przycisku Wyślij.',
   'Nothing has been added here yet.': 'Nic tu jeszcze nie dodano.',
   'Nothing in this folder matches "{query}".': 'Nic w tym folderze nie pasuje do "{query}".',
   'Clear search': 'Wyczyść wyszukiwanie',
@@ -222,7 +221,7 @@ export default {
   'Actions for {name}': 'Działania dla {name}',
   'Select all': 'Zaznacz wszystko',
   Actions: 'Działania',
-  'Drop to encrypt and upload to {folder}': 'Upuść, żeby zaszyfrować i wysłać do {folder}',
+  'Drop to upload to {folder}': 'Upuść, aby wysłać do {folder}',
   '{count} found, reading {done} of {total} files': 'Znaleziono: {count}, czytanie plików: {done} z {total}',
   '{count} found so far': 'Znaleziono na razie: {count}',
   '{count} found': 'Znaleziono: {count}',
@@ -269,8 +268,8 @@ export default {
   'Change picture': 'Zmień zdjęcie',
   'Add a picture': 'Dodaj zdjęcie',
   Remove: 'Usuń',
-  "Encrypted in this browser. Only people you share with, or who share with you, can see it; the server can't.":
-    'Szyfrowane w tej przeglądarce. Widzą je tylko osoby, z którymi coś udostępniasz albo które udostępniają coś tobie; serwer go nie widzi.',
+  'Only people you share with, or who share with you, can see it.':
+    'Widzą je tylko osoby, którym coś udostępniasz albo które udostępniają coś tobie.',
   'Display name': 'Nazwa wyświetlana',
   None: 'Brak',
   'Any script, up to 64 characters. Shown next to your username, to the same people who see your picture.':
@@ -285,8 +284,8 @@ export default {
   'When someone shares with you, they see this fingerprint. Read it to them over a call or in person so they can check it matches. That proves the server gave them your real key.':
     'Gdy ktoś coś ci udostępnia, widzi ten odcisk. Przeczytaj mu go przez telefon albo osobiście, żeby sprawdził, czy się zgadza. To dowodzi, że serwer dał mu twój prawdziwy klucz.',
   'Verified contacts': 'Sprawdzone kontakty',
-  "Keys you've checked by fingerprint. If the server ever gives you a different key for one of these people, sharing with them is stopped until you check again. This list is encrypted; the server can't read or change it.":
-    'Klucze sprawdzone odciskiem. Jeśli serwer kiedyś poda inny klucz dla jednej z tych osób, udostępnianie jej zostanie wstrzymane, dopóki nie sprawdzisz go ponownie. Ta lista jest zaszyfrowana; serwer nie może jej odczytać ani zmienić.',
+  "Keys you've checked by fingerprint. If the server ever gives you a different key for one of these people, sharing with them is stopped until you check again.":
+    'Klucze sprawdzone odciskiem. Jeśli serwer kiedyś poda inny klucz dla jednej z tych osób, udostępnianie jej zostanie wstrzymane, dopóki nie sprawdzisz go ponownie.',
   'Changing it signs out your other devices. If you forget it, only your recovery key can get you back in.':
     'Zmiana hasła kończy sesje na innych urządzeniach. Jeśli je zapomnisz, wrócić pozwoli tylko klucz odzyskiwania.',
   'A printable key that lets you set a new password if you forget yours, without losing your files. Keep it somewhere safe, away from this device.':
@@ -323,17 +322,17 @@ export default {
   'Location in photos': 'Lokalizacja w zdjęciach',
   'JPEG, PNG and WebP photos often record where they were taken and on what camera. This is checked on this device when you upload; the orientation is always kept.':
     'Zdjęcia JPEG, PNG i WebP często zapisują, gdzie i jakim aparatem je zrobiono. Sprawdzamy to na tym urządzeniu przy wysyłaniu; orientacja zawsze zostaje.',
-  'Turning one off only hides it; what you logged stays, encrypted, until you turn it on again.':
-    'Wyłączenie tylko go ukrywa; zapisane dane zostają zaszyfrowane, dopóki nie włączysz go ponownie.',
+  'Turning one off only hides it; what you logged stays until you turn it on again.':
+    'Wyłączenie modułu tylko go ukrywa; zapisane dane zostają do ponownego włączenia.',
   Modules: 'Moduły',
-  'Optional parts of thencloud. Which ones are on is saved encrypted with your account, so it follows you to other devices.':
-    'Opcjonalne części thencloud. To, które są włączone, jest zapisane w zaszyfrowanej postaci z twoim kontem, więc działa też na innych urządzeniach.',
+  'Optional parts of thencloud. Which ones are on is saved with your account, so it follows you to other devices.':
+    'Opcjonalne części thencloud. To, które są włączone, jest zapisywane z twoim kontem, więc działa też na innych urządzeniach.',
   'Export your data': 'Eksportuj dane',
   'Check your files': 'Sprawdź pliki',
   'Delete account': 'Usuń konto',
   About: 'O programie',
-  'A log of weight, height, blood pressure and other measurements with charts, and a mood meter. Encrypted like your files.':
-    'Dziennik wagi, wzrostu, ciśnienia i innych pomiarów z wykresami oraz miernik nastroju. Szyfrowany jak twoje pliki.',
+  'A log of weight, height, blood pressure and other measurements with charts, and a mood meter.':
+    'Dziennik wagi, wzrostu, ciśnienia i innych pomiarów z wykresami oraz miernik nastroju.',
 
   // Errors
   'You do not have permission to do that.': 'Nie masz do tego uprawnień.',
@@ -384,7 +383,6 @@ export default {
   // Recent and favourites
   'Files and folders you starred.': 'Pliki i foldery oznaczone gwiazdką.',
   'Files you opened lately, on any device.': 'Pliki otwierane ostatnio, na dowolnym urządzeniu.',
-  "The list is encrypted, so the server can't tell which they are.": 'Lista jest zaszyfrowana, więc serwer nie wie, które to pliki.',
   'No favourites yet': 'Nie ma jeszcze ulubionych',
   'Nothing opened yet': 'Nic jeszcze nie otwarto',
   'Use "Add to favourites" in the menu on any file or folder.': 'Użyj "Dodaj do ulubionych" w menu dowolnego pliku lub folderu.',
@@ -540,7 +538,7 @@ export default {
   'Pleasant, calm': 'Przyjemnie, spokojnie',
   'Unpleasant, low energy': 'Nieprzyjemnie, mało energii',
   'Unpleasant, lots of energy': 'Nieprzyjemnie, dużo energii',
-  "Encrypted in this browser like your files. The server stores it but can't read any of it.": 'Szyfrowane w tej przeglądarce jak twoje pliki. Serwer to przechowuje, ale nie może niczego odczytać.',
+  'Your measurements and moods over time.': 'Twoje pomiary i nastroje w czasie.',
   'Health sections': 'Sekcje zdrowia',
   Measurements: 'Pomiary',
   Mood: 'Nastrój',
@@ -630,8 +628,7 @@ export default {
   'For languages whose words change with it, like Polish "przeczytała" or "przeczytał". Not set keeps the wording neutral.':
     'Dla języków, w których słowa się od niego zmieniają, np. "przeczytała" albo "przeczytał". Gdy nie jest ustawiony, sformułowania pozostają neutralne.',
   "Those pronouns have characters that can't be used.": 'Te zaimki zawierają znaki, których nie można użyć.',
-  'Shown only to the people who see your picture and display name, and encrypted the same way.':
-    'Widoczne tylko dla osób, które widzą twoje zdjęcie i nazwę wyświetlaną, i szyfrowane tak samo.',
+  'Shown only to the people who see your picture and display name.': 'Widoczne tylko dla osób, które widzą twoje zdjęcie i nazwę wyświetlaną.',
 
   // Versions, comments and activity
   You: 'Ty',
@@ -653,7 +650,7 @@ export default {
   "a file that's no longer here": 'plik, którego już tu nie ma',
   'In the last hour': 'W ciągu ostatniej godziny',
   'Show older': 'Pokaż starsze',
-  "On {name}. Encrypted like the file itself: everyone who can open it can read them, and the server can't.": 'Do {name}. Zaszyfrowane jak sam plik: może je czytać każdy, kto może go otworzyć, a serwer nie.',
+  'On {name}. Everyone who can open it can read them.': 'Do {name}. Może je czytać każdy, kto może go otworzyć.',
   "This comment can't be decrypted. It may have been tampered with.": 'Nie da się odszyfrować tego komentarza. Ktoś mógł przy nim majstrować.',
   'Delete comment': 'Usuń komentarz',
   Delete: 'Usuń',
@@ -669,17 +666,17 @@ export default {
   'Download this version': 'Pobierz tę wersję',
   'Delete this version': 'Usuń tę wersję',
   'This is the only version so far. Uploading a new version keeps this one here.': 'Na razie to jedyna wersja. Po wgraniu nowej ta zostanie tutaj.',
-  'Drop files or whole folders anywhere on this page, or use Upload. Everything is encrypted before it leaves your device.':
-    'Upuść pliki lub całe foldery w dowolnym miejscu tej strony albo użyj przycisku Wyślij. Wszystko jest szyfrowane, zanim opuści twoje urządzenie.',
+  'Drop files or whole folders anywhere on this page, or use Upload.':
+    'Upuść pliki lub całe foldery w dowolnym miejscu tej strony albo użyj przycisku Wyślij.',
 
   // Notes and the folder picker
   'Use {name}': 'Użyj: {name}',
   'your notes folder': 'twój folder notatek',
-  'Encrypting and saving': 'Szyfrowanie i zapisywanie',
+  'Saving': 'Zapisywanie',
   Saved: 'Zapisano',
   'Unsaved changes': 'Niezapisane zmiany',
   'Changed on another device': 'Zmieniono na innym urządzeniu',
-  'Markdown files in {folder}, encrypted like everything else.': 'Pliki Markdown w folderze {folder}, zaszyfrowane jak wszystko inne.',
+  'Markdown files in {folder}.': 'Pliki Markdown w folderze {folder}.',
   'Notes folder': 'Folder notatek',
   'Choose another folder': 'Wybierz inny folder',
   'Look for new notes': 'Poszukaj nowych notatek',
@@ -779,15 +776,14 @@ export default {
   'Add tracks from an album or the track list with Add to playlist in their menu.':
     'Dodawaj utwory z albumu lub listy utworów przez Dodaj do playlisty w ich menu.',
   '{count} albums': { one: '{count} album', few: '{count} albumy', many: '{count} albumów', other: '{count} albumy' },
-  'Play the music in your files. Names and tags are read in this browser.':
-    'Słuchaj muzyki ze swoich plików. Nazwy i tagi są odczytywane w tej przeglądarce.',
+  'Play the music in your files.': 'Słuchaj muzyki ze swoich plików.',
   'Shuffle all': 'Wszystko losowo',
   'Music options': 'Opcje muzyki',
   'New playlist': 'Nowa playlista',
   'Scan again': 'Przeszukaj ponownie',
   'Pick your music folder': 'Wybierz folder z muzyką',
-  'Albums are made from its folders, like Artist/Album/01 Song.mp3. MP3, M4A, AAC, Ogg, Opus, FLAC and WAV play here, decrypted as they stream.':
-    'Albumy powstają z jego folderów, np. Wykonawca/Album/01 Utwór.mp3. MP3, M4A, AAC, Ogg, Opus, FLAC i WAV grają tutaj, odszyfrowywane w trakcie odtwarzania.',
+  'Albums are made from its folders, like Artist/Album/01 Song.mp3. MP3, M4A, AAC, Ogg, Opus, FLAC and WAV play here.':
+    'Albumy powstają z jego folderów, np. Wykonawca/Album/01 Utwór.mp3. MP3, M4A, AAC, Ogg, Opus, FLAC i WAV grają tutaj.',
   'Choose folder': 'Wybierz folder',
   'Could not open the music folder': 'Nie udało się otworzyć folderu z muzyką',
   '{error}. It may have been moved to the trash, or its share ended.':
@@ -819,13 +815,12 @@ export default {
   'Added {count} tracks to {name}': { one: 'Dodano {count} utwór do {name}', few: 'Dodano {count} utwory do {name}', many: 'Dodano {count} utworów do {name}', other: 'Dodano {count} utworu do {name}' },
   'Already in {name}': 'Już jest w {name}',
   'Made the playlist {name}': 'Utworzono playlistę {name}',
-  "The name and artist are kept in your library, encrypted. A new cover is saved as cover.jpg in the album's folder.":
-    'Nazwa i wykonawca są przechowywane w twojej bibliotece, zaszyfrowane. Nowa okładka zostanie zapisana jako cover.jpg w folderze albumu.',
+  "The name and artist are kept in your library. A new cover is saved as cover.jpg in the album's folder.":
+    'Nazwa i wykonawca są przechowywane w twojej bibliotece. Nowa okładka zostanie zapisana jako cover.jpg w folderze albumu.',
   'Choose cover': 'Wybierz okładkę',
   Artist: 'Wykonawca',
   'Edit track': 'Edytuj utwór',
-  "Changes are kept in your library, encrypted. The file isn't changed.":
-    'Zmiany są przechowywane w twojej bibliotece, zaszyfrowane. Plik się nie zmienia.',
+  "Changes are kept in your library. The file isn't changed.": 'Zmiany są przechowywane w twojej bibliotece. Plik się nie zmienia.',
   Track: 'Nr',
   'File: {name}': 'Plik: {name}',
   'Undo edits': 'Cofnij zmiany',
@@ -891,14 +886,13 @@ export default {
   'Episode actions': 'Działania na odcinku',
   '{count} series': { one: '{count} serial', few: '{count} seriale', many: '{count} seriali', other: '{count} seriale' },
   '{count} movies': { one: '{count} film', few: '{count} filmy', many: '{count} filmów', other: '{count} filmy' },
-  'Watch the videos in your files. Names and details are read in this browser.':
-    'Oglądaj filmy ze swoich plików. Nazwy i szczegóły są odczytywane w tej przeglądarce.',
+  'Watch the videos in your files.': 'Oglądaj filmy ze swoich plików.',
   'Video options': 'Opcje wideo',
   'Read episode details from files': 'Odczytaj szczegóły odcinków z plików',
   'Reading episode details: {done} of {total}': 'Odczytywanie szczegółów odcinków: {done} z {total}',
   'Pick your videos folder': 'Wybierz folder z filmami',
-  'Episodes are grouped into series by their names, like Show S01E02.mp4, by folders like Show/Season 1, or by their tags. MP4, WebM and MOV play here, decrypted as they stream; MKV where your browser can.':
-    'Odcinki są grupowane w seriale według nazw, np. Serial S01E02.mp4, folderów, np. Serial/Sezon 1, albo tagów. MP4, WebM i MOV grają tutaj, odszyfrowywane w trakcie odtwarzania; MKV tam, gdzie przeglądarka to umie.',
+  'Episodes are grouped into series by their names, like Show S01E02.mp4, by folders like Show/Season 1, or by their tags. MP4, WebM and MOV play here; MKV where your browser can.':
+    'Odcinki są grupowane w seriale według nazw, np. Serial S01E02.mp4, folderów, np. Serial/Sezon 1, albo tagów. MP4, WebM i MOV grają tutaj; MKV tam, gdzie przeglądarka to umie.',
   'Could not open the videos folder': 'Nie udało się otworzyć folderu z filmami',
   'Looking through folders: {count} videos so far': { one: 'Przeszukiwanie folderów: na razie {count} film', few: 'Przeszukiwanie folderów: na razie {count} filmy', many: 'Przeszukiwanie folderów: na razie {count} filmów', other: 'Przeszukiwanie folderów: na razie {count} filmy' },
   'No videos in {folder}': 'Brak filmów w folderze {folder}',
@@ -1046,7 +1040,6 @@ export default {
   'Set up on {date}': 'Utworzony {date}',
   "Not set up. If you forget your password, your files can't be recovered by anyone.":
     'Nie utworzono. Jeśli zapomnisz hasła, nikt nie odzyska twoich plików.',
-  'Made in this browser; the server never sees it.': 'Powstaje w tej przeglądarce; serwer nigdy go nie widzi.',
   'Create recovery key': 'Utwórz klucz odzyskiwania',
   'Authenticator app': 'Aplikacja uwierzytelniająca',
   'On since {date}': 'Włączona od {date}',
@@ -1093,11 +1086,11 @@ export default {
   'Ask me': 'Pytaj mnie',
   'When a photo records where it was taken.': 'Gdy zdjęcie zapisuje, gdzie je zrobiono.',
   'Always remove': 'Zawsze usuwaj',
-  'From every photo, before it is encrypted.': 'Z każdego zdjęcia, zanim zostanie zaszyfrowane.',
+  'From every photo, before it is uploaded.': 'Z każdego zdjęcia, zanim zostanie wysłane.',
   'Keep them': 'Zachowuj',
   'Upload photos exactly as they are.': 'Wysyłaj zdjęcia dokładnie takie, jakie są.',
-  "Everything in My files, decrypted in this browser into one zip, with your playlists, pinned notes and verified contacts as JSON in a {folder} folder. The zip is not encrypted, so keep it somewhere safe. Items others shared with you aren't included.":
-    'Wszystko z Moich plików, odszyfrowane w tej przeglądarce do jednego pliku zip, z playlistami, przypiętymi notatkami i zweryfikowanymi kontaktami jako JSON w folderze {folder}. Zip nie jest zaszyfrowany, więc trzymaj go w bezpiecznym miejscu. Elementy udostępnione ci przez innych nie są dołączane.',
+  "Everything in My files in one zip, with your playlists, pinned notes and verified contacts as JSON in a {folder} folder. The zip is not encrypted, so keep it somewhere safe. Items others shared with you aren't included.":
+    'Wszystko z Moich plików w jednym pliku zip, z playlistami, przypiętymi notatkami i zweryfikowanymi kontaktami jako JSON w folderze {folder}. Zip nie jest zaszyfrowany, więc trzymaj go w bezpiecznym miejscu. Elementy udostępnione ci przez innych nie są dołączane.',
   Export: 'Eksportuj',
   'Downloads everything in My files and decrypts it here, to make sure nothing is damaged or missing. Nothing is saved. With a lot of data this takes a while.':
     'Pobiera wszystko z Moich plików i odszyfrowuje to tutaj, by upewnić się, że nic nie jest uszkodzone ani nie zginęło. Nic nie jest zapisywane. Przy dużej ilości danych to chwilę trwa.',

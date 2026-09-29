@@ -306,7 +306,7 @@
         {/if}
         <p class="flex items-center gap-2 text-sm">
           <Icon name="loader-circle" class="spinner" />
-          {stage === 'saving' ? 'Encrypting and saving' : `Downloading ${formatSize(received)}${shown?.size ? ` of about ${formatSize(shown.size)}` : ''}`}
+          {stage === 'saving' ? 'Saving' : `Downloading ${formatSize(received)}${shown?.size ? ` of about ${formatSize(shown.size)}` : ''}`}
         </p>
         {#if stage === 'saving' || shown?.size}
           <div class="progress"><div style:width="{Math.round(Math.min(1, stage === 'saving' ? progress : received / shown.size) * 100)}%"></div></div>

@@ -146,7 +146,7 @@
 
 <Modal
   title={merging ? `Merge ${entries.length} PDFs` : `Edit ${entries[0].meta.name}`}
-  description="Rotate, reorder or remove pages{merging ? '' : ', or pick some to save on their own'}. It's done in this browser, and the result is encrypted like any upload."
+  description="Rotate, reorder or remove pages{merging ? '' : ', or pick some to save on their own'}."
   class="max-w-4xl"
   onclose={onclose}>
   {#if phase === 'loading'}

@@ -319,7 +319,7 @@
 
     {#if editing}
       <p class="hidden truncate text-xs sm:block {saveError ? 'text-danger' : 'text-fg-muted'}" role="status" title={saveError}>
-        {saveError || (saving ? 'Encrypting and saving' : dirty ? 'Unsaved changes' : 'All changes saved')}
+        {saveError || (saving ? 'Saving' : dirty ? 'Unsaved changes' : 'All changes saved')}
       </p>
       <button type="button" class="btn btn-secondary" onclick={() => guard(stopEditing)}>Done</button>
       <button type="button" class="btn btn-primary" disabled={!dirty || saving} title="Save (Ctrl+S)" onclick={saveDraft}>

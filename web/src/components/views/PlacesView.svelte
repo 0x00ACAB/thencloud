@@ -53,7 +53,7 @@
 <div>
   <h1 class="text-xl font-semibold tracking-tight">{title}</h1>
   <p class="mt-1 text-[13px] text-fg-muted">
-    {mode === 'favourites' ? t('Files and folders you starred.') : t('Files you opened lately, on any device.')} {t("The list is encrypted, so the server can't tell which they are.")}
+    {mode === 'favourites' ? t('Files and folders you starred.') : t('Files you opened lately, on any device.')}
   </p>
 </div>
 

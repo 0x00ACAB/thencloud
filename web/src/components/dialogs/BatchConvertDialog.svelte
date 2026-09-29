@@ -38,7 +38,7 @@
   const side = $derived(maxSide.trim() ? Math.round(Number(maxSide)) : null);
   const sideError = $derived(side !== null && !(side >= 16 && side <= 16384) ? 'Use a number of pixels between 16 and 16384.' : '');
 
-  const stageText = { decrypting: 'Decrypting', loading: 'Loading the converter', converting: 'Converting', saving: 'Encrypting and saving' };
+  const stageText = { decrypting: 'Decrypting', loading: 'Loading the converter', converting: 'Converting', saving: 'Saving' };
 
   async function imageSize(blob) {
     const b = await createImageBitmap(blob);
@@ -106,7 +106,7 @@
 
 <Modal
   title="Convert {entries.length} files"
-  description="One after another, in this browser. The server never sees the files, and saved copies are encrypted like any upload."
+  description="One after another, in this browser."
   onclose={() => (controller?.abort(), onclose())}
   onsubmit={run}
   class="max-w-lg">

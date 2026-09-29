@@ -131,7 +131,7 @@
     decrypting: 'Decrypting',
     loading: 'Loading the converter (about 10 MB, only the first time)',
     converting: 'Converting',
-    saving: 'Encrypting and saving',
+    saving: 'Saving',
   };
 
   async function run() {
@@ -190,7 +190,7 @@
 
 <Modal
   title="Convert {entry.meta.name}"
-  description="It's done in this browser. The server never sees the file, and a saved copy is encrypted like any upload."
+  description="It's done in this browser."
   onclose={() => (controller?.abort(), onclose())}
   onsubmit={run}
   class={kind === 'image' ? 'max-w-2xl' : 'max-w-lg'}>

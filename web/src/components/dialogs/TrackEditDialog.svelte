@@ -35,7 +35,7 @@
     run(() => editTrack(track, { title: title.trim(), artist: artist.trim(), album: album.trim(), trackNo: trackNo === '' || trackNo == null ? null : +trackNo }));
 </script>
 
-<Modal title={t('Edit track')} description={t("Changes are kept in your library, encrypted. The file isn't changed.")} {onclose} onsubmit={submit}>
+<Modal title={t('Edit track')} description={t("Changes are kept in your library. The file isn't changed.")} {onclose} onsubmit={submit}>
   <div class="field">
     <label class="label" for="track-title">{t('Title')}</label>
     <input id="track-title" class="input" bind:value={title} autocomplete="off" />

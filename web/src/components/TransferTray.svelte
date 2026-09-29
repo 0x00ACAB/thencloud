@@ -26,7 +26,7 @@
   const active = $derived(transfers.filter((job) => job.status === 'active').length);
   const failed = $derived(transfers.filter((job) => job.status === 'error').length);
   const heading = $derived(
-    active ? t('Encrypting and transferring {count} files', { count: active }) : failed ? t('{count} failed', { count: failed }) : t('All transfers complete'),
+    active ? t('Transferring {count} files', { count: active }) : failed ? t('{count} failed', { count: failed }) : t('All transfers complete'),
   );
 </script>
 
