@@ -8,12 +8,13 @@
 // an album cover picked here is uploaded as cover.jpg into its folder.
 
 import { SvelteMap } from 'svelte/reactivity';
-import { session, resolvePath, walkTree, openEntry, fetchEntry, loadAppData, saveAppData } from './cloud.svelte.js';
+import { session, resolvePath, walkTree, openEntry, fetchEntry, loadAppData, saveAppData, folderLabel } from './cloud.svelte.js';
 import { putFolderImage } from './cover.js';
 import { previewKind } from './preview.js';
 import { parseTags } from './tags.js';
 import { readChapters } from './chapters.js';
 import { toast, errorMessage } from './ui.svelte.js';
+import { t } from './i18n.svelte.js';
 
 // ---------------------------------------------------------------- library
 
@@ -86,16 +87,16 @@ export function makeTrack(entry, { albumId = null, album, artist, disc = '' } = 
  * name and folders say. `edited: false` leaves out the track's own edits.
  */
 export function info(track, { edited = true } = {}) {
-  const t = tags.get(track.id);
+  const tag = tags.get(track.id);
   const e = edited ? saved.value.tracks[track.id] : null;
   const a = saved.value.albums[track.albumId];
   const folderCover = covers.get(track.albumId);
   return {
-    title: e?.title || t?.title || track.title,
-    artist: e?.artist || t?.artist || a?.artist || track.artist || 'Unknown artist',
-    album: e?.album || t?.album || a?.name || track.album || '',
-    trackNo: e?.trackNo ?? t?.track ?? track.trackNo,
-    cover: (a?.cover && folderCover) || t?.cover || folderCover || null,
+    title: e?.title || tag?.title || track.title,
+    artist: e?.artist || tag?.artist || a?.artist || track.artist || t('Unknown artist'),
+    album: e?.album || tag?.album || a?.name || track.album || '',
+    trackNo: e?.trackNo ?? tag?.track ?? track.trackNo,
+    cover: (a?.cover && folderCover) || tag?.cover || folderCover || null,
   };
 }
 
@@ -237,9 +238,9 @@ export async function scanLibrary() {
   try {
     const { items } = await resolvePath(music.rootId);
     const root = items[items.length - 1];
-    if (root.node.kind !== 'folder') throw new Error('The music folder is not a folder');
+    if (root.node.kind !== 'folder') throw new Error(t('The music folder is not a folder'));
     const rootId = root.node.id;
-    const folders = new Map([[rootId, { name: root.meta.name, parentId: null }]]);
+    const folders = new Map([[rootId, { name: folderLabel(root), parentId: null }]]);
     const images = new Map(); // folder id -> best cover entry
     const files = [];
     await walkTree(root, {
@@ -281,7 +282,7 @@ export async function scanLibrary() {
       a.artist ??= a.tracks.every((t) => t.artist && t.artist === a.tracks[0].artist) ? a.tracks[0].artist : undefined;
     }
     list.sort((a, b) => collator.compare(a.artist ?? '￿', b.artist ?? '￿') || collator.compare(a.name, b.name));
-    music.rootName = root.meta.name;
+    music.rootName = folderLabel(root);
     library.value = { albums: list, tracks: list.flatMap((a) => a.tracks) };
   } catch (e) {
     if (!ctl.signal.aborted) music.error = errorMessage(e);
@@ -482,7 +483,7 @@ async function load(autoplay = true) {
 function failed(e) {
   const track = current();
   if (!track) return;
-  toast(`Could not play ${info(track).title}${e ? `: ${errorMessage(e)}` : ''}`, { kind: 'error' });
+  toast(e ? t('Could not play {title}: {error}', { title: info(track).title, error: errorMessage(e) }) : t('Could not play {title}', { title: info(track).title }), { kind: 'error' });
   player.buffering = false;
   // Skip ahead, but not round and round a queue that won't play.
   if (++failures < player.queue.length && (player.index < player.queue.length - 1 || player.repeat === 'all')) next();
@@ -662,11 +663,11 @@ function remember() {
   const track = loaded;
   lastRemembered = Date.now();
   if (!track || !audio || !player.duration || !isLong(track, player.duration)) return;
-  const t = Math.floor(audio.currentTime);
+  const secs = Math.floor(audio.currentTime);
   // Near either end there's nothing worth coming back to.
-  if (t < 15 || t > player.duration - 30) return forget(track);
-  if (saved.value.positions?.[track.id]?.t === t) return;
-  savePosition(track.id, { t, at: Date.now() });
+  if (secs < 15 || secs > player.duration - 30) return forget(track);
+  if (saved.value.positions?.[track.id]?.t === secs) return;
+  savePosition(track.id, { t: secs, at: Date.now() });
 }
 
 function forget(track) {
@@ -691,7 +692,7 @@ function resume() {
   const pos = track && saved.value.positions?.[track.id];
   if (!pos || !isLong(track, audio.duration) || pos.t >= audio.duration - 30) return;
   audio.currentTime = pos.t;
-  toast(`Picked up where you left off, at ${formatTime(pos.t)}`, { icon: 'play' });
+  toast(t('Picked up where you left off, at {time}', { time: formatTime(pos.t) }), { icon: 'play' });
 }
 
 /** Chapters from an M4B/MP4, read from its moov box (a few pieces at most). */
