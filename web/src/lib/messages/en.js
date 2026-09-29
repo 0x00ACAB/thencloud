@@ -30,4 +30,8 @@ export default {
     other: '{name}. Up to {count} versions are kept, and the oldest go first when you run out of space.',
   },
   '{count} photos': { one: '{count} photo', other: '{count} photos' },
+  '{count} tracks': { one: '{count} track', other: '{count} tracks' },
+  '{count} albums': { one: '{count} album', other: '{count} albums' },
+  'Looking through folders: {count} tracks so far': { one: 'Looking through folders: {count} track so far', other: 'Looking through folders: {count} tracks so far' },
+  'Added {count} tracks to {name}': { one: 'Added {count} track to {name}', other: 'Added {count} tracks to {name}' },
 };

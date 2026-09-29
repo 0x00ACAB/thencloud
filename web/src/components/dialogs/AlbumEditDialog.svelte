@@ -3,6 +3,7 @@
   // your encrypted library data; the cover goes into the album's folder as
   // cover.jpg, encrypted like any file.
   import { untrack, onDestroy } from 'svelte';
+  import { t } from '../../lib/i18n.svelte.js';
   import Modal from '../Modal.svelte';
   import Icon from '../Icon.svelte';
   import { albumInfo, editAlbum, setAlbumCover, covers } from '../../lib/music.svelte.js';
@@ -47,30 +48,30 @@
   }
 </script>
 
-<Modal title="Edit album" description="The name and artist are kept in your library, encrypted. A new cover is saved as cover.jpg in the album's folder." {onclose} onsubmit={submit}>
+<Modal title={t('Edit album')} description={t("The name and artist are kept in your library, encrypted. A new cover is saved as cover.jpg in the album's folder.")} {onclose} onsubmit={submit}>
   <div class="flex items-center gap-4">
     <div class="grid size-24 shrink-0 place-items-center overflow-hidden rounded-md border border-line bg-muted text-fg-faint">
       {#if shown}<img src={shown} alt="" class="size-full object-cover" />{:else}<Icon name="disc-3" class="size-1/3" strokeWidth={1.5} />{/if}
     </div>
     <label class="btn btn-secondary cursor-pointer">
-      <Icon name="image" />Choose cover
+      <Icon name="image" />{t('Choose cover')}
       <input type="file" accept="image/*" class="sr-only" onchange={pick} />
     </label>
   </div>
   <div class="field">
-    <label class="label" for="album-name">Name</label>
+    <label class="label" for="album-name">{t('Name')}</label>
     <input id="album-name" class="input" bind:value={name} placeholder={album.name} autocomplete="off" />
   </div>
   <div class="field">
-    <label class="label" for="album-artist">Artist</label>
-    <input id="album-artist" class="input" bind:value={artist} placeholder="Unknown artist" autocomplete="off" />
+    <label class="label" for="album-artist">{t('Artist')}</label>
+    <input id="album-artist" class="input" bind:value={artist} placeholder={t('Unknown artist')} autocomplete="off" />
   </div>
   {#if error}<p class="text-[13px] text-danger">{error}</p>{/if}
   {#snippet footer()}
-    <button type="button" class="btn btn-secondary" onclick={onclose}>Cancel</button>
+    <button type="button" class="btn btn-secondary" onclick={onclose}>{t('Cancel')}</button>
     <button class="btn btn-primary" disabled={busy}>
       {#if busy}<Icon name="loader-circle" class="spinner" />{/if}
-      Save
+      {t('Save')}
     </button>
   {/snippet}
 </Modal>
