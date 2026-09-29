@@ -91,6 +91,7 @@ fn start() -> Server {
         &format!("{url}/api/auth/register"),
         None,
         &RegisterRequest {
+            turnstile: None,
             username: "alice".into(),
             auth_key: B64(ak.auth_key.as_bytes().to_vec()),
             kdf_salt: B64(salt),

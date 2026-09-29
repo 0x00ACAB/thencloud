@@ -178,6 +178,16 @@ async fn try_register(
     password: &str,
     invite: Option<&str>,
 ) -> Result<Client, Box<Resp>> {
+    try_register_with(h, username, password, invite, None).await
+}
+
+async fn try_register_with(
+    h: &Harness,
+    username: &str,
+    password: &str,
+    invite: Option<&str>,
+    turnstile: Option<&str>,
+) -> Result<Client, Box<Resp>> {
     let salt = c::random_bytes(c::SALT_LEN);
     let ak = c::derive_account_keys(password, &salt, FAST_KDF).unwrap();
     let mk = Key::generate();
@@ -186,6 +196,7 @@ async fn try_register(
     let root_id = c::new_id();
     let root_key = Key::generate();
     let req = RegisterRequest {
+        turnstile: turnstile.map(Into::into),
         username: username.into(),
         auth_key: B64(ak.auth_key.as_bytes().to_vec()),
         kdf_salt: B64(salt),
@@ -220,6 +231,15 @@ async fn try_register(
 }
 
 async fn login(h: &Harness, username: &str, password: &str) -> Result<Client, Box<Resp>> {
+    login_with(h, username, password, None).await
+}
+
+async fn login_with(
+    h: &Harness,
+    username: &str,
+    password: &str,
+    turnstile: Option<&str>,
+) -> Result<Client, Box<Resp>> {
     let pre: PreloginResponse = h
         .call(
             Method::POST,
@@ -231,6 +251,7 @@ async fn login(h: &Harness, username: &str, password: &str) -> Result<Client, Bo
         .json();
     let ak = c::derive_account_keys(password, &pre.kdf_salt, pre.kdf_params).unwrap();
     let req = LoginRequest {
+        turnstile: turnstile.map(Into::into),
         username: username.into(),
         auth_key: B64(ak.auth_key.as_bytes().to_vec()),
         device_name: None,
@@ -4043,6 +4064,7 @@ async fn password_login(h: &Harness, username: &str, password: &str) -> LoginRes
             "/api/auth/login",
             None,
             Some(LoginRequest {
+                turnstile: None,
                 username: username.into(),
                 auth_key: B64(ak.auth_key.as_bytes().to_vec()),
                 device_name: Some("laptop".into()),
@@ -4414,6 +4436,7 @@ async fn post_quantum_keys_seal_shares_and_drops() {
             "/api/auth/register",
             None,
             Some(RegisterRequest {
+                turnstile: None,
                 username: "old".into(),
                 auth_key: B64(ak.auth_key.as_bytes().to_vec()),
                 kdf_salt: B64(salt),
@@ -5087,6 +5110,7 @@ async fn backup_restore_and_check() {
 async fn behind_a_proxy_rate_limits_use_forwarded_for() {
     async fn attempt(h: &Harness, username: &str, key: &Key, from: &str) -> StatusCode {
         let body = serde_json::to_vec(&LoginRequest {
+            turnstile: None,
             username: username.into(),
             auth_key: B64(key.as_bytes().to_vec()),
             device_name: None,
@@ -5143,6 +5167,7 @@ async fn onion_services_limit_by_account_not_by_address() {
                 "/api/auth/login",
                 None,
                 Some(LoginRequest {
+                    turnstile: None,
                     username: format!("stranger{i}"),
                     auth_key: B64(bad.as_bytes().to_vec()),
                     device_name: None,
@@ -6460,4 +6485,196 @@ async fn s3_blob_store_backup_and_restore() {
         .await;
     assert_eq!(r.status, StatusCode::NO_CONTENT);
     assert_eq!(count_under(&store, "main/tc/").await, 0);
+}
+
+/// A stand-in for Turnstile's Siteverify: answers by token, and keeps every
+/// form it was sent.
+async fn fake_siteverify() -> (String, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+    use axum::routing::post;
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let log = seen.clone();
+    let app = Router::new().route(
+        "/siteverify",
+        post(move |body: String| {
+            let log = log.clone();
+            async move {
+                log.lock().unwrap().push(body.clone());
+                let form: std::collections::HashMap<String, String> = url_form(&body);
+                let right_secret = form.get("secret").map(String::as_str) == Some("test-secret");
+                let (success, action, hostname) = match form.get("response").map(String::as_str) {
+                    // Like Siteverify here, accepts a good token more than once.
+                    Some(t) if t.starts_with("good") => (true, "auth", "cloud.example"),
+                    Some("wrong-action") => (true, "login", "cloud.example"),
+                    Some("wrong-host") => (true, "auth", "evil.example"),
+                    _ => (false, "", ""),
+                };
+                axum::Json(json!({
+                    "success": success && right_secret,
+                    "action": action,
+                    "hostname": hostname,
+                }))
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    (format!("http://{addr}/siteverify"), seen)
+}
+
+fn url_form(body: &str) -> std::collections::HashMap<String, String> {
+    body.split('&')
+        .filter_map(|kv| kv.split_once('='))
+        .map(|(k, v)| (k.to_string(), v.replace('+', " ")))
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn turnstile_guards_sign_in_and_open_registration() {
+    let (url, seen) = fake_siteverify().await;
+    let h = Harness::with_config(|c| {
+        c.turnstile_site_key = Some("test-site-key".into());
+        c.turnstile_secret = Some("test-secret".into());
+        c.turnstile_hostnames = vec!["cloud.example".into()];
+        c.turnstile_verify_url = url;
+    })
+    .await;
+
+    // The first account is how a server is set up: no check.
+    let admin = register(&h, "admin", "admin's password").await;
+    let opts: AuthOptions = h
+        .call(Method::GET, "/api/auth/options", None, None::<()>)
+        .await
+        .json();
+    let ts = opts.turnstile.expect("turnstile is announced");
+    assert_eq!(ts.site_key, "test-site-key");
+    assert!(ts.login && ts.register);
+
+    // Sign-in needs a token Cloudflare accepted, for this action and host.
+    for token in [
+        None,
+        Some(""),
+        Some("wrong-action"),
+        Some("wrong-host"),
+        Some("used"),
+    ] {
+        let err = login_with(&h, "admin", "admin's password", token)
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(err.status, StatusCode::FORBIDDEN, "{token:?}");
+        assert_eq!(err.error(), "turnstile_failed", "{token:?}");
+    }
+    login_with(&h, "admin", "admin's password", Some("good-1"))
+        .await
+        .unwrap();
+    // A failed check doesn't count as a wrong password.
+    login_with(&h, "admin", "admin's password", Some("good-2"))
+        .await
+        .unwrap();
+    // Each token works once, even though Siteverify would take it again.
+    let err = login_with(&h, "admin", "admin's password", Some("good-2"))
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(err.error(), "turnstile_failed");
+
+    // Open registration needs one too.
+    let err = try_register_with(&h, "bob", "bob's password", None, None)
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(err.error(), "turnstile_failed");
+    try_register_with(&h, "bob", "bob's password", None, Some("good-3"))
+        .await
+        .unwrap();
+
+    // Invite-only: the invite is the check.
+    let r = h
+        .call(
+            Method::PATCH,
+            "/api/admin/settings",
+            Some(&admin.token),
+            Some(json!({"registration": "invite"})),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+    let opts: AuthOptions = h
+        .call(Method::GET, "/api/auth/options", None, None::<()>)
+        .await
+        .json();
+    let ts = opts.turnstile.unwrap();
+    assert!(ts.login && !ts.register);
+    let inv: CreatedInvite = h
+        .call(
+            Method::POST,
+            "/api/admin/invites",
+            Some(&admin.token),
+            Some(json!({"days": 7})),
+        )
+        .await
+        .json();
+    try_register(&h, "carol", "carol's password", Some(&inv.token))
+        .await
+        .unwrap();
+
+    // Siteverify only ever got the secret and the token: no username, no
+    // password, no address.
+    for form in seen.lock().unwrap().iter() {
+        let mut keys: Vec<String> = url_form(form).into_keys().collect();
+        keys.sort();
+        assert_eq!(keys, ["response", "secret"], "{form}");
+        for word in ["admin", "bob", "password"] {
+            assert!(!form.contains(word), "{form}");
+        }
+    }
+
+    // Only /auth may load Cloudflare's script; the app's page may not.
+    let web = h.dir.path().join("web");
+    std::fs::create_dir_all(&web).unwrap();
+    std::fs::write(web.join("index.html"), "<!doctype html>").unwrap();
+    std::fs::write(web.join("auth.html"), "<!doctype html>").unwrap();
+    let csp = |r: Resp| {
+        r.headers
+            .get("content-security-policy")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .to_string()
+    };
+    let page = h
+        .raw(Method::GET, "/", None, &[], Body::empty(), None)
+        .await;
+    assert!(!csp(page).contains("cloudflare"));
+    let auth = h
+        .raw(Method::GET, "/auth", None, &[], Body::empty(), None)
+        .await;
+    assert_eq!(auth.status, StatusCode::OK);
+    let auth_csp = csp(auth);
+    assert!(auth_csp.contains("script-src 'self' https://challenges.cloudflare.com"));
+    assert!(auth_csp.contains("frame-src https://challenges.cloudflare.com"));
+    assert!(auth_csp.contains("connect-src 'self';"));
+}
+
+#[tokio::test]
+async fn without_turnstile_auth_page_keeps_the_strict_policy() {
+    let h = Harness::new().await;
+    let web = h.dir.path().join("web");
+    std::fs::create_dir_all(&web).unwrap();
+    std::fs::write(web.join("auth.html"), "<!doctype html>").unwrap();
+    let r = h
+        .raw(Method::GET, "/auth", None, &[], Body::empty(), None)
+        .await;
+    let csp = r
+        .headers
+        .get("content-security-policy")
+        .unwrap()
+        .to_str()
+        .unwrap();
+    assert!(!csp.contains("cloudflare"), "{csp}");
+    let opts: AuthOptions = h
+        .call(Method::GET, "/api/auth/options", None, None::<()>)
+        .await
+        .json();
+    assert!(opts.turnstile.is_none());
 }
