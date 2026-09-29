@@ -1,15 +1,17 @@
-//! Administration: users, registration, invites and server stats.
+//! Administration: users, registration, invites, server stats and the audit
+//! log of what admins did (`audit.rs`).
 //!
 //! Admins manage accounts, never content: nothing here can read a file, a
 //! name or a key, and the stats are plain counts.
 
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use sqlx::AssertSqlSafe;
 use thencloud_crypto::api::*;
 
 use crate::AppState;
+use crate::audit::{self, action};
 use crate::auth::AuthUser;
 use crate::error::{AppError, Result};
 use crate::routes::{nodes::delete_subtree, uploads::discard};
@@ -91,7 +93,7 @@ pub async fn update_user(
     Json(req): Json<UpdateUserRequest>,
 ) -> Result<Json<AdminUser>> {
     require_admin(&user)?;
-    admin_user(&state, &id).await?;
+    let target = admin_user(&state, &id).await?.username;
     let own = id == user.id;
     if own && (req.disabled == Some(true) || req.is_admin == Some(false)) {
         return Err(AppError::bad(
@@ -108,10 +110,26 @@ pub async fn update_user(
             .bind(&id)
             .execute(&mut *tx)
             .await?;
+        audit::record(
+            &mut *tx,
+            &user.username,
+            action::QUOTA,
+            Some(&target),
+            Some(q.to_string()),
+        )
+        .await?;
     }
-    for (col, v) in [
-        ("daily_download_limit", req.daily_download_limit),
-        ("daily_upload_limit", req.daily_upload_limit),
+    for (col, what, v) in [
+        (
+            "daily_download_limit",
+            action::DOWNLOAD_LIMIT,
+            req.daily_download_limit,
+        ),
+        (
+            "daily_upload_limit",
+            action::UPLOAD_LIMIT,
+            req.daily_upload_limit,
+        ),
     ] {
         let Some(v) = v else { continue };
         if !(0..=1 << 50).contains(&v) {
@@ -124,6 +142,14 @@ pub async fn update_user(
         .bind(&id)
         .execute(&mut *tx)
         .await?;
+        audit::record(
+            &mut *tx,
+            &user.username,
+            what,
+            Some(&target),
+            Some(v.to_string()),
+        )
+        .await?;
     }
     if let Some(a) = req.is_admin {
         sqlx::query("UPDATE users SET is_admin = ? WHERE id = ?")
@@ -131,6 +157,12 @@ pub async fn update_user(
             .bind(&id)
             .execute(&mut *tx)
             .await?;
+        let what = if a {
+            action::ADMIN_GRANTED
+        } else {
+            action::ADMIN_REMOVED
+        };
+        audit::record(&mut *tx, &user.username, what, Some(&target), None).await?;
     }
     match req.disabled {
         Some(true) => {
@@ -144,12 +176,28 @@ pub async fn update_user(
                 .bind(&id)
                 .execute(&mut *tx)
                 .await?;
+            audit::record(
+                &mut *tx,
+                &user.username,
+                action::DISABLED,
+                Some(&target),
+                None,
+            )
+            .await?;
         }
         Some(false) => {
             sqlx::query("UPDATE users SET disabled_at = NULL WHERE id = ?")
                 .bind(&id)
                 .execute(&mut *tx)
                 .await?;
+            audit::record(
+                &mut *tx,
+                &user.username,
+                action::ENABLED,
+                Some(&target),
+                None,
+            )
+            .await?;
         }
         None => {}
     }
@@ -168,7 +216,16 @@ pub async fn delete_user(
     if id == user.id {
         return Err(AppError::bad("you can't delete your own account here"));
     }
+    let target = admin_user(&state, &id).await?.username;
     delete_account(&state, &id).await?;
+    audit::record(
+        &state.db,
+        &user.username,
+        action::DELETED,
+        Some(&target),
+        None,
+    )
+    .await?;
     tracing::info!(user = %id, by = %user.username, "user deleted");
     Ok(StatusCode::NO_CONTENT)
 }
@@ -228,9 +285,25 @@ pub async fn update_settings(
     require_admin(&user)?;
     if let Some(r) = req.registration {
         settings::set_registration(&state, r).await?;
+        audit::record(
+            &state.db,
+            &user.username,
+            action::REGISTRATION,
+            None,
+            Some(wire_name(&r)),
+        )
+        .await?;
     }
     if let Some(d) = req.downloader {
         settings::set_downloader(&state, d).await?;
+        audit::record(
+            &state.db,
+            &user.username,
+            action::DOWNLOADER,
+            None,
+            Some(wire_name(&d)),
+        )
+        .await?;
     }
     get_settings(State(state), user).await
 }
@@ -285,6 +358,14 @@ pub async fn create_invite(
     .bind(expires_at)
     .execute(&state.db)
     .await?;
+    audit::record(
+        &state.db,
+        &user.username,
+        action::INVITE_CREATED,
+        None,
+        Some(req.days.to_string()),
+    )
+    .await?;
     let invite = Invite {
         id,
         created_by: user.username,
@@ -309,7 +390,61 @@ pub async fn delete_invite(
     if r.rows_affected() == 0 {
         return Err(AppError::NotFound);
     }
+    audit::record(
+        &state.db,
+        &user.username,
+        action::INVITE_DELETED,
+        None,
+        None,
+    )
+    .await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// How an enum value is written in the API ("open", "admins"...).
+fn wire_name<T: serde::Serialize>(v: &T) -> String {
+    serde_json::to_value(v)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_default()
+}
+
+const AUDIT_PAGE: i64 = 100;
+
+#[derive(serde::Deserialize)]
+pub struct AuditQuery {
+    before: Option<i64>,
+}
+
+/// The audit log, newest first, a page at a time.
+pub async fn audit_log(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Query(q): Query<AuditQuery>,
+) -> Result<Json<AuditPage>> {
+    require_admin(&user)?;
+    type Row = (i64, i64, String, String, Option<String>, Option<String>);
+    let mut rows: Vec<Row> = sqlx::query_as(
+        "SELECT id, at, actor, action, target, detail FROM admin_audit WHERE id < ? ORDER BY id DESC LIMIT ?",
+    )
+    .bind(q.before.unwrap_or(i64::MAX))
+    .bind(AUDIT_PAGE + 1)
+    .fetch_all(&state.db)
+    .await?;
+    let more = rows.len() as i64 > AUDIT_PAGE;
+    rows.truncate(AUDIT_PAGE as usize);
+    let entries = rows
+        .into_iter()
+        .map(|(id, at, actor, action, target, detail)| AuditEntry {
+            id,
+            at,
+            actor,
+            action,
+            target,
+            detail,
+        })
+        .collect();
+    Ok(Json(AuditPage { entries, more }))
 }
 
 pub async fn stats(State(state): State<AppState>, user: AuthUser) -> Result<Json<ServerStats>> {

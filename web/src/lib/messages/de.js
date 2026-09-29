@@ -1420,4 +1420,23 @@ export default {
   // App data
   "Your {name} library data couldn't be decrypted. It may have been tampered with.":
     'Deine Bibliotheksdaten ({name}) ließen sich nicht entschlüsseln. Möglicherweise wurden sie manipuliert.',
+
+  // Admin activity
+  "{actor} set {target}'s storage to {value}": '{actor} hat den Speicher von {target} auf {value} gesetzt',
+  "{actor} limited {target}'s downloads to {value} a day": '{actor} hat die Downloads von {target} auf {value} pro Tag begrenzt',
+  "{actor} removed {target}'s download limit": '{actor} hat das Downloadlimit von {target} aufgehoben',
+  "{actor} limited {target}'s uploads to {value} a day": '{actor} hat die Uploads von {target} auf {value} pro Tag begrenzt',
+  "{actor} removed {target}'s upload limit": '{actor} hat das Uploadlimit von {target} aufgehoben',
+  '{actor} made {target} an admin': '{actor} hat {target} zum Admin gemacht',
+  "{actor} took {target}'s admin rights away": '{actor} hat {target} die Adminrechte entzogen',
+  "{actor} disabled {target}'s account": '{actor} hat das Konto von {target} deaktiviert',
+  "{actor} enabled {target}'s account again": '{actor} hat das Konto von {target} wieder aktiviert',
+  "{actor} deleted {target}'s account": '{actor} hat das Konto von {target} gelöscht',
+  '{actor} set registration to {value}': '{actor} hat die Registrierung auf {value} gesetzt',
+  '{actor} set the video downloader to {value}': '{actor} hat den Video-Downloader auf {value} gesetzt',
+  '{actor} made an invite link valid for {count} days': { one: '{actor} hat einen Einladungslink für {count} Tag erstellt', other: '{actor} hat einen Einladungslink für {count} Tage erstellt' },
+  '{actor} deleted an invite link': '{actor} hat einen Einladungslink gelöscht',
+  'Admin activity': 'Admin-Aktivität',
+  'What admins changed on this server, kept for a year.': 'Was Admins auf diesem Server geändert haben, ein Jahr lang aufbewahrt.',
+  'Nothing yet.': 'Noch nichts.',
 };

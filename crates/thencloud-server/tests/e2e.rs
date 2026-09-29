@@ -5924,6 +5924,112 @@ async fn admins_can_limit_how_much_someone_moves_a_day() {
     assert_eq!(r.status, StatusCode::FORBIDDEN);
 }
 
+#[tokio::test]
+async fn admin_actions_are_logged_for_admins_only() {
+    let h = Harness::new().await;
+    let admin = register(&h, "root", "admin password").await;
+    let bob = register(&h, "bob", "bob's password").await;
+    let carol = register(&h, "carol", "carol's password").await;
+    let other = register(&h, "dave", "dave's password").await;
+    let id_of = |c: &Client| {
+        let (h, token) = (&h, c.token.clone());
+        async move { h.get("/api/me", &token).await.json::<Me>().user_id }
+    };
+    let (bob_id, carol_id) = (id_of(&bob).await, id_of(&carol).await);
+    let patch = |uri: String, body: serde_json::Value| {
+        let (h, token) = (&h, admin.token.clone());
+        async move {
+            let r = h.call(Method::PATCH, &uri, Some(&token), Some(body)).await;
+            assert_eq!(r.status, StatusCode::OK, "{uri}");
+        }
+    };
+
+    patch(
+        format!("/api/admin/users/{bob_id}"),
+        json!({"quota_bytes": 5_000_000}),
+    )
+    .await;
+    patch(
+        format!("/api/admin/users/{bob_id}"),
+        json!({"daily_download_limit": 1000, "is_admin": true}),
+    )
+    .await;
+    patch(
+        format!("/api/admin/users/{bob_id}"),
+        json!({"disabled": true}),
+    )
+    .await;
+    patch(
+        "/api/admin/settings".into(),
+        json!({"registration": "invite"}),
+    )
+    .await;
+    let r = h
+        .call(
+            Method::POST,
+            "/api/admin/invites",
+            Some(&admin.token),
+            Some(json!({"days": 7})),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED);
+    let r = h
+        .call(
+            Method::DELETE,
+            &format!("/api/admin/users/{carol_id}"),
+            Some(&admin.token),
+            None::<()>,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+
+    // Only admins read it (bob is an admin now, but disabled).
+    assert_eq!(
+        h.get("/api/admin/audit", &other.token).await.status,
+        StatusCode::FORBIDDEN
+    );
+
+    let page: AuditPage = h.get("/api/admin/audit", &admin.token).await.json();
+    assert!(!page.more);
+    let got: Vec<(&str, &str, Option<&str>, Option<&str>)> = page
+        .entries
+        .iter()
+        .map(|e| {
+            (
+                e.actor.as_str(),
+                e.action.as_str(),
+                e.target.as_deref(),
+                e.detail.as_deref(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        got,
+        vec![
+            ("root", "deleted", Some("carol"), None),
+            ("root", "invite_created", None, Some("7")),
+            ("root", "registration", None, Some("invite")),
+            ("root", "disabled", Some("bob"), None),
+            ("root", "admin_granted", Some("bob"), None),
+            ("root", "download_limit", Some("bob"), Some("1000")),
+            ("root", "quota", Some("bob"), Some("5000000")),
+        ],
+        "newest first, and carol's name outlives her account"
+    );
+    assert!(page.entries.windows(2).all(|w| w[0].id > w[1].id));
+
+    // Paging by id.
+    let older: AuditPage = h
+        .get(
+            &format!("/api/admin/audit?before={}", page.entries[4].id),
+            &admin.token,
+        )
+        .await
+        .json();
+    assert_eq!(older.entries.len(), 2);
+    assert_eq!(older.entries[0].action, "download_limit");
+}
+
 fn now_secs() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

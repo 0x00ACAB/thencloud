@@ -1472,4 +1472,23 @@ export default {
   // App data
   "Your {name} library data couldn't be decrypted. It may have been tampered with.":
     'Nie udało się odszyfrować danych biblioteki ({name}). Ktoś mógł przy nich majstrować.',
+
+  // Admin activity
+  "{actor} set {target}'s storage to {value}": '{actor}: miejsce konta {target} ustawiono na {value}',
+  "{actor} limited {target}'s downloads to {value} a day": '{actor}: pobieranie konta {target} ograniczono do {value} dziennie',
+  "{actor} removed {target}'s download limit": '{actor}: zdjęto limit pobierania konta {target}',
+  "{actor} limited {target}'s uploads to {value} a day": '{actor}: wysyłanie konta {target} ograniczono do {value} dziennie',
+  "{actor} removed {target}'s upload limit": '{actor}: zdjęto limit wysyłania konta {target}',
+  '{actor} made {target} an admin': '{actor}: nadano {target} uprawnienia administratora',
+  "{actor} took {target}'s admin rights away": '{actor}: odebrano {target} uprawnienia administratora',
+  "{actor} disabled {target}'s account": '{actor}: wyłączono konto {target}',
+  "{actor} enabled {target}'s account again": '{actor}: ponownie włączono konto {target}',
+  "{actor} deleted {target}'s account": '{actor}: usunięto konto {target}',
+  '{actor} set registration to {value}': '{actor}: rejestracja ustawiona na: {value}',
+  '{actor} set the video downloader to {value}': '{actor}: pobieranie wideo ustawione na: {value}',
+  '{actor} made an invite link valid for {count} days': { one: '{actor}: utworzono link z zaproszeniem ważny {count} dzień', few: '{actor}: utworzono link z zaproszeniem ważny {count} dni', many: '{actor}: utworzono link z zaproszeniem ważny {count} dni', other: '{actor}: utworzono link z zaproszeniem ważny {count} dnia' },
+  '{actor} deleted an invite link': '{actor}: usunięto link z zaproszeniem',
+  'Admin activity': 'Działania administratorów',
+  'What admins changed on this server, kept for a year.': 'Co administratorzy zmienili na tym serwerze, przechowywane przez rok.',
+  'Nothing yet.': 'Na razie nic.',
 };

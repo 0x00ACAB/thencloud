@@ -4,6 +4,7 @@
 //! receives passwords, master keys, file keys or file names in the clear.
 
 pub mod access;
+pub mod audit;
 pub mod auth;
 pub mod blob;
 pub mod config;

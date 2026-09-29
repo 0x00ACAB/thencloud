@@ -58,4 +58,5 @@ export default {
   '{count} lines added': { one: '{count} line added', other: '{count} lines added' },
   '{count} lines removed': { one: '{count} line removed', other: '{count} lines removed' },
   '{count} unchanged lines': { one: '{count} unchanged line', other: '{count} unchanged lines' },
+  '{actor} made an invite link valid for {count} days': { one: '{actor} made an invite link valid for {count} day', other: '{actor} made an invite link valid for {count} days' },
 };
