@@ -25,6 +25,10 @@ hyper-util = { version = "0.1", features = ["tokio"] }
 tokio = { version = "1", features = ["rt-multi-thread", "net"] }
 futures-util = "0.3"
 bytes = "1"
+xmltree = "0.12"
+httpdate = "1"
+percent-encoding = "2"
+base64.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 fuser = "0.18"
@@ -34,6 +38,8 @@ libc = "0.2"
 flate2 = "1"
 ring = "0.17"
 blake2 = "0.11"
+percent-encoding = "2"
+httpdate = "1"
 base64.workspace = true
 thencloud-server = { path = "../thencloud-server" }
 axum = "0.8"

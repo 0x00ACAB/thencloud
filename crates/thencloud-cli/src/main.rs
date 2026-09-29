@@ -12,6 +12,7 @@ use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 #[cfg(target_os = "linux")]
 use thencloud_cli::mount::{self, MountOptions};
+use thencloud_cli::nextcloud::Nextcloud;
 use thencloud_cli::serve::{self, ServeOptions};
 use thencloud_cli::{Client, Error, Result, parse_app_password, safe_name, verify};
 use thencloud_crypto::{self as c, Key};
@@ -58,6 +59,21 @@ enum Command {
     /// Save a folder ("" is My files) as one encrypted file, under a new
     /// backup key that's shown once. It can be restored anywhere.
     Backup { remote: String, file: PathBuf },
+    /// Copy files from a Nextcloud account into a folder ("" is My files),
+    /// encrypting them here. Reads the Nextcloud password (an app password
+    /// is best) from NEXTCLOUD_PASSWORD or stdin. Safe to run again: files
+    /// already copied are skipped.
+    ImportNextcloud {
+        /// The Nextcloud address, e.g. https://cloud.example.com.
+        server: String,
+        /// The Nextcloud user name.
+        user: String,
+        #[arg(default_value = "")]
+        remote: String,
+        /// Only this folder on Nextcloud [default: all files].
+        #[arg(long, default_value = "")]
+        from: String,
+    },
     /// Restore a backup into a folder, on this server or any other. Reads
     /// the backup key from THENCLOUD_BACKUP_KEY or stdin.
     Restore { file: PathBuf, remote: String },
@@ -407,6 +423,31 @@ fn run(cmd: Command) -> Result<()> {
                     println!("restored {p}")
                 })?;
                 println!("{} files restored", s.transferred);
+            }
+            Command::ImportNextcloud {
+                server,
+                user,
+                remote,
+                from,
+            } => {
+                let folder = client.resolve(&remote)?;
+                if !folder.is_folder() {
+                    return Err(Error::Usage(format!("{remote} is a file")));
+                }
+                let password = match std::env::var("NEXTCLOUD_PASSWORD") {
+                    Ok(t) => t,
+                    Err(_) => {
+                        eprint!("Nextcloud password for {user}: ");
+                        io::stderr().flush()?;
+                        let mut line = String::new();
+                        io::stdin().lock().read_line(&mut line)?;
+                        line.trim_end_matches(['\r', '\n']).to_string()
+                    }
+                };
+                let nc = Nextcloud::connect(&server, &user, &password)?;
+                let s = client
+                    .import_nextcloud(&nc, &from, &folder, &mut |p| println!("copied {p}"))?;
+                println!("{} copied, {} already here", s.transferred, s.unchanged);
             }
             #[cfg(target_os = "linux")]
             Command::Mount { .. } => unreachable!(),
