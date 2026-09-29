@@ -1,5 +1,6 @@
 <script>
   import { untrack } from 'svelte';
+  import { t } from '../lib/i18n.svelte.js';
 
   // A crop box over an image: drag inside to move it, drag a corner to
   // resize. `crop` is in the image's own pixels: { x, y, w, h }.
@@ -80,7 +81,7 @@
   }
 </script>
 
-<div class="relative mx-auto w-fit touch-none overflow-hidden rounded border border-line select-none" role="group" aria-label="Image to crop" onpointermove={move} onpointerup={up} onpointercancel={up}>
+<div class="relative mx-auto w-fit touch-none overflow-hidden rounded border border-line select-none" role="group" aria-label={t('Image to crop')} onpointermove={move} onpointerup={up} onpointercancel={up}>
   <img {src} alt="" class="checkerboard block max-h-64 max-w-full" bind:clientWidth={shown} draggable="false" />
   {#if crop && shown}
     <div
@@ -91,7 +92,7 @@
       style:height="{crop.h * scale}px"
       role="slider"
       tabindex="0"
-      aria-label="Crop area, {crop.w} by {crop.h} pixels. Arrow keys move it."
+      aria-label={t('Crop area, {width} by {height} pixels. Arrow keys move it.', { width: crop.w, height: crop.h })}
       aria-valuenow={crop.x}
       onpointerdown={(e) => down(e, 'move')}
       onkeydown={key}>

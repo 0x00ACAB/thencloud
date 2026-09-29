@@ -1448,4 +1448,9 @@ export default {
 
   // Public link page title
   'Shared with you': 'Udostępnione tobie',
+
+  // Cropping
+  'Image to crop': 'Obraz do kadrowania',
+  'Crop area, {width} by {height} pixels. Arrow keys move it.': 'Obszar kadru, {width} na {height} pikseli. Strzałki go przesuwają.',
+  'as is': 'bez zmian',
 };

@@ -243,8 +243,8 @@
         <div class="grid gap-2">
           <p class="text-xs font-medium text-fg-muted">Then</p>
           <div class="flex flex-wrap gap-4 text-sm">
-            <label class="flex cursor-pointer items-center gap-2"><input type="radio" class="accent-accent" bind:group={destination} value="save" />Save them in this folder</label>
-            <label class="flex cursor-pointer items-center gap-2"><input type="radio" class="accent-accent" bind:group={destination} value="download" />Download them</label>
+            <label class="flex cursor-pointer items-center gap-2"><input type="radio" class="accent-accent" bind:group={destination} value="save" />{t('Save them in this folder')}</label>
+            <label class="flex cursor-pointer items-center gap-2"><input type="radio" class="accent-accent" bind:group={destination} value="download" />{t('Download them')}</label>
           </div>
         </div>
       {/if}
@@ -290,8 +290,8 @@
         <div class="grid gap-2">
           <p class="text-xs font-medium text-fg-muted">Then</p>
           <div class="flex flex-wrap gap-4 text-sm">
-            <label class="flex cursor-pointer items-center gap-2"><input type="radio" class="accent-accent" bind:group={destination} value="save" />Save it in this folder</label>
-            <label class="flex cursor-pointer items-center gap-2"><input type="radio" class="accent-accent" bind:group={destination} value="download" />Download it</label>
+            <label class="flex cursor-pointer items-center gap-2"><input type="radio" class="accent-accent" bind:group={destination} value="save" />{t('Save it in this folder')}</label>
+            <label class="flex cursor-pointer items-center gap-2"><input type="radio" class="accent-accent" bind:group={destination} value="download" />{t('Download it')}</label>
           </div>
         </div>
       {/if}
