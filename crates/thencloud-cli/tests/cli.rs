@@ -811,3 +811,197 @@ fn webdav_bridge_with_read_only_password_refuses_changes() {
     assert_eq!(fetch(&cl, &child(&cl, &root, "a.txt").unwrap()), b"keep me");
     assert!(child(&cl, &root, "b.txt").is_none());
 }
+
+/// A stand-in for Nextcloud's WebDAV: files by path under the user's id,
+/// with sizes as listed (`lie` lists one file as a byte longer than it is).
+struct FakeNextcloud {
+    files: std::collections::BTreeMap<String, (Option<Vec<u8>>, i64)>,
+    lie: Option<String>,
+}
+
+fn fake_nextcloud(nc: FakeNextcloud) -> String {
+    use axum::body::Body;
+    use axum::http::{Request, Response, StatusCode};
+    use base64::Engine;
+    let nc = std::sync::Arc::new(nc);
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let app = axum::Router::new().fallback(move |req: Request<Body>| {
+                let nc = nc.clone();
+                async move {
+                    let reply = |status: u16, body: String| {
+                        Response::builder()
+                            .status(StatusCode::from_u16(status).unwrap())
+                            .body(Body::from(body))
+                            .unwrap()
+                    };
+                    let want = format!(
+                        "Basic {}",
+                        base64::engine::general_purpose::STANDARD
+                            .encode("alice@example.com:nc-app-password")
+                    );
+                    if req.headers().get("authorization").and_then(|h| h.to_str().ok())
+                        != Some(want.as_str())
+                    {
+                        return reply(401, String::new());
+                    }
+                    let path = percent_encoding::percent_decode_str(req.uri().path())
+                        .decode_utf8()
+                        .unwrap()
+                        .into_owned();
+                    let date = |ms: i64| {
+                        httpdate::fmt_http_date(
+                            std::time::UNIX_EPOCH + std::time::Duration::from_millis(ms as u64),
+                        )
+                    };
+                    let enc = |p: &str| {
+                        p.split('/')
+                            .map(|s| {
+                                percent_encoding::utf8_percent_encode(
+                                    s,
+                                    percent_encoding::NON_ALPHANUMERIC,
+                                )
+                                .to_string()
+                            })
+                            .collect::<Vec<_>>()
+                            .join("/")
+                    };
+                    const FILES: &str = "/nc/remote.php/dav/files/alice-id/";
+                    if req.method() == "PROPFIND" && path == "/nc/remote.php/dav/" {
+                        return reply(207, r#"<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:response><d:href>/nc/remote.php/dav/</d:href><d:propstat><d:prop><d:current-user-principal><d:href>/nc/remote.php/dav/principals/users/alice-id/</d:href></d:current-user-principal></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>"#.into());
+                    }
+                    let Some(rel) = path.strip_prefix(FILES) else {
+                        return reply(404, String::new());
+                    };
+                    let rel = rel.trim_end_matches('/').to_string();
+                    if req.method() == "GET" {
+                        return match nc.files.get(&rel) {
+                            Some((Some(b), _)) => Response::new(Body::from(b.clone())),
+                            _ => reply(404, String::new()),
+                        };
+                    }
+                    let dir = if rel.is_empty() { String::new() } else { format!("{rel}/") };
+                    let mut xml = String::from(r#"<?xml version="1.0"?><d:multistatus xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">"#);
+                    xml += &format!("<d:response><d:href>{FILES}{}</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>", enc(&dir));
+                    for (p, (body, mtime)) in &nc.files {
+                        let Some(name) = p.strip_prefix(&dir) else { continue };
+                        if name.contains('/') {
+                            continue;
+                        }
+                        let props = match body {
+                            None => "<d:resourcetype><d:collection/></d:resourcetype>".to_string(),
+                            Some(b) => {
+                                let extra = usize::from(nc.lie.as_deref() == Some(p.as_str()));
+                                format!("<d:resourcetype/><d:getcontentlength>{}</d:getcontentlength>", b.len() + extra)
+                            }
+                        };
+                        let slash = if body.is_none() { "/" } else { "" };
+                        xml += &format!(
+                            "<d:response><d:href>{FILES}{}{slash}</d:href><d:propstat><d:prop>{props}<d:getlastmodified>{}</d:getlastmodified></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat><d:propstat><d:prop><oc:fileid/></d:prop><d:status>HTTP/1.1 404 Not Found</d:status></d:propstat></d:response>",
+                            enc(p),
+                            date(*mtime)
+                        );
+                    }
+                    xml += "</d:multistatus>";
+                    reply(207, xml)
+                }
+            });
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            tx.send(listener.local_addr().unwrap()).unwrap();
+            axum::serve(listener, app).await.unwrap();
+        });
+    });
+    format!("http://{}/nc", rx.recv().unwrap())
+}
+
+#[test]
+fn import_from_nextcloud_keeps_folders_and_dates() {
+    use thencloud_cli::nextcloud::Nextcloud;
+    let s = start();
+    let cl = client(&s);
+    let root = cl.root().unwrap();
+    let photo = content(c::CHUNK_SIZE + 999, 7);
+    let mut files = std::collections::BTreeMap::new();
+    files.insert("Photos".to_string(), (None, 1_700_000_000_000));
+    files.insert(
+        "Photos/Beach day.jpg".to_string(),
+        (Some(photo.clone()), 1_700_000_100_000),
+    );
+    files.insert("Photos/2026".to_string(), (None, 1_700_000_200_000));
+    files.insert(
+        "Photos/2026/#1 100%.txt".to_string(),
+        (Some(b"odd name".to_vec()), 1_700_000_300_000),
+    );
+    files.insert("Empty".to_string(), (None, 1_700_000_400_000));
+    files.insert(
+        "notes.md".to_string(),
+        (Some(b"# Nextcloud notes".to_vec()), 1_700_000_500_000),
+    );
+    let url = fake_nextcloud(FakeNextcloud { files, lie: None });
+
+    assert!(
+        Nextcloud::connect(&url, "alice@example.com", "wrong")
+            .and_then(|nc| nc.list(""))
+            .is_err()
+    );
+    let nc = Nextcloud::connect(&url, "alice@example.com", "nc-app-password").unwrap();
+    let mut seen = Vec::new();
+    let st = cl
+        .import_nextcloud(&nc, "", &root, &mut |p| seen.push(p.to_string()))
+        .unwrap();
+    assert_eq!((st.transferred, st.unchanged), (3, 0));
+    assert_eq!(
+        seen,
+        [
+            "Photos/2026/#1 100%.txt",
+            "Photos/Beach day.jpg",
+            "notes.md"
+        ]
+    );
+
+    let photos = child(&cl, &root, "Photos").unwrap();
+    assert_eq!(photos.meta.mtime, 1_700_000_000_000);
+    let beach = child(&cl, &photos, "Beach day.jpg").unwrap();
+    assert!(fetch(&cl, &beach) == photo);
+    assert_eq!(beach.meta.mtime, 1_700_000_100_000);
+    let odd = child(&cl, &child(&cl, &photos, "2026").unwrap(), "#1 100%.txt").unwrap();
+    assert_eq!(fetch(&cl, &odd), b"odd name");
+    assert!(child(&cl, &root, "Empty").unwrap().is_folder());
+
+    // Again: nothing to copy.
+    let st = cl.import_nextcloud(&nc, "", &root, &mut |_| {}).unwrap();
+    assert_eq!((st.transferred, st.unchanged), (0, 3));
+
+    // Just one folder, into another.
+    let dest = cl.mkdir(&root, "From NC").unwrap();
+    let st = cl
+        .import_nextcloud(&nc, "Photos/2026", &dest, &mut |_| {})
+        .unwrap();
+    assert_eq!(st.transferred, 1);
+    assert!(child(&cl, &dest, "#1 100%.txt").is_some());
+
+    cl.logout().unwrap();
+    assert_no_plaintext(&s, &[MARKER, b"Nextcloud notes", b"odd name", b"Beach day"]);
+}
+
+#[test]
+fn import_from_nextcloud_refuses_a_short_download() {
+    use thencloud_cli::nextcloud::Nextcloud;
+    let s = start();
+    let cl = client(&s);
+    let root = cl.root().unwrap();
+    let mut files = std::collections::BTreeMap::new();
+    files.insert(
+        "cut.txt".to_string(),
+        (Some(b"not all of it".to_vec()), 1_700_000_000_000),
+    );
+    let url = fake_nextcloud(FakeNextcloud {
+        files,
+        lie: Some("cut.txt".into()),
+    });
+    let nc = Nextcloud::connect(&url, "alice@example.com", "nc-app-password").unwrap();
+    assert!(cl.import_nextcloud(&nc, "", &root, &mut |_| {}).is_err());
+    assert!(child(&cl, &root, "cut.txt").is_none());
+}

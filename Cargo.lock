@@ -2921,10 +2921,12 @@ dependencies = [
  "flate2",
  "fuser",
  "futures-util",
+ "httpdate",
  "hyper 1.11.1",
  "hyper-util",
  "libc",
  "minisign-verify",
+ "percent-encoding",
  "ring",
  "serde",
  "serde_json",
@@ -2934,6 +2936,7 @@ dependencies = [
  "thencloud-server",
  "tokio",
  "ureq",
+ "xmltree",
 ]
 
 [[package]]

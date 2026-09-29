@@ -28,6 +28,17 @@ THENCLOUD_BACKUP_KEY=... thencloud restore ~/thencloud.backup "From backup"   # 
 
 `backup` makes a new backup key for each backup and shows it once, in the same format as a recovery key. Keep it with the file: nothing else opens the backup, and it isn't stored anywhere. `restore` puts the files back into a folder in whatever account you're signed in to, on this server or another one, encrypting them afresh there. Folders already there are reused, and files with the same name get a new version. A damaged or incomplete backup stops the restore at the damage. The format is in [docs/format](../../docs/format/README.md#backups).
 
+## Moving from Nextcloud
+
+`import-nextcloud` copies files from a Nextcloud account over its WebDAV, encrypting them on this machine as they stream through. Folders, names and modification times are kept; nothing is written to disk on the way. Make an app password in Nextcloud (Settings > Security > Devices & sessions) and use it instead of your real one:
+
+```sh
+NEXTCLOUD_PASSWORD=... thencloud import-nextcloud https://nc.example.com alice                 # everything, into My files
+NEXTCLOUD_PASSWORD=... thencloud import-nextcloud https://nc.example.com alice "From Nextcloud" --from Photos
+```
+
+It's safe to stop and run again: files already copied, with the same size and time, are skipped. A file that changes while it's being copied (its size no longer matches the listing) stops the import rather than being saved cut short. Shares, comments, versions and trash on Nextcloud aren't copied, only the current files.
+
 ## Mounting as a drive (Linux)
 
 `thencloud mount` shows My files, or one folder, as a normal folder on your machine through FUSE, so Dolphin, Nautilus, editors and the shell can use it directly.
