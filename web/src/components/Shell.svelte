@@ -190,6 +190,20 @@
           <button type="button" class="nav-item" aria-current={current === item.name ? 'page' : undefined} onclick={() => go(item.to())}>
             <Icon name={item.icon} />{item.label}
           </button>
+          {#if item.name === 'files' && places.searches.length}
+            <div class="mb-1 ml-4 grid gap-px border-l border-line pl-2">
+              {#each places.searches as s (s.id)}
+                <button
+                  type="button"
+                  class="flex h-7 min-w-0 cursor-pointer items-center gap-2 rounded-md px-2 text-left text-[13px] text-fg-muted hover:bg-muted hover:text-fg"
+                  title={s.query}
+                  onclick={() => go({ name: 'files', folderId: rootId, search: { query: s.query, scope: s.scope } })}>
+                  <Icon name="bookmark" class="size-3.5" />
+                  <span class="truncate">{s.name}</span>
+                </button>
+              {/each}
+            </div>
+          {/if}
           {#if item.name === 'favourites' && starred.length}
             <div class="mb-1 ml-4 grid gap-px border-l border-line pl-2">
               {#each starred as x (x.id)}
@@ -223,7 +237,7 @@
       {#key view.name}
       <div class="mx-auto max-w-5xl animate-enter">
         {#if view.name === 'files'}
-          <FilesView folderId={view.folderId} openId={view.open} {go} bind:inShare />
+          <FilesView folderId={view.folderId} openId={view.open} search={view.search} {go} bind:inShare />
         {:else if view.name === 'recent' || view.name === 'favourites' || view.name === 'tags'}
           <PlacesView mode={view.name} {go} />
         {:else if view.name === 'shared-with-me'}

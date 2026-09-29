@@ -1501,4 +1501,11 @@ export default {
   'Files and folders by the tags you gave them. Only you see your tags.': 'Pliki i foldery według nadanych im tagów. Twoje tagi widzisz tylko ty.',
   'No tags yet': 'Nie ma jeszcze tagów',
   'Use "Tags" in the menu on any file or folder.': 'Użyj "Tagi" w menu dowolnego pliku lub folderu.',
+
+  // Saved searches
+  'Forget this saved search': 'Zapomnij zapisane wyszukiwanie',
+  'Save this search': 'Zapisz to wyszukiwanie',
+  'Reading files to search inside them ({done} of {total})': 'Odczytywanie plików, by przeszukać ich treść ({done} z {total})',
+  'Looking through your folders': 'Przeszukiwanie twoich folderów',
+  'Saved. It is under My files in the sidebar.': 'Zapisano. Jest pod Moimi plikami na pasku bocznym.',
 };
