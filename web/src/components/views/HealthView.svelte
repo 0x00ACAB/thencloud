@@ -158,7 +158,7 @@
 <div class="flex flex-wrap items-end justify-between gap-3">
   <div>
     <h1 class="text-xl font-semibold tracking-tight">{t('Health')}</h1>
-    <p class="mt-1 text-[13px] text-fg-muted">{t("Encrypted in this browser like your files. The server stores it but can't read any of it.")}</p>
+    <p class="mt-1 text-[13px] text-fg-muted">{t('Your measurements and moods over time.')}</p>
   </div>
   <div class="flex items-center gap-2">
     <div class="flex rounded-md border border-line p-0.5" role="tablist" aria-label={t('Health sections')}>

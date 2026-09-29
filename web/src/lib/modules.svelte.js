@@ -13,7 +13,7 @@ export const MODULES = [
       return t('Health');
     },
     get description() {
-      return t('A log of weight, height, blood pressure and other measurements with charts, and a mood meter. Encrypted like your files.');
+      return t('A log of weight, height, blood pressure and other measurements with charts, and a mood meter.');
     },
   },
 ];

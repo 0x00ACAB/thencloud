@@ -165,7 +165,7 @@
   const rootName = $derived(notes.rootId === session.me.keys.root_node_id ? t('My files') : notes.rootName || t('your notes folder'));
 
   const statusText = $derived(
-    { '': '', saving: t('Encrypting and saving'), saved: t('Saved'), unsaved: t('Unsaved changes'), conflict: t('Changed on another device') }[status] ?? status,
+    { '': '', saving: t('Saving'), saved: t('Saved'), unsaved: t('Unsaved changes'), conflict: t('Changed on another device') }[status] ?? status,
   );
 </script>
 
@@ -176,7 +176,7 @@
     <h1 class="text-xl font-semibold tracking-tight">{t('Notes')}</h1>
     {#if notes.rootId}
       <p class="mt-1 text-[13px] text-fg-muted">
-        {#each slots(t('Markdown files in {folder}, encrypted like everything else.')) as part, i (i)}{#if typeof part === 'string'}{part}{:else}<button type="button" class="link" onclick={() => go({ name: 'files', folderId: notes.rootId })}>{rootName}</button>{/if}{/each}
+        {#each slots(t('Markdown files in {folder}.')) as part, i (i)}{#if typeof part === 'string'}{part}{:else}<button type="button" class="link" onclick={() => go({ name: 'files', folderId: notes.rootId })}>{rootName}</button>{/if}{/each}
       </p>
     {/if}
   </div>

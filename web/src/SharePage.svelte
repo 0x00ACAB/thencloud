@@ -307,7 +307,7 @@
         <div class="grid gap-1">
           <h1 class="text-xl font-semibold tracking-tight">Send files to {owner}</h1>
           <p class="text-[13px] text-fg-muted">
-            Files are encrypted in your browser so only {owner} can open them. You can't see what's already in this folder, and neither can the server.
+            Only {owner} can open the files you send. You can't see what's already in this folder.
           </p>
         </div>
         <button
@@ -316,7 +316,6 @@
           onclick={() => picker.click()}>
           <Icon name="upload" class="size-5 text-fg-muted" />
           <span class="text-sm font-medium">Drop files here or choose them</span>
-          <span class="text-xs text-fg-muted">Nothing leaves your browser unencrypted.</span>
         </button>
         <input bind:this={picker} type="file" multiple class="hidden" onchange={(e) => (sendFiles([...e.currentTarget.files]), (e.currentTarget.value = ''))} />
         {#if sent.length}

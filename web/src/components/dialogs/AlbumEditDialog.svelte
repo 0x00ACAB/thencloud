@@ -48,7 +48,7 @@
   }
 </script>
 
-<Modal title={t('Edit album')} description={t("The name and artist are kept in your library, encrypted. A new cover is saved as cover.jpg in the album's folder.")} {onclose} onsubmit={submit}>
+<Modal title={t('Edit album')} description={t("The name and artist are kept in your library. A new cover is saved as cover.jpg in the album's folder.")} {onclose} onsubmit={submit}>
   <div class="flex items-center gap-4">
     <div class="grid size-24 shrink-0 place-items-center overflow-hidden rounded-md border border-line bg-muted text-fg-faint">
       {#if shown}<img src={shown} alt="" class="size-full object-cover" />{:else}<Icon name="disc-3" class="size-1/3" strokeWidth={1.5} />{/if}

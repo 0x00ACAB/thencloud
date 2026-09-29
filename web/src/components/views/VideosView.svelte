@@ -212,7 +212,7 @@
     <div class="mr-auto min-w-0">
       <h1 class="text-xl font-semibold tracking-tight">{t('Videos')}</h1>
       <p class="mt-1 truncate text-[13px] text-fg-muted">
-        {#if cat}{videos.rootName} · {t('{count} series', { count: cat.series.length })} · {t('{count} movies', { count: cat.movies.length })}{:else}{t('Watch the videos in your files. Names and details are read in this browser.')}{/if}
+        {#if cat}{videos.rootName} · {t('{count} series', { count: cat.series.length })} · {t('{count} movies', { count: cat.movies.length })}{:else}{t('Watch the videos in your files.')}{/if}
       </p>
     </div>
     {#if videos.rootId}
@@ -239,7 +239,7 @@
       <img src="/img/logo.webp" alt="" width="715" height="349" class="mb-4 h-auto w-32 opacity-90 select-none" draggable="false" />
       <p class="font-medium">{t('Pick your videos folder')}</p>
       <p class="max-w-sm text-[13px] text-fg-muted">
-        {t('Episodes are grouped into series by their names, like Show S01E02.mp4, by folders like Show/Season 1, or by their tags. MP4, WebM and MOV play here, decrypted as they stream; MKV where your browser can.')}
+        {t('Episodes are grouped into series by their names, like Show S01E02.mp4, by folders like Show/Season 1, or by their tags. MP4, WebM and MOV play here; MKV where your browser can.')}
       </p>
       <button type="button" class="btn btn-primary mt-4" onclick={choose}><Icon name="folder-open" />{t('Choose folder')}</button>
     </div>

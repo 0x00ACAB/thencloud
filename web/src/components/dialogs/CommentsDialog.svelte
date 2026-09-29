@@ -63,7 +63,7 @@
 
 <Modal
   title={t('Comments')}
-  description={t("On {name}. Encrypted like the file itself: everyone who can open it can read them, and the server can't.", { name: entry.meta.name })}
+  description={t('On {name}. Everyone who can open it can read them.', { name: entry.meta.name })}
   {onclose}
   onsubmit={post}
   class="max-w-lg">

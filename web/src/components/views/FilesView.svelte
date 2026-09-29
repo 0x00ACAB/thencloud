@@ -1032,7 +1032,7 @@
         <img src="/img/logo.webp" alt="" width="715" height="349" class="mb-4 h-auto w-40 select-none" draggable="false" />
         <p class="font-medium">{t('Nothing here yet')}</p>
         <p class="max-w-sm text-[13px] text-fg-muted">
-          {t('Drop files or whole folders anywhere on this page, or use Upload. Everything is encrypted before it leaves your device.')}
+          {t('Drop files or whole folders anywhere on this page, or use Upload.')}
         </p>
       {:else}
         <div class="mb-3 grid size-11 place-items-center rounded-lg border border-line bg-subtle">
@@ -1040,7 +1040,7 @@
         </div>
         <p class="font-medium">{t('This folder is empty')}</p>
         <p class="text-[13px] text-fg-muted">
-          {canWrite ? t('Drop files anywhere on this page, or use Upload. They are encrypted before they leave your device.') : t('Nothing has been added here yet.')}
+          {canWrite ? t('Drop files anywhere on this page, or use Upload.') : t('Nothing has been added here yet.')}
         </p>
       {/if}
     </div>
@@ -1241,7 +1241,7 @@
 
   {#if dragging}
     <div class="pointer-events-none absolute inset-0 grid place-items-center rounded-lg border-2 border-dashed border-accent bg-accent-soft/80">
-      <p class="flex items-center gap-2 font-medium text-accent-text"><Icon name="upload" /> {t('Drop to encrypt and upload to {folder}', { folder: folderName(here) })}</p>
+      <p class="flex items-center gap-2 font-medium text-accent-text"><Icon name="upload" /> {t('Drop to upload to {folder}', { folder: folderName(here) })}</p>
     </div>
   {/if}
 </div>
