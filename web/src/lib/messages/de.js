@@ -1280,4 +1280,37 @@ export default {
   // Image sizes
   'Width (px)': 'Breite (px)',
   'Height (px)': 'Höhe (px)',
+
+  // PDF tools
+  '{name} and {count} more': '{name} und {count} weitere',
+  '{name} (edited)': '{name} (bearbeitet)',
+  '{name} is too big for the PDF tools (over {size}).': '{name} ist zu groß für die PDF-Werkzeuge (über {size}).',
+  Document: 'Dokument',
+  'Saved {name}': '{name} gespeichert',
+  'page {n}': 'Seite {n}',
+  'pages {list}': 'Seiten {list}',
+  '{name}, page {n}': '{name}, Seite {n}',
+  "This PDF is protected with a password, so its pages can't be copied.":
+    'Dieses PDF ist passwortgeschützt, seine Seiten lassen sich also nicht kopieren.',
+  "This file couldn't be read as a PDF.": 'Diese Datei konnte nicht als PDF gelesen werden.',
+  'There are no pages to save.': 'Es gibt keine Seiten zum Speichern.',
+  'Merge {count} PDFs': { one: '{count} PDF zusammenführen', other: '{count} PDFs zusammenführen' },
+  'Edit {name}': '{name} bearbeiten',
+  'Rotate, reorder or remove pages.': 'Seiten drehen, umsortieren oder entfernen.',
+  'Rotate, reorder or remove pages, or pick some to save on their own.':
+    'Seiten drehen, umsortieren oder entfernen, oder einige auswählen und einzeln speichern.',
+  'Reading {n} of {total} files': 'Datei {n} von {total} wird gelesen',
+  'Reading the file': 'Datei wird gelesen',
+  Pages: 'Seiten',
+  '{name} p. {n}': '{name} S. {n}',
+  'was {n}': 'war {n}',
+  'Move {page} earlier': '{page} nach vorn',
+  'Rotate {page} left': '{page} nach links drehen',
+  'Rotate {page} right': '{page} nach rechts drehen',
+  'Remove {page}': '{page} entfernen',
+  'Move {page} later': '{page} nach hinten',
+  'Save as': 'Speichern als',
+  'Save {count} pages on their own': { one: '{count} Seite einzeln speichern', other: '{count} Seiten einzeln speichern' },
+  'Download {count} pages on their own': { one: '{count} Seite einzeln herunterladen', other: '{count} Seiten einzeln herunterladen' },
+  'Save as new file': 'Als neue Datei speichern',
 };
