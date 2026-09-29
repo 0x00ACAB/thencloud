@@ -6,7 +6,7 @@
 
 use axum::Json;
 use axum::body::Bytes;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;
 use thencloud_crypto::api::*;
@@ -14,7 +14,7 @@ use thencloud_crypto::api::*;
 use crate::AppState;
 use crate::access;
 use crate::auth::ClientIp;
-use crate::db::{NodeRow, get_children, get_node};
+use crate::db::{ChildrenQuery, NodeRow, get_node};
 use crate::error::{AppError, Result};
 use crate::routes::nodes::current_chunk;
 use crate::routes::uploads::{self, DropLink, Uploader};
@@ -208,14 +208,14 @@ pub async fn children(
     State(state): State<AppState>,
     Path((token, id)): Path<(String, String)>,
     headers: HeaderMap,
-) -> Result<Json<Vec<Node>>> {
+    Query(q): Query<ChildrenQuery>,
+) -> Result<Response> {
     let link = resolve(&state, &token, &headers).await?;
     let node = node_in_link(&state, &link, &id).await?;
     if !node.is_folder() {
         return Err(AppError::bad("not a folder"));
     }
-    let kids = get_children(&state.db, &id).await?;
-    Ok(Json(kids.into_iter().map(NodeRow::into_api).collect()))
+    crate::db::children_response(&state.db, &id, q).await
 }
 
 pub async fn chunk(
@@ -225,7 +225,8 @@ pub async fn chunk(
 ) -> Result<Response> {
     let link = resolve(&state, &token, &headers).await?;
     let node = node_in_link(&state, &link, &id).await?;
-    current_chunk(&state, node, idx).await
+    // Downloads through a link count for its owner.
+    current_chunk(&state, node, idx, &link.owner_id).await
 }
 
 pub async fn thumbnail(

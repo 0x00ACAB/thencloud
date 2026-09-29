@@ -861,6 +861,10 @@ async fn full_lifecycle_is_zero_knowledge() {
         .await;
     assert_eq!(r.status, StatusCode::UNAUTHORIZED);
 
+    // The change feed has recorded all that (ids only; scanned below).
+    let feed: ChangeFeed = h.get("/api/changes?since=0", &alice.token).await.json();
+    assert!(feed.changes.iter().any(|c| c.node_id == file.id));
+
     // --- zero-knowledge check: no plaintext at rest -------------------------
     let mut files = Vec::new();
     all_files(&h.dir.path().join("data"), &mut files);
@@ -2094,21 +2098,66 @@ async fn drafts_are_per_user_writers_only_and_opaque() {
 }
 
 #[tokio::test]
-async fn profile_pictures_are_encrypted_and_only_for_share_partners() {
+async fn profile_pictures_and_display_names_are_encrypted_and_only_for_share_partners() {
     let h = Harness::new().await;
     let alice = register(&h, "alice", "pw").await;
     let bob = register(&h, "bob", "pw").await;
     let carol = register(&h, "carol", "pw").await;
     let alice_id = alice.me(&h).await.user_id;
     let picture = b"AVATAR-PNG-SECRET-PIXELS";
+    let display_name = "Alice Pleasance Secretname";
+    let pronouns = c::PersonDetails {
+        subject: "zesecret".into(),
+        object: "zirsecret".into(),
+        possessive: "zirs".into(),
+        gender: Some(c::Gender::Feminine),
+    };
     let ak = Key::generate();
+    let enc_key = B64(c::encrypt_private_data(
+        &alice.mk,
+        &alice_id,
+        "avatar-key",
+        ak.as_bytes(),
+    ));
+    // Nothing to set, or a name that isn't the fixed padded size: refused.
+    for bad in [
+        SetAvatar {
+            data: None,
+            name: None,
+            details: None,
+            enc_key: enc_key.clone(),
+        },
+        SetAvatar {
+            data: None,
+            name: Some(B64(c::encrypt_avatar(&ak, "alice", b"short"))),
+            details: None,
+            enc_key: enc_key.clone(),
+        },
+        SetAvatar {
+            data: None,
+            name: None,
+            details: Some(B64(c::encrypt_avatar(&ak, "alice", b"short"))),
+            enc_key: enc_key.clone(),
+        },
+    ] {
+        let r = h
+            .call(Method::PUT, "/api/me/avatar", Some(&alice.token), Some(bad))
+            .await;
+        assert_eq!(r.status, StatusCode::BAD_REQUEST, "{r:?}");
+    }
     let r = h
         .call(
             Method::PUT,
             "/api/me/avatar",
             Some(&alice.token),
             Some(SetAvatar {
-                data: B64(c::encrypt_avatar(&ak, "alice", picture)),
+                data: Some(B64(c::encrypt_avatar(&ak, "alice", picture))),
+                name: Some(B64(
+                    c::encrypt_display_name(&ak, "alice", display_name).unwrap()
+                )),
+                details: Some(B64(
+                    c::encrypt_person_details(&ak, "alice", &pronouns).unwrap()
+                )),
                 enc_key: B64(c::encrypt_private_data(
                     &alice.mk,
                     &alice_id,
@@ -2175,7 +2224,18 @@ async fn profile_pictures_are_encrypted_and_only_for_share_partners() {
         .json::<Option<UserAvatar>>()
         .unwrap();
     let k = c::open_avatar_key(&bob.kp, &got.sealed_key, "alice", "bob").unwrap();
-    assert_eq!(c::decrypt_avatar(&k, "alice", &got.data).unwrap(), picture);
+    assert_eq!(
+        c::decrypt_avatar(&k, "alice", &got.data.unwrap()).unwrap(),
+        picture
+    );
+    assert_eq!(
+        c::decrypt_display_name(&k, "alice", &got.name.unwrap()).unwrap(),
+        display_name
+    );
+    assert_eq!(
+        c::decrypt_person_details(&k, "alice", &got.details.unwrap()).unwrap(),
+        pronouns
+    );
     let none: Option<UserAvatar> = h.get("/api/users/alice/avatar", &carol.token).await.json();
     assert!(none.is_none());
     let mine: MyAvatar = h.get("/api/me/avatar", &alice.token).await.json();
@@ -2202,7 +2262,14 @@ async fn profile_pictures_are_encrypted_and_only_for_share_partners() {
     all_files(&h.dir.path().join("data"), &mut files);
     for p in &files {
         let bytes = std::fs::read(p).unwrap();
-        for n in [picture.as_slice(), ak.as_bytes()] {
+        for n in [
+            picture.as_slice(),
+            display_name.as_bytes(),
+            b"zesecret",
+            b"zirsecret",
+            b"feminine",
+            ak.as_bytes(),
+        ] {
             assert!(!contains(&bytes, n), "avatar data found in {}", p.display());
         }
     }
@@ -2220,7 +2287,12 @@ async fn profile_pictures_are_encrypted_and_only_for_share_partners() {
     let none: Option<UserAvatar> = h.get("/api/users/alice/avatar", &bob.token).await.json();
     assert!(none.is_none());
     let mine: MyAvatar = h.get("/api/me/avatar", &alice.token).await.json();
-    assert!(mine.data.is_none() && mine.grantees.is_empty());
+    assert!(
+        mine.data.is_none()
+            && mine.name.is_none()
+            && mine.details.is_none()
+            && mine.grantees.is_empty()
+    );
 }
 
 #[tokio::test]
@@ -3333,10 +3405,30 @@ async fn app_data_is_opaque_to_the_server() {
     let theirs: PrivateData = h.get("/api/me/data/music", &other.token).await.json();
     assert!(theirs.data.is_none());
 
+    // The health log is app data like the rest: stored, never readable.
+    let health = br#"{"measures":[{"kind":"weight","value":81.5,"note":"mira-marker-weight"}]}"#;
+    let r = h
+        .call(
+            Method::PUT,
+            "/api/me/data/health",
+            Some(&lea.token),
+            Some(put(
+                c::encrypt_private_data(&lea.mk, &me.user_id, "health", health),
+                0,
+            )),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+
     let mut files = Vec::new();
     all_files(&h.dir.path().join("data"), &mut files);
     for p in &files {
         let bytes = std::fs::read(p).unwrap();
+        assert!(
+            !contains(&bytes, b"mira-marker-weight"),
+            "health data plaintext in {}",
+            p.display()
+        );
         assert!(
             !contains(&bytes, b"mira-marker-playlist"),
             "app data plaintext in {}",
@@ -5561,6 +5653,282 @@ async fn the_search_index_may_be_bigger_than_other_app_data() {
     };
     assert_eq!(put("music").await, StatusCode::BAD_REQUEST);
     assert_eq!(put("search").await, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn the_change_feed_lists_what_changed_after_a_cursor() {
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "pw").await;
+    let bob = register(&h, "bob", "pw").await;
+    let feed = |who: &Client, since: Option<i64>| {
+        let uri = match since {
+            Some(s) => format!("/api/changes?since={s}"),
+            None => "/api/changes".to_string(),
+        };
+        let (h, token) = (&h, who.token.clone());
+        async move {
+            let r = h.get(&uri, &token).await;
+            assert_eq!(r.status, StatusCode::OK, "{r:?}");
+            r.json::<ChangeFeed>()
+        }
+    };
+    fn ids(f: &ChangeFeed) -> Vec<&str> {
+        f.changes.iter().map(|c| c.node_id.as_str()).collect()
+    }
+
+    // Without a cursor: just where things stand now.
+    let start = feed(&alice, None).await;
+    assert!(start.changes.is_empty() && !start.resync);
+    let bob_start = feed(&bob, None).await.cursor;
+
+    let (team, team_key) = alice.mkdir(&h, &alice.root, "Team").await;
+    let (private, private_key) = alice.mkdir(&h, &alice.root, "Private").await;
+    let pk: UserPublicKey = h
+        .get("/api/users/bob/public-key", &alice.token)
+        .await
+        .json();
+    let r = h
+        .call(
+            Method::POST,
+            "/api/shares",
+            Some(&alice.token),
+            Some(CreateShareRequest {
+                node_id: team.clone(),
+                recipient: "bob".into(),
+                wrapped_key: B64(c::seal_share_key(&sealing_key(&pk), &team_key, &team).unwrap()),
+                permission: Permission::Write,
+                expires_at: None,
+            }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED);
+    let shared = alice.upload(&h, &team, None, "a.txt", b"a").await.unwrap();
+    let secret = alice
+        .upload(&h, &private, None, "b.txt", b"b")
+        .await
+        .unwrap();
+    let edited = bob
+        .upload(&h, "", Some(&shared), "a.txt", b"a2")
+        .await
+        .unwrap();
+
+    // Alice sees everything in her tree, in order, whoever did it.
+    let all = feed(&alice, Some(start.cursor)).await;
+    assert_eq!(
+        ids(&all),
+        [
+            team.as_str(),
+            private.as_str(),
+            shared.id.as_str(),
+            secret.id.as_str(),
+            edited.id.as_str()
+        ]
+    );
+    assert!(!all.more && !all.resync);
+    assert!(all.changes.windows(2).all(|w| w[0].seq < w[1].seq));
+    // Nothing new since then.
+    let again = feed(&alice, Some(all.cursor)).await;
+    assert!(again.changes.is_empty() && again.cursor == all.cursor);
+
+    // Bob sees only what's under the folder shared with him.
+    let bobs = feed(&bob, Some(bob_start)).await;
+    assert_eq!(
+        ids(&bobs),
+        [team.as_str(), shared.id.as_str(), shared.id.as_str()]
+    );
+    assert_eq!(bobs.cursor, all.cursor, "past what he can't see too");
+
+    // A move out of the shared folder shows to him (it left), and nothing
+    // after it in the private folder does.
+    let file_key = alice.key_of(&h, &shared.id).await;
+    let r = h
+        .call(
+            Method::PATCH,
+            &format!("/api/nodes/{}", shared.id),
+            Some(&alice.token),
+            Some(UpdateNodeRequest {
+                enc_metadata: None,
+                parent_id: Some(private.clone()),
+                enc_key: Some(B64(c::wrap_node_key(&private_key, &file_key, &shared.id))),
+                if_revision: None,
+                name_tag: None,
+            }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{r:?}");
+    alice
+        .upload(&h, "", Some(&secret), "b.txt", b"b2")
+        .await
+        .unwrap();
+    let bobs = feed(&bob, Some(bobs.cursor)).await;
+    assert_eq!(ids(&bobs), [shared.id.as_str()]);
+    let later = feed(&alice, Some(all.cursor)).await;
+    assert_eq!(ids(&later), [shared.id.as_str(), secret.id.as_str()]);
+
+    // A cursor from the future, or from before what's kept: start over.
+    assert!(feed(&alice, Some(later.cursor + 5)).await.resync);
+    sqlx::query("UPDATE changes SET at = 0 WHERE seq <= ?")
+        .bind(all.cursor)
+        .execute(&h.state.db)
+        .await
+        .unwrap();
+    thencloud_server::janitor::run_once(&h.state).await.unwrap();
+    let old = feed(&alice, Some(start.cursor)).await;
+    assert!(old.resync && old.changes.is_empty());
+    assert_eq!(old.cursor, later.cursor);
+    let kept = feed(&alice, Some(all.cursor)).await;
+    assert!(!kept.resync);
+    assert_eq!(ids(&kept), [shared.id.as_str(), secret.id.as_str()]);
+    // Pruning took the scope rows with it.
+    let orphans: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM change_scope WHERE seq NOT IN (SELECT seq FROM changes)",
+    )
+    .fetch_one(&h.state.db)
+    .await
+    .unwrap();
+    assert_eq!(orphans, 0);
+}
+
+#[tokio::test]
+async fn big_folders_are_listed_a_page_at_a_time() {
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "pw").await;
+    let (big, _) = alice.mkdir(&h, &alice.root, "Big").await;
+    for i in 0..6 {
+        alice.mkdir(&h, &big, &format!("dir {i}")).await;
+    }
+    for i in 0..11 {
+        alice
+            .upload(&h, &big, None, &format!("f{i}.txt"), b"x")
+            .await
+            .unwrap();
+    }
+    let all: Vec<Node> = h
+        .get(&format!("/api/nodes/{big}/children"), &alice.token)
+        .await
+        .json();
+    assert_eq!(all.len(), 17);
+
+    // Pages of 5 add up to the whole listing, in the same order.
+    let mut paged = Vec::new();
+    let mut after: Option<String> = None;
+    let mut pages = 0;
+    loop {
+        let uri = match &after {
+            Some(a) => format!("/api/nodes/{big}/children?limit=5&after={a}"),
+            None => format!("/api/nodes/{big}/children?limit=5"),
+        };
+        let r = h.get(&uri, &alice.token).await;
+        assert_eq!(r.status, StatusCode::OK, "{r:?}");
+        let page: NodePage = r.json();
+        assert!(page.nodes.len() <= 5);
+        paged.extend(page.nodes);
+        pages += 1;
+        match page.next {
+            Some(n) => after = Some(n),
+            None => break,
+        }
+    }
+    assert_eq!(pages, 4);
+    let ids = |v: &[Node]| v.iter().map(|n| n.id.clone()).collect::<Vec<_>>();
+    assert_eq!(ids(&paged), ids(&all));
+
+    // Nonsense cursors are refused, not guessed at.
+    for bad in ["x", "file.notanumber.id"] {
+        let r = h
+            .get(
+                &format!("/api/nodes/{big}/children?limit=5&after={bad}"),
+                &alice.token,
+            )
+            .await;
+        assert_eq!(r.status, StatusCode::BAD_REQUEST, "{bad}");
+    }
+
+    // A page is read from the index in order, not sorted afterwards.
+    let plan: Vec<(i64, i64, i64, String)> = sqlx::query_as(
+        "EXPLAIN QUERY PLAN SELECT id FROM nodes n WHERE n.parent_id = ?1 AND n.trashed_at IS NULL \
+         AND n.dropped = 0 AND (?2 = 0 OR n.kind < ?3) ORDER BY n.kind DESC, n.created_at, n.id LIMIT 5",
+    )
+    .bind(&big)
+    .bind(false)
+    .bind("")
+    .fetch_all(&h.state.db)
+    .await
+    .unwrap();
+    let plan: Vec<&str> = plan.iter().map(|p| p.3.as_str()).collect();
+    assert!(
+        plan.iter().any(|p| p.contains("nodes_children")),
+        "{plan:?}"
+    );
+    assert!(!plan.iter().any(|p| p.contains("TEMP B-TREE")), "{plan:?}");
+}
+
+#[tokio::test]
+async fn admins_can_limit_how_much_someone_moves_a_day() {
+    let h = Harness::new().await;
+    let admin = register(&h, "root", "admin password").await;
+    let bob = register(&h, "bob", "bob's password").await;
+    let bob_id = bob.me(&h).await.user_id;
+    let file = bob
+        .upload(&h, &bob.root, None, "a.txt", b"some bytes")
+        .await
+        .unwrap();
+    let chunk = format!("/api/nodes/{}/chunks/0", file.id);
+    let limit = |body: serde_json::Value| {
+        let (h, uri, token) = (
+            &h,
+            format!("/api/admin/users/{bob_id}"),
+            admin.token.clone(),
+        );
+        async move {
+            h.call(Method::PATCH, &uri, Some(&token), Some(body))
+                .await
+                .json::<AdminUser>()
+        }
+    };
+
+    // No limit by default.
+    for _ in 0..3 {
+        assert_eq!(h.get(&chunk, &bob.token).await.status, StatusCode::OK);
+    }
+    let u = limit(json!({})).await;
+    assert!(u.daily_download_limit.is_none() && u.downloaded_today > 0);
+
+    // Over today's download limit: refused, with a reason, until it's lifted.
+    let u = limit(json!({"daily_download_limit": u.downloaded_today})).await;
+    assert_eq!(u.daily_download_limit, Some(u.downloaded_today));
+    let r = h.get(&chunk, &bob.token).await;
+    assert_eq!(r.status, StatusCode::TOO_MANY_REQUESTS);
+    assert!(String::from_utf8_lossy(&r.body).contains("transfer_limit"));
+    let mine: TransferInfo = h.get("/api/me/transfer", &bob.token).await.json();
+    assert_eq!(mine.daily_download_limit, u.daily_download_limit);
+    assert!(mine.resets_at > now_secs() && mine.resets_at % 86_400 == 0);
+    limit(json!({"daily_download_limit": 0})).await;
+    assert_eq!(h.get(&chunk, &bob.token).await.status, StatusCode::OK);
+
+    // Uploads the same way.
+    let u = limit(json!({"daily_upload_limit": 1})).await;
+    assert!(u.uploaded_today > 0);
+    let r = bob.upload(&h, &bob.root, None, "b.txt", b"more").await;
+    assert_eq!(r.unwrap_err().status, StatusCode::TOO_MANY_REQUESTS);
+
+    // Only admins set them.
+    let r = h
+        .call(
+            Method::PATCH,
+            &format!("/api/admin/users/{bob_id}"),
+            Some(&bob.token),
+            Some(json!({"daily_upload_limit": 0})),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN);
+}
+
+fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64
 }
 
 // --- a fake S3 server, for the blob store's S3 side ------------------------

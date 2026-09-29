@@ -94,7 +94,7 @@ pub async fn chunk(
 ) -> Result<Response> {
     file_node(&state, &user, &id, Access::Read).await?;
     let v = version_of(&state, &id, &version_id).await?;
-    chunk_response(&state, &v.id, v.chunk_count, idx).await
+    chunk_response(&state, &v.id, v.chunk_count, idx, &user.id).await
 }
 
 /// Make an older version current again. The previously current version

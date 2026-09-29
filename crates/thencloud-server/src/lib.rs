@@ -17,6 +17,7 @@ pub mod routes;
 pub mod s3;
 pub mod settings;
 pub mod totp;
+pub mod transfer;
 pub mod util;
 pub mod webauthn;
 

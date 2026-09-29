@@ -78,6 +78,7 @@ pub fn router(state: AppState) -> Router {
         .route("/auth/password", post(auth::change_password))
         .route("/me", get(auth::me))
         .route("/me/delete", post(auth::delete_me))
+        .route("/me/transfer", get(auth::transfer))
         .route("/me/pq-key", put(auth::set_pq_key))
         .route("/me/contacts", get(contacts::get).put(contacts::put))
         .route(
@@ -137,6 +138,7 @@ pub fn router(state: AppState) -> Router {
         .route("/nodes/{id}/thumbnail", get(thumbnails::get))
         .route("/nodes/{id}/activity", get(activity::list))
         .route("/nodes/{id}/changes", get(activity::live))
+        .route("/changes", get(activity::changes))
         .route(
             "/nodes/{id}/versions/{vid}/thumbnail",
             put(thumbnails::put).layer(DefaultBodyLimit::max(

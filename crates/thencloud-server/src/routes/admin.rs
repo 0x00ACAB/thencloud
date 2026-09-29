@@ -24,29 +24,50 @@ fn require_admin(user: &AuthUser) -> Result<()> {
     }
 }
 
-type UserTuple = (String, String, bool, bool, i64, i64, i64, Option<i64>);
+#[derive(sqlx::FromRow)]
+struct UserRow {
+    id: String,
+    username: String,
+    is_admin: bool,
+    disabled: bool,
+    quota_bytes: i64,
+    used_bytes: i64,
+    created_at: i64,
+    last_seen: Option<i64>,
+    daily_download_limit: Option<i64>,
+    daily_upload_limit: Option<i64>,
+    downloaded_today: i64,
+    uploaded_today: i64,
+}
 
-const USER_QUERY: &str = "SELECT u.id, u.username, u.is_admin, u.disabled_at IS NOT NULL, u.quota_bytes, \
-     u.used_bytes, u.created_at, (SELECT MAX(s.last_seen) FROM sessions s WHERE s.user_id = u.id) \
-     FROM users u";
+/// Binds today's day number (for the transfer counts) first.
+const USER_QUERY: &str = "SELECT u.id, u.username, u.is_admin, u.disabled_at IS NOT NULL AS disabled, u.quota_bytes, \
+     u.used_bytes, u.created_at, (SELECT MAX(s.last_seen) FROM sessions s WHERE s.user_id = u.id) AS last_seen, \
+     u.daily_download_limit, u.daily_upload_limit, \
+     COALESCE(t.down_bytes, 0) AS downloaded_today, COALESCE(t.up_bytes, 0) AS uploaded_today \
+     FROM users u LEFT JOIN transfer_usage t ON t.user_id = u.id AND t.day = ?";
 
-fn to_admin_user(t: UserTuple) -> AdminUser {
-    let (id, username, is_admin, disabled, quota_bytes, used_bytes, created_at, last_seen) = t;
+fn to_admin_user(r: UserRow) -> AdminUser {
     AdminUser {
-        id,
-        username,
-        is_admin,
-        disabled,
-        quota_bytes,
-        used_bytes,
-        created_at,
-        last_seen,
+        id: r.id,
+        username: r.username,
+        is_admin: r.is_admin,
+        disabled: r.disabled,
+        quota_bytes: r.quota_bytes,
+        used_bytes: r.used_bytes,
+        created_at: r.created_at,
+        last_seen: r.last_seen,
+        daily_download_limit: r.daily_download_limit,
+        daily_upload_limit: r.daily_upload_limit,
+        downloaded_today: r.downloaded_today,
+        uploaded_today: r.uploaded_today,
     }
 }
 
 async fn admin_user(state: &AppState, id: &str) -> Result<AdminUser> {
-    let row: Option<UserTuple> =
+    let row: Option<UserRow> =
         sqlx::query_as(AssertSqlSafe(format!("{USER_QUERY} WHERE u.id = ?")))
+            .bind(crate::transfer::today())
             .bind(id)
             .fetch_optional(&state.db)
             .await?;
@@ -55,8 +76,9 @@ async fn admin_user(state: &AppState, id: &str) -> Result<AdminUser> {
 
 pub async fn users(State(state): State<AppState>, user: AuthUser) -> Result<Json<Vec<AdminUser>>> {
     require_admin(&user)?;
-    let rows: Vec<UserTuple> =
+    let rows: Vec<UserRow> =
         sqlx::query_as(AssertSqlSafe(format!("{USER_QUERY} ORDER BY u.created_at")))
+            .bind(crate::transfer::today())
             .fetch_all(&state.db)
             .await?;
     Ok(Json(rows.into_iter().map(to_admin_user).collect()))
@@ -86,6 +108,22 @@ pub async fn update_user(
             .bind(&id)
             .execute(&mut *tx)
             .await?;
+    }
+    for (col, v) in [
+        ("daily_download_limit", req.daily_download_limit),
+        ("daily_upload_limit", req.daily_upload_limit),
+    ] {
+        let Some(v) = v else { continue };
+        if !(0..=1 << 50).contains(&v) {
+            return Err(AppError::bad(format!("{col} is out of range")));
+        }
+        sqlx::query(AssertSqlSafe(format!(
+            "UPDATE users SET {col} = ? WHERE id = ?"
+        )))
+        .bind((v > 0).then_some(v))
+        .bind(&id)
+        .execute(&mut *tx)
+        .await?;
     }
     if let Some(a) = req.is_admin {
         sqlx::query("UPDATE users SET is_admin = ? WHERE id = ?")

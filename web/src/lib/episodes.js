@@ -56,7 +56,8 @@ export const fromTitle = (title) => parseEpisode(`${title}.x`);
 export const pad = (n) => String(n ?? 0).padStart(2, '0');
 
 /** "{Episode Name} S01E02". */
-export const episodeLabel = (e) => `${e.title || `Episode ${e.episode}`} S${pad(e.season)}E${pad(e.episode)}`;
+// `untitled` names an episode without a title ("Episode 2", in the reader's language).
+export const episodeLabel = (e, untitled = `Episode ${e.episode}`) => `${e.title || untitled} S${pad(e.season)}E${pad(e.episode)}`;
 
 /** `s` without the characters file systems refuse. */
 export const safeName = (s) => s.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').replace(/\s{2,}/g, ' ').trim();

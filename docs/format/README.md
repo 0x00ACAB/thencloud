@@ -164,16 +164,36 @@ Each of these is `seal(key, plaintext, aad)`:
 | `node-key` | parent folder's key, or MK for a root folder | node key | `aad("node-key", node_id)` |
 | `content-key` | file's node key | content key | `aad("content-key", node_id, version_id)` |
 | `private-data` | MK | any bytes | `aad("private-data", user_id, label)` |
-| `avatar` | the user's avatar key | the image | `aad("avatar", owner_user_id)` |
+| `avatar` | the user's avatar key | the image | `aad("avatar", owner_username)` |
+| `person-details` | the user's avatar key | pronouns and grammatical gender as JSON, zero-padded to 256 bytes (see below) | `aad("person-details", owner_username)` |
+| `display-name` | the user's avatar key | the display name, UTF-8, zero-padded to 256 bytes (see below) | `aad("display-name", owner_username)` |
 | `link-key` | a link password's KEK | node key | `aad("link-key", node_id)` |
 | `link-secret` | the node key | the link's secret, so the owner can show the link again | `aad("link-secret", node_id)` |
 | `thumbnail` | the file's node key | a small JPEG of that version | `aad("thumbnail", node_id, version_id)` |
 | `comment` | the node key | a comment: JSON `{"text": "...", "at": <ms>}` | `aad("comment", node_id, comment_id, author_user_id)` |
 | `backup` | a backup key | one backup record (see [Backups](#backups)) | `aad("backup", base64url(backup_id), decimal(index))` |
 
+A display name is NFC, trimmed, 1 to 64 characters, with no control
+characters and none of U+061C, U+200E, U+200F, U+202A to U+202E and U+2066
+to U+2069 (bidirectional formatting, which could make one name read as
+another). The padding hides its length. A reader must refuse a name that
+isn't already in that form, or whose padding isn't all zeros, since any
+client could have written it; clients show it next to the username, never
+instead of it.
+
+Person details are how someone likes to be referred to: JSON with optional
+`subject`, `object` and `possessive` pronouns (English: "they", "them",
+"their"; each NFC, trimmed, at most 24 characters, with the same forbidden
+characters as display names) and an optional `gender` (`neuter`, `feminine`
+or `masculine`), for languages whose words change with it. Missing means
+not said. The JSON is padded like a display name, and a reader refuses
+pronouns not already in stored form, an unknown gender or non-zero padding.
+
 Private data labels in use: `contacts` (verified contacts), `avatar-key` (the
-owner's copy of their avatar key), `music`, `videos`, `files` and `notes`
-(library data, JSON) and `draft:<node id>` (unsaved text). The server keeps
+owner's copy of their avatar key), `music`, `videos`, `files`, `notes`,
+`books`, `search`, `health` (the Health module's measurements and moods) and
+`prefs` (which optional modules are on) (app data, JSON) and
+`draft:<node id>` (unsaved text). The server keeps
 each under its label and user, and the associated data stops it from handing
 one back as another.
 
@@ -283,7 +303,7 @@ shorter than that. A hybrid box can't be opened without the ML-KEM key.
 |---|---|---|
 | `share` | node key | `aad("share", node_id)` |
 | `drop` | a dropped file's node key, sealed to the folder's owner | `aad("drop", node_id, folder_id)` |
-| `avatar-key` | the owner's avatar key | `aad("avatar-key", owner_user_id, grantee_user_id)` |
+| `avatar-key` | the owner's avatar key | `aad("avatar-key", owner_username, grantee_username)` |
 
 ## Public links
 

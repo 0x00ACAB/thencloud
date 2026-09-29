@@ -1,5 +1,6 @@
 // Small pieces of global UI state: toasts, the upload queue and the theme.
 
+import { t } from './i18n.svelte.js';
 import { ApiError } from './api.js';
 
 export const toasts = $state([]);
@@ -20,9 +21,33 @@ export function dismissToast(id) {
   if (i >= 0) toasts.splice(i, 1);
 }
 
+/** The server's errors that have a code worth translating; others show its own text. */
+function apiMessage(e) {
+  switch (e.code) {
+    case 'forbidden':
+      return t('You do not have permission to do that.');
+    case 'not_found':
+      return t('That no longer exists, or you no longer have access to it.');
+    case 'name_taken':
+      return t("There's already something with that name here.");
+    case 'quota_exceeded':
+      return t('Not enough storage left.');
+    case 'rate_limited':
+      return t('Too many attempts. Wait a little and try again.');
+    case 'transfer_limit':
+      return /upload/.test(e.message)
+        ? t("You've reached today's upload limit on this server. It starts again at midnight UTC.")
+        : t("You've reached today's download limit on this server. It starts again at midnight UTC.");
+    case 'internal':
+      return t('Something went wrong on the server. Try again in a moment.');
+    default:
+      return e.status === 0 ? t('Could not reach the server. Check your connection.') : e.message;
+  }
+}
+
 export function errorMessage(e) {
-  if (e instanceof ApiError) return e.message;
-  return String(e?.message || e || 'Something went wrong');
+  if (e instanceof ApiError) return apiMessage(e);
+  return String(e?.message || e || t('Something went wrong'));
 }
 
 export function toastError(e) {

@@ -13,6 +13,7 @@
   import Menu from '../Menu.svelte';
   import FolderPickDialog from '../dialogs/FolderPickDialog.svelte';
   import MarkdownEditor from '../preview/MarkdownEditor.svelte';
+  import { t, slots } from '../../lib/i18n.svelte.js';
 
   let { go } = $props();
 
@@ -42,11 +43,11 @@
     found = null;
     if (!q) return;
     const ctl = new AbortController();
-    const t = setTimeout(async () => {
+    const wait = setTimeout(async () => {
       const r = await searchNotes(q, { signal: ctl.signal });
       if (!ctl.signal.aborted) found = r;
     }, 200);
-    return () => (clearTimeout(t), ctl.abort());
+    return () => (clearTimeout(wait), ctl.abort());
   });
 
   const title = (entry) => entry.meta.name.replace(/\.(md|markdown)$/i, '');
@@ -69,9 +70,9 @@
     loadError = '';
     status = '';
     try {
-      const t = await readNote(entry);
+      const md = await readNote(entry);
       if (open?.node.id !== entry.node.id) return;
-      text = t;
+      text = md;
       editorKey++;
     } catch (e) {
       loadError = errorMessage(e);
@@ -122,7 +123,7 @@
 
   async function newNote() {
     try {
-      await select(await createNote());
+      await select(await createNote(t('Untitled')));
     } catch (e) {
       toastError(e);
     }
@@ -136,7 +137,7 @@
       }
       await trash(entry);
       notes.list = notes.list.filter((n) => n.node.id !== entry.node.id);
-      toast(`Moved ${entry.meta.name} to the trash`, { icon: 'trash-2' });
+      toast(t('Moved {name} to the trash', { name: entry.meta.name }), { icon: 'trash-2' });
     } catch (e) {
       toastError(e);
     }
@@ -161,8 +162,10 @@
     }
   }
 
+  const rootName = $derived(notes.rootId === session.me.keys.root_node_id ? t('My files') : notes.rootName || t('your notes folder'));
+
   const statusText = $derived(
-    { '': '', saving: 'Encrypting and saving', saved: 'Saved', unsaved: 'Unsaved changes', conflict: 'Changed on another device' }[status] ?? status,
+    { '': '', saving: t('Encrypting and saving'), saved: t('Saved'), unsaved: t('Unsaved changes'), conflict: t('Changed on another device') }[status] ?? status,
   );
 </script>
 
@@ -170,22 +173,22 @@
 
 <div class="flex flex-wrap items-center justify-between gap-3">
   <div>
-    <h1 class="text-xl font-semibold tracking-tight">Notes</h1>
+    <h1 class="text-xl font-semibold tracking-tight">{t('Notes')}</h1>
     {#if notes.rootId}
       <p class="mt-1 text-[13px] text-fg-muted">
-        Markdown files in <button type="button" class="link" onclick={() => go({ name: 'files', folderId: notes.rootId })}>{notes.rootName || 'your notes folder'}</button>, encrypted like everything else.
+        {#each slots(t('Markdown files in {folder}, encrypted like everything else.')) as part, i (i)}{#if typeof part === 'string'}{part}{:else}<button type="button" class="link" onclick={() => go({ name: 'files', folderId: notes.rootId })}>{rootName}</button>{/if}{/each}
       </p>
     {/if}
   </div>
   {#if notes.rootId}
     <div class="flex gap-2">
       <Menu
-        label="Notes folder"
+        label={t('Notes folder')}
         items={[
-          { label: 'Choose another folder', icon: 'folder-open', onclick: choose },
-          { label: 'Look for new notes', icon: 'refresh-cw', onclick: scanNotes },
+          { label: t('Choose another folder'), icon: 'folder-open', onclick: choose },
+          { label: t('Look for new notes'), icon: 'refresh-cw', onclick: scanNotes },
         ]} />
-      <button type="button" class="btn btn-primary" disabled={!notes.list} onclick={newNote}><Icon name="file-plus" /> New note</button>
+      <button type="button" class="btn btn-primary" disabled={!notes.list} onclick={newNote}><Icon name="file-plus" /> {t('New note')}</button>
     </div>
   {/if}
 </div>
@@ -193,17 +196,17 @@
 {#if !notes.rootId}
   <div class="card mt-6 grid place-items-center gap-1 px-6 py-20 text-center">
     <div class="mb-3 grid size-11 place-items-center rounded-lg border border-line bg-subtle"><Icon name="notebook-pen" class="size-5 text-fg-muted" /></div>
-    <p class="font-medium">Pick a folder for your notes</p>
-    <p class="max-w-sm text-[13px] text-fg-muted">Its Markdown files become a notebook you can search and write in. New notes are saved there too.</p>
-    <button type="button" class="btn btn-primary mt-4" onclick={choose}><Icon name="folder-open" /> Choose a folder</button>
+    <p class="font-medium">{t('Pick a folder for your notes')}</p>
+    <p class="max-w-sm text-[13px] text-fg-muted">{t('Its Markdown files become a notebook you can search and write in. New notes are saved there too.')}</p>
+    <button type="button" class="btn btn-primary mt-4" onclick={choose}><Icon name="folder-open" /> {t('Choose a folder')}</button>
   </div>
 {:else if notes.error}
   <div class="card mt-6 grid place-items-center gap-3 px-6 py-16 text-center">
     <Icon name="circle-alert" class="size-6 text-danger" />
     <p class="text-fg-muted">{notes.error}</p>
     <div class="flex gap-2">
-      <button type="button" class="btn btn-secondary" onclick={scanNotes}><Icon name="refresh-cw" /> Try again</button>
-      <button type="button" class="btn btn-ghost" onclick={choose}>Choose another folder</button>
+      <button type="button" class="btn btn-secondary" onclick={scanNotes}><Icon name="refresh-cw" /> {t('Try again')}</button>
+      <button type="button" class="btn btn-ghost" onclick={choose}>{t('Choose another folder')}</button>
     </div>
   </div>
 {:else}
@@ -211,17 +214,17 @@
     <!-- On phones the list and the note take turns. -->
     <aside class="flex min-h-0 flex-col border-line md:border-r {open ? 'max-md:hidden' : ''}">
       <label class="relative block border-b border-line p-2">
-        <span class="sr-only">Search notes</span>
+        <span class="sr-only">{t('Search notes')}</span>
         <Icon name="search" class="pointer-events-none absolute top-1/2 left-4.5 size-4 -translate-y-1/2 text-fg-faint" />
-        <input bind:value={query} type="search" class="input h-8 w-full pl-8" placeholder="Search notes" autocomplete="off" spellcheck="false" />
+        <input bind:value={query} type="search" class="input h-8 w-full pl-8" placeholder={t('Search notes')} autocomplete="off" spellcheck="false" />
       </label>
       <ul class="min-h-0 flex-1 overflow-y-auto p-1">
         {#if !notes.list}
           <li class="grid h-32 place-items-center text-fg-muted"><Icon name="loader-circle" class="spinner" /></li>
         {:else if query.trim() && found === null}
-          <li class="px-3 py-6 text-center text-[13px] text-fg-muted"><Icon name="loader-circle" class="spinner mr-1.5 inline size-4 align-[-3px]" />Searching</li>
+          <li class="px-3 py-6 text-center text-[13px] text-fg-muted"><Icon name="loader-circle" class="spinner mr-1.5 inline size-4 align-[-3px]" />{t('Searching')}</li>
         {:else if !shown.length}
-          <li class="px-3 py-6 text-center text-[13px] text-fg-muted">{query.trim() ? `No note mentions "${query.trim()}".` : 'No notes yet. Use New note to start one.'}</li>
+          <li class="px-3 py-6 text-center text-[13px] text-fg-muted">{query.trim() ? t('No note mentions "{query}".', { query: query.trim() }) : t('No notes yet. Use New note to start one.')}</li>
         {/if}
         {#each shown as { entry, snippet } (entry.node.id)}
           <li>
@@ -244,27 +247,27 @@
 
     <section class="flex min-h-0 min-w-0 flex-col {open ? '' : 'max-md:hidden'}">
       {#if !open}
-        <div class="grid flex-1 place-items-center p-6 text-center text-[13px] text-fg-muted">Pick a note, or start a new one.</div>
+        <div class="grid flex-1 place-items-center p-6 text-center text-[13px] text-fg-muted">{t('Pick a note, or start a new one.')}</div>
       {:else}
         <header class="flex h-12 shrink-0 items-center gap-2 border-b border-line px-3">
-          <button type="button" class="btn btn-ghost btn-icon md:hidden" aria-label="Back to the list" onclick={() => (flush(), (open = null))}><Icon name="arrow-left" /></button>
+          <button type="button" class="btn btn-ghost btn-icon md:hidden" aria-label={t('Back to the list')} onclick={() => (flush(), (open = null))}><Icon name="arrow-left" /></button>
           <h2 class="min-w-0 flex-1 truncate text-sm font-medium">{title(open)}</h2>
           <p class="hidden truncate text-xs sm:block {status === 'conflict' || !['', 'saving', 'saved', 'unsaved'].includes(status) ? 'text-danger' : 'text-fg-muted'}" role="status">{statusText}</p>
           <Menu
-            label="Note actions"
+            label={t('Note actions')}
             items={[
-              isPinned(open.node.id) ? { label: 'Unpin', icon: 'pin-off', onclick: () => pin(open) } : { label: 'Pin to the top', icon: 'pin', onclick: () => pin(open) },
-              { label: 'Show in My files', icon: 'folder-open', onclick: () => go({ name: 'files', folderId: open.parentId, open: open.node.id }) },
+              isPinned(open.node.id) ? { label: t('Unpin'), icon: 'pin-off', onclick: () => pin(open) } : { label: t('Pin to the top'), icon: 'pin', onclick: () => pin(open) },
+              { label: t('Show in My files'), icon: 'folder-open', onclick: () => go({ name: 'files', folderId: open.parentId, open: open.node.id }) },
               'sep',
-              { label: 'Move to trash', icon: 'trash-2', danger: true, onclick: () => remove(open) },
+              { label: t('Move to trash'), icon: 'trash-2', danger: true, onclick: () => remove(open) },
             ]} />
         </header>
         {#if status === 'conflict'}
           <div class="flex flex-wrap items-center gap-3 border-b border-line bg-subtle px-4 py-2 text-[13px]" role="alert">
             <Icon name="circle-alert" class="size-4 shrink-0 text-fg-muted" />
-            <p class="min-w-0 flex-1">This note was changed somewhere else since you opened it.</p>
-            <button type="button" class="btn btn-ghost h-7 px-2.5 text-[13px]" onclick={takeTheirs}>Use theirs</button>
-            <button type="button" class="btn btn-secondary h-7 px-2.5 text-[13px]" onclick={keepMine}>Keep mine</button>
+            <p class="min-w-0 flex-1">{t('This note was changed somewhere else since you opened it.')}</p>
+            <button type="button" class="btn btn-ghost h-7 px-2.5 text-[13px]" onclick={takeTheirs}>{t('Use theirs')}</button>
+            <button type="button" class="btn btn-secondary h-7 px-2.5 text-[13px]" onclick={keepMine}>{t('Keep mine')}</button>
           </div>
         {/if}
         <div class="relative min-h-0 flex-1">
@@ -284,8 +287,8 @@
 {#if picking}
   <FolderPickDialog
     root={picking}
-    title="Notes folder"
-    description="Its Markdown files, in it and in folders below it, become your notebook."
+    title={t('Notes folder')}
+    description={t('Its Markdown files, in it and in folders below it, become your notebook.')}
     onpick={(id) => {
       open = null;
       setNotesRoot(id);

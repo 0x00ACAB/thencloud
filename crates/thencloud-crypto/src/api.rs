@@ -767,6 +767,27 @@ pub struct AdminUser {
     pub created_at: i64,
     /// Most recent activity of any of their sessions.
     pub last_seen: Option<i64>,
+    /// Daily transfer limits in bytes (None: no limit), and what was moved
+    /// today (UTC).
+    #[serde(default)]
+    pub daily_download_limit: Option<i64>,
+    #[serde(default)]
+    pub daily_upload_limit: Option<i64>,
+    #[serde(default)]
+    pub downloaded_today: i64,
+    #[serde(default)]
+    pub uploaded_today: i64,
+}
+
+/// The caller's own daily transfer limits and use (`GET /api/me/transfer`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TransferInfo {
+    pub daily_download_limit: Option<i64>,
+    pub daily_upload_limit: Option<i64>,
+    pub downloaded_today: i64,
+    pub uploaded_today: i64,
+    /// When today's counts start again (Unix seconds, midnight UTC).
+    pub resets_at: i64,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -777,6 +798,11 @@ pub struct UpdateUserRequest {
     pub disabled: Option<bool>,
     #[serde(default)]
     pub is_admin: Option<bool>,
+    /// Bytes per day; 0 removes the limit.
+    #[serde(default)]
+    pub daily_download_limit: Option<i64>,
+    #[serde(default)]
+    pub daily_upload_limit: Option<i64>,
 }
 
 /// Who may use the video downloader, the one tool where the server sees
@@ -948,6 +974,37 @@ pub struct ActivityEvent {
     pub at: i64,
 }
 
+/// A page of a folder's children (`GET .../children?limit=<n>&after=<cursor>`);
+/// without `limit` the listing is the whole array instead.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct NodePage {
+    pub nodes: Vec<Node>,
+    /// Pass as `after` for the next page; `None` on the last one.
+    pub next: Option<String>,
+}
+
+/// One page of the change feed (`GET /api/changes?since=<cursor>`).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ChangeFeed {
+    /// Nodes that changed after the cursor, oldest first. A node may appear
+    /// more than once. Only ids: fetch the node to see what it is now (a 404
+    /// means it's gone, or no longer yours to see).
+    pub changes: Vec<ChangedNode>,
+    /// Where to continue from next time.
+    pub cursor: i64,
+    /// More changes wait: ask again with `cursor` straight away.
+    pub more: bool,
+    /// The cursor is older than the history kept: walk the whole tree again,
+    /// then carry on from `cursor`.
+    pub resync: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChangedNode {
+    pub seq: i64,
+    pub node_id: String,
+}
+
 // ---------------------------------------------------------------------------
 // Comments (encrypted under the node key; see `encrypt_comment`)
 // ---------------------------------------------------------------------------
@@ -978,7 +1035,14 @@ pub struct CreateCommentRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SetAvatar {
     /// The picture, encrypted under the avatar key.
-    pub data: B64,
+    #[serde(default)]
+    pub data: Option<B64>,
+    /// The display name, encrypted under the same key (`encrypt_display_name`).
+    #[serde(default)]
+    pub name: Option<B64>,
+    /// Pronouns and grammatical gender, under the same key (`encrypt_person_details`).
+    #[serde(default)]
+    pub details: Option<B64>,
     /// The avatar key, encrypted under the master key.
     pub enc_key: B64,
 }
@@ -986,6 +1050,10 @@ pub struct SetAvatar {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct MyAvatar {
     pub data: Option<B64>,
+    #[serde(default)]
+    pub name: Option<B64>,
+    #[serde(default)]
+    pub details: Option<B64>,
     pub enc_key: Option<B64>,
     /// Who has been given the avatar key.
     pub grantees: Vec<String>,
@@ -997,10 +1065,15 @@ pub struct AvatarGrant {
     pub sealed_key: B64,
 }
 
-/// Someone else's picture, for a user they gave their avatar key to.
+/// Someone else's picture and display name (either may be missing), for a
+/// user they gave their avatar key to.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserAvatar {
-    pub data: B64,
+    pub data: Option<B64>,
+    #[serde(default)]
+    pub name: Option<B64>,
+    #[serde(default)]
+    pub details: Option<B64>,
     pub sealed_key: B64,
     pub updated_at: i64,
 }

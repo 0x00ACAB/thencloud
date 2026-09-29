@@ -13,9 +13,9 @@ const NOT_LANGUAGES = new Set(['sdh', 'cc']);
 
 const stem = (name) => name.replace(/\.[^.]+$/, '').toLowerCase();
 
-function languageName(code) {
+function languageName(code, locale) {
   try {
-    const name = new Intl.DisplayNames([navigator.language, 'en'], { type: 'language' }).of(code);
+    const name = new Intl.DisplayNames([locale, 'en'], { type: 'language' }).of(code);
     return name && name.toLowerCase() !== code.toLowerCase() ? name : null;
   } catch {
     return null;
@@ -24,9 +24,10 @@ function languageName(code) {
 
 /**
  * The subtitle files among `files` (entries in the video's folder) that go
- * with `videoName`, as [{ entry, lang, label }], sorted by label.
+ * with `videoName`, as [{ entry, lang, label }], sorted by label. Labels name
+ * the language in `locale`; `unnamed` is the label of a file without one.
  */
-export function matchSubtitles(videoName, files) {
+export function matchSubtitles(videoName, files, { locale = navigator.language, unnamed = 'Subtitles' } = {}) {
   const base = stem(videoName);
   const baseLength = videoName.replace(/\.[^.]+$/, '').length;
   const out = [];
@@ -37,9 +38,9 @@ export function matchSubtitles(videoName, files) {
     if (s !== base && !s.startsWith(`${base}.`)) continue;
     // What's between the video's name and the extension: "en", "en.forced", "sdh".
     const tags = name.replace(/\.[^.]+$/, '').slice(baseLength).split('.').filter(Boolean);
-    const lang = tags.find((t) => !NOT_LANGUAGES.has(t.toLowerCase()) && /^[a-z]{2,3}(-[a-z0-9]{2,8})?$/i.test(t) && languageName(t)) ?? '';
+    const lang = tags.find((t) => !NOT_LANGUAGES.has(t.toLowerCase()) && /^[a-z]{2,3}(-[a-z0-9]{2,8})?$/i.test(t) && languageName(t, locale)) ?? '';
     const rest = tags.filter((t) => t !== lang).map((t) => (NOT_LANGUAGES.has(t.toLowerCase()) ? t.toUpperCase() : t));
-    const language = lang ? languageName(lang) : 'Subtitles';
+    const language = lang ? languageName(lang, locale) : unnamed;
     const label = rest.length ? `${language} (${rest.join(', ')})` : language;
     out.push({ entry, lang, label });
   }
