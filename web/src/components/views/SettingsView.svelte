@@ -105,7 +105,7 @@
 
   // Daily transfer limits, shown only when an admin set some.
   let transfer = $state(null);
-  onMount(() => myTransfer().then((t) => (transfer = t)).catch(() => {}));
+  onMount(() => myTransfer().then((info) => (transfer = info)).catch(() => {}));
 
   // Optional modules (and the language and region settings, in the same app data).
   onMount(() => loadModules().catch(() => {}));
@@ -354,7 +354,7 @@
           </label>
           {#if avatar.url}<button type="button" class="btn btn-ghost" disabled={avatarBusy} onclick={dropAvatar}>{t('Remove')}</button>{/if}
         </div>
-        <p class="max-w-md text-xs text-fg-muted">{t("Encrypted in this browser. Only people you share with, or who share with you, can see it; the server can't.")}</p>
+        <p class="max-w-md text-xs text-fg-muted">{t('Only people you share with, or who share with you, can see it.')}</p>
       </div>
     </div>
     <dl class="grid gap-3 text-sm sm:grid-cols-[10rem_1fr]">
@@ -406,7 +406,7 @@
               {t('Save')}
             </button>
           </div>
-          <p class="text-xs text-fg-muted">{t('Shown only to the people who see your picture and display name, and encrypted the same way.')}</p>
+          <p class="text-xs text-fg-muted">{t('Shown only to the people who see your picture and display name.')}</p>
         </form>
       </dd>
       <dt class="text-fg-muted">{t('Username')}</dt>
@@ -467,7 +467,7 @@
   {/snippet}
   {@render section(
     t('Verified contacts'),
-    t("Keys you've checked by fingerprint. If the server ever gives you a different key for one of these people, sharing with them is stopped until you check again. This list is encrypted; the server can't read or change it."),
+    t("Keys you've checked by fingerprint. If the server ever gives you a different key for one of these people, sharing with them is stopped until you check again."),
     contactsBody,
   )}
 
@@ -508,7 +508,6 @@
     {/if}
   {/snippet}
   {#snippet recoveryFooter()}
-    <p class="mr-auto hidden text-xs text-fg-muted sm:block">{t('Made in this browser; the server never sees it.')}</p>
     {#if session.me.recovery_created_at}
       <button type="button" class="btn btn-ghost" onclick={() => ((removePassword = ''), (recoveryDialog = 'remove'))}>{t('Remove')}</button>
     {/if}
@@ -822,7 +821,7 @@
 
   {#snippet photosBody()}
     <div class="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label={t('Location and camera details in photos')}>
-      {#each [['ask', t('Ask me'), t('When a photo records where it was taken.')], ['remove', t('Always remove'), t('From every photo, before it is encrypted.')], ['keep', t('Keep them'), t('Upload photos exactly as they are.')]] as [value, label, text] (value)}
+      {#each [['ask', t('Ask me'), t('When a photo records where it was taken.')], ['remove', t('Always remove'), t('From every photo, before it is uploaded.')], ['keep', t('Keep them'), t('Upload photos exactly as they are.')]] as [value, label, text] (value)}
         <button
           type="button"
           role="radio"
@@ -840,7 +839,7 @@
 
   {#snippet exportBody()}
     <p class="text-[13px] text-fg-muted">
-      <Sentence text={t("Everything in My files, decrypted in this browser into one zip, with your playlists, pinned notes and verified contacts as JSON in a {folder} folder. The zip is not encrypted, so keep it somewhere safe. Items others shared with you aren't included.")}>
+      <Sentence text={t("Everything in My files in one zip, with your playlists, pinned notes and verified contacts as JSON in a {folder} folder. The zip is not encrypted, so keep it somewhere safe. Items others shared with you aren't included.")}>
         {#snippet folder()}<code class="font-mono text-fg">thencloud-data</code>{/snippet}
       </Sentence>
     </p>
@@ -867,9 +866,9 @@
         </li>
       {/each}
     </ul>
-    <p class="text-xs text-fg-muted">{t('Turning one off only hides it; what you logged stays, encrypted, until you turn it on again.')}</p>
+    <p class="text-xs text-fg-muted">{t('Turning one off only hides it; what you logged stays until you turn it on again.')}</p>
   {/snippet}
-  {@render section(t('Modules'), t('Optional parts of thencloud. Which ones are on is saved encrypted with your account, so it follows you to other devices.'), modulesBody)}
+  {@render section(t('Modules'), t('Optional parts of thencloud. Which ones are on is saved with your account, so it follows you to other devices.'), modulesBody)}
 
   {@render section(t('Export your data'), null, exportBody, exportFooter)}
 

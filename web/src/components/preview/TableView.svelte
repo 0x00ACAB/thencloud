@@ -2,7 +2,7 @@
   // CSV and TSV as a table: the first row is the header, and clicking a
   // header sorts by that column (numbers by value). Very long files show
   // their first rows only; the Source view still has everything.
-  import { formatNumber } from '../../lib/locale.svelte.js';
+  import { t } from '../../lib/i18n.svelte.js';
   import Icon from '../Icon.svelte';
   import { parseCsv, compareCells } from '../../lib/csv.js';
 
@@ -43,13 +43,13 @@
 
 <div class="flex h-full flex-col">
   {#if !parsed.rows.length}
-    <p class="grid flex-1 place-items-center text-[13px] text-fg-muted">This file is empty.</p>
+    <p class="grid flex-1 place-items-center text-[13px] text-fg-muted">{t('This file is empty.')}</p>
   {:else}
     <div class="min-h-0 flex-1 overflow-auto">
       <table class="min-w-full border-separate border-spacing-0 text-[13px] [&_td]:border-b [&_td]:border-line [&_td]:px-3 [&_td]:py-1.5 [&_td]:whitespace-nowrap [&_td+td]:border-l [&_th]:sticky [&_th]:top-0 [&_th]:z-[1] [&_th]:border-b [&_th]:border-line [&_th]:bg-subtle [&_th]:px-3 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-medium [&_th]:whitespace-nowrap [&_th]:text-fg-muted [&_th+th]:border-l [&_tbody_tr:hover]:bg-subtle">
         <thead>
           <tr>
-            <th class="w-px text-right text-fg-faint"><span class="sr-only">Row</span></th>
+            <th class="w-px text-right text-fg-faint"><span class="sr-only">{t('Row')}</span></th>
             {#each { length: width } as _, i (i)}
               <th aria-sort={sortCol === i ? (sortDir === 1 ? 'ascending' : 'descending') : 'none'}>
                 <button type="button" class="inline-flex max-w-80 cursor-pointer items-center gap-1 text-left hover:text-fg {sortCol === i ? 'text-fg' : ''}" onclick={() => sortBy(i)}>
@@ -73,7 +73,7 @@
       </table>
     </div>
     <p class="shrink-0 border-t border-line px-4 py-2 text-xs text-fg-faint">
-      {formatNumber(body.length)} {body.length === 1 ? 'row' : 'rows'}{truncated ? ` shown, the file has more. Use Source to see all of it.` : ''}
+      {truncated ? t('{count} rows shown, the file has more. Use Source to see all of it.', { count: body.length }) : t('{count} rows', { count: body.length })}
     </p>
   {/if}
 </div>

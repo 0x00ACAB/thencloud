@@ -14,8 +14,10 @@
   import { streamsAvailable, streamDownload } from './lib/stream.js';
   import { formatSize, sortEntries } from './lib/format.js';
   import { errorMessage, trackTransfer } from './lib/ui.svelte.js';
+  import { t } from './lib/i18n.svelte.js';
   import Icon from './components/Icon.svelte';
   import Time from './components/Time.svelte';
+  import Sentence from './components/Sentence.svelte';
   import FileIcon from './components/FileIcon.svelte';
   import FolderIcon from './components/FolderIcon.svelte';
   import Toasts from './components/Toasts.svelte';
@@ -69,8 +71,8 @@
   async function load() {
     if (!rootKey) {
       return fail(
-        'This link is incomplete',
-        'The part after the # is missing or damaged. It holds the decryption key, so ask the sender for the full link.',
+        t('This link is incomplete'),
+        t('The part after the # is missing or damaged. It holds the decryption key, so ask the sender for the full link.'),
       );
     }
     let info;
@@ -78,8 +80,8 @@
       info = await request('GET', base, opts());
     } catch (e) {
       if (e.code === 'password_required') return (phase = 'password');
-      if (e.status === 404) return fail('This link has expired or was removed', 'Ask the person who shared it for a new link.');
-      return fail("Couldn't open this link", errorMessage(e));
+      if (e.status === 404) return fail(t('This link has expired or was removed'), t('Ask the person who shared it for a new link.'));
+      return fail(t("Couldn't open this link"), errorMessage(e));
     }
     expiresAt = info.expires_at;
     // A link with limited opens counted this visit; its token covers the rest.
@@ -90,8 +92,8 @@
         // The server supplies the ML-KEM key; the link says which one it must be.
         if (b64(tc.identity(rootKey.subarray(0, 32), pq)) !== b64(rootKey)) {
           return fail(
-            "This link doesn't match its owner's key",
-            "The server gave a different key than the link names, so nothing can be sent safely. Don't upload anything; let the owner know.",
+            t("This link doesn't match its owner's key"),
+            t("The server gave a different key than the link names, so nothing can be sent safely. Don't upload anything; let the owner know."),
           );
         }
         dropKey = new Uint8Array([...rootKey.subarray(0, 32), ...pq]);
@@ -110,14 +112,14 @@
       try {
         nodeKey = tc.unwrap_link_key(linkKek, unb64(info.enc_link_key), info.node.id);
       } catch {
-        return fail('The key in this link is wrong', 'The password was accepted, but it and the link together do not open this. Make sure you copied the whole link.');
+        return fail(t('The key in this link is wrong'), t('The password was accepted, but it and the link together do not open this. Make sure you copied the whole link.'));
       }
     }
     let meta;
     try {
       meta = decryptMeta(nodeKey, info.node);
     } catch {
-      return fail('The key in this link is wrong', 'The part after the # does not match. Make sure you copied the whole link.');
+      return fail(t('The key in this link is wrong'), t('The part after the # does not match. Make sure you copied the whole link.'));
     }
     trail = [{ node: info.node, key: nodeKey, meta }];
     phase = 'ready';
@@ -135,7 +137,7 @@
       password = '';
       await load();
     } catch (err) {
-      unlockError = err?.code === 'invalid_credentials' ? 'That password is not right.' : errorMessage(err);
+      unlockError = err?.code === 'invalid_credentials' ? t('That password is not right.') : errorMessage(err);
     } finally {
       unlocking = false;
     }
@@ -149,7 +151,7 @@
       .then((nodes) => {
         if (here?.node.id === node.id) rows = sortEntries(decryptChildren(key, nodes));
       })
-      .catch((e) => fail("Couldn't list this folder", errorMessage(e)))
+      .catch((e) => fail(t("Couldn't list this folder"), errorMessage(e)))
       .finally(() => (listing = false));
   });
 
@@ -165,11 +167,11 @@
   /** Everything in the folder being viewed, as one zip. */
   async function downloadAll() {
     const name = `${here.meta.name}.zip`;
-    const t = trackTransfer('download', name, null);
+    const job = trackTransfer('download', name, null);
     try {
       const { saveZip } = await import('./lib/zip.js');
-      await saveZip(rows, name, { list: listFolder, open: openEntry, onProgress: (p) => (t.progress = p) });
-      t.status = 'done';
+      await saveZip(rows, name, { list: listFolder, open: openEntry, onProgress: (p) => (job.progress = p) });
+      job.status = 'done';
     } catch (e) {
       t.status = 'error';
       t.error = errorMessage(e);
@@ -177,12 +179,12 @@
   }
 
   async function downloadEntry(entry) {
-    const t = trackTransfer('download', entry.meta.name, entry.meta.size);
+    const job = trackTransfer('download', entry.meta.name, entry.meta.size);
     try {
       if (entry.meta.size > 16 * 1024 * 1024 && (await streamsAvailable())) {
-        await streamDownload(openEntry(entry), (p) => (t.progress = p));
+        await streamDownload(openEntry(entry), (p) => (job.progress = p));
       } else {
-        const { blob, meta } = await fetchEntry(entry, (p) => (t.progress = p));
+        const { blob, meta } = await fetchEntry(entry, (p) => (job.progress = p));
         saveBlob(blob, meta.name);
       }
       t.status = 'done';
@@ -199,7 +201,7 @@
   let sent = $state([]); // { id, name, size, progress, status, error }
   let dragging = $state(false);
   let picker = $state();
-  const fingerprint = $derived(phase === 'drop' ? tc.fingerprint(rootKey) : '');
+  const fingerprintText = $derived(phase === 'drop' ? tc.fingerprint(rootKey) : '');
 
   /** Encrypt `file` under a fresh key sealed to the owner, and upload it. */
   async function dropFile(file) {
@@ -240,7 +242,7 @@
       // Free the space it took straight away.
       if (upId) request('DELETE', `${base}/uploads/${upId}`, opts()).catch(() => {});
       row.status = 'error';
-      row.error = e?.status === 507 ? "There's no room left in this folder." : errorMessage(e);
+      row.error = e?.status === 507 ? t("There's no room left in this folder.") : errorMessage(e);
     }
   }
 
@@ -275,7 +277,7 @@
   <header class="border-b border-line">
     <div class="mx-auto flex h-16 max-w-4xl items-center justify-between gap-4 px-4">
       <img src="/img/logo.webp" alt="thencloud" width="715" height="349" class="h-10 w-auto select-none" draggable="false" />
-      <span class="badge"><Icon name="lock" />End-to-end encrypted</span>
+      <span class="badge"><Icon name="lock" />{t('End-to-end encrypted')}</span>
     </div>
   </header>
 
@@ -292,22 +294,22 @@
       <form class="card mx-auto grid max-w-sm gap-4 p-6" onsubmit={unlock}>
         <div class="grid gap-1">
           <div class="mb-2 grid size-10 place-items-center rounded-lg border border-line bg-subtle"><Icon name="lock" class="size-5 text-fg-muted" /></div>
-          <h1 class="text-base font-semibold">This link is password protected</h1>
-          <p class="text-[13px] text-fg-muted">Enter the password the sender gave you.</p>
+          <h1 class="text-base font-semibold">{t('This link is password protected')}</h1>
+          <p class="text-[13px] text-fg-muted">{t('Enter the password the sender gave you.')}</p>
         </div>
-        <input class="input" type="password" bind:value={password} aria-label="Password" autocomplete="off" required />
+        <input class="input" type="password" bind:value={password} aria-label={t('Password')} autocomplete="off" required />
         {#if unlockError}<p class="text-[13px] text-danger">{unlockError}</p>{/if}
         <button class="btn btn-primary w-full" disabled={unlocking}>
           {#if unlocking}<Icon name="loader-circle" class="spinner" />{/if}
-          Unlock
+          {t('Unlock')}
         </button>
       </form>
     {:else if phase === 'drop'}
       <div class="mx-auto grid max-w-lg gap-6">
         <div class="grid gap-1">
-          <h1 class="text-xl font-semibold tracking-tight">Send files to {owner}</h1>
+          <h1 class="text-xl font-semibold tracking-tight">{t('Send files to {name}', { name: owner })}</h1>
           <p class="text-[13px] text-fg-muted">
-            Files are encrypted in your browser so only {owner} can open them. You can't see what's already in this folder, and neither can the server.
+            {t("Only {name} can open the files you send. You can't see what's already in this folder.", { name: owner })}
           </p>
         </div>
         <button
@@ -315,8 +317,7 @@
           class="grid cursor-pointer justify-items-center gap-2 rounded-lg border border-dashed p-10 text-center transition-colors {dragging ? 'border-accent bg-accent-soft' : 'border-line-strong hover:bg-subtle'}"
           onclick={() => picker.click()}>
           <Icon name="upload" class="size-5 text-fg-muted" />
-          <span class="text-sm font-medium">Drop files here or choose them</span>
-          <span class="text-xs text-fg-muted">Nothing leaves your browser unencrypted.</span>
+          <span class="text-sm font-medium">{t('Drop files here or choose them')}</span>
         </button>
         <input bind:this={picker} type="file" multiple class="hidden" onchange={(e) => (sendFiles([...e.currentTarget.files]), (e.currentTarget.value = ''))} />
         {#if sent.length}
@@ -327,7 +328,7 @@
                 <div class="min-w-0 flex-1">
                   <p class="truncate text-[13px] font-medium">{f.name}</p>
                   <p class="text-xs {f.status === 'error' ? 'text-danger' : 'text-fg-muted'}">
-                    {#if f.status === 'error'}{f.error}{:else if f.status === 'done'}Sent · {formatSize(f.size)}{:else}{Math.round(f.progress * 100)}% of {formatSize(f.size)}{/if}
+                    {#if f.status === 'error'}{f.error}{:else if f.status === 'done'}{t('Sent')} · {formatSize(f.size)}{:else}{t('{percent}% of {size}', { percent: Math.round(f.progress * 100), size: formatSize(f.size) })}{/if}
                   </p>
                 </div>
                 {#if f.status === 'done'}<Icon name="check" class="size-4 text-accent-text" />{:else if f.status === 'active'}<Icon name="loader-circle" class="spinner size-4 text-fg-muted" />{/if}
@@ -336,7 +337,7 @@
           </ul>
         {/if}
         <p class="text-xs text-fg-muted">
-          {owner}'s key fingerprint is <span class="font-mono text-fg">{fingerprint}</span>. If it matters who can read these files, check it with them.
+          <Sentence text={t("{name}'s key fingerprint is {fingerprint}. If it matters who can read these files, check it with them.", { name: owner })}>{#snippet fingerprint()}<span class="font-mono text-fg">{fingerprintText}</span>{/snippet}</Sentence>
         </p>
       </div>
     {:else if here.node.kind === 'file'}
@@ -345,21 +346,21 @@
           <FileIcon meta={here.meta} class="size-6" strokeWidth={1.5} />
         </div>
         <h1 class="max-w-full truncate text-base font-semibold">{here.meta.name}</h1>
-        <p class="text-[13px] text-fg-muted">{formatSize(here.meta.size)}{#if here.meta.mtime}, <Time ms={here.meta.mtime} prefix="modified " />{/if}</p>
+        <p class="text-[13px] text-fg-muted">{formatSize(here.meta.size)}{#if here.meta.mtime}, <Sentence text={t('modified {date}')}>{#snippet date()}<Time ms={here.meta.mtime} />{/snippet}</Sentence>{/if}</p>
         <div class="mt-5 grid w-full gap-2">
           <button type="button" class="btn btn-accent btn-lg w-full" onclick={() => downloadEntry(here)}>
-            <Icon name="download" /> Download
+            <Icon name="download" /> {t('Download')}
           </button>
           {#if previewKind(here.meta)}
             <button type="button" class="btn btn-secondary btn-lg w-full" onclick={() => (preview = { entries: [here], start: 0 })}>
-              <Icon name="eye" /> Preview
+              <Icon name="eye" /> {t('Preview')}
             </button>
           {/if}
         </div>
       </div>
     {:else}
       <div class="flex flex-wrap items-center justify-between gap-3">
-        <nav class="flex flex-wrap items-center gap-1 text-sm" aria-label="Folder path">
+        <nav class="flex flex-wrap items-center gap-1 text-sm" aria-label={t('Folder path')}>
           {#each trail as crumb, i (crumb.node.id)}
             {#if i}<Icon name="chevron-right" class="size-4 text-fg-faint" />{/if}
             {#if i === trail.length - 1}
@@ -370,21 +371,21 @@
           {/each}
         </nav>
         {#if rows.length}
-          <button type="button" class="btn btn-secondary" onclick={downloadAll}><Icon name="download" /> Download all</button>
+          <button type="button" class="btn btn-secondary" onclick={downloadAll}><Icon name="download" /> {t('Download all')}</button>
         {/if}
       </div>
       <div class="card mt-6 overflow-hidden">
         {#if listing && !rows.length}
           <div class="grid h-48 place-items-center text-fg-muted"><Icon name="loader-circle" class="spinner size-5" /></div>
         {:else if !rows.length}
-          <p class="px-6 py-16 text-center text-[13px] text-fg-muted">This folder is empty.</p>
+          <p class="px-6 py-16 text-center text-[13px] text-fg-muted">{t('This folder is empty.')}</p>
         {:else}
           <table class="table">
             <thead>
               <tr>
-                <th>Name</th>
-                <th class="hidden w-28 text-right sm:table-cell">Size</th>
-                <th class="w-28"><span class="sr-only">Actions</span></th>
+                <th>{t('Name')}</th>
+                <th class="hidden w-28 text-right sm:table-cell">{t('Size')}</th>
+                <th class="w-28"><span class="sr-only">{t('Actions')}</span></th>
               </tr>
             </thead>
             <tbody>
@@ -404,7 +405,7 @@
                   <td class="text-right">
                     {#if !folder}
                       <button type="button" class="btn btn-secondary h-7 px-2.5 text-[13px]" onclick={() => downloadEntry(entry)}>
-                        <Icon name="download" /> Download
+                        <Icon name="download" /> {t('Download')}
                       </button>
                     {/if}
                   </td>
@@ -421,9 +422,9 @@
     <div class="mx-auto flex max-w-4xl flex-wrap items-center justify-between gap-2 px-4 py-5 text-xs text-fg-muted">
       <p class="flex items-center gap-1.5">
         <Icon name="shield-check" class="size-3.5" />
-        {#if phase === 'drop'}Encrypted in your browser before upload.{:else}Decrypted in your browser. The key is never sent to the server.{/if}
+        {#if phase === 'drop'}{t('Encrypted in your browser before upload.')}{:else}{t('Decrypted in your browser. The key is never sent to the server.')}{/if}
       </p>
-      {#if expiresAt}<p><Time ms={expiresAt * 1000} prefix="Link expires " /></p>{/if}
+      {#if expiresAt}<p><Sentence text={t('Link expires {date}')}>{#snippet date()}<Time ms={expiresAt * 1000} />{/snippet}</Sentence></p>{/if}
     </div>
   </footer>
 </div>

@@ -26,7 +26,7 @@
   const active = $derived(transfers.filter((job) => job.status === 'active').length);
   const failed = $derived(transfers.filter((job) => job.status === 'error').length);
   const heading = $derived(
-    active ? t('Encrypting and transferring {count} files', { count: active }) : failed ? t('{count} failed', { count: failed }) : t('All transfers complete'),
+    active ? t('Transferring {count} files', { count: active }) : failed ? t('{count} failed', { count: failed }) : t('All transfers complete'),
   );
 </script>
 
@@ -49,7 +49,7 @@
     </header>
     {#if !collapsed}
       <ul class="max-h-64 divide-y divide-line overflow-y-auto">
-        {#each transfers as t (job.id)}
+        {#each transfers as job (job.id)}
           <li class="grid gap-1.5 px-3.5 py-2.5" in:slide out:slide>
             <div class="flex items-center gap-2 text-[13px]">
               <Icon name={job.kind === 'upload' ? 'upload' : 'download'} class="size-3.5 shrink-0 text-fg-faint" />

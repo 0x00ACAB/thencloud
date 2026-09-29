@@ -218,7 +218,7 @@
     <div class="mr-auto min-w-0">
       <h1 class="text-xl font-semibold tracking-tight">{t('Music')}</h1>
       <p class="mt-1 truncate text-[13px] text-fg-muted">
-        {#if lib}{music.rootName} · {t('{count} albums', { count: lib.albums.length })} · {t('{count} tracks', { count: lib.tracks.length })}{:else}{t('Play the music in your files. Names and tags are read in this browser.')}{/if}
+        {#if lib}{music.rootName} · {t('{count} albums', { count: lib.albums.length })} · {t('{count} tracks', { count: lib.tracks.length })}{:else}{t('Play the music in your files.')}{/if}
       </p>
     </div>
     {#if music.rootId}
@@ -242,7 +242,7 @@
       <img src="/img/logo.webp" alt="" width="715" height="349" class="mb-4 h-auto w-32 opacity-90 select-none" draggable="false" />
       <p class="font-medium">{t('Pick your music folder')}</p>
       <p class="max-w-sm text-[13px] text-fg-muted">
-        {t('Albums are made from its folders, like Artist/Album/01 Song.mp3. MP3, M4A, AAC, Ogg, Opus, FLAC and WAV play here, decrypted as they stream.')}
+        {t('Albums are made from its folders, like Artist/Album/01 Song.mp3. MP3, M4A, AAC, Ogg, Opus, FLAC and WAV play here.')}
       </p>
       <button type="button" class="btn btn-primary mt-4" onclick={choose}><Icon name="folder-open" />{t('Choose folder')}</button>
     </div>

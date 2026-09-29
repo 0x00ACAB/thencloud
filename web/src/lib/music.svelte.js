@@ -108,7 +108,7 @@ export function albumInfo(album) {
 
 /** An album's tracks in order, by disc and (edited) track number. */
 export function albumTracks(album) {
-  const no = (t) => info(t).trackNo ?? 1e9;
+  const no = (track) => info(track).trackNo ?? 1e9;
   return album.tracks.toSorted((a, b) => collator.compare(a.disc, b.disc) || no(a) - no(b) || collator.compare(a.entry.meta.name, b.entry.meta.name));
 }
 
@@ -180,7 +180,7 @@ export async function setAlbumCover(album, file) {
 /** Library tracks by node id. */
 let byId = { lib: null, map: new Map() };
 function trackById(id) {
-  if (byId.lib !== library.value) byId = { lib: library.value, map: new Map(library.value?.tracks.map((t) => [t.id, t])) };
+  if (byId.lib !== library.value) byId = { lib: library.value, map: new Map(library.value?.tracks.map((track) => [track.id, track])) };
   return byId.map.get(id);
 }
 
@@ -191,7 +191,7 @@ const findList = (d, id) => d.playlists.find((p) => p.id === id) ?? { tracks: []
 
 export async function createPlaylist(name, tracks = []) {
   const id = crypto.randomUUID();
-  await update((d) => d.playlists.push({ id, name, tracks: [...new Set(tracks.map((t) => t.id))], at: Date.now() }));
+  await update((d) => d.playlists.push({ id, name, tracks: [...new Set(tracks.map((track) => track.id))], at: Date.now() }));
   return id;
 }
 
@@ -205,10 +205,10 @@ export async function addToPlaylist(id, tracks) {
     const p = findList(d, id);
     const have = new Set(p.tracks);
     added = 0;
-    for (const t of tracks) {
-      if (have.has(t.id)) continue;
-      have.add(t.id);
-      p.tracks.push(t.id);
+    for (const track of tracks) {
+      if (have.has(track.id)) continue;
+      have.add(track.id);
+      p.tracks.push(track.id);
       added++;
     }
     p.at = Date.now();
@@ -219,7 +219,7 @@ export async function addToPlaylist(id, tracks) {
 export const removeFromPlaylist = (id, track) =>
   update((d) => {
     const p = findList(d, id);
-    p.tracks = p.tracks.filter((t) => t !== track.id);
+    p.tracks = p.tracks.filter((id) => id !== track.id);
   });
 
 /** Swap two tracks in the playlist (a track and its neighbour, to move it). */
@@ -279,7 +279,7 @@ export async function scanLibrary() {
     for (const a of list) {
       a.tracks.sort(byTrack);
       // An album without a folder artist takes one its tracks' names agree on.
-      a.artist ??= a.tracks.every((t) => t.artist && t.artist === a.tracks[0].artist) ? a.tracks[0].artist : undefined;
+      a.artist ??= a.tracks.every((track) => track.artist && track.artist === a.tracks[0].artist) ? a.tracks[0].artist : undefined;
     }
     list.sort((a, b) => collator.compare(a.artist ?? '￿', b.artist ?? '￿') || collator.compare(a.name, b.name));
     music.rootName = folderLabel(root);
@@ -318,9 +318,9 @@ async function pumpCovers() {
 
 function learn(track, bytes) {
   if (tags.has(track.id)) return;
-  const t = parseTags(bytes) ?? {};
-  const cover = t.picture ? URL.createObjectURL(t.picture) : undefined;
-  tags.set(track.id, { title: t.title, artist: t.artist, album: t.album, track: t.track, cover });
+  const found = parseTags(bytes) ?? {};
+  const cover = found.picture ? URL.createObjectURL(found.picture) : undefined;
+  tags.set(track.id, { title: found.title, artist: found.artist, album: found.album, track: found.track, cover });
   if (track === current()) updateSession();
 }
 
@@ -517,7 +517,7 @@ export function play(tracks, start = 0, { shuffle = player.shuffle } = {}) {
   player.shuffle = shuffle;
   if (shuffle) {
     const first = tracks[start] ?? tracks[0];
-    player.queue = [first, ...shuffled(tracks.filter((t) => t !== first))];
+    player.queue = [first, ...shuffled(tracks.filter((track) => track !== first))];
     player.index = 0;
   } else {
     player.queue = [...tracks];
@@ -588,7 +588,7 @@ export function toggleShuffle() {
     player.queue = [...player.queue.slice(0, player.index + 1), ...shuffled(player.queue.slice(player.index + 1))];
   } else {
     const kept = new Set(player.queue);
-    player.queue = original.filter((t) => kept.has(t));
+    player.queue = original.filter((track) => kept.has(track));
     player.index = player.queue.indexOf(now);
   }
 }
@@ -612,7 +612,7 @@ export function enqueue(tracks) {
 
 export function removeFromQueue(i) {
   if (i === player.index) return;
-  original = original.filter((t) => t !== player.queue[i]);
+  original = original.filter((track) => track !== player.queue[i]);
   player.queue = player.queue.toSpliced(i, 1);
   if (i < player.index) player.index--;
 }
@@ -639,7 +639,7 @@ export function unloadMusic() {
   scan?.abort();
   coverQueue.length = 0;
   library.value = null;
-  for (const t of tags.values()) if (t.cover) URL.revokeObjectURL(t.cover);
+  for (const tag of tags.values()) if (tag.cover) URL.revokeObjectURL(tag.cover);
   for (const url of covers.values()) if (url) URL.revokeObjectURL(url);
   tags.clear();
   covers.clear();

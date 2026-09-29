@@ -4,6 +4,8 @@
   // stripped and why. `loadImage(path)`, when given, turns a relative image
   // path into a blob: URL of a decrypted file (or null). `ontoggle(index,
   // checked)`, when given, makes task list checkboxes clickable.
+  import { t } from '../../lib/i18n.svelte.js';
+
   let { text, loadImage = null, ontoggle = null } = $props();
 
   let article = $state();
@@ -36,10 +38,10 @@
 
   function showImages(el, urls, live) {
     for (const span of el.querySelectorAll('.md-image[data-path]')) {
-      span.title = 'Loading image';
+      span.title = t('Loading image');
       loadImage(span.dataset.path)
         .then((url) => {
-          if (!url) return (span.title = `No image found at ${span.dataset.path}`);
+          if (!url) return (span.title = t('No image found at {path}', { path: span.dataset.path }));
           if (!live()) return URL.revokeObjectURL(url);
           urls.push(url);
           const img = document.createElement('img');
@@ -47,13 +49,13 @@
           img.alt = span.dataset.alt ?? '';
           span.replaceWith(img);
         })
-        .catch(() => (span.title = `Couldn't load ${span.dataset.path}`));
+        .catch(() => (span.title = t("Couldn't load {path}", { path: span.dataset.path })));
     }
   }
 </script>
 <div class="h-full overflow-auto">
   {#if failed}
-    <p class="p-6 text-center text-[13px] text-fg-muted">Couldn't render this file. Switch to Source to read it.</p>
+    <p class="p-6 text-center text-[13px] text-fg-muted">{t("Couldn't render this file. Switch to Source to read it.")}</p>
   {/if}
   <article bind:this={article} class="prose mx-auto max-w-3xl px-6 py-10"></article>
 </div>

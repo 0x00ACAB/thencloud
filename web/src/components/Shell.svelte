@@ -51,6 +51,8 @@
     { name: 'files', label: t('My files'), short: t('Files'), icon: 'folder', to: () => ({ name: 'files', folderId: rootId }) },
     { name: 'recent', label: t('Recent'), icon: 'clock', to: () => ({ name: 'recent' }) },
     { name: 'favourites', label: t('Favourites'), icon: 'star', to: () => ({ name: 'favourites' }) },
+    // Once there's something to show.
+    ...(Object.keys(places.tags).length ? [{ name: 'tags', label: t('Tags'), icon: 'tag', to: () => ({ name: 'tags' }) }] : []),
     { name: 'shared-with-me', label: t('Shared with me'), short: t('Shared'), icon: 'inbox', to: () => ({ name: 'shared-with-me' }) },
     { name: 'shared-by-me', label: t('Shared by me'), icon: 'users', to: () => ({ name: 'shared-by-me' }) },
     { name: 'links', label: t('Public links'), icon: 'link', to: () => ({ name: 'links' }) },
@@ -82,7 +84,7 @@
     if (name === 'music' && a === 'album' && id(b)) return { name, album: b };
     if (name === 'music' && a === 'playlist' && id(b)) return { name, playlist: b };
     // Optional modules aren't known to be on yet at first; their views check.
-    if (nav.some((n) => n.name === name) || name === 'health') return { name };
+    if (nav.some((n) => n.name === name) || name === 'health' || name === 'tags') return { name };
     return null;
   }
 
@@ -188,6 +190,20 @@
           <button type="button" class="nav-item" aria-current={current === item.name ? 'page' : undefined} onclick={() => go(item.to())}>
             <Icon name={item.icon} />{item.label}
           </button>
+          {#if item.name === 'files' && places.searches.length}
+            <div class="mb-1 ml-4 grid gap-px border-l border-line pl-2">
+              {#each places.searches as s (s.id)}
+                <button
+                  type="button"
+                  class="flex h-7 min-w-0 cursor-pointer items-center gap-2 rounded-md px-2 text-left text-[13px] text-fg-muted hover:bg-muted hover:text-fg"
+                  title={s.query}
+                  onclick={() => go({ name: 'files', folderId: rootId, search: { query: s.query, scope: s.scope } })}>
+                  <Icon name="bookmark" class="size-3.5" />
+                  <span class="truncate">{s.name}</span>
+                </button>
+              {/each}
+            </div>
+          {/if}
           {#if item.name === 'favourites' && starred.length}
             <div class="mb-1 ml-4 grid gap-px border-l border-line pl-2">
               {#each starred as x (x.id)}
@@ -221,8 +237,8 @@
       {#key view.name}
       <div class="mx-auto max-w-5xl animate-enter">
         {#if view.name === 'files'}
-          <FilesView folderId={view.folderId} openId={view.open} {go} bind:inShare />
-        {:else if view.name === 'recent' || view.name === 'favourites'}
+          <FilesView folderId={view.folderId} openId={view.open} search={view.search} {go} bind:inShare />
+        {:else if view.name === 'recent' || view.name === 'favourites' || view.name === 'tags'}
           <PlacesView mode={view.name} {go} />
         {:else if view.name === 'shared-with-me'}
           <SharedWithMe {go} />

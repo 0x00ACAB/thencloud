@@ -75,3 +75,23 @@ test('i18n: no catalog lists a key twice', () => {
     assert.deepEqual(twice, [], `${lang} lists these twice`);
   }
 });
+
+test('i18n: nothing names a local variable t', () => {
+  // It would hide the t() in scope (and the key scan can't tell).
+  const local = /\b(?:const|let|var)\s+t\b|\bas\s+t\b|\(\s*t\s*(?:,[^)]*)?\)\s*=>|\bfor\s*\(\s*(?:const|let)\s+t\s+of\b/;
+  const found = [];
+  const walk = (dir) => {
+    for (const f of readdirSync(dir)) {
+      const p = join(dir, f);
+      if (statSync(p).isDirectory()) {
+        if (f !== 'wasm' && f !== 'messages') walk(p);
+      } else if (/\.(svelte|js)$/.test(f)) {
+        const src = readFileSync(p, 'utf8');
+        if (!/\bt\(\s*['"`]/.test(src)) continue;
+        src.split('\n').forEach((line, i) => local.test(line) && found.push(`${p}:${i + 1}: ${line.trim()}`));
+      }
+    }
+  };
+  walk(new URL('../src', import.meta.url).pathname);
+  assert.deepEqual(found, []);
+});
