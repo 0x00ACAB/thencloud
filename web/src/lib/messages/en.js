@@ -29,4 +29,5 @@ export default {
     one: '{name}. Up to {count} version is kept, and the oldest goes first when you run out of space.',
     other: '{name}. Up to {count} versions are kept, and the oldest go first when you run out of space.',
   },
+  '{count} photos': { one: '{count} photo', other: '{count} photos' },
 };

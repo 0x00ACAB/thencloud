@@ -8,6 +8,7 @@ import { session, resolvePath, walkTree, folderLabel } from './cloud.svelte.js';
 import { errorMessage } from './ui.svelte.js';
 import { previewKind } from './preview.js';
 import { formatDateTime } from './locale.svelte.js';
+import { t } from './i18n.svelte.js';
 
 function readRoot() {
   try {
@@ -50,7 +51,7 @@ export async function scanPhotos() {
   try {
     const { items } = await resolvePath(photos.rootId);
     const root = items[items.length - 1];
-    if (root.node.kind !== 'folder') throw new Error('The photos folder is not a folder');
+    if (root.node.kind !== 'folder') throw new Error(t('The photos folder is not a folder'));
     const found = [];
     await walkTree(root, {
       signal: ctl.signal,
