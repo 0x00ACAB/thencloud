@@ -12,6 +12,11 @@
 //! Reads fetch and decrypt one 4 MiB chunk at a time. Writes go to an
 //! unlinked temporary file and are uploaded when the request ends, as a new
 //! version when the file exists. Deleting moves to the trash.
+//!
+//! Folder listings are kept until the server's change feed says something
+//! in them changed (checked every few seconds). The files Finder leaves
+//! everywhere (`.DS_Store`, and `._name` for extended attributes) are kept
+//! in memory for as long as this runs and never uploaded.
 
 use std::collections::HashMap;
 use std::convert::Infallible;
@@ -20,6 +25,7 @@ use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::net::{SocketAddr, TcpListener};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -43,9 +49,31 @@ use thencloud_crypto::{CHUNK_SIZE, Key};
 
 use crate::{Client, Entry, Error, now_ms};
 
-/// Listings are reused for this long, and dropped at once when this bridge
-/// changes something in them.
+/// How often the change feed is checked. Listings are reused until it says
+/// something in them changed (or this bridge changes it); without the feed,
+/// they're reused for this long.
 const LIST_TTL: Duration = Duration::from_secs(5);
+/// More changes than this at once and every listing is dropped, rather than
+/// looking up where each changed node is now.
+const FEED_LOOKUPS: usize = 64;
+/// Memory for Finder's own files, all together.
+const SCRATCH_MAX: u64 = 64 * 1024 * 1024;
+
+/// Files Finder writes next to others: a folder's view settings, and an
+/// AppleDouble file per file for its extended attributes. They'd clutter
+/// every folder in the web client, so they only live here.
+fn is_scratch(name: &str) -> bool {
+    name == ".DS_Store" || name.starts_with("._")
+}
+
+/// One of Finder's files, in memory.
+struct Scratch {
+    data: Vec<u8>,
+    mtime: i64,
+}
+
+/// A folder's node id and a name in it.
+type ScratchKey = (String, String);
 
 pub struct ServeOptions {
     pub read_only: bool,
@@ -71,7 +99,11 @@ struct Tree {
     temp_dir: PathBuf,
     /// Folder listings by node id.
     dirs: Mutex<HashMap<String, Listing>>,
+    /// The change feed's cursor and when it was last read.
+    feed: Mutex<Option<(i64, Instant)>>,
     quota: Mutex<Option<(Instant, u64, u64)>>,
+    scratch: Mutex<HashMap<ScratchKey, Arc<Mutex<Scratch>>>>,
+    scratch_bytes: AtomicU64,
 }
 
 fn fs_error(e: &Error) -> FsError {
@@ -99,10 +131,62 @@ impl Tree {
         }
     }
 
+    /// Read the change feed, at most every `LIST_TTL`, and drop the listings
+    /// it touches. False when it can't be read: listings then expire by age.
+    fn follow(&self) -> bool {
+        // Held throughout, so only one request reads the feed at a time.
+        let mut feed = self.feed.lock().unwrap();
+        let Some((mut cursor, checked)) = *feed else {
+            return false;
+        };
+        if checked.elapsed() < LIST_TTL {
+            return true;
+        }
+        let mut changed = Vec::new();
+        let mut everything = false;
+        loop {
+            let Ok(page) = self.client.changes(Some(cursor)) else {
+                return false;
+            };
+            everything |= page.resync;
+            changed.extend(page.changes.into_iter().map(|c| c.node_id));
+            cursor = page.cursor;
+            if !page.more {
+                break;
+            }
+        }
+        changed.sort();
+        changed.dedup();
+        everything |= changed.len() > FEED_LOOKUPS;
+        // Where each changed node is now; where it was is in the listings.
+        let mut now_in = Vec::new();
+        if !everything {
+            for id in &changed {
+                match self.client.parent_of(id) {
+                    Ok(p) => now_in.extend(p),
+                    Err(_) => everything = true,
+                }
+            }
+        }
+        let mut dirs = self.dirs.lock().unwrap();
+        if everything {
+            dirs.clear();
+        } else if !changed.is_empty() {
+            dirs.retain(|folder, (_, kids)| {
+                !changed.contains(folder)
+                    && !now_in.contains(folder)
+                    && !kids.iter().any(|k| changed.contains(&k.node.id))
+            });
+        }
+        *feed = Some((cursor, Instant::now()));
+        true
+    }
+
     fn list(&self, folder: &Entry) -> FsResult<Arc<Vec<Entry>>> {
         let id = &folder.node.id;
+        let following = self.follow();
         if let Some((at, kids)) = self.dirs.lock().unwrap().get(id)
-            && at.elapsed() < LIST_TTL
+            && (following || at.elapsed() < LIST_TTL)
         {
             return Ok(kids.clone());
         }
@@ -155,6 +239,32 @@ impl Tree {
             }
         }
         Ok((here, name))
+    }
+
+    /// Where `path` would be kept if it's one of Finder's files.
+    fn scratch_key(&self, path: &DavPath) -> FsResult<Option<ScratchKey>> {
+        let parts = segments(path)?;
+        match parts.last() {
+            Some(name) if is_scratch(name) => {
+                let (parent, name) = self.parent(path)?;
+                Ok(Some((parent.node.id, name)))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    fn scratch(&self, path: &DavPath) -> FsResult<Option<(ScratchKey, Arc<Mutex<Scratch>>)>> {
+        Ok(self.scratch_key(path)?.and_then(|k| {
+            let f = self.scratch.lock().unwrap().get(&k).cloned();
+            f.map(|f| (k, f))
+        }))
+    }
+
+    fn drop_scratch(&self, key: &ScratchKey) -> Option<Arc<Mutex<Scratch>>> {
+        let f = self.scratch.lock().unwrap().remove(key)?;
+        let len = f.lock().unwrap().data.len() as u64;
+        self.scratch_bytes.fetch_sub(len, Ordering::Relaxed);
+        Some(f)
     }
 
     fn quota(&self) -> (u64, Option<u64>) {
@@ -240,15 +350,114 @@ impl DavMetaData for Meta {
     }
 }
 
-struct DirEntry(Entry);
+impl Meta {
+    fn of_scratch(f: &Scratch) -> Meta {
+        Meta {
+            size: f.data.len() as u64,
+            mtime: f.mtime,
+            folder: false,
+            tag: None,
+        }
+    }
+}
+
+struct DirEntry(String, Meta);
 
 impl DavDirEntry for DirEntry {
     fn name(&self) -> Vec<u8> {
-        self.0.meta.name.clone().into_bytes()
+        self.0.clone().into_bytes()
     }
     fn metadata(&self) -> FsFuture<'_, Box<dyn DavMetaData>> {
-        let m: Box<dyn DavMetaData> = Box::new(Meta::of(&self.0));
+        let m: Box<dyn DavMetaData> = Box::new(self.1.clone());
         async move { Ok(m) }.boxed()
+    }
+}
+
+/// One of Finder's files, open.
+struct ScratchFile {
+    tree: Arc<Tree>,
+    file: Arc<Mutex<Scratch>>,
+    pos: u64,
+}
+
+impl fmt::Debug for ScratchFile {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("ScratchFile")
+    }
+}
+
+impl ScratchFile {
+    fn write(&mut self, data: &[u8]) -> FsResult<()> {
+        let mut f = self.file.lock().unwrap();
+        let start = self.pos as usize;
+        let end = start + data.len();
+        let grow = (end as u64).saturating_sub(f.data.len() as u64);
+        if self.tree.scratch_bytes.fetch_add(grow, Ordering::Relaxed) + grow > SCRATCH_MAX {
+            self.tree.scratch_bytes.fetch_sub(grow, Ordering::Relaxed);
+            return Err(FsError::InsufficientStorage);
+        }
+        if f.data.len() < end {
+            f.data.resize(end, 0);
+        }
+        f.data[start..end].copy_from_slice(data);
+        f.mtime = now_ms();
+        self.pos = end as u64;
+        Ok(())
+    }
+}
+
+impl DavFile for ScratchFile {
+    fn metadata(&mut self) -> FsFuture<'_, Box<dyn DavMetaData>> {
+        let m: Box<dyn DavMetaData> = Box::new(Meta::of_scratch(&self.file.lock().unwrap()));
+        async move { Ok(m) }.boxed()
+    }
+
+    fn write_buf(&mut self, mut buf: Box<dyn Buf + Send>) -> FsFuture<'_, ()> {
+        async move {
+            while buf.has_remaining() {
+                let n = buf.chunk().len();
+                self.write(buf.chunk())?;
+                buf.advance(n);
+            }
+            Ok(())
+        }
+        .boxed()
+    }
+
+    fn write_bytes(&mut self, buf: Bytes) -> FsFuture<'_, ()> {
+        async move { self.write(&buf) }.boxed()
+    }
+
+    fn read_bytes(&mut self, count: usize) -> FsFuture<'_, Bytes> {
+        async move {
+            let f = self.file.lock().unwrap();
+            let start = (self.pos as usize).min(f.data.len());
+            let end = (start + count).min(f.data.len());
+            self.pos = end as u64;
+            Ok(Bytes::copy_from_slice(&f.data[start..end]))
+        }
+        .boxed()
+    }
+
+    fn seek(&mut self, pos: SeekFrom) -> FsFuture<'_, u64> {
+        async move {
+            let len = self.file.lock().unwrap().data.len() as i64;
+            let to = match pos {
+                SeekFrom::Start(p) => p as i64,
+                SeekFrom::Current(d) => self.pos as i64 + d,
+                SeekFrom::End(d) => len + d,
+            };
+            if to < 0 || to as u64 > SCRATCH_MAX {
+                return Err(FsError::GeneralFailure);
+            }
+            self.pos = to as u64;
+            Ok(self.pos)
+        }
+        .boxed()
+    }
+
+    fn flush(&mut self) -> FsFuture<'_, ()> {
+        async { Ok(()) }.boxed()
     }
 }
 
@@ -480,7 +689,55 @@ impl DavFileSystem for CloudDav {
         let tree = self.0.clone();
         let path = path.clone();
         blocking(move || {
-            if !options.write && !options.append {
+            let writing = options.write || options.append;
+            if writing && let Some(key) = tree.scratch_key(&path)? {
+                tree.writable()?;
+                let existing = tree.scratch.lock().unwrap().get(&key).cloned();
+                let file = match existing {
+                    Some(_) if options.create_new => return Err(FsError::Exists),
+                    Some(f) => {
+                        if options.truncate {
+                            let mut g = f.lock().unwrap();
+                            tree.scratch_bytes
+                                .fetch_sub(g.data.len() as u64, Ordering::Relaxed);
+                            g.data.clear();
+                            g.mtime = now_ms();
+                        }
+                        f
+                    }
+                    None if !options.create && !options.create_new => {
+                        return Err(FsError::NotFound);
+                    }
+                    None => {
+                        let f = Arc::new(Mutex::new(Scratch {
+                            data: Vec::new(),
+                            mtime: now_ms(),
+                        }));
+                        tree.scratch.lock().unwrap().insert(key, f.clone());
+                        f
+                    }
+                };
+                let pos = if options.append {
+                    file.lock().unwrap().data.len() as u64
+                } else {
+                    0
+                };
+                let f: Box<dyn DavFile> = Box::new(ScratchFile {
+                    tree: tree.clone(),
+                    file,
+                    pos,
+                });
+                return Ok(f);
+            }
+            if !writing {
+                if let Some((_, file)) = tree.scratch(&path)? {
+                    let f: Box<dyn DavFile> = Box::new(ScratchFile {
+                        tree: tree.clone(),
+                        file,
+                        pos: 0,
+                    });
+                    return Ok(f);
+                }
                 let entry = tree.resolve(&path)?;
                 if entry.is_folder() {
                     return Err(FsError::Forbidden);
@@ -544,13 +801,22 @@ impl DavFileSystem for CloudDav {
             if !folder.is_folder() {
                 return Err(FsError::Forbidden);
             }
-            let kids: Vec<FsResult<Box<dyn DavDirEntry>>> = tree
-                .list(&folder)?
+            let listed = tree.list(&folder)?;
+            let mut kids: Vec<FsResult<Box<dyn DavDirEntry>>> = listed
                 .iter()
                 // A name with a slash in it can't be addressed by a path.
                 .filter(|e| !e.meta.name.contains('/'))
-                .map(|e| Ok(Box::new(DirEntry(e.clone())) as Box<dyn DavDirEntry>))
+                .map(|e| {
+                    let d = DirEntry(e.meta.name.clone(), Meta::of(e));
+                    Ok(Box::new(d) as Box<dyn DavDirEntry>)
+                })
                 .collect();
+            for ((dir, name), f) in tree.scratch.lock().unwrap().iter() {
+                if *dir == folder.node.id && !listed.iter().any(|e| e.meta.name == *name) {
+                    let d = DirEntry(name.clone(), Meta::of_scratch(&f.lock().unwrap()));
+                    kids.push(Ok(Box::new(d)));
+                }
+            }
             let s: FsStream<Box<dyn DavDirEntry>> = Box::pin(stream::iter(kids));
             Ok(s)
         })
@@ -560,6 +826,10 @@ impl DavFileSystem for CloudDav {
         let tree = self.0.clone();
         let path = path.clone();
         blocking(move || {
+            if let Some((_, f)) = tree.scratch(&path)? {
+                let m: Box<dyn DavMetaData> = Box::new(Meta::of_scratch(&f.lock().unwrap()));
+                return Ok(m);
+            }
             let m: Box<dyn DavMetaData> = Box::new(Meta::of(&tree.resolve(&path)?));
             Ok(m)
         })
@@ -593,6 +863,21 @@ impl DavFileSystem for CloudDav {
         let (from, to) = (from.clone(), to.clone());
         blocking(move || {
             tree.writable()?;
+            if let Some((key, _)) = tree.scratch(&from)? {
+                // Finder's files stay Finder's files.
+                let to = tree.scratch_key(&to)?.ok_or(FsError::Forbidden)?;
+                let f = tree.drop_scratch(&key).ok_or(FsError::NotFound)?;
+                let len = f.lock().unwrap().data.len() as u64;
+                tree.scratch_bytes.fetch_add(len, Ordering::Relaxed);
+                if let Some(old) = tree.scratch.lock().unwrap().insert(to, f) {
+                    let old = old.lock().unwrap().data.len() as u64;
+                    tree.scratch_bytes.fetch_sub(old, Ordering::Relaxed);
+                }
+                return Ok(());
+            }
+            if tree.scratch_key(&to)?.is_some() {
+                return Err(FsError::Forbidden);
+            }
             let e = tree.resolve(&from)?;
             if e.node.id == tree.root.node.id {
                 return Err(FsError::Forbidden);
@@ -614,6 +899,30 @@ impl DavFileSystem for CloudDav {
         let (from, to) = (from.clone(), to.clone());
         blocking(move || {
             tree.writable()?;
+            if let Some((_, f)) = tree.scratch(&from)? {
+                let to = tree.scratch_key(&to)?.ok_or(FsError::Forbidden)?;
+                let copy = {
+                    let g = f.lock().unwrap();
+                    Scratch {
+                        data: g.data.clone(),
+                        mtime: g.mtime,
+                    }
+                };
+                let len = copy.data.len() as u64;
+                if tree.scratch_bytes.fetch_add(len, Ordering::Relaxed) + len > SCRATCH_MAX {
+                    tree.scratch_bytes.fetch_sub(len, Ordering::Relaxed);
+                    return Err(FsError::InsufficientStorage);
+                }
+                tree.drop_scratch(&to);
+                tree.scratch
+                    .lock()
+                    .unwrap()
+                    .insert(to, Arc::new(Mutex::new(copy)));
+                return Ok(());
+            }
+            if tree.scratch_key(&to)?.is_some() {
+                return Err(FsError::Forbidden);
+            }
             let e = tree.resolve(&from)?;
             if e.is_folder() {
                 return Err(FsError::Forbidden);
@@ -647,12 +956,17 @@ impl DavFileSystem for CloudDav {
         let path = path.clone();
         blocking(move || {
             tree.writable()?;
+            let ms = tm
+                .duration_since(UNIX_EPOCH)
+                .map_or(0, |d| d.as_millis() as i64);
+            if let Some((_, f)) = tree.scratch(&path)? {
+                f.lock().unwrap().mtime = ms;
+                return Ok(());
+            }
             let e = tree.resolve(&path)?;
             let (parent, _) = tree.parent(&path)?;
             let mut meta = e.meta.clone();
-            meta.mtime = tm
-                .duration_since(UNIX_EPOCH)
-                .map_or(0, |d| d.as_millis() as i64);
+            meta.mtime = ms;
             let r = tree.client.update(&e, &parent, meta);
             tree.stale(&parent.node.id);
             r.map(|_| ()).map_err(|e| tree.fail(e))
@@ -672,6 +986,10 @@ impl CloudDav {
         let path = path.clone();
         blocking(move || {
             tree.writable()?;
+            if let Some((key, _)) = tree.scratch(&path)? {
+                tree.drop_scratch(&key);
+                return Ok(());
+            }
             let e = tree.resolve(&path)?;
             if e.node.id == tree.root.node.id {
                 return Err(FsError::Forbidden);
@@ -751,7 +1069,8 @@ async fn delete_folder(
     match r {
         Ok(false) => None,
         Ok(true) => Some(plain(StatusCode::NO_CONTENT)),
-        Err(FsError::NotFound) => Some(plain(StatusCode::NOT_FOUND)),
+        // Maybe one of Finder's files, which aren't on the server.
+        Err(FsError::NotFound) => None,
         Err(FsError::Forbidden) => Some(plain(StatusCode::FORBIDDEN)),
         Err(_) => Some(plain(StatusCode::INTERNAL_SERVER_ERROR)),
     }
@@ -788,9 +1107,9 @@ async fn handle(
         return res;
     }
     let res = dav.handle(req).await;
-    // Other clients may have changed things; a request that failed on a
-    // stale listing shouldn't fail again for the next five seconds.
-    if res.status() == StatusCode::NOT_FOUND || res.status() == StatusCode::CONFLICT {
+    // A name taken by something another client added: don't wait for the
+    // change feed before trying again.
+    if res.status() == StatusCode::CONFLICT {
         tree.dirs.lock().unwrap().clear();
     }
     res
@@ -837,13 +1156,21 @@ async fn run(
     listener.set_nonblocking(true)?;
     let listener = tokio::net::TcpListener::from_std(listener)?;
     let read_only = opts.read_only || client.scope == AppScope::Read;
+    // Taken before anything is listed, so no change falls in between.
+    let feed = client
+        .changes(None)
+        .ok()
+        .map(|f| (f.cursor, Instant::now()));
     let tree = Arc::new(Tree {
         client,
         root,
         read_only,
         temp_dir: opts.temp_dir,
         dirs: Mutex::new(HashMap::new()),
+        feed: Mutex::new(feed),
         quota: Mutex::new(None),
+        scratch: Mutex::new(HashMap::new()),
+        scratch_bytes: AtomicU64::new(0),
     });
     let prefix: Arc<str> = format!("/{secret}/").into();
     let mut builder = DavHandler::builder()

@@ -104,7 +104,8 @@ How it behaves:
 - Uploads are kept in an unlinked temporary file in `$TMPDIR` until the request ends, then encrypted and uploaded. Writing over a file makes a new version of it.
 - Deleting moves things to the trash (a folder goes as one item). Moving and renaming keep a file's history and shares.
 - It only ever listens on `127.0.0.1`. A read-only app password (or `--read-only`) refuses every change.
-- Folder listings are cached for five seconds, so changes made elsewhere show up shortly after.
+- Folder listings are kept until the server's change feed says something in them changed (checked every five seconds), so changes made elsewhere show up shortly after.
+- Finder's own files (`.DS_Store`, and `._name` files for extended attributes) are kept in memory while `serve` runs and never uploaded, so they don't clutter your folders elsewhere. They're gone when it stops.
 
 ## Checking the web client a server sends
 
