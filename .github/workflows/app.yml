@@ -85,10 +85,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates/thencloud-app
+      # The real binary, not npx: `android init` writes the command it was
+      # run with into the Gradle project, and `npm run tauri` needs a
+      # package.json there.
       - uses: taiki-e/install-action@v2
         with:
-          tool: wasm-pack
+          tool: wasm-pack,cargo-binstall
+      - run: cargo binstall -y --locked tauri-cli@^2
       - run: NDK_HOME="$ANDROID_NDK_LATEST_HOME" scripts/build-app.sh android
+        env:
+          TAURI: cargo tauri
       - uses: actions/upload-artifact@v4
         with:
           name: app-android
