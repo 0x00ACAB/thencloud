@@ -2,13 +2,16 @@
 // output it returns is key material and goes straight to cloud.svelte.js,
 // which turns it into a key and drops it.
 
+import { inApp } from './server.svelte.js';
+
 const bytes = (buf) => new Uint8Array(buf);
 const prfFirst = (cred) => {
   const r = cred.getClientExtensionResults?.().prf;
   return { enabled: !!r?.enabled || !!r?.results, output: r?.results?.first ? bytes(r.results.first) : null };
 };
 
-export const passkeysSupported = () => typeof PublicKeyCredential !== 'undefined' && !!navigator.credentials?.create;
+// A passkey is tied to the server's host name, which the apps' pages don't have.
+export const passkeysSupported = () => !inApp && typeof PublicKeyCredential !== 'undefined' && !!navigator.credentials?.create;
 
 /** Make a passkey. `opts` comes from POST /api/passkeys/options (bytes already decoded). */
 export async function createPasskey({ challenge, userHandle, exclude, username, prfSalt }) {
