@@ -6,6 +6,7 @@
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
+use sqlx::AssertSqlSafe;
 use thencloud_crypto::api::*;
 
 use crate::AppState;

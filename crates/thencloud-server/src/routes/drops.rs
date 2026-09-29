@@ -9,6 +9,7 @@
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
+use sqlx::AssertSqlSafe;
 use thencloud_crypto::api::*;
 
 use crate::AppState;
@@ -21,7 +22,7 @@ use crate::util::*;
 
 async fn dropped_node(state: &AppState, user: &AuthUser, id: &str) -> Result<NodeRow> {
     let sql = format!("{NODE_SELECT} WHERE n.id = ? AND n.owner_id = ? AND n.dropped = 1");
-    sqlx::query_as(&sql)
+    sqlx::query_as(AssertSqlSafe(sql))
         .bind(id)
         .bind(&user.id)
         .fetch_optional(&state.db)
@@ -32,7 +33,7 @@ async fn dropped_node(state: &AppState, user: &AuthUser, id: &str) -> Result<Nod
 /// Dropped files waiting to be taken in, except those in trashed folders.
 pub async fn list(State(state): State<AppState>, user: AuthUser) -> Result<Json<Vec<DroppedFile>>> {
     let sql = format!("{NODE_SELECT} WHERE n.owner_id = ? AND n.dropped = 1 ORDER BY n.created_at");
-    let rows: Vec<NodeRow> = sqlx::query_as(&sql)
+    let rows: Vec<NodeRow> = sqlx::query_as(AssertSqlSafe(sql))
         .bind(&user.id)
         .fetch_all(&state.db)
         .await?;

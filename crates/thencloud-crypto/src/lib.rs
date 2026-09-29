@@ -149,7 +149,7 @@ pub fn seal(key: &Key, plaintext: &[u8], aad: &[u8]) -> Vec<u8> {
     fill_random(&mut nonce);
     let ct = cipher
         .encrypt(
-            XNonce::from_slice(&nonce),
+            &XNonce::from(nonce),
             Payload {
                 msg: plaintext,
                 aad,
@@ -167,9 +167,10 @@ pub fn open(key: &Key, sealed: &[u8], aad: &[u8]) -> Result<Vec<u8>> {
         return Err(Error::Decrypt);
     }
     let (nonce, ct) = sealed.split_at(NONCE_LEN);
+    let nonce = XNonce::try_from(nonce).map_err(|_| Error::Decrypt)?;
     let cipher = XChaCha20Poly1305::new(key.as_bytes().into());
     cipher
-        .decrypt(XNonce::from_slice(nonce), Payload { msg: ct, aad })
+        .decrypt(&nonce, Payload { msg: ct, aad })
         .map_err(|_| Error::Decrypt)
 }
 
