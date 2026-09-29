@@ -96,9 +96,9 @@ export default {
   Dismiss: 'Schließen',
 
   // Transfers
-  'Encrypting and transferring {count} files': {
-    one: '1 Datei wird verschlüsselt und übertragen',
-    other: '{count} Dateien werden verschlüsselt und übertragen',
+  'Transferring {count} files': {
+    one: '1 Datei wird übertragen',
+    other: '{count} Dateien werden übertragen',
   },
   '{count} failed': { one: '{count} fehlgeschlagen', other: '{count} fehlgeschlagen' },
   'All transfers complete': 'Alle Übertragungen abgeschlossen',
@@ -193,8 +193,7 @@ export default {
   Location: 'Ort',
   'Nothing here yet': 'Noch nichts hier',
   'This folder is empty': 'Dieser Ordner ist leer',
-  'Drop files anywhere on this page, or use Upload. They are encrypted before they leave your device.':
-    'Zieh Dateien irgendwo auf diese Seite oder nutze Hochladen. Sie werden verschlüsselt, bevor sie dein Gerät verlassen.',
+  'Drop files anywhere on this page, or use Upload.': 'Zieh Dateien irgendwo auf diese Seite oder nutze Hochladen.',
   'Nothing has been added here yet.': 'Hier wurde noch nichts hinzugefügt.',
   'Nothing in this folder matches "{query}".': 'Nichts in diesem Ordner passt zu "{query}".',
   'Clear search': 'Suche leeren',
@@ -203,7 +202,7 @@ export default {
   'Actions for {name}': 'Aktionen für {name}',
   'Select all': 'Alle auswählen',
   Actions: 'Aktionen',
-  'Drop to encrypt and upload to {folder}': 'Ablegen, um nach {folder} verschlüsselt hochzuladen',
+  'Drop to upload to {folder}': 'Loslassen zum Hochladen nach {folder}',
   '{count} found, reading {done} of {total} files': '{count} gefunden, {done} von {total} Dateien gelesen',
   '{count} found so far': 'Bisher {count} gefunden',
   '{count} found': '{count} gefunden',
@@ -235,8 +234,7 @@ export default {
   'Change picture': 'Bild ändern',
   'Add a picture': 'Bild hinzufügen',
   Remove: 'Entfernen',
-  "Encrypted in this browser. Only people you share with, or who share with you, can see it; the server can't.":
-    'In diesem Browser verschlüsselt. Nur Personen, mit denen du etwas teilst oder die etwas mit dir teilen, können es sehen; der Server nicht.',
+  'Only people you share with, or who share with you, can see it.': 'Nur Personen, mit denen du teilst oder die mit dir teilen, sehen es.',
   'Display name': 'Anzeigename',
   None: 'Keiner',
   'Any script, up to 64 characters. Shown next to your username, to the same people who see your picture.':
@@ -251,8 +249,8 @@ export default {
   'When someone shares with you, they see this fingerprint. Read it to them over a call or in person so they can check it matches. That proves the server gave them your real key.':
     'Wenn jemand etwas mit dir teilt, sieht die Person diesen Fingerabdruck. Lies ihn ihr am Telefon oder persönlich vor, damit sie prüfen kann, ob er übereinstimmt. Das beweist, dass der Server ihr deinen echten Schlüssel gegeben hat.',
   'Verified contacts': 'Geprüfte Kontakte',
-  "Keys you've checked by fingerprint. If the server ever gives you a different key for one of these people, sharing with them is stopped until you check again. This list is encrypted; the server can't read or change it.":
-    'Schlüssel, die du per Fingerabdruck geprüft hast. Gibt der Server dir je einen anderen Schlüssel für eine dieser Personen, wird das Teilen mit ihr gestoppt, bis du erneut prüfst. Diese Liste ist verschlüsselt; der Server kann sie weder lesen noch ändern.',
+  "Keys you've checked by fingerprint. If the server ever gives you a different key for one of these people, sharing with them is stopped until you check again.":
+    'Schlüssel, die du per Fingerabdruck geprüft hast. Gibt dir der Server je einen anderen Schlüssel für eine dieser Personen, wird das Teilen mit ihr gestoppt, bis du erneut prüfst.',
   'Changing it signs out your other devices. If you forget it, only your recovery key can get you back in.':
     'Beim Ändern werden deine anderen Geräte abgemeldet. Wenn du es vergisst, kommst du nur mit deinem Wiederherstellungsschlüssel wieder hinein.',
   'A printable key that lets you set a new password if you forget yours, without losing your files. Keep it somewhere safe, away from this device.':
@@ -289,17 +287,17 @@ export default {
   'Location in photos': 'Ort in Fotos',
   'JPEG, PNG and WebP photos often record where they were taken and on what camera. This is checked on this device when you upload; the orientation is always kept.':
     'JPEG-, PNG- und WebP-Fotos speichern oft, wo und mit welcher Kamera sie aufgenommen wurden. Das wird beim Hochladen auf diesem Gerät geprüft; die Ausrichtung bleibt immer erhalten.',
-  'Turning one off only hides it; what you logged stays, encrypted, until you turn it on again.':
-    'Ausschalten blendet es nur aus; was du eingetragen hast, bleibt verschlüsselt erhalten, bis du es wieder einschaltest.',
+  'Turning one off only hides it; what you logged stays until you turn it on again.':
+    'Ausschalten blendet es nur aus; was du eingetragen hast, bleibt, bis du es wieder einschaltest.',
   Modules: 'Module',
-  'Optional parts of thencloud. Which ones are on is saved encrypted with your account, so it follows you to other devices.':
-    'Optionale Teile von thencloud. Welche eingeschaltet sind, wird verschlüsselt mit deinem Konto gespeichert und gilt so auch auf deinen anderen Geräten.',
+  'Optional parts of thencloud. Which ones are on is saved with your account, so it follows you to other devices.':
+    'Optionale Teile von thencloud. Welche an sind, wird mit deinem Konto gespeichert und gilt so auch auf deinen anderen Geräten.',
   'Export your data': 'Deine Daten exportieren',
   'Check your files': 'Deine Dateien prüfen',
   'Delete account': 'Konto löschen',
   About: 'Über',
-  'A log of weight, height, blood pressure and other measurements with charts, and a mood meter. Encrypted like your files.':
-    'Ein Protokoll für Gewicht, Größe, Blutdruck und andere Messwerte mit Diagrammen, und ein Stimmungsbarometer. Verschlüsselt wie deine Dateien.',
+  'A log of weight, height, blood pressure and other measurements with charts, and a mood meter.':
+    'Ein Protokoll von Gewicht, Größe, Blutdruck und anderen Messwerten mit Diagrammen, dazu ein Stimmungsbarometer.',
 
   // Errors
   'You do not have permission to do that.': 'Dazu hast du keine Berechtigung.',
@@ -345,7 +343,6 @@ export default {
   // Recent and favourites
   'Files and folders you starred.': 'Dateien und Ordner, die du markiert hast.',
   'Files you opened lately, on any device.': 'Dateien, die du zuletzt geöffnet hast, auf jedem Gerät.',
-  "The list is encrypted, so the server can't tell which they are.": 'Die Liste ist verschlüsselt, der Server weiß also nicht, welche es sind.',
   'No favourites yet': 'Noch keine Favoriten',
   'Nothing opened yet': 'Noch nichts geöffnet',
   'Use "Add to favourites" in the menu on any file or folder.': 'Nutze "Zu den Favoriten hinzufügen" im Menü einer Datei oder eines Ordners.',
@@ -482,7 +479,7 @@ export default {
   'Pleasant, calm': 'Angenehm, ruhig',
   'Unpleasant, low energy': 'Unangenehm, wenig Energie',
   'Unpleasant, lots of energy': 'Unangenehm, viel Energie',
-  "Encrypted in this browser like your files. The server stores it but can't read any of it.": 'In diesem Browser verschlüsselt wie deine Dateien. Der Server speichert es, kann aber nichts davon lesen.',
+  'Your measurements and moods over time.': 'Deine Messwerte und Stimmungen im Verlauf.',
   'Health sections': 'Bereiche von Gesundheit',
   Measurements: 'Messwerte',
   Mood: 'Stimmung',
@@ -572,8 +569,7 @@ export default {
   'For languages whose words change with it, like Polish "przeczytała" or "przeczytał". Not set keeps the wording neutral.':
     'Für Sprachen, deren Wörter sich danach richten, wie das polnische "przeczytała" oder "przeczytał". Ohne Angabe bleibt die Formulierung neutral.',
   "Those pronouns have characters that can't be used.": 'Diese Pronomen enthalten Zeichen, die nicht verwendet werden können.',
-  'Shown only to the people who see your picture and display name, and encrypted the same way.':
-    'Nur für die Personen sichtbar, die dein Bild und deinen Anzeigenamen sehen, und genauso verschlüsselt.',
+  'Shown only to the people who see your picture and display name.': 'Nur für die Personen sichtbar, die dein Bild und deinen Anzeigenamen sehen.',
 
   // Versions, comments and activity
   You: 'Du',
@@ -595,7 +591,7 @@ export default {
   "a file that's no longer here": 'eine Datei, die nicht mehr da ist',
   'In the last hour': 'In der letzten Stunde',
   'Show older': 'Ältere anzeigen',
-  "On {name}. Encrypted like the file itself: everyone who can open it can read them, and the server can't.": 'Zu {name}. Verschlüsselt wie die Datei selbst: Alle, die sie öffnen können, können sie lesen, der Server nicht.',
+  'On {name}. Everyone who can open it can read them.': 'Zu {name}. Alle, die es öffnen können, können sie lesen.',
   "This comment can't be decrypted. It may have been tampered with.": 'Dieser Kommentar lässt sich nicht entschlüsseln. Möglicherweise wurde er manipuliert.',
   'Delete comment': 'Kommentar löschen',
   Delete: 'Löschen',
@@ -611,17 +607,17 @@ export default {
   'Download this version': 'Diese Version herunterladen',
   'Delete this version': 'Diese Version löschen',
   'This is the only version so far. Uploading a new version keeps this one here.': 'Das ist bisher die einzige Version. Wenn du eine neue hochlädst, bleibt diese hier.',
-  'Drop files or whole folders anywhere on this page, or use Upload. Everything is encrypted before it leaves your device.':
-    'Zieh Dateien oder ganze Ordner irgendwo auf diese Seite oder nutze Hochladen. Alles wird verschlüsselt, bevor es dein Gerät verlässt.',
+  'Drop files or whole folders anywhere on this page, or use Upload.':
+    'Zieh Dateien oder ganze Ordner irgendwo auf diese Seite oder nutze Hochladen.',
 
   // Notes and the folder picker
   'Use {name}': '{name} verwenden',
   'your notes folder': 'deinem Notizordner',
-  'Encrypting and saving': 'Wird verschlüsselt und gespeichert',
+  'Saving': 'Wird gespeichert',
   Saved: 'Gespeichert',
   'Unsaved changes': 'Ungespeicherte Änderungen',
   'Changed on another device': 'Auf einem anderen Gerät geändert',
-  'Markdown files in {folder}, encrypted like everything else.': 'Markdown-Dateien in {folder}, verschlüsselt wie alles andere.',
+  'Markdown files in {folder}.': 'Markdown-Dateien in {folder}.',
   'Notes folder': 'Notizordner',
   'Choose another folder': 'Anderen Ordner wählen',
   'Look for new notes': 'Nach neuen Notizen suchen',
@@ -721,15 +717,14 @@ export default {
   'Add tracks from an album or the track list with Add to playlist in their menu.':
     'Füge Titel aus einem Album oder der Titelliste über Zur Playlist hinzufügen in ihrem Menü hinzu.',
   '{count} albums': { one: '{count} Album', other: '{count} Alben' },
-  'Play the music in your files. Names and tags are read in this browser.':
-    'Spiel die Musik in deinen Dateien ab. Namen und Tags werden in diesem Browser gelesen.',
+  'Play the music in your files.': 'Spiel die Musik in deinen Dateien ab.',
   'Shuffle all': 'Alles zufällig',
   'Music options': 'Musikoptionen',
   'New playlist': 'Neue Playlist',
   'Scan again': 'Erneut durchsuchen',
   'Pick your music folder': 'Wähle deinen Musikordner',
-  'Albums are made from its folders, like Artist/Album/01 Song.mp3. MP3, M4A, AAC, Ogg, Opus, FLAC and WAV play here, decrypted as they stream.':
-    'Alben entstehen aus seinen Ordnern, etwa Interpret/Album/01 Song.mp3. MP3, M4A, AAC, Ogg, Opus, FLAC und WAV laufen hier und werden beim Streamen entschlüsselt.',
+  'Albums are made from its folders, like Artist/Album/01 Song.mp3. MP3, M4A, AAC, Ogg, Opus, FLAC and WAV play here.':
+    'Alben entstehen aus seinen Ordnern, etwa Interpret/Album/01 Song.mp3. MP3, M4A, AAC, Ogg, Opus, FLAC und WAV laufen hier.',
   'Choose folder': 'Ordner wählen',
   'Could not open the music folder': 'Der Musikordner konnte nicht geöffnet werden',
   '{error}. It may have been moved to the trash, or its share ended.':
@@ -761,13 +756,12 @@ export default {
   'Added {count} tracks to {name}': { one: '{count} Titel zu {name} hinzugefügt', other: '{count} Titel zu {name} hinzugefügt' },
   'Already in {name}': 'Schon in {name}',
   'Made the playlist {name}': 'Playlist {name} erstellt',
-  "The name and artist are kept in your library, encrypted. A new cover is saved as cover.jpg in the album's folder.":
-    'Name und Interpret werden verschlüsselt in deiner Bibliothek gespeichert. Ein neues Cover wird als cover.jpg im Ordner des Albums gespeichert.',
+  "The name and artist are kept in your library. A new cover is saved as cover.jpg in the album's folder.":
+    'Name und Interpret werden in deiner Bibliothek gespeichert. Ein neues Cover wird als cover.jpg im Ordner des Albums gespeichert.',
   'Choose cover': 'Cover wählen',
   Artist: 'Interpret',
   'Edit track': 'Titel bearbeiten',
-  "Changes are kept in your library, encrypted. The file isn't changed.":
-    'Änderungen werden verschlüsselt in deiner Bibliothek gespeichert. Die Datei bleibt unverändert.',
+  "Changes are kept in your library. The file isn't changed.": 'Änderungen werden in deiner Bibliothek gespeichert. Die Datei bleibt unverändert.',
   Track: 'Nr.',
   'File: {name}': 'Datei: {name}',
   'Undo edits': 'Änderungen verwerfen',
@@ -833,14 +827,13 @@ export default {
   'Episode actions': 'Folgenaktionen',
   '{count} series': { one: '{count} Serie', other: '{count} Serien' },
   '{count} movies': { one: '{count} Film', other: '{count} Filme' },
-  'Watch the videos in your files. Names and details are read in this browser.':
-    'Schau die Videos in deinen Dateien. Namen und Angaben werden in diesem Browser gelesen.',
+  'Watch the videos in your files.': 'Schau die Videos in deinen Dateien.',
   'Video options': 'Videooptionen',
   'Read episode details from files': 'Folgenangaben aus Dateien lesen',
   'Reading episode details: {done} of {total}': 'Folgenangaben werden gelesen: {done} von {total}',
   'Pick your videos folder': 'Wähle deinen Videoordner',
-  'Episodes are grouped into series by their names, like Show S01E02.mp4, by folders like Show/Season 1, or by their tags. MP4, WebM and MOV play here, decrypted as they stream; MKV where your browser can.':
-    'Folgen werden nach ihren Namen wie Serie S01E02.mp4, nach Ordnern wie Serie/Staffel 1 oder nach ihren Tags zu Serien gruppiert. MP4, WebM und MOV laufen hier und werden beim Streamen entschlüsselt, MKV, wo dein Browser es kann.',
+  'Episodes are grouped into series by their names, like Show S01E02.mp4, by folders like Show/Season 1, or by their tags. MP4, WebM and MOV play here; MKV where your browser can.':
+    'Folgen werden nach ihren Namen wie Serie S01E02.mp4, nach Ordnern wie Serie/Staffel 1 oder nach ihren Tags zu Serien gruppiert. MP4, WebM und MOV laufen hier, MKV, wo dein Browser es kann.',
   'Could not open the videos folder': 'Der Videoordner konnte nicht geöffnet werden',
   'Looking through folders: {count} videos so far': { one: 'Ordner werden durchsucht: bisher {count} Video', other: 'Ordner werden durchsucht: bisher {count} Videos' },
   'No videos in {folder}': 'Keine Videos in {folder}',
@@ -989,7 +982,6 @@ export default {
   'Set up on {date}': 'Eingerichtet am {date}',
   "Not set up. If you forget your password, your files can't be recovered by anyone.":
     'Nicht eingerichtet. Wenn du dein Passwort vergisst, kann niemand deine Dateien wiederherstellen.',
-  'Made in this browser; the server never sees it.': 'Wird in diesem Browser erstellt; der Server sieht ihn nie.',
   'Create recovery key': 'Wiederherstellungsschlüssel erstellen',
   'Authenticator app': 'Authenticator-App',
   'On since {date}': 'An seit {date}',
@@ -1037,11 +1029,11 @@ export default {
   'Ask me': 'Nachfragen',
   'When a photo records where it was taken.': 'Wenn ein Foto speichert, wo es aufgenommen wurde.',
   'Always remove': 'Immer entfernen',
-  'From every photo, before it is encrypted.': 'Aus jedem Foto, bevor es verschlüsselt wird.',
+  'From every photo, before it is uploaded.': 'Aus jedem Foto, bevor es hochgeladen wird.',
   'Keep them': 'Behalten',
   'Upload photos exactly as they are.': 'Fotos genau so hochladen, wie sie sind.',
-  "Everything in My files, decrypted in this browser into one zip, with your playlists, pinned notes and verified contacts as JSON in a {folder} folder. The zip is not encrypted, so keep it somewhere safe. Items others shared with you aren't included.":
-    'Alles in Meine Dateien, in diesem Browser entschlüsselt in eine Zip-Datei, mit deinen Playlists, angehefteten Notizen und bestätigten Kontakten als JSON in einem Ordner {folder}. Die Zip-Datei ist nicht verschlüsselt, also bewahre sie sicher auf. Was andere mit dir geteilt haben, ist nicht dabei.',
+  "Everything in My files in one zip, with your playlists, pinned notes and verified contacts as JSON in a {folder} folder. The zip is not encrypted, so keep it somewhere safe. Items others shared with you aren't included.":
+    'Alles in Meine Dateien in einer Zip-Datei, mit deinen Playlists, angehefteten Notizen und bestätigten Kontakten als JSON in einem Ordner {folder}. Die Zip-Datei ist nicht verschlüsselt, also bewahre sie sicher auf. Was andere mit dir geteilt haben, ist nicht dabei.',
   Export: 'Exportieren',
   'Downloads everything in My files and decrypts it here, to make sure nothing is damaged or missing. Nothing is saved. With a lot of data this takes a while.':
     'Lädt alles in Meine Dateien herunter und entschlüsselt es hier, um sicherzugehen, dass nichts beschädigt ist oder fehlt. Nichts wird gespeichert. Bei vielen Daten dauert das eine Weile.',
@@ -1162,4 +1154,307 @@ export default {
   "Their files, folders, versions, shares and links are deleted for good, and the storage is freed. Files they added to other people's shared folders stay with those people. This can't be undone.":
     'Dateien, Ordner, Versionen, Freigaben und Links des Kontos werden endgültig gelöscht und der Speicher freigegeben. Dateien in Ordnern anderer bleiben bei diesen. Das lässt sich nicht rückgängig machen.',
   'Deleted {name}': '{name} gelöscht',
+
+  // Preview
+  'Someone else changed this file since you opened it. Copy your changes, then reopen the file.':
+    'Jemand anderes hat diese Datei geändert, seit du sie geöffnet hast. Kopiere deine Änderungen und öffne die Datei dann neu.',
+  'Not enough storage left to save.': 'Nicht genug Speicher frei zum Speichern.',
+  'Preview of {name}': 'Vorschau von {name}',
+  'All changes saved': 'Alle Änderungen gespeichert',
+  'Save (Ctrl+S)': 'Speichern (Strg+S)',
+  Source: 'Quelltext',
+  Edit: 'Bearbeiten',
+  'Previous file': 'Vorherige Datei',
+  'Previous (←)': 'Vorherige (←)',
+  '{n} of {total}': '{n} von {total}',
+  'Next file': 'Nächste Datei',
+  'Next (→)': 'Nächste (→)',
+  'Close preview': 'Vorschau schließen',
+  'Close (Esc)': 'Schließen (Esc)',
+  'You have unsaved changes from {when}.': 'Du hast ungespeicherte Änderungen von {when}.',
+  'The file has changed since, so restoring replaces those changes when you save.':
+    'Die Datei hat sich seitdem geändert; wenn du wiederherstellst, ersetzt das beim Speichern diese Änderungen.',
+  Discard: 'Verwerfen',
+  Decrypting: 'Wird entschlüsselt',
+  'Fit to window': 'An Fenster anpassen',
+  'Show actual size': 'Originalgröße zeigen',
+  "This image couldn't be displayed. It may be damaged, or in a format your browser doesn't support.":
+    'Dieses Bild konnte nicht angezeigt werden. Vielleicht ist es beschädigt oder in einem Format, das dein Browser nicht kann.',
+  'No preview for this type of file': 'Keine Vorschau für diesen Dateityp',
+  'Download it to open it with an app on your device.': 'Lade sie herunter, um sie mit einer App auf deinem Gerät zu öffnen.',
+  'Too large to preview': 'Zu groß für die Vorschau',
+  "Previews are made in memory, so they're limited to {size}. Download it instead.":
+    'Vorschauen entstehen im Arbeitsspeicher und sind daher auf {size} begrenzt. Lade die Datei stattdessen herunter.',
+  "This doesn't look like text": 'Das sieht nicht nach Text aus',
+  'It has binary content, so there is nothing to show here. Download it instead.':
+    'Sie enthält Binärdaten, hier gibt es also nichts zu zeigen. Lade sie stattdessen herunter.',
+  "Couldn't open this file": 'Diese Datei konnte nicht geöffnet werden',
+  'Discard your changes?': 'Deine Änderungen verwerfen?',
+  "Your edits to {name} haven't been saved.": 'Deine Änderungen an {name} wurden nicht gespeichert.',
+  'Page {n}': 'Seite {n}',
+  'Previous page': 'Vorherige Seite',
+  'Next page': 'Nächste Seite',
+  'Previous chapter': 'Vorheriges Kapitel',
+  'Page {n} of {total}': 'Seite {n} von {total}',
+  'Chapter {n} of {total}': 'Kapitel {n} von {total}',
+  'Next chapter': 'Nächstes Kapitel',
+  'Loading image': 'Bild wird geladen',
+  'No image found at {path}': 'Kein Bild unter {path} gefunden',
+  "Couldn't load {path}": '{path} konnte nicht geladen werden',
+  "Couldn't render this file. Switch to Source to read it.": 'Diese Datei konnte nicht dargestellt werden. Wechsle zu Quelltext, um sie zu lesen.',
+  "This PDF is password protected, which the preview doesn't support yet.": 'Dieses PDF ist passwortgeschützt, was die Vorschau noch nicht kann.',
+  "This PDF couldn't be read. It may be damaged.": 'Dieses PDF konnte nicht gelesen werden. Vielleicht ist es beschädigt.',
+  'Go to page {n}': 'Zu Seite {n}',
+  'Zoom out': 'Verkleinern',
+  'Fit to width': 'An Breite anpassen',
+  'Zoom in': 'Vergrößern',
+  '{count} pages': { one: '{count} Seite', other: '{count} Seiten' },
+  'This file is empty.': 'Diese Datei ist leer.',
+  Row: 'Zeile',
+  '{count} rows shown, the file has more. Use Source to see all of it.': { one: '{count} Zeile angezeigt, die Datei hat mehr. Unter Quelltext siehst du alles.', other: '{count} Zeilen angezeigt, die Datei hat mehr. Unter Quelltext siehst du alles.' },
+  '{count} rows': { one: '{count} Zeile', other: '{count} Zeilen' },
+
+  // Converting
+  'Use a number of pixels between 16 and 16384.': 'Gib eine Pixelzahl zwischen 16 und 16384 an.',
+  'Loading the converter': 'Konverter wird geladen',
+  Converting: 'Wird konvertiert',
+  'Too large to convert in the browser': 'Zu groß, um im Browser konvertiert zu werden',
+  'Already {format}': 'Schon {format}',
+  'Convert {count} files': { one: '{count} Datei konvertieren', other: '{count} Dateien konvertieren' },
+  'One after another, in this browser.': 'Eine nach der anderen, in diesem Browser.',
+  'These files have no format in common to convert to. Select only images, or only video and audio.':
+    'Diese Dateien haben kein gemeinsames Zielformat. Wähle nur Bilder oder nur Video und Audio aus.',
+  To: 'Nach',
+  Quality: 'Qualität',
+  'Longest side at most': 'Längste Seite höchstens',
+  '(optional, pixels)': '(optional, Pixel)',
+  Then: 'Danach',
+  'Save them in this folder': 'In diesem Ordner speichern',
+  'Download them': 'Herunterladen',
+  'File {n} of {total}: {name}': 'Datei {n} von {total}: {name}',
+  Working: 'Läuft',
+  '{done} of {total} done before you stopped': '{done} von {total} fertig, bevor du angehalten hast',
+  '{done} of {total} done': '{done} von {total} fertig',
+  'Convert to {format}': 'In {format} konvertieren',
+  "This image couldn't be read, so it can't be converted here.":
+    'Dieses Bild konnte nicht gelesen werden und lässt sich hier daher nicht konvertieren.',
+  Free: 'Frei',
+  Original: 'Original',
+  'Keep each side under {n} pixels.': 'Jede Seite muss unter {n} Pixeln bleiben.',
+  'Use times like 1:05, 0:01:05 or 65.': 'Gib Zeiten wie 1:05, 0:01:05 oder 65 an.',
+  'The end has to be after the start.': 'Das Ende muss nach dem Anfang liegen.',
+  'Loading the converter (about 10 MB, only the first time)': 'Konverter wird geladen (etwa 10 MB, nur beim ersten Mal)',
+  'Convert {name}': '{name} konvertieren',
+  "It's done in this browser.": 'Das passiert in diesem Browser.',
+  "This file is {size}. Conversion happens in memory in your browser, so it's limited to {limit} for images.":
+    'Diese Datei hat {size}. Konvertiert wird im Arbeitsspeicher deines Browsers, daher sind Bilder auf {limit} begrenzt.',
+  "This file is {size}. Conversion happens in memory in your browser, so it's limited to {limit} for video and audio.":
+    'Diese Datei hat {size}. Konvertiert wird im Arbeitsspeicher deines Browsers, daher sind Video und Audio auf {limit} begrenzt.',
+  'same format': 'gleiches Format',
+  Crop: 'Zuschneiden',
+  'Crop shape': 'Zuschnittform',
+  Reset: 'Zurücksetzen',
+  'Keep proportions': 'Seitenverhältnis beibehalten',
+  'Original {width} x {height}': 'Original {width} x {height}',
+  'Trim (optional)': 'Kürzen (optional)',
+  From: 'Von',
+  'the end': 'Ende',
+  'Save it in this folder': 'In diesem Ordner speichern',
+  'Download it': 'Herunterladen',
+  'Video and audio are converted by ffmpeg in your browser, single-threaded, so long files take a while. Changing only the container (say MOV to MP4) is usually quick.':
+    'Video und Audio konvertiert ffmpeg in deinem Browser, mit einem Thread, lange Dateien dauern also eine Weile. Nur den Container zu ändern (etwa MOV zu MP4) geht meist schnell.',
+  "It's already in this format. Pick another, or crop or resize it first.":
+    'Sie ist schon in diesem Format. Wähle ein anderes oder schneide sie erst zu oder ändere die Größe.',
+  "It's already in this format. Pick another, or trim it first.": 'Sie ist schon in diesem Format. Wähle ein anderes oder kürze sie erst.',
+  'Saved as {name}': 'Als {name} gespeichert',
+  'Downloaded {name}': '{name} heruntergeladen',
+  '{before} to {after}': '{before} zu {after}',
+  'Save changes': 'Änderungen speichern',
+  Video: 'Video',
+  'Audio only': 'Nur Audio',
+  Audio: 'Audio',
+  "This file couldn't be converted: {detail}": 'Diese Datei konnte nicht konvertiert werden: {detail}',
+  "This file couldn't be converted.": 'Diese Datei konnte nicht konvertiert werden.',
+
+
+  // Image sizes
+  'Width (px)': 'Breite (px)',
+  'Height (px)': 'Höhe (px)',
+
+  // PDF tools
+  '{name} and {count} more': '{name} und {count} weitere',
+  '{name} (edited)': '{name} (bearbeitet)',
+  '{name} is too big for the PDF tools (over {size}).': '{name} ist zu groß für die PDF-Werkzeuge (über {size}).',
+  Document: 'Dokument',
+  'Saved {name}': '{name} gespeichert',
+  'page {n}': 'Seite {n}',
+  'pages {list}': 'Seiten {list}',
+  '{name}, page {n}': '{name}, Seite {n}',
+  "This PDF is protected with a password, so its pages can't be copied.":
+    'Dieses PDF ist passwortgeschützt, seine Seiten lassen sich also nicht kopieren.',
+  "This file couldn't be read as a PDF.": 'Diese Datei konnte nicht als PDF gelesen werden.',
+  'There are no pages to save.': 'Es gibt keine Seiten zum Speichern.',
+  'Merge {count} PDFs': { one: '{count} PDF zusammenführen', other: '{count} PDFs zusammenführen' },
+  'Edit {name}': '{name} bearbeiten',
+  'Rotate, reorder or remove pages.': 'Seiten drehen, umsortieren oder entfernen.',
+  'Rotate, reorder or remove pages, or pick some to save on their own.':
+    'Seiten drehen, umsortieren oder entfernen, oder einige auswählen und einzeln speichern.',
+  'Reading {n} of {total} files': 'Datei {n} von {total} wird gelesen',
+  'Reading the file': 'Datei wird gelesen',
+  Pages: 'Seiten',
+  '{name} p. {n}': '{name} S. {n}',
+  'was {n}': 'war {n}',
+  'Move {page} earlier': '{page} nach vorn',
+  'Rotate {page} left': '{page} nach links drehen',
+  'Rotate {page} right': '{page} nach rechts drehen',
+  'Remove {page}': '{page} entfernen',
+  'Move {page} later': '{page} nach hinten',
+  'Save as': 'Speichern als',
+  'Save {count} pages on their own': { one: '{count} Seite einzeln speichern', other: '{count} Seiten einzeln speichern' },
+  'Download {count} pages on their own': { one: '{count} Seite einzeln herunterladen', other: '{count} Seiten einzeln herunterladen' },
+  'Save as new file': 'Als neue Datei speichern',
+
+  // Video downloader
+  Best: 'Beste',
+  'You already have a download running. Wait for it to finish.': 'Bei dir läuft schon ein Download. Warte, bis er fertig ist.',
+  'No video to download': 'Kein Video zum Herunterladen',
+  'No audio to download': 'Kein Audio zum Herunterladen',
+  'Too large for this server': 'Zu groß für diesen Server',
+  'Download from a video link': 'Von einem Videolink herunterladen',
+  'This server downloads it for you, so it sees the link and the video.': 'Dieser Server lädt es für dich herunter und sieht dabei Link und Video.',
+  'Nothing is kept there: the video comes straight to this browser, which encrypts it like any upload.':
+    'Dort bleibt nichts: Das Video kommt direkt in diesen Browser, der es wie jeden Upload verschlüsselt.',
+  'Look up': 'Abrufen',
+  'Links to a video or a playlist on YouTube, Vimeo and most other video sites work.':
+    'Links zu einem Video oder einer Playlist auf YouTube, Vimeo und den meisten anderen Videoseiten funktionieren.',
+  '{count} videos': { one: '{count} Video', other: '{count} Videos' },
+  '{n} of {total} selected': '{n} von {total} ausgewählt',
+  'Select none': 'Keine auswählen',
+  Get: 'Holen',
+  'Up to': 'Bis',
+  'Videos are fetched one at a time. Any that fail are skipped and listed at the end.':
+    'Videos werden nacheinander geholt. Fehlgeschlagene werden übersprungen und am Ende aufgelistet.',
+  'about {size}': 'etwa {size}',
+  'Not available': 'Nicht verfügbar',
+  'Not offered as one file': 'Nicht als eine Datei angeboten',
+  Default: 'Standard',
+  "That's larger than this server allows ({size}).": 'Das ist größer, als dieser Server erlaubt ({size}).',
+  'Video is saved as MP4, put together as it streams, so nothing is written to the server. Above 1080p it is usually VP9 or AV1, which not every player can open.':
+    'Video wird als MP4 gespeichert und beim Streamen zusammengesetzt, auf dem Server wird also nichts geschrieben. Über 1080p ist es meist VP9 oder AV1, das nicht jeder Player öffnen kann.',
+  'Video is saved as MP4, put together as it streams, so nothing is written to the server.':
+    'Video wird als MP4 gespeichert und beim Streamen zusammengesetzt, auf dem Server wird also nichts geschrieben.',
+  'This server can only save videos a site offers as one file, and YouTube rarely does. Audio only usually works.':
+    'Dieser Server kann nur Videos speichern, die eine Seite als eine Datei anbietet, und YouTube tut das selten. Nur Audio klappt meist.',
+  'Video {n} of {total}: {name}': 'Video {n} von {total}: {name}',
+  'Downloading {size} of about {total}': 'Lädt {size} von etwa {total}',
+  'Downloading {size}': 'Lädt {size}',
+  'Saved {n} of {total} videos before you stopped': '{n} von {total} Videos gespeichert, bevor du angehalten hast',
+  'Saved {n} of {total} videos': '{n} von {total} Videos gespeichert',
+  'Downloaded {n} of {total} videos before you stopped': '{n} von {total} Videos heruntergeladen, bevor du angehalten hast',
+  'Downloaded {n} of {total} videos': '{n} von {total} Videos heruntergeladen',
+  'Download and save {count}': '{count} herunterladen und speichern',
+  'Download {count}': '{count} herunterladen',
+  'Download and save': 'Herunterladen und speichern',
+
+  // Public link page
+  'This link is incomplete': 'Dieser Link ist unvollständig',
+  'The part after the # is missing or damaged. It holds the decryption key, so ask the sender for the full link.':
+    'Der Teil nach dem # fehlt oder ist beschädigt. Er enthält den Schlüssel, also bitte den Absender um den vollständigen Link.',
+  'This link has expired or was removed': 'Dieser Link ist abgelaufen oder wurde entfernt',
+  'Ask the person who shared it for a new link.': 'Bitte die Person, die ihn geteilt hat, um einen neuen Link.',
+  "Couldn't open this link": 'Dieser Link konnte nicht geöffnet werden',
+  "This link doesn't match its owner's key": 'Dieser Link passt nicht zum Schlüssel seines Besitzers',
+  "The server gave a different key than the link names, so nothing can be sent safely. Don't upload anything; let the owner know.":
+    'Der Server hat einen anderen Schlüssel geliefert, als der Link nennt, also lässt sich nichts sicher senden. Lade nichts hoch und sag dem Besitzer Bescheid.',
+  'The key in this link is wrong': 'Der Schlüssel in diesem Link ist falsch',
+  'The password was accepted, but it and the link together do not open this. Make sure you copied the whole link.':
+    'Das Passwort wurde angenommen, aber zusammen mit dem Link öffnet es das nicht. Prüf, ob du den ganzen Link kopiert hast.',
+  'The part after the # does not match. Make sure you copied the whole link.':
+    'Der Teil nach dem # passt nicht. Prüf, ob du den ganzen Link kopiert hast.',
+  'That password is not right.': 'Dieses Passwort stimmt nicht.',
+  "Couldn't list this folder": 'Dieser Ordner konnte nicht aufgelistet werden',
+  "There's no room left in this folder.": 'In diesem Ordner ist kein Platz mehr.',
+  'This link is password protected': 'Dieser Link ist passwortgeschützt',
+  'Enter the password the sender gave you.': 'Gib das Passwort ein, das du vom Absender hast.',
+  Unlock: 'Entsperren',
+  'Send files to {name}': 'Dateien an {name} senden',
+  "Only {name} can open the files you send. You can't see what's already in this folder.":
+    'Nur {name} kann die Dateien öffnen, die du sendest. Was schon in diesem Ordner liegt, siehst du nicht.',
+  'Drop files here or choose them': 'Dateien hierher ziehen oder auswählen',
+  Sent: 'Gesendet',
+  '{percent}% of {size}': '{percent}% von {size}',
+  "{name}'s key fingerprint is {fingerprint}. If it matters who can read these files, check it with them.":
+    'Der Schlüssel-Fingerabdruck von {name} ist {fingerprint}. Wenn es darauf ankommt, wer diese Dateien lesen kann, prüf ihn mit der Person.',
+  'modified {date}': 'geändert {date}',
+  'Download all': 'Alle herunterladen',
+  'This folder is empty.': 'Dieser Ordner ist leer.',
+  'Encrypted in your browser before upload.': 'Vor dem Hochladen in deinem Browser verschlüsselt.',
+  'Decrypted in your browser. The key is never sent to the server.':
+    'In deinem Browser entschlüsselt. Der Schlüssel wird nie an den Server gesendet.',
+  'Link expires {date}': 'Link läuft ab am {date}',
+
+  // Public link page title
+  'Shared with you': 'Mit dir geteilt',
+
+  // Cropping
+  'Image to crop': 'Zuzuschneidendes Bild',
+  'Crop area, {width} by {height} pixels. Arrow keys move it.': 'Zuschnitt, {width} mal {height} Pixel. Mit den Pfeiltasten verschieben.',
+  'as is': 'wie es ist',
+
+  // Comparing versions
+  'These versions are too large to compare here (over {size}).': 'Diese Versionen sind zu groß, um sie hier zu vergleichen (über {size}).',
+  "One of these versions isn't text, so there are no lines to compare.":
+    'Eine dieser Versionen ist kein Text, also gibt es keine Zeilen zu vergleichen.',
+  'These versions are too different to compare line by line.': 'Diese Versionen sind zu verschieden, um sie Zeile für Zeile zu vergleichen.',
+  'Changes in {name}': 'Änderungen in {name}',
+  'From the version of {from} to the version of {to}': 'Ältere Version: {from} · neuere: {to}',
+  '{count} lines added': { one: '{count} Zeile hinzugefügt', other: '{count} Zeilen hinzugefügt' },
+  '{count} lines removed': { one: '{count} Zeile entfernt', other: '{count} Zeilen entfernt' },
+  'The text is the same in both.': 'Der Text ist in beiden gleich.',
+  '{count} unchanged lines': { one: '{count} unveränderte Zeile', other: '{count} unveränderte Zeilen' },
+  Added: 'Hinzugefügt',
+  Removed: 'Entfernt',
+  'What changed in this version': 'Was sich in dieser Version geändert hat',
+  Changes: 'Änderungen',
+
+  // App data
+  "Your {name} library data couldn't be decrypted. It may have been tampered with.":
+    'Deine Bibliotheksdaten ({name}) ließen sich nicht entschlüsseln. Möglicherweise wurden sie manipuliert.',
+
+  // Admin activity
+  "{actor} set {target}'s storage to {value}": '{actor} hat den Speicher von {target} auf {value} gesetzt',
+  "{actor} limited {target}'s downloads to {value} a day": '{actor} hat die Downloads von {target} auf {value} pro Tag begrenzt',
+  "{actor} removed {target}'s download limit": '{actor} hat das Downloadlimit von {target} aufgehoben',
+  "{actor} limited {target}'s uploads to {value} a day": '{actor} hat die Uploads von {target} auf {value} pro Tag begrenzt',
+  "{actor} removed {target}'s upload limit": '{actor} hat das Uploadlimit von {target} aufgehoben',
+  '{actor} made {target} an admin': '{actor} hat {target} zum Admin gemacht',
+  "{actor} took {target}'s admin rights away": '{actor} hat {target} die Adminrechte entzogen',
+  "{actor} disabled {target}'s account": '{actor} hat das Konto von {target} deaktiviert',
+  "{actor} enabled {target}'s account again": '{actor} hat das Konto von {target} wieder aktiviert',
+  "{actor} deleted {target}'s account": '{actor} hat das Konto von {target} gelöscht',
+  '{actor} set registration to {value}': '{actor} hat die Registrierung auf {value} gesetzt',
+  '{actor} set the video downloader to {value}': '{actor} hat den Video-Downloader auf {value} gesetzt',
+  '{actor} made an invite link valid for {count} days': { one: '{actor} hat einen Einladungslink für {count} Tag erstellt', other: '{actor} hat einen Einladungslink für {count} Tage erstellt' },
+  '{actor} deleted an invite link': '{actor} hat einen Einladungslink gelöscht',
+  'Admin activity': 'Admin-Aktivität',
+  'What admins changed on this server, kept for a year.': 'Was Admins auf diesem Server geändert haben, ein Jahr lang aufbewahrt.',
+  'Nothing yet.': 'Noch nichts.',
+
+  // Tags
+  Tags: 'Tags',
+  'On {name}. Only you see them.': 'An {name}. Nur du siehst sie.',
+  'Remove {tag}': '{tag} entfernen',
+  'Add a tag': 'Tag hinzufügen',
+  'Press Enter after each tag.': 'Drück nach jedem Tag Enter.',
+  'Files and folders by the tags you gave them. Only you see your tags.':
+    'Dateien und Ordner nach den Tags, die du ihnen gegeben hast. Deine Tags siehst nur du.',
+  'No tags yet': 'Noch keine Tags',
+  'Use "Tags" in the menu on any file or folder.': 'Nutze "Tags" im Menü einer Datei oder eines Ordners.',
+
+  // Saved searches
+  'Forget this saved search': 'Gespeicherte Suche vergessen',
+  'Save this search': 'Diese Suche speichern',
+  'Reading files to search inside them ({done} of {total})': 'Dateien werden gelesen, um in ihnen zu suchen ({done} von {total})',
+  'Looking through your folders': 'Deine Ordner werden durchsucht',
+  'Saved. It is under My files in the sidebar.': 'Gespeichert. Du findest sie unter Meine Dateien in der Seitenleiste.',
 };

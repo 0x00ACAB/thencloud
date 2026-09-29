@@ -1,4 +1,4 @@
-// Favourites and recently opened files. Only node ids are kept, in the
+// Favourites, recently opened files and tags. Only node ids are kept, in the
 // encrypted app data ("files"), so the server learns neither which files
 // they are nor their names; names are decrypted here by resolving each id's
 // path, and kept in memory only.
@@ -6,8 +6,11 @@ import { resolvePath, loadAppData, saveAppData, folderLabel } from './cloud.svel
 
 const MAX_RECENT = 30;
 
-/** `favourites`: [node id]; `recent`: [{ id, at }], newest first. */
-export const places = $state({ favourites: [], recent: [], loaded: false });
+/**
+ * `favourites`: [node id]; `recent`: [{ id, at }], newest first; `tags`: { node id: [tag] };
+ * `searches`: [{ id, name, query, scope }] (scope 'all' or 'contents').
+ */
+export const places = $state({ favourites: [], recent: [], tags: {}, searches: [], loaded: false });
 
 let loading = null;
 
@@ -16,6 +19,8 @@ export function loadPlaces() {
     (d) => {
       places.favourites = d.favourites ?? [];
       places.recent = d.recent ?? [];
+      places.tags = d.tags ?? {};
+      places.searches = d.searches ?? [];
       places.loaded = true;
     },
     (e) => {
@@ -56,9 +61,12 @@ export async function forgetPlaces(ids) {
   if (!gone.size) return;
   places.favourites = places.favourites.filter((x) => !gone.has(x));
   places.recent = places.recent.filter((r) => !gone.has(r.id));
+  const untag = (tags = {}) => Object.fromEntries(Object.entries(tags).filter(([id]) => !gone.has(id)));
+  places.tags = untag(places.tags);
   await saveAppData('files', (d) => {
     d.favourites = (d.favourites ?? []).filter((x) => !gone.has(x));
     d.recent = (d.recent ?? []).filter((r) => !gone.has(r.id));
+    d.tags = untag(d.tags);
   }).catch(() => {});
 }
 
@@ -79,3 +87,79 @@ export function resolvePlaces(ids) {
     }),
   );
 }
+
+// ---------------------------------------------------------------- tags
+
+export const MAX_TAG = 40;
+const MAX_TAGS_PER_ITEM = 20;
+
+/** A tag as kept: trimmed, inner spaces collapsed, no control characters. '' if nothing's left. */
+export function cleanTag(tag) {
+  return String(tag)
+    .normalize('NFC')
+    .replace(/[\p{Cc}\p{Cf}]/gu, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_TAG);
+}
+
+const same = (a, b) => a.localeCompare(b, undefined, { sensitivity: 'accent' }) === 0;
+
+/** An item's tags, [] if none. */
+export const tagsOf = (id) => places.tags[id] ?? [];
+
+/** Every tag in use, with how many items carry it, most used first. */
+export function allTags() {
+  const count = new Map();
+  for (const list of Object.values(places.tags)) {
+    for (const tag of list) {
+      const known = [...count.keys()].find((k) => same(k, tag)) ?? tag;
+      count.set(known, (count.get(known) ?? 0) + 1);
+    }
+  }
+  return [...count].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([tag, n]) => ({ tag, n }));
+}
+
+/** Ids of the items tagged `tag` (whatever the case). */
+export const taggedWith = (tag) => Object.entries(places.tags).flatMap(([id, list]) => (list.some((x) => same(x, tag)) ? [id] : []));
+
+/** Replace an item's tags. Duplicates (ignoring case) and empty ones are dropped. */
+export async function setTags(id, tags) {
+  const list = [];
+  for (const tag of tags.map(cleanTag)) if (tag && !list.some((x) => same(x, tag))) list.push(tag);
+  const apply = (all = {}) => {
+    const next = { ...all };
+    if (list.length) next[id] = list.slice(0, MAX_TAGS_PER_ITEM);
+    else delete next[id];
+    return next;
+  };
+  const before = places.tags;
+  places.tags = apply(places.tags);
+  try {
+    const d = await saveAppData('files', (d) => (d.tags = apply(d.tags)));
+    places.tags = d.tags;
+  } catch (e) {
+    places.tags = before;
+    throw e;
+  }
+}
+
+// ---------------------------------------------------------------- saved searches
+
+const MAX_SEARCHES = 50;
+
+/** Keep a search (the search box's text and where it looked) under `name`. */
+export async function saveSearch(name, query, scope) {
+  const entry = { id: crypto.randomUUID(), name, query, scope };
+  places.searches = [...places.searches, entry];
+  const d = await saveAppData('files', (d) => (d.searches = [...(d.searches ?? []), entry].slice(-MAX_SEARCHES)));
+  places.searches = d.searches;
+  return entry;
+}
+
+export async function forgetSearch(id) {
+  places.searches = places.searches.filter((x) => x.id !== id);
+  const d = await saveAppData('files', (d) => (d.searches = (d.searches ?? []).filter((x) => x.id !== id)));
+  places.searches = d.searches;
+}
+

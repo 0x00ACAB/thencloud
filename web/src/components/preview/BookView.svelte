@@ -4,6 +4,7 @@
   // from inside the book. Where you were is kept through `progress`
   // (encrypted app data) when it's given; public links don't have it.
   import { onMount } from 'svelte';
+  import { t } from '../../lib/i18n.svelte.js';
   import Icon from '../Icon.svelte';
 
   let { blob, entry, format, progress = null } = $props();
@@ -134,13 +135,13 @@
     {#if book.kind === 'cbz'}
       <div class="relative min-h-0 flex-1">
         {#if pageUrl}
-          <img src={pageUrl} alt="Page {at + 1}" class="absolute inset-0 m-auto max-h-full max-w-full object-contain p-4 select-none" draggable="false" />
+          <img src={pageUrl} alt={t('Page {n}', { n: at + 1 })} class="absolute inset-0 m-auto max-h-full max-w-full object-contain p-4 select-none" draggable="false" />
         {:else if error}
           <p class="grid h-full place-items-center text-[13px] text-fg-muted">{error}</p>
         {/if}
         <!-- Tap either side to turn the page. -->
-        <button type="button" class="absolute inset-y-0 left-0 w-1/3 cursor-w-resize" aria-label="Previous page" disabled={at === 0} onclick={() => go(at - 1)}></button>
-        <button type="button" class="absolute inset-y-0 right-0 w-1/3 cursor-e-resize" aria-label="Next page" disabled={at === book.count - 1} onclick={() => go(at + 1)}></button>
+        <button type="button" class="absolute inset-y-0 left-0 w-1/3 cursor-w-resize" aria-label={t('Previous page')} disabled={at === 0} onclick={() => go(at - 1)}></button>
+        <button type="button" class="absolute inset-y-0 right-0 w-1/3 cursor-e-resize" aria-label={t('Next page')} disabled={at === book.count - 1} onclick={() => go(at + 1)}></button>
       </div>
     {:else}
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
@@ -150,11 +151,11 @@
       </div>
     {/if}
     <div class="flex items-center justify-center gap-3 border-t border-line px-4 py-2 text-[13px] text-fg-muted">
-      <button type="button" class="btn btn-ghost btn-icon" aria-label={book.kind === 'cbz' ? 'Previous page' : 'Previous chapter'} disabled={at === 0} onclick={() => go(at - 1)}>
+      <button type="button" class="btn btn-ghost btn-icon" aria-label={book.kind === 'cbz' ? t('Previous page') : t('Previous chapter')} disabled={at === 0} onclick={() => go(at - 1)}>
         <Icon name="chevron-left" />
       </button>
-      <span class="tabular-nums">{book.kind === 'cbz' ? 'Page' : 'Chapter'} {at + 1} of {book.count}</span>
-      <button type="button" class="btn btn-ghost btn-icon" aria-label={book.kind === 'cbz' ? 'Next page' : 'Next chapter'} disabled={at === book.count - 1} onclick={() => go(at + 1)}>
+      <span class="tabular-nums">{book.kind === 'cbz' ? t('Page {n} of {total}', { n: at + 1, total: book.count }) : t('Chapter {n} of {total}', { n: at + 1, total: book.count })}</span>
+      <button type="button" class="btn btn-ghost btn-icon" aria-label={book.kind === 'cbz' ? t('Next page') : t('Next chapter')} disabled={at === book.count - 1} onclick={() => go(at + 1)}>
         <Icon name="chevron-right" />
       </button>
     </div>

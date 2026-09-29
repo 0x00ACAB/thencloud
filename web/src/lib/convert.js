@@ -7,6 +7,7 @@
 // loaded only the first time it's needed.
 
 import { previewKind, extension } from './preview.js';
+import { t } from './i18n.svelte.js';
 
 /** @typedef {{ id: string, label: string, ext: string, type: string, kind: 'image' | 'video' | 'audio', quality?: boolean }} Target */
 
@@ -63,11 +64,11 @@ async function imageEncoders() {
   const canvas = new OffscreenCanvas(1, 1);
   canvas.getContext('2d');
   const ok = new Set(['bmp']); // written by hand below
-  for (const t of IMAGE_TARGETS) {
-    if (t.id === 'bmp') continue;
+  for (const fmt of IMAGE_TARGETS) {
+    if (fmt.id === 'bmp') continue;
     try {
-      const blob = await canvas.convertToBlob({ type: t.type });
-      if (blob.type === t.type) ok.add(t.id);
+      const blob = await canvas.convertToBlob({ type: fmt.type });
+      if (blob.type === fmt.type) ok.add(fmt.id);
     } catch {
       /* not supported */
     }
@@ -83,18 +84,18 @@ async function imageEncoders() {
 export async function targetsFor(meta) {
   const kind = sourceKind(meta);
   const ext = extension(meta.name);
-  const mark = (t) => ({ ...t, same: t.ext === ext || (t.id === 'jpeg' && ext === 'jpeg') });
+  const mark = (fmt) => ({ ...fmt, same: fmt.ext === ext || (fmt.id === 'jpeg' && ext === 'jpeg') });
   if (kind === 'image') {
     const ok = await imageEncoders();
-    return [{ title: 'Image', targets: IMAGE_TARGETS.filter((t) => ok.has(t.id)).map(mark) }];
+    return [{ title: t('Image'), targets: IMAGE_TARGETS.filter((fmt) => ok.has(fmt.id)).map(mark) }];
   }
   if (kind === 'video') {
     return [
-      { title: 'Video', targets: VIDEO_TARGETS.map(mark) },
-      { title: 'Audio only', targets: AUDIO_TARGETS },
+      { title: t('Video'), targets: VIDEO_TARGETS.map(mark) },
+      { title: t('Audio only'), targets: AUDIO_TARGETS },
     ];
   }
-  if (kind === 'audio') return [{ title: 'Audio', targets: AUDIO_TARGETS.map(mark) }];
+  if (kind === 'audio') return [{ title: t('Audio'), targets: AUDIO_TARGETS.map(mark) }];
   return [];
 }
 
@@ -168,8 +169,8 @@ function encodeBmp({ width, height, data }) {
 
 /** "1:05", "0:01:05", "65" or "65.5" to seconds; null if empty, NaN if not a time. */
 export function parseTime(text) {
-  const t = String(text ?? '').trim();
-  if (!t) return null;
-  if (!/^\d+(:\d{1,2}){0,2}(\.\d+)?$/.test(t)) return NaN;
-  return t.split(':').reduce((acc, part) => acc * 60 + Number(part), 0);
+  const str = String(text ?? '').trim();
+  if (!str) return null;
+  if (!/^\d+(:\d{1,2}){0,2}(\.\d+)?$/.test(str)) return NaN;
+  return str.split(':').reduce((acc, part) => acc * 60 + Number(part), 0);
 }

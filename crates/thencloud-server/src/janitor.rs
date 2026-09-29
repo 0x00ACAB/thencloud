@@ -66,6 +66,7 @@ pub async fn run_once(state: &AppState) -> Result<()> {
     };
     let activity = crate::routes::activity::prune(&state.db).await?;
     crate::transfer::prune(state).await?;
+    crate::audit::prune(state).await?;
     state.limiter.prune();
     if !expired.is_empty()
         || sessions.rows_affected() > 0

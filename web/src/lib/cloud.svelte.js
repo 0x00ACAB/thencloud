@@ -6,6 +6,7 @@
 
 import { request, allChildren } from './api.js';
 import { t } from './i18n.svelte.js';
+import { padJson } from './appdata.js';
 import {
   tc, b64, unb64, decryptMeta, encryptMeta, unwrapChild, decryptChildren,
   deriveAccountKeys, deriveLinkKeys, fetchFile, openFile, encryptPiece, saveBlob,
@@ -1011,13 +1012,12 @@ const versionNode = (entry, v) => ({
   version: { id: v.id, enc_content_key: v.enc_content_key, chunk_count: v.chunk_count, size: v.size, created_at: v.created_at },
 });
 
+/** Download and decrypt one version into memory: { blob, meta }. */
+export const fetchVersion = (entry, v, onProgress) =>
+  fetchFile(versionNode(entry, v), entry.key, (i) => api('GET', `/api/nodes/${entry.node.id}/versions/${v.id}/chunks/${i}`), onProgress);
+
 export async function downloadVersion(entry, v, onProgress) {
-  const { blob, meta } = await fetchFile(
-    versionNode(entry, v),
-    entry.key,
-    (i) => api('GET', `/api/nodes/${entry.node.id}/versions/${v.id}/chunks/${i}`),
-    onProgress,
-  );
+  const { blob, meta } = await fetchVersion(entry, v, onProgress);
   saveBlob(blob, meta.name);
 }
 
@@ -1302,7 +1302,7 @@ export async function loadAppData(name) {
     try {
       data = JSON.parse(dec.decode(tc.decrypt_private_data(mk, session.me.user_id, name, unb64(r.data))));
     } catch {
-      throw new Error(`Your ${name} library data couldn't be decrypted. It may have been tampered with.`);
+      throw new Error(t("Your {name} library data couldn't be decrypted. It may have been tampered with.", { name }));
     }
   }
   appData.set(name, { data, revision: r.revision });
@@ -1343,7 +1343,7 @@ export function saveAppData(name, change) {
       const current = appData.get(name);
       const next = structuredClone(current.data);
       change(next);
-      const sealed = tc.encrypt_private_data(mk, session.me.user_id, name, enc.encode(JSON.stringify(next)));
+      const sealed = tc.encrypt_private_data(mk, session.me.user_id, name, padJson(JSON.stringify(next), name, tc.padded_size));
       try {
         const r = await api('PUT', `/api/me/data/${name}`, { body: { data: b64(sealed), if_revision: current.revision } });
         appData.set(name, { data: next, revision: r.revision });
@@ -1839,6 +1839,8 @@ export const adminInvites = () => api('GET', '/api/admin/invites');
 export const adminCreateInvite = (days) => api('POST', '/api/admin/invites', { body: { days } });
 export const adminDeleteInvite = (id) => api('DELETE', `/api/admin/invites/${encodeURIComponent(id)}`);
 export const adminStats = () => api('GET', '/api/admin/stats');
+/** What admins did, newest first: { entries, more }; `before` is the last id seen, for older ones. */
+export const adminAudit = (before = null) => api('GET', before ? `/api/admin/audit?before=${before}` : '/api/admin/audit');
 
 /** Invite links carry the token in the fragment, which is never sent to the server. */
 export const inviteUrl = (token) => `${location.origin}/#invite=${encodeURIComponent(token)}`;

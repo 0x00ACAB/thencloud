@@ -38,7 +38,7 @@
   }
 </script>
 
-<Modal title={t('Edit video')} description={t("Changes are kept in your library, encrypted. The file isn't changed.")} {onclose} onsubmit={() => run(() => editVideo(video, fields))}>
+<Modal title={t('Edit video')} description={t("Changes are kept in your library. The file isn't changed.")} {onclose} onsubmit={() => run(() => editVideo(video, fields))}>
   <div class="field">
     <label class="label" for="video-title">{fields.episode == null ? t('Title') : t('Episode name')}</label>
     <input id="video-title" class="input" bind:value={title} autocomplete="off" />

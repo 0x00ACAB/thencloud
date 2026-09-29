@@ -5,6 +5,7 @@
   // then encrypted and uploaded like any other file (or just saved).
   import { untrack } from 'svelte';
   import Modal from '../Modal.svelte';
+  import { t } from '../../lib/i18n.svelte.js';
   import Icon from '../Icon.svelte';
   import { videoInfo, downloadVideo } from '../../lib/cloud.svelte.js';
   import { saveBlob } from '../../lib/crypto.js';
@@ -34,12 +35,12 @@
   const option = $derived(
     !info || playlist ? null : kind === 'video' ? (info.qualities?.find((q) => q.quality === quality) ?? info.video) : info.audio,
   );
-  const QUALITIES = [
+  const QUALITIES = $derived([
     ['480', '480p'],
     ['720', '720p'],
     ['1080', '1080p'],
-    ['best', 'Best'],
-  ];
+    ['best', t('Best')],
+  ]);
   const CAP = { 480: 480, 720: 720, 1080: 1080, best: Infinity };
 
   /** For one playlist video: the closest match to the chosen quality. */
@@ -74,7 +75,7 @@
       picked = new Set(info.entries?.map((e) => e.url) ?? []);
       phase = 'choose';
     } catch (e) {
-      error = e?.code === 'busy' ? 'You already have a download running. Wait for it to finish.' : errorMessage(e);
+      error = e?.code === 'busy' ? t('You already have a download running. Wait for it to finish.') : errorMessage(e);
       phase = 'link';
     }
   }
@@ -109,8 +110,8 @@
       try {
         const one = await videoInfo(e.url);
         const opt = kind === 'video' ? (one.qualities?.find((q) => q.quality === qualityFor(one)) ?? one.video) : one.audio;
-        if (!opt) throw new Error(kind === 'video' ? 'No video to download' : 'No audio to download');
-        if (maxBytes && opt.size > maxBytes) throw new Error('Too large for this server');
+        if (!opt) throw new Error(kind === 'video' ? t('No video to download') : t('No audio to download'));
+        if (maxBytes && opt.size > maxBytes) throw new Error(t('Too large for this server'));
         batchOption = opt;
         await fetchOne(e.url, one.title, opt, kind === 'video' ? opt.quality : undefined, controller.signal);
         batch.done++;
@@ -141,7 +142,7 @@
       phase = 'done';
     } catch (e) {
       phase = 'choose';
-      if (e?.name !== 'AbortError') error = e?.code === 'busy' ? 'You already have a download running. Wait for it to finish.' : errorMessage(e);
+      if (e?.name !== 'AbortError') error = e?.code === 'busy' ? t('You already have a download running. Wait for it to finish.') : errorMessage(e);
     } finally {
       controller = null;
     }
@@ -159,45 +160,45 @@
   }
 </script>
 
-<Modal title="Download from a video link" {onclose} onsubmit={submit} class="max-w-lg">
+<Modal title={t('Download from a video link')} {onclose} onsubmit={submit} class="max-w-lg">
   <div class="flex gap-2.5 rounded-md border border-line bg-subtle p-3 text-[13px] text-fg-muted">
     <Icon name="circle-alert" class="mt-0.5 size-4 shrink-0 text-fg" />
     <p>
-      <span class="font-medium text-fg">This server downloads it for you, so it sees the link and the video.</span>
-      Nothing is kept there: the video comes straight to this browser, which encrypts it like any upload.
+      <span class="font-medium text-fg">{t('This server downloads it for you, so it sees the link and the video.')}</span>
+      {t('Nothing is kept there: the video comes straight to this browser, which encrypts it like any upload.')}
     </p>
   </div>
 
   {#if phase === 'link' || phase === 'looking'}
     <div class="field">
-      <label class="label" for="video-url">Link</label>
+      <label class="label" for="video-url">{t('Link')}</label>
       <div class="flex gap-2">
         <!-- svelte-ignore a11y_autofocus -->
         <input id="video-url" class="input" type="url" bind:value={url} placeholder="https://www.youtube.com/watch?v=..." autocomplete="off" spellcheck="false" required autofocus />
         <button class="btn btn-primary h-9" disabled={phase === 'looking' || !url.trim()}>
           {#if phase === 'looking'}<Icon name="loader-circle" class="spinner" />{/if}
-          Look up
+          {t('Look up')}
         </button>
       </div>
-      <p class="hint">Links to a video or a playlist on YouTube, Vimeo and most other video sites work.</p>
+      <p class="hint">{t('Links to a video or a playlist on YouTube, Vimeo and most other video sites work.')}</p>
     </div>
   {:else if info}
     <div class="grid gap-1 rounded-md border border-line p-3">
       <p class="truncate font-medium" title={info.title}>{info.title}</p>
       <p class="truncate text-xs text-fg-muted">
-        {[info.site, info.uploader, playlist ? `${info.entries.length} videos` : duration(info.duration)].filter(Boolean).join(' · ')}
+        {[info.site, info.uploader, playlist ? t('{count} videos', { count: info.entries.length }) : duration(info.duration)].filter(Boolean).join(' · ')}
       </p>
     </div>
 
     {#if phase === 'choose' && playlist}
       <div class="grid gap-2">
         <div class="flex items-center justify-between text-xs text-fg-muted">
-          <span>{picked.size} of {info.entries.length} selected</span>
+          <span>{t('{n} of {total} selected', { n: picked.size, total: info.entries.length })}</span>
           <button
             type="button"
             class="cursor-pointer hover:text-fg"
             onclick={() => (picked = picked.size === info.entries.length ? new Set() : new Set(info.entries.map((e) => e.url)))}>
-            {picked.size === info.entries.length ? 'Select none' : 'Select all'}
+            {picked.size === info.entries.length ? t('Select none') : t('Select all')}
           </button>
         </div>
         <ul class="max-h-56 divide-y divide-line overflow-y-auto rounded-md border border-line">
@@ -223,15 +224,15 @@
       </div>
       <div class="flex flex-wrap items-start gap-4">
         <div class="field">
-          <span class="label">Get</span>
+          <span class="label">{t('Get')}</span>
           <div class="flex gap-4 text-sm">
-            <label class="flex cursor-pointer items-center gap-2"><input type="radio" class="accent-accent" bind:group={kind} value="video" />Video</label>
-            <label class="flex cursor-pointer items-center gap-2"><input type="radio" class="accent-accent" bind:group={kind} value="audio" />Audio only</label>
+            <label class="flex cursor-pointer items-center gap-2"><input type="radio" class="accent-accent" bind:group={kind} value="video" />{t('Video')}</label>
+            <label class="flex cursor-pointer items-center gap-2"><input type="radio" class="accent-accent" bind:group={kind} value="audio" />{t('Audio only')}</label>
           </div>
         </div>
         {#if kind === 'video'}
           <div class="field">
-            <label class="label" for="pl-quality">Up to</label>
+            <label class="label" for="pl-quality">{t('Up to')}</label>
             <select id="pl-quality" class="input h-8 w-auto" bind:value={quality}>
               {#each QUALITIES as [value, label] (value)}<option {value}>{label}</option>{/each}
             </select>
@@ -242,33 +243,33 @@
         <div class="grid gap-2">
           <p class="text-xs font-medium text-fg-muted">Then</p>
           <div class="flex flex-wrap gap-4 text-sm">
-            <label class="flex cursor-pointer items-center gap-2"><input type="radio" class="accent-accent" bind:group={destination} value="save" />Save them in this folder</label>
-            <label class="flex cursor-pointer items-center gap-2"><input type="radio" class="accent-accent" bind:group={destination} value="download" />Download them</label>
+            <label class="flex cursor-pointer items-center gap-2"><input type="radio" class="accent-accent" bind:group={destination} value="save" />{t('Save them in this folder')}</label>
+            <label class="flex cursor-pointer items-center gap-2"><input type="radio" class="accent-accent" bind:group={destination} value="download" />{t('Download them')}</label>
           </div>
         </div>
       {/if}
-      <p class="hint">Videos are fetched one at a time. Any that fail are skipped and listed at the end.</p>
+      <p class="hint">{t('Videos are fetched one at a time. Any that fail are skipped and listed at the end.')}</p>
     {:else if phase === 'choose'}
       <fieldset class="grid gap-2">
-        <legend class="mb-2 text-xs font-medium text-fg-muted">Get</legend>
-        {#each [['video', 'Video', info.video], ['audio', 'Audio only', info.audio]] as [value, label, opt] (value)}
+        <legend class="mb-2 text-xs font-medium text-fg-muted">{t('Get')}</legend>
+        {#each [['video', t('Video'), info.video], ['audio', t('Audio only'), info.audio]] as [value, label, opt] (value)}
           <label class="flex cursor-pointer items-center gap-3 rounded-md border px-3 py-2 text-sm {kind === value ? 'border-accent bg-accent-soft' : 'border-line hover:bg-subtle'} {opt ? '' : 'pointer-events-none opacity-50'}">
             <input type="radio" class="accent-accent" bind:group={kind} {value} disabled={!opt} />
             <span class="font-medium {kind === value ? 'text-accent-text' : ''}">{label}</span>
             <span class="ml-auto text-xs text-fg-muted tabular-nums">
               {#if value === 'video' && opt}{@const o = option ?? opt}
-                {o.ext.toUpperCase()}{o.height ? ` · ${o.height}p` : ''}{o.size ? ` · about ${formatSize(o.size)}` : ''}
+                {o.ext.toUpperCase()}{o.height ? ` · ${o.height}p` : ''}{o.size ? ` · ${t('about {size}', { size: formatSize(o.size) })}` : ''}
               {:else if opt}
-                {opt.ext.toUpperCase()}{opt.size ? ` · about ${formatSize(opt.size)}` : ''}
+                {opt.ext.toUpperCase()}{opt.size ? ` · ${t('about {size}', { size: formatSize(opt.size) })}` : ''}
               {:else}
-                {canMerge ? 'Not available' : 'Not offered as one file'}
+                {canMerge ? t('Not available') : t('Not offered as one file')}
               {/if}
             </span>
           </label>
         {/each}
       </fieldset>
       {#if kind === 'video' && info.qualities?.length > 1}
-        <div class="flex flex-wrap gap-2" role="radiogroup" aria-label="Quality">
+        <div class="flex flex-wrap gap-2" role="radiogroup" aria-label={t('Quality')}>
           {#each info.qualities as q (q.quality)}
             <button
               type="button"
@@ -277,36 +278,38 @@
               class="h-8 cursor-pointer rounded-md border px-3 text-[13px] tabular-nums transition-colors {quality === q.quality
                 ? 'border-accent bg-accent-soft font-medium text-accent-text'
                 : 'border-line text-fg-muted hover:bg-subtle hover:text-fg'}"
-              onclick={() => (quality = q.quality)}>{q.height ? `${q.height}p` : 'Default'}</button>
+              onclick={() => (quality = q.quality)}>{q.height ? `${q.height}p` : t('Default')}</button>
           {/each}
         </div>
       {/if}
       {#if option?.size && maxBytes && option.size > maxBytes}
-        <p class="text-[13px] text-danger">That's larger than this server allows ({formatSize(maxBytes)}).</p>
+        <p class="text-[13px] text-danger">{t("That's larger than this server allows ({size}).", { size: formatSize(maxBytes) })}</p>
       {/if}
 
       {#if save}
         <div class="grid gap-2">
           <p class="text-xs font-medium text-fg-muted">Then</p>
           <div class="flex flex-wrap gap-4 text-sm">
-            <label class="flex cursor-pointer items-center gap-2"><input type="radio" class="accent-accent" bind:group={destination} value="save" />Save it in this folder</label>
-            <label class="flex cursor-pointer items-center gap-2"><input type="radio" class="accent-accent" bind:group={destination} value="download" />Download it</label>
+            <label class="flex cursor-pointer items-center gap-2"><input type="radio" class="accent-accent" bind:group={destination} value="save" />{t('Save it in this folder')}</label>
+            <label class="flex cursor-pointer items-center gap-2"><input type="radio" class="accent-accent" bind:group={destination} value="download" />{t('Download it')}</label>
           </div>
         </div>
       {/if}
       <p class="hint">
         {canMerge
-          ? `Video is saved as MP4, put together as it streams, so nothing is written to the server.${option?.height > 1080 ? ' Above 1080p it is usually VP9 or AV1, which not every player can open.' : ''}`
-          : "This server can only save videos a site offers as one file, and YouTube rarely does. Audio only usually works."}
+          ? option?.height > 1080
+            ? t('Video is saved as MP4, put together as it streams, so nothing is written to the server. Above 1080p it is usually VP9 or AV1, which not every player can open.')
+            : t('Video is saved as MP4, put together as it streams, so nothing is written to the server.')
+          : t('This server can only save videos a site offers as one file, and YouTube rarely does. Audio only usually works.')}
       </p>
     {:else if phase === 'working'}
       <div class="grid gap-3 py-1" role="status">
         {#if playlist}
-          <p class="truncate text-xs text-fg-muted">Video {batch.index} of {batch.total}: {batch.current}</p>
+          <p class="truncate text-xs text-fg-muted">{t('Video {n} of {total}: {name}', { n: batch.index, total: batch.total, name: batch.current })}</p>
         {/if}
         <p class="flex items-center gap-2 text-sm">
           <Icon name="loader-circle" class="spinner" />
-          {stage === 'saving' ? 'Encrypting and saving' : `Downloading ${formatSize(received)}${shown?.size ? ` of about ${formatSize(shown.size)}` : ''}`}
+          {stage === 'saving' ? t('Saving') : shown?.size ? t('Downloading {size} of about {total}', { size: formatSize(received), total: formatSize(shown.size) }) : t('Downloading {size}', { size: formatSize(received) })}
         </p>
         {#if stage === 'saving' || shown?.size}
           <div class="progress"><div style:width="{Math.round(Math.min(1, stage === 'saving' ? progress : received / shown.size) * 100)}%"></div></div>
@@ -315,7 +318,13 @@
     {:else if phase === 'done' && result.playlist}
       <p class="flex items-center gap-2 py-1 text-sm font-medium">
         <Icon name="check" class="size-4 text-success" />
-        {result.saved ? 'Saved' : 'Downloaded'} {result.done} of {batch.total} videos{result.stopped ? ' before you stopped' : ''}
+        {result.saved
+          ? result.stopped
+            ? t('Saved {n} of {total} videos before you stopped', { n: result.done, total: batch.total })
+            : t('Saved {n} of {total} videos', { n: result.done, total: batch.total })
+          : result.stopped
+            ? t('Downloaded {n} of {total} videos before you stopped', { n: result.done, total: batch.total })
+            : t('Downloaded {n} of {total} videos', { n: result.done, total: batch.total })}
       </p>
       {#if result.failed.length}
         <ul class="max-h-40 divide-y divide-line overflow-y-auto rounded-md border border-line text-[13px]">
@@ -326,7 +335,7 @@
       {/if}
     {:else if phase === 'done'}
       <p class="flex items-center gap-2 py-1 text-sm font-medium">
-        <Icon name="check" class="size-4 text-success" />{result.saved ? `Saved as ${result.name}` : `Downloaded ${result.name}`} ({formatSize(result.size)})
+        <Icon name="check" class="size-4 text-success" />{result.saved ? t('Saved as {name}', { name: result.name }) : t('Downloaded {name}', { name: result.name })} ({formatSize(result.size)})
       </p>
     {/if}
   {/if}
@@ -335,16 +344,22 @@
 
   {#snippet footer()}
     {#if phase === 'done'}
-      <button class="btn btn-primary">Done</button>
+      <button class="btn btn-primary">{t('Done')}</button>
     {:else if phase === 'choose' || phase === 'working'}
-      <button type="button" class="btn btn-secondary mr-auto" disabled={phase === 'working'} onclick={() => ((phase = 'link'), (info = null), (error = ''))}>Back</button>
-      <button type="button" class="btn btn-secondary" onclick={cancel}>{phase === 'working' ? 'Stop' : 'Cancel'}</button>
+      <button type="button" class="btn btn-secondary mr-auto" disabled={phase === 'working'} onclick={() => ((phase = 'link'), (info = null), (error = ''))}>{t('Back')}</button>
+      <button type="button" class="btn btn-secondary" onclick={cancel}>{phase === 'working' ? t('Stop') : t('Cancel')}</button>
       <button class="btn btn-primary" disabled={phase === 'working' || (playlist ? !picked.size : !option || (maxBytes && option.size > maxBytes))}>
         {#if phase === 'working'}<Icon name="loader-circle" class="spinner" />{/if}
-        {destination === 'save' ? 'Download and save' : 'Download'}{playlist ? ` ${picked.size}` : ''}
+        {playlist
+          ? destination === 'save'
+            ? t('Download and save {count}', { count: picked.size })
+            : t('Download {count}', { count: picked.size })
+          : destination === 'save'
+            ? t('Download and save')
+            : t('Download')}
       </button>
     {:else}
-      <button type="button" class="btn btn-secondary" onclick={onclose}>Cancel</button>
+      <button type="button" class="btn btn-secondary" onclick={onclose}>{t('Cancel')}</button>
     {/if}
   {/snippet}
 </Modal>

@@ -11,7 +11,7 @@
 // when chosen. web/tests/i18n.test.js checks every t() string has a Polish
 // and a German translation with the same placeholders.
 
-import { format } from './locale.svelte.js';
+import { format, formatNumber } from './locale.svelte.js';
 import en from './messages/en.js';
 
 export const LANGUAGES = [
@@ -83,7 +83,9 @@ export function t(key, params) {
     msg = isGendered(msg) ? (msg[params?.gender] ?? msg.other) : (msg[pluralRules(lang).select(params?.count ?? 0)] ?? msg.other);
   }
   if (!params) return msg;
-  return msg.replace(/\{(\w+)\}/g, (m, name) => (name in params ? String(params[name]) : m));
+  // A {count} is shown the local way (1 234, 1.234 or 1,234).
+  const shown = (name) => (name === 'count' && typeof params.count === 'number' ? formatNumber(params.count) : String(params[name]));
+  return msg.replace(/\{(\w+)\}/g, (m, name) => (name in params ? shown(name) : m));
 }
 
 /**
