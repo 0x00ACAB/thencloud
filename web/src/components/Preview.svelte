@@ -8,6 +8,7 @@
   // With `drafts` ({ load, store, drop }), unsaved edits are kept encrypted
   // on the server as you type and offered back next time.
   import { onMount, untrack } from 'svelte';
+  import { t, language } from '../lib/i18n.svelte.js';
   import Icon from './Icon.svelte';
   import Time from './Time.svelte';
   import FileIcon from './FileIcon.svelte';
@@ -124,14 +125,14 @@
   $effect(() => {
     const e = entry;
     if (previewKind(e.meta)?.kind !== 'video') return;
-    const matched = matchSubtitles(e.meta.name, entries);
+    const matched = matchSubtitles(e.meta.name, entries, { locale: language(), unnamed: t('Subtitles') });
     if (!matched.length) return;
     let live = true;
     let got = [];
-    loadSubtitles(matched, fetch).then((t) => {
-      got = t;
-      if (live) subtitles = t;
-      else releaseSubtitles(t);
+    loadSubtitles(matched, fetch).then((subs) => {
+      got = subs;
+      if (live) subtitles = subs;
+      else releaseSubtitles(subs);
     });
     return () => {
       live = false;
@@ -415,7 +416,7 @@
             <div class="grid h-full place-items-center p-6">
               <!-- svelte-ignore a11y_media_has_caption -->
               <video bind:this={videoEl} src={view.url} controls class="max-h-full max-w-full rounded-md bg-black">
-                {#each subtitles as t (t.url)}<track kind="subtitles" src={t.url} srclang={t.lang || undefined} label={t.label} />{/each}
+                {#each subtitles as sub (sub.url)}<track kind="subtitles" src={sub.url} srclang={sub.lang || undefined} label={sub.label} />{/each}
               </video>
             </div>
           {:else if kind.kind === 'audio'}

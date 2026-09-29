@@ -34,4 +34,10 @@ export default {
   '{count} albums': { one: '{count} album', other: '{count} albums' },
   'Looking through folders: {count} tracks so far': { one: 'Looking through folders: {count} track so far', other: 'Looking through folders: {count} tracks so far' },
   'Added {count} tracks to {name}': { one: 'Added {count} track to {name}', other: 'Added {count} tracks to {name}' },
+  '{count} seasons': { one: '{count} season', other: '{count} seasons' },
+  '{count} episodes': { one: '{count} episode', other: '{count} episodes' },
+  '{count} movies': { one: '{count} movie', other: '{count} movies' },
+  'Looking through folders: {count} videos so far': { one: 'Looking through folders: {count} video so far', other: 'Looking through folders: {count} videos so far' },
+  'Rename {count} files?': { one: 'Rename {count} file?', other: 'Rename {count} files?' },
+  'Renamed {count} files': { one: 'Renamed {count} file', other: 'Renamed {count} files' },
 };
