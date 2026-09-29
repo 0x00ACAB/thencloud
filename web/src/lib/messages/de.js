@@ -1355,4 +1355,44 @@ export default {
   'Download and save {count}': '{count} herunterladen und speichern',
   'Download {count}': '{count} herunterladen',
   'Download and save': 'Herunterladen und speichern',
+
+  // Public link page
+  'This link is incomplete': 'Dieser Link ist unvollständig',
+  'The part after the # is missing or damaged. It holds the decryption key, so ask the sender for the full link.':
+    'Der Teil nach dem # fehlt oder ist beschädigt. Er enthält den Schlüssel, also bitte den Absender um den vollständigen Link.',
+  'This link has expired or was removed': 'Dieser Link ist abgelaufen oder wurde entfernt',
+  'Ask the person who shared it for a new link.': 'Bitte die Person, die ihn geteilt hat, um einen neuen Link.',
+  "Couldn't open this link": 'Dieser Link konnte nicht geöffnet werden',
+  "This link doesn't match its owner's key": 'Dieser Link passt nicht zum Schlüssel seines Besitzers',
+  "The server gave a different key than the link names, so nothing can be sent safely. Don't upload anything; let the owner know.":
+    'Der Server hat einen anderen Schlüssel geliefert, als der Link nennt, also lässt sich nichts sicher senden. Lade nichts hoch und sag dem Besitzer Bescheid.',
+  'The key in this link is wrong': 'Der Schlüssel in diesem Link ist falsch',
+  'The password was accepted, but it and the link together do not open this. Make sure you copied the whole link.':
+    'Das Passwort wurde angenommen, aber zusammen mit dem Link öffnet es das nicht. Prüf, ob du den ganzen Link kopiert hast.',
+  'The part after the # does not match. Make sure you copied the whole link.':
+    'Der Teil nach dem # passt nicht. Prüf, ob du den ganzen Link kopiert hast.',
+  'That password is not right.': 'Dieses Passwort stimmt nicht.',
+  "Couldn't list this folder": 'Dieser Ordner konnte nicht aufgelistet werden',
+  "There's no room left in this folder.": 'In diesem Ordner ist kein Platz mehr.',
+  'This link is password protected': 'Dieser Link ist passwortgeschützt',
+  'Enter the password the sender gave you.': 'Gib das Passwort ein, das du vom Absender hast.',
+  Unlock: 'Entsperren',
+  'Send files to {name}': 'Dateien an {name} senden',
+  "Only {name} can open the files you send. You can't see what's already in this folder.":
+    'Nur {name} kann die Dateien öffnen, die du sendest. Was schon in diesem Ordner liegt, siehst du nicht.',
+  'Drop files here or choose them': 'Dateien hierher ziehen oder auswählen',
+  Sent: 'Gesendet',
+  '{percent}% of {size}': '{percent}% von {size}',
+  "{name}'s key fingerprint is {fingerprint}. If it matters who can read these files, check it with them.":
+    'Der Schlüssel-Fingerabdruck von {name} ist {fingerprint}. Wenn es darauf ankommt, wer diese Dateien lesen kann, prüf ihn mit der Person.',
+  'modified {date}': 'geändert {date}',
+  'Download all': 'Alle herunterladen',
+  'This folder is empty.': 'Dieser Ordner ist leer.',
+  'Encrypted in your browser before upload.': 'Vor dem Hochladen in deinem Browser verschlüsselt.',
+  'Decrypted in your browser. The key is never sent to the server.':
+    'In deinem Browser entschlüsselt. Der Schlüssel wird nie an den Server gesendet.',
+  'Link expires {date}': 'Link läuft ab am {date}',
+
+  // Public link page title
+  'Shared with you': 'Mit dir geteilt',
 };
