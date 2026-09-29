@@ -6,6 +6,7 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg';
 import coreURL from '@ffmpeg/core?url';
 import wasmURL from '@ffmpeg/core/wasm?url';
+import { t } from './i18n.svelte.js';
 
 /** ffmpeg arguments per target format, tuned for speed in WASM. */
 const ARGS = {
@@ -94,7 +95,7 @@ export async function transcode(blob, inputExt, target, { trim, onProgress, onSt
     if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
     if (code !== 0) {
       const detail = log.filter((l) => /error|invalid|not supported|unknown/i.test(l)).pop();
-      throw new Error(`This file couldn't be converted${detail ? `: ${detail.trim()}` : '.'}`);
+      throw new Error(detail ? t("This file couldn't be converted: {detail}", { detail: detail.trim() }) : t("This file couldn't be converted."));
     }
     const data = await f.readFile(output);
     return new Blob([data], { type: target.type });
