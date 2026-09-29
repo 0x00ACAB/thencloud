@@ -51,4 +51,7 @@ export default {
   '{count} rows': { one: '{count} row', other: '{count} rows' },
   '{count} rows shown, the file has more. Use Source to see all of it.': { one: '{count} row shown, the file has more. Use Source to see all of it.', other: '{count} rows shown, the file has more. Use Source to see all of it.' },
   'Convert {count} files': { one: 'Convert {count} file', other: 'Convert {count} files' },
+  'Merge {count} PDFs': { one: 'Merge {count} PDF', other: 'Merge {count} PDFs' },
+  'Save {count} pages on their own': { one: 'Save {count} page on its own', other: 'Save {count} pages on their own' },
+  'Download {count} pages on their own': { one: 'Download {count} page on its own', other: 'Download {count} pages on their own' },
 };
