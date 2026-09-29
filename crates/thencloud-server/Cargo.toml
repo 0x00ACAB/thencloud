@@ -34,6 +34,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ring = "0.17"
 ciborium = "0.2"
+aws-sdk-s3 = { version = "1", default-features = false, features = ["rt-tokio", "rustls"] }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

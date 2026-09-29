@@ -4850,21 +4850,22 @@ async fn backup_restore_and_check() {
         .upload(&h, &folder, None, "keep.bin", &data)
         .await
         .unwrap();
-    let data_dir = h.dir.path().join("data");
-
-    let r = maintenance::check(&h.state.db, &data_dir).await.unwrap();
+    let r = maintenance::check(&h.state.db, &h.state.blobs)
+        .await
+        .unwrap();
     assert!(r.is_ok(), "{r:?}");
     assert_eq!((r.versions, r.chunks), (1, 2));
 
     let dest = h.dir.path().join("backup");
-    let b = maintenance::backup(&h.state.db, &data_dir, &dest)
+    let dest = maintenance::BackupDest::Dir(dest);
+    let b = maintenance::backup(&h.state.db, &h.state.blobs, &dest)
         .await
         .unwrap();
     assert_eq!(b.chunks, 2);
     assert!(b.missing.is_empty());
     // A second backup into the same place is refused.
     assert!(
-        maintenance::backup(&h.state.db, &data_dir, &dest)
+        maintenance::backup(&h.state.db, &h.state.blobs, &dest)
             .await
             .is_err()
     );
@@ -4878,7 +4879,10 @@ async fn backup_restore_and_check() {
 
     // Restore: a server started on the backup has the file back.
     let mut cfg = Config::for_dir(h.dir.path());
-    cfg.data_dir = dest.clone();
+    let maintenance::BackupDest::Dir(dest_dir) = &dest else {
+        unreachable!()
+    };
+    cfg.data_dir = dest_dir.clone();
     let state = AppState::new(cfg).await.unwrap();
     let restored = Harness {
         app: router(state.clone()),
@@ -4890,17 +4894,22 @@ async fn backup_restore_and_check() {
     let f = find_by_name(&kids, &folder_key, "keep.bin");
     let fk = c::unwrap_node_key(&folder_key, &f.enc_key, &f.id).unwrap();
     assert_eq!(alice2.download(&restored, f, &fk).await.1, data);
-    let r = maintenance::check(&restored.state.db, &dest).await.unwrap();
+    let r = maintenance::check(&restored.state.db, &restored.state.blobs)
+        .await
+        .unwrap();
     assert!(r.is_ok() && r.orphans.is_empty(), "{r:?}");
 
     // A lost or truncated blob, and one nothing refers to, are reported.
     let version = f.version.as_ref().unwrap().id.clone();
+    let dest = dest_dir.clone();
     let vdir = dest.join("blobs").join(&version[..2]).join(&version);
     std::fs::write(vdir.join("1"), b"short").unwrap();
     std::fs::remove_file(vdir.join("0")).unwrap();
     let stray = dest.join("blobs/ab/abcdef00-0000-4000-8000-000000000000");
     std::fs::create_dir_all(&stray).unwrap();
-    let r = maintenance::check(&restored.state.db, &dest).await.unwrap();
+    let r = maintenance::check(&restored.state.db, &restored.state.blobs)
+        .await
+        .unwrap();
     assert!(!r.is_ok());
     assert_eq!(r.missing, vec![(version.clone(), 0)]);
     assert_eq!(
@@ -5552,4 +5561,366 @@ async fn the_search_index_may_be_bigger_than_other_app_data() {
     };
     assert_eq!(put("music").await, StatusCode::BAD_REQUEST);
     assert_eq!(put("search").await, StatusCode::OK);
+}
+
+// --- a fake S3 server, for the blob store's S3 side ------------------------
+//
+// Just enough of the REST API for the AWS SDK: path-style object PUT/GET/
+// HEAD/DELETE, batch delete and ListObjectsV2 with delimiter, max-keys and
+// continuation tokens. Signatures are ignored; the point is the client side.
+
+mod fake_s3 {
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    use axum::extract::Request;
+    use axum::http::{Method, StatusCode, header};
+    use axum::response::{IntoResponse, Response};
+    use http_body_util::BodyExt;
+    use tokio::sync::Mutex;
+
+    /// Objects by "bucket/key".
+    pub type Store = Arc<Mutex<BTreeMap<String, Vec<u8>>>>;
+
+    /// Start the server; returns its store and endpoint URL.
+    pub async fn spawn() -> (Store, String) {
+        let store: Store = Arc::new(Mutex::new(BTreeMap::new()));
+        let app = axum::Router::new().fallback({
+            let store = store.clone();
+            move |req: Request| {
+                let store = store.clone();
+                async move { handle(store, req).await }
+            }
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        (store, url)
+    }
+
+    fn percent_decode(s: &str) -> String {
+        let b = s.as_bytes();
+        let mut out = Vec::with_capacity(b.len());
+        let mut i = 0;
+        while i < b.len() {
+            if b[i] == b'%' && i + 2 < b.len() {
+                out.push(u8::from_str_radix(&s[i + 1..i + 3], 16).unwrap());
+                i += 3;
+            } else if b[i] == b'+' {
+                out.push(b' ');
+                i += 1;
+            } else {
+                out.push(b[i]);
+                i += 1;
+            }
+        }
+        String::from_utf8(out).unwrap()
+    }
+
+    fn query_pairs(uri: &axum::http::Uri) -> Vec<(String, String)> {
+        uri.query()
+            .unwrap_or("")
+            .split('&')
+            .filter(|s| !s.is_empty())
+            .map(|kv| match kv.split_once('=') {
+                Some((k, v)) => (percent_decode(k), percent_decode(v)),
+                None => (percent_decode(kv), String::new()),
+            })
+            .collect()
+    }
+
+    fn xml(body: String) -> Response {
+        (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, "application/xml")],
+            body,
+        )
+            .into_response()
+    }
+
+    fn no_such_key() -> Response {
+        (
+            StatusCode::NOT_FOUND,
+            [(header::CONTENT_TYPE, "application/xml")],
+            r#"<?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchKey</Code><Message>not found</Message></Error>"#,
+        )
+            .into_response()
+    }
+
+    enum Entry {
+        Key(String, usize),
+        Prefix(String),
+    }
+
+    async fn list(store: &Store, bucket: &str, q: &[(String, String)]) -> Response {
+        let get = |k: &str| q.iter().find(|(kk, _)| kk == k).map(|(_, v)| v.clone());
+        let prefix = get("prefix").unwrap_or_default();
+        let delimiter = get("delimiter").unwrap_or_default();
+        let max_keys: usize = get("max-keys").and_then(|s| s.parse().ok()).unwrap_or(1000);
+        let token: usize = get("continuation-token")
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+        let full_prefix = format!("{bucket}/{prefix}");
+        let mut entries: Vec<Entry> = Vec::new();
+        {
+            let map = store.lock().await;
+            let mut commons: Vec<String> = Vec::new();
+            for (k, v) in map.iter() {
+                if !k.starts_with(&full_prefix) {
+                    continue;
+                }
+                let rel = &k[bucket.len() + 1..];
+                let tail = &rel[prefix.len()..];
+                if delimiter == "/" && tail.contains('/') {
+                    let p = format!("{prefix}{}/", &tail[..tail.find('/').unwrap()]);
+                    if !commons.contains(&p) {
+                        commons.push(p.clone());
+                        entries.push(Entry::Prefix(p));
+                    }
+                } else {
+                    entries.push(Entry::Key(rel.to_string(), v.len()));
+                }
+            }
+        }
+        entries.sort_by_key(|e| match e {
+            Entry::Key(k, _) => k.clone(),
+            Entry::Prefix(p) => p.clone(),
+        });
+        let total = entries.len();
+        let page: Vec<Entry> = entries.into_iter().skip(token).take(max_keys).collect();
+        let truncated = token + page.len() < total;
+        let mut out = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?><ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>{bucket}</Name><Prefix>{prefix}</Prefix><MaxKeys>{max_keys}</MaxKeys><KeyCount>{}</KeyCount><IsTruncated>{truncated}</IsTruncated>"#,
+            page.len()
+        );
+        if truncated {
+            out += &format!(
+                "<NextContinuationToken>{}</NextContinuationToken>",
+                token + page.len()
+            );
+        }
+        for e in &page {
+            match e {
+                Entry::Key(k, size) => {
+                    out += &format!(
+                        r#"<Contents><Key>{k}</Key><Size>{size}</Size><LastModified>2026-01-01T00:00:00.000Z</LastModified><ETag>&quot;fake&quot;</ETag><StorageClass>STANDARD</StorageClass></Contents>"#
+                    )
+                }
+                Entry::Prefix(p) => {
+                    out += &format!("<CommonPrefixes><Prefix>{p}</Prefix></CommonPrefixes>")
+                }
+            }
+        }
+        out += "</ListBucketResult>";
+        xml(out)
+    }
+
+    pub async fn handle(store: Store, req: Request) -> Response {
+        let (parts, body) = req.into_parts();
+        let body = body.collect().await.unwrap().to_bytes().to_vec();
+        let q = query_pairs(&parts.uri);
+        let has = |k: &str| q.iter().any(|(kk, _)| kk == k);
+        let path = percent_decode(parts.uri.path());
+        let trimmed = path.trim_start_matches('/');
+        let (bucket, key) = match trimmed.split_once('/') {
+            Some((b, k)) => (b.to_string(), k.to_string()),
+            None => (trimmed.to_string(), String::new()),
+        };
+        let map_key = format!("{bucket}/{key}");
+        match parts.method {
+            Method::PUT => {
+                store.lock().await.insert(map_key, body);
+                (StatusCode::OK, [(header::ETAG, "\"fake\"")]).into_response()
+            }
+            Method::GET if has("list-type") => list(&store, &bucket, &q).await,
+            Method::GET => match store.lock().await.get(&map_key) {
+                Some(v) => (
+                    StatusCode::OK,
+                    [
+                        (header::CONTENT_TYPE, "application/octet-stream"),
+                        (header::ETAG, "\"fake\""),
+                    ],
+                    v.clone(),
+                )
+                    .into_response(),
+                None => no_such_key(),
+            },
+            Method::HEAD => match store.lock().await.get(&map_key) {
+                Some(v) => (
+                    StatusCode::OK,
+                    [(header::CONTENT_LENGTH, v.len().to_string())],
+                )
+                    .into_response(),
+                None => StatusCode::NOT_FOUND.into_response(),
+            },
+            Method::POST if has("delete") => {
+                let text = String::from_utf8_lossy(&body).into_owned();
+                let mut out = String::from(
+                    r#"<?xml version="1.0" encoding="UTF-8"?><DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">"#,
+                );
+                let mut rest = &text[..];
+                let mut map = store.lock().await;
+                while let Some(start) = rest.find("<Key>") {
+                    let body_start = start + 5;
+                    let end = body_start + rest[body_start..].find("</Key>").unwrap();
+                    let k = &rest[body_start..end];
+                    map.remove(&format!("{bucket}/{k}"));
+                    out += &format!("<Deleted><Key>{k}</Key></Deleted>");
+                    rest = &rest[end..];
+                }
+                out += "</DeleteResult>";
+                xml(out)
+            }
+            Method::DELETE => {
+                store.lock().await.remove(&map_key);
+                StatusCode::NO_CONTENT.into_response()
+            }
+            _ => StatusCode::NOT_IMPLEMENTED.into_response(),
+        }
+    }
+}
+
+#[tokio::test]
+async fn s3_blob_store_backup_and_restore() {
+    use thencloud_server::maintenance::{self, BackupDest};
+
+    let (store, endpoint) = fake_s3::spawn().await;
+    let h = Harness::with_config(|c| {
+        c.s3_endpoint = Some(endpoint.clone());
+        c.s3_bucket = Some("main".into());
+        c.s3_access_key = Some("access".into());
+        c.s3_secret_key = Some("secret".into());
+        c.s3_prefix = "tc/".into();
+    })
+    .await;
+    let alice = register(&h, "alice", "pw").await;
+    let (folder, folder_key) = alice.mkdir(&h, &alice.root, "Kept").await;
+    let data = secret_payload(c::CHUNK_SIZE + 99);
+    let file = alice
+        .upload(&h, &folder, None, "keep.bin", &data)
+        .await
+        .unwrap();
+
+    // The chunks went to the bucket, not to the data directory.
+    assert!(!h.dir.path().join("data/blobs").exists());
+    async fn count_under(store: &fake_s3::Store, p: &str) -> usize {
+        store
+            .lock()
+            .await
+            .keys()
+            .filter(|k| k.starts_with(p))
+            .count()
+    }
+    assert_eq!(count_under(&store, "main/tc/").await, 2);
+
+    // Downloading reads them back.
+    let kids: Vec<Node> = alice.children(&h, &folder).await.json();
+    let f = find_by_name(&kids, &folder_key, "keep.bin");
+    let fk = c::unwrap_node_key(&folder_key, &f.enc_key, &f.id).unwrap();
+    assert_eq!(alice.download(&h, f, &fk).await.1, data);
+
+    // Zero-knowledge: the bucket holds nothing but ciphertext.
+    for (k, v) in store.lock().await.iter() {
+        for n in [MARKER, b"keep.bin", b"Kept", folder_key.as_bytes()] {
+            assert!(
+                !contains(v, n),
+                "plaintext {:?} in {k}",
+                String::from_utf8_lossy(n)
+            );
+        }
+    }
+
+    // check() works against the bucket, and sees an orphan put behind its back.
+    let r = maintenance::check(&h.state.db, &h.state.blobs)
+        .await
+        .unwrap();
+    assert!(r.is_ok() && r.orphans.is_empty(), "{r:?}");
+    store.lock().await.insert(
+        "main/tc/ab/abcdef00-0000-4000-8000-000000000000/0".into(),
+        vec![1, 2, 3],
+    );
+    let r = maintenance::check(&h.state.db, &h.state.blobs)
+        .await
+        .unwrap();
+    assert_eq!(
+        r.orphans,
+        vec!["abcdef00-0000-4000-8000-000000000000".to_string()]
+    );
+    store
+        .lock()
+        .await
+        .remove("main/tc/ab/abcdef00-0000-4000-8000-000000000000/0");
+
+    // Back up bucket -> another prefix in the same bucket.
+    let cfg = &h.state.config;
+    let dest = BackupDest::parse("s3://backups/one", cfg).unwrap();
+    let b = maintenance::backup(&h.state.db, &h.state.blobs, &dest)
+        .await
+        .unwrap();
+    assert_eq!(b.chunks, 2);
+    assert!(b.missing.is_empty());
+    assert!(store.lock().await.contains_key("backups/one/thencloud.db"));
+    // A second backup into the same place is refused.
+    assert!(
+        maintenance::backup(&h.state.db, &h.state.blobs, &dest)
+            .await
+            .is_err()
+    );
+
+    // Restore: the backed-up db in a fresh data directory, blobs from the
+    // backup's own prefix.
+    let rdir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(rdir.path().join("data")).unwrap();
+    let db_bytes = store
+        .lock()
+        .await
+        .get("backups/one/thencloud.db")
+        .unwrap()
+        .clone();
+    std::fs::write(rdir.path().join("data/thencloud.db"), db_bytes).unwrap();
+    let mut cfg2 = Config::for_dir(rdir.path());
+    cfg2.s3_endpoint = Some(endpoint.clone());
+    cfg2.s3_bucket = Some("backups".into());
+    cfg2.s3_access_key = Some("access".into());
+    cfg2.s3_secret_key = Some("secret".into());
+    cfg2.s3_prefix = "one/blobs/".into();
+    let state = AppState::new(cfg2).await.unwrap();
+    let restored = Harness {
+        app: router(state.clone()),
+        state,
+        dir: rdir,
+    };
+    let alice2 = login(&restored, "alice", "pw").await.unwrap();
+    let kids: Vec<Node> = alice2.children(&restored, &folder).await.json();
+    let f = find_by_name(&kids, &folder_key, "keep.bin");
+    let fk = c::unwrap_node_key(&folder_key, &f.enc_key, &f.id).unwrap();
+    assert_eq!(alice2.download(&restored, f, &fk).await.1, data);
+    let r = maintenance::check(&restored.state.db, &restored.state.blobs)
+        .await
+        .unwrap();
+    assert!(r.is_ok() && r.orphans.is_empty(), "{r:?}");
+
+    // Back up bucket -> a local directory, and check what landed there.
+    let ldir = h.dir.path().join("backup");
+    let b = maintenance::backup(&h.state.db, &h.state.blobs, &BackupDest::Dir(ldir.clone()))
+        .await
+        .unwrap();
+    assert_eq!(b.chunks, 2);
+    assert!(ldir.join("thencloud.db").exists());
+    let version = f.version.as_ref().unwrap().id.clone();
+    assert!(
+        ldir.join("blobs")
+            .join(&version[..2])
+            .join(&version)
+            .join("0")
+            .exists()
+    );
+
+    // Emptying the trash deletes the blobs from the bucket.
+    assert_eq!(alice.delete(&h, &file.id).await, StatusCode::NO_CONTENT);
+    let r = h
+        .call(Method::DELETE, "/api/trash", Some(&alice.token), None::<()>)
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    assert_eq!(count_under(&store, "main/tc/").await, 0);
 }
