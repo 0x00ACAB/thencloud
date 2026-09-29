@@ -665,3 +665,440 @@ fn verify_web_checks_signature_and_every_encoding() {
             .all(|p| p.starts_with("/sw.js") && p.ends_with("HTTP 404"))
     );
 }
+
+/// A WebDAV request to a bridge; the status and body.
+fn dav(method: &str, url: &str, headers: &[(&str, &str)], body: &[u8]) -> (u16, Vec<u8>) {
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .http_status_as_error(false)
+        .allow_non_standard_methods(true)
+        .build()
+        .into();
+    let mut req = ureq::http::Request::builder().method(method).uri(url);
+    for (k, v) in headers {
+        req = req.header(*k, *v);
+    }
+    let mut res = agent.run(req.body(body.to_vec()).unwrap()).unwrap();
+    let status = res.status().as_u16();
+    (status, res.body_mut().read_to_vec().unwrap())
+}
+
+fn bridge(s: &Server, password: &Key) -> thencloud_cli::serve::Bridge {
+    let cl = Client::login(&s.url, password, "test").unwrap();
+    let root = cl.root().unwrap();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    thencloud_cli::serve::spawn(
+        cl,
+        root,
+        listener,
+        thencloud_cli::serve::ServeOptions {
+            read_only: false,
+            temp_dir: std::env::temp_dir(),
+        },
+    )
+    .unwrap()
+}
+
+#[test]
+fn webdav_bridge_reads_writes_and_moves() {
+    let s = start();
+    let cl = client(&s);
+    let root = cl.root().unwrap();
+    let b = bridge(&s, &s.app_password);
+    let base = b.url();
+
+    // Put a file bigger than a chunk, and read it back, whole and in part.
+    let big = content(c::CHUNK_SIZE + 12345, 3);
+    let (st, _) = dav("MKCOL", &format!("{base}Secret%20plans"), &[], b"");
+    assert_eq!(st, 201);
+    let file = format!("{base}Secret%20plans/big%20file.bin");
+    assert_eq!(dav("PUT", &file, &[], &big).0, 201);
+    let (st, got) = dav("GET", &file, &[], b"");
+    assert_eq!(st, 200);
+    assert!(got == big, "downloaded content differs");
+    let range = format!("bytes={}-{}", c::CHUNK_SIZE - 10, c::CHUNK_SIZE + 9);
+    let (st, part) = dav("GET", &file, &[("Range", &range)], b"");
+    assert_eq!(st, 206);
+    assert_eq!(part, &big[c::CHUNK_SIZE - 10..c::CHUNK_SIZE + 10]);
+
+    // Listing shows the decrypted names.
+    let (st, xml) = dav(
+        "PROPFIND",
+        &format!("{base}Secret%20plans/"),
+        &[("Depth", "1")],
+        b"",
+    );
+    assert_eq!(st, 207);
+    let xml = String::from_utf8(xml).unwrap();
+    assert!(xml.contains("big%20file.bin"), "{xml}");
+    assert!(
+        xml.contains(&format!("<D:getcontentlength>{}<", big.len())),
+        "{xml}"
+    );
+
+    // Writing over it makes a new version rather than a new file.
+    assert_eq!(dav("PUT", &file, &[], b"second draft").0, 204);
+    let folder = child(&cl, &root, "Secret plans").unwrap();
+    let e = child(&cl, &folder, "big file.bin").unwrap();
+    assert_eq!(fetch(&cl, &e), b"second draft");
+    let versions: Vec<VersionInfo> = get(&s, &format!("/api/nodes/{}/versions", e.node.id));
+    assert_eq!(versions.len(), 2);
+
+    // Move and copy.
+    let dest = format!("{base}renamed.txt");
+    let (st, _) = dav("MOVE", &file, &[("Destination", &dest)], b"");
+    assert_eq!(st, 201);
+    assert!(child(&cl, &folder, "big file.bin").is_none());
+    let moved = child(&cl, &root, "renamed.txt").unwrap();
+    assert_eq!(moved.node.id, e.node.id);
+    let copy = format!("{base}Secret%20plans/copy.txt");
+    assert_eq!(dav("COPY", &dest, &[("Destination", &copy)], b"").0, 201);
+    assert_eq!(dav("GET", &copy, &[], b"").1, b"second draft");
+
+    // Deleting a folder puts it in the trash, as one item.
+    assert_eq!(
+        dav("DELETE", &format!("{base}Secret%20plans/"), &[], b"").0,
+        204
+    );
+    assert!(child(&cl, &root, "Secret plans").is_none());
+    let trash: Vec<TrashItem> = get(&s, "/api/trash");
+    assert_eq!(trash.len(), 1, "one trash item for the folder");
+    assert_eq!(dav("GET", &copy, &[], b"").0, 404);
+
+    // Without the secret, or from another host name, nothing.
+    let bare = format!("http://{}/", b.addr);
+    assert_eq!(dav("PROPFIND", &bare, &[("Depth", "1")], b"").0, 404);
+    assert_eq!(dav("GET", &format!("{bare}renamed.txt"), &[], b"").0, 404);
+    let wrong = format!("http://{}/{}x/renamed.txt", b.addr, b.secret);
+    assert_eq!(dav("GET", &wrong, &[], b"").0, 404);
+    let rebound = dav(
+        "GET",
+        &format!("{base}renamed.txt"),
+        &[("Host", "evil.example:80")],
+        b"",
+    );
+    assert_eq!(rebound.0, 403);
+    // Windows asks the root what it supports.
+    assert_eq!(dav("OPTIONS", &bare, &[], b"").0, 200);
+
+    cl.logout().unwrap();
+    assert_no_plaintext(
+        &s,
+        &[MARKER, b"second draft", b"Secret plans", b"renamed.txt"],
+    );
+}
+
+#[test]
+fn webdav_bridge_with_read_only_password_refuses_changes() {
+    let s = start();
+    let cl = client(&s);
+    let root = cl.root().unwrap();
+    let local = tempfile::tempdir().unwrap();
+    fs::write(local.path().join("a.txt"), b"keep me").unwrap();
+    cl.upload(&local.path().join("a.txt"), &root, "a.txt", None)
+        .unwrap();
+
+    let b = bridge(&s, &s.read_only_password);
+    let base = b.url();
+    assert_eq!(dav("GET", &format!("{base}a.txt"), &[], b"").1, b"keep me");
+    for (method, path) in [
+        ("PUT", "a.txt"),
+        ("PUT", "b.txt"),
+        ("MKCOL", "dir"),
+        ("DELETE", "a.txt"),
+    ] {
+        let (st, _) = dav(method, &format!("{base}{path}"), &[], b"x");
+        assert!(st == 403 || st == 405, "{method} {path}: {st}");
+    }
+    assert_eq!(fetch(&cl, &child(&cl, &root, "a.txt").unwrap()), b"keep me");
+    assert!(child(&cl, &root, "b.txt").is_none());
+}
+
+/// A stand-in for Nextcloud's WebDAV: files by path under the user's id,
+/// with sizes as listed (`lie` lists one file as a byte longer than it is).
+struct FakeNextcloud {
+    files: std::collections::BTreeMap<String, (Option<Vec<u8>>, i64)>,
+    lie: Option<String>,
+}
+
+fn fake_nextcloud(nc: FakeNextcloud) -> String {
+    use axum::body::Body;
+    use axum::http::{Request, Response, StatusCode};
+    use base64::Engine;
+    let nc = std::sync::Arc::new(nc);
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async move {
+            let app = axum::Router::new().fallback(move |req: Request<Body>| {
+                let nc = nc.clone();
+                async move {
+                    let reply = |status: u16, body: String| {
+                        Response::builder()
+                            .status(StatusCode::from_u16(status).unwrap())
+                            .body(Body::from(body))
+                            .unwrap()
+                    };
+                    let want = format!(
+                        "Basic {}",
+                        base64::engine::general_purpose::STANDARD
+                            .encode("alice@example.com:nc-app-password")
+                    );
+                    if req.headers().get("authorization").and_then(|h| h.to_str().ok())
+                        != Some(want.as_str())
+                    {
+                        return reply(401, String::new());
+                    }
+                    let path = percent_encoding::percent_decode_str(req.uri().path())
+                        .decode_utf8()
+                        .unwrap()
+                        .into_owned();
+                    let date = |ms: i64| {
+                        httpdate::fmt_http_date(
+                            std::time::UNIX_EPOCH + std::time::Duration::from_millis(ms as u64),
+                        )
+                    };
+                    let enc = |p: &str| {
+                        p.split('/')
+                            .map(|s| {
+                                percent_encoding::utf8_percent_encode(
+                                    s,
+                                    percent_encoding::NON_ALPHANUMERIC,
+                                )
+                                .to_string()
+                            })
+                            .collect::<Vec<_>>()
+                            .join("/")
+                    };
+                    const FILES: &str = "/nc/remote.php/dav/files/alice-id/";
+                    if req.method() == "PROPFIND" && path == "/nc/remote.php/dav/" {
+                        return reply(207, r#"<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:response><d:href>/nc/remote.php/dav/</d:href><d:propstat><d:prop><d:current-user-principal><d:href>/nc/remote.php/dav/principals/users/alice-id/</d:href></d:current-user-principal></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>"#.into());
+                    }
+                    let Some(rel) = path.strip_prefix(FILES) else {
+                        return reply(404, String::new());
+                    };
+                    let rel = rel.trim_end_matches('/').to_string();
+                    if req.method() == "GET" {
+                        return match nc.files.get(&rel) {
+                            Some((Some(b), _)) => Response::new(Body::from(b.clone())),
+                            _ => reply(404, String::new()),
+                        };
+                    }
+                    let dir = if rel.is_empty() { String::new() } else { format!("{rel}/") };
+                    let mut xml = String::from(r#"<?xml version="1.0"?><d:multistatus xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">"#);
+                    xml += &format!("<d:response><d:href>{FILES}{}</d:href><d:propstat><d:prop><d:resourcetype><d:collection/></d:resourcetype></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>", enc(&dir));
+                    for (p, (body, mtime)) in &nc.files {
+                        let Some(name) = p.strip_prefix(&dir) else { continue };
+                        if name.contains('/') {
+                            continue;
+                        }
+                        let props = match body {
+                            None => "<d:resourcetype><d:collection/></d:resourcetype>".to_string(),
+                            Some(b) => {
+                                let extra = usize::from(nc.lie.as_deref() == Some(p.as_str()));
+                                format!("<d:resourcetype/><d:getcontentlength>{}</d:getcontentlength>", b.len() + extra)
+                            }
+                        };
+                        let slash = if body.is_none() { "/" } else { "" };
+                        xml += &format!(
+                            "<d:response><d:href>{FILES}{}{slash}</d:href><d:propstat><d:prop>{props}<d:getlastmodified>{}</d:getlastmodified></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat><d:propstat><d:prop><oc:fileid/></d:prop><d:status>HTTP/1.1 404 Not Found</d:status></d:propstat></d:response>",
+                            enc(p),
+                            date(*mtime)
+                        );
+                    }
+                    xml += "</d:multistatus>";
+                    reply(207, xml)
+                }
+            });
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            tx.send(listener.local_addr().unwrap()).unwrap();
+            axum::serve(listener, app).await.unwrap();
+        });
+    });
+    format!("http://{}/nc", rx.recv().unwrap())
+}
+
+#[test]
+fn import_from_nextcloud_keeps_folders_and_dates() {
+    use thencloud_cli::nextcloud::Nextcloud;
+    let s = start();
+    let cl = client(&s);
+    let root = cl.root().unwrap();
+    let photo = content(c::CHUNK_SIZE + 999, 7);
+    let mut files = std::collections::BTreeMap::new();
+    files.insert("Photos".to_string(), (None, 1_700_000_000_000));
+    files.insert(
+        "Photos/Beach day.jpg".to_string(),
+        (Some(photo.clone()), 1_700_000_100_000),
+    );
+    files.insert("Photos/2026".to_string(), (None, 1_700_000_200_000));
+    files.insert(
+        "Photos/2026/#1 100%.txt".to_string(),
+        (Some(b"odd name".to_vec()), 1_700_000_300_000),
+    );
+    files.insert("Empty".to_string(), (None, 1_700_000_400_000));
+    files.insert(
+        "notes.md".to_string(),
+        (Some(b"# Nextcloud notes".to_vec()), 1_700_000_500_000),
+    );
+    let url = fake_nextcloud(FakeNextcloud { files, lie: None });
+
+    assert!(
+        Nextcloud::connect(&url, "alice@example.com", "wrong")
+            .and_then(|nc| nc.list(""))
+            .is_err()
+    );
+    let nc = Nextcloud::connect(&url, "alice@example.com", "nc-app-password").unwrap();
+    let mut seen = Vec::new();
+    let st = cl
+        .import_nextcloud(&nc, "", &root, &mut |p| seen.push(p.to_string()))
+        .unwrap();
+    assert_eq!((st.transferred, st.unchanged), (3, 0));
+    assert_eq!(
+        seen,
+        [
+            "Photos/2026/#1 100%.txt",
+            "Photos/Beach day.jpg",
+            "notes.md"
+        ]
+    );
+
+    let photos = child(&cl, &root, "Photos").unwrap();
+    assert_eq!(photos.meta.mtime, 1_700_000_000_000);
+    let beach = child(&cl, &photos, "Beach day.jpg").unwrap();
+    assert!(fetch(&cl, &beach) == photo);
+    assert_eq!(beach.meta.mtime, 1_700_000_100_000);
+    let odd = child(&cl, &child(&cl, &photos, "2026").unwrap(), "#1 100%.txt").unwrap();
+    assert_eq!(fetch(&cl, &odd), b"odd name");
+    assert!(child(&cl, &root, "Empty").unwrap().is_folder());
+
+    // Again: nothing to copy.
+    let st = cl.import_nextcloud(&nc, "", &root, &mut |_| {}).unwrap();
+    assert_eq!((st.transferred, st.unchanged), (0, 3));
+
+    // Just one folder, into another.
+    let dest = cl.mkdir(&root, "From NC").unwrap();
+    let st = cl
+        .import_nextcloud(&nc, "Photos/2026", &dest, &mut |_| {})
+        .unwrap();
+    assert_eq!(st.transferred, 1);
+    assert!(child(&cl, &dest, "#1 100%.txt").is_some());
+
+    cl.logout().unwrap();
+    assert_no_plaintext(&s, &[MARKER, b"Nextcloud notes", b"odd name", b"Beach day"]);
+}
+
+#[test]
+fn import_from_nextcloud_refuses_a_short_download() {
+    use thencloud_cli::nextcloud::Nextcloud;
+    let s = start();
+    let cl = client(&s);
+    let root = cl.root().unwrap();
+    let mut files = std::collections::BTreeMap::new();
+    files.insert(
+        "cut.txt".to_string(),
+        (Some(b"not all of it".to_vec()), 1_700_000_000_000),
+    );
+    let url = fake_nextcloud(FakeNextcloud {
+        files,
+        lie: Some("cut.txt".into()),
+    });
+    let nc = Nextcloud::connect(&url, "alice@example.com", "nc-app-password").unwrap();
+    assert!(cl.import_nextcloud(&nc, "", &root, &mut |_| {}).is_err());
+    assert!(child(&cl, &root, "cut.txt").is_none());
+}
+
+#[test]
+fn webdav_bridge_keeps_finder_files_local_and_follows_changes() {
+    let s = start();
+    let cl = client(&s);
+    let root = cl.root().unwrap();
+    let b = bridge(&s, &s.app_password);
+    let base = b.url();
+    let listing = |path: &str| {
+        let (st, xml) = dav("PROPFIND", &format!("{base}{path}"), &[("Depth", "1")], b"");
+        assert_eq!(st, 207);
+        String::from_utf8(xml).unwrap()
+    };
+
+    // Finder's files work, but only here.
+    assert_eq!(dav("MKCOL", &format!("{base}Docs"), &[], b"").0, 201);
+    assert_eq!(
+        dav("PUT", &format!("{base}Docs/report.txt"), &[], b"real").0,
+        201
+    );
+    assert_eq!(
+        dav("PUT", &format!("{base}Docs/._report.txt"), &[], b"xattrs").0,
+        201
+    );
+    assert_eq!(
+        dav("PUT", &format!("{base}Docs/.DS_Store"), &[], b"view").0,
+        201
+    );
+    assert_eq!(
+        dav("GET", &format!("{base}Docs/._report.txt"), &[], b"").1,
+        b"xattrs"
+    );
+    let xml = listing("Docs/");
+    assert!(
+        xml.contains("._report.txt") && xml.contains(".DS_Store"),
+        "{xml}"
+    );
+    let docs = child(&cl, &root, "Docs").unwrap();
+    let names: Vec<String> = cl
+        .list(&docs)
+        .unwrap()
+        .into_iter()
+        .map(|e| e.meta.name)
+        .collect();
+    assert_eq!(names, ["report.txt"]);
+    // Renamed alongside their file, and deleted.
+    let dest = format!("{base}Docs/._renamed.txt");
+    let (st, _) = dav(
+        "MOVE",
+        &format!("{base}Docs/._report.txt"),
+        &[("Destination", &dest)],
+        b"",
+    );
+    assert_eq!(st, 201);
+    assert_eq!(dav("GET", &dest, &[], b"").1, b"xattrs");
+    assert_eq!(
+        dav("GET", &format!("{base}Docs/._report.txt"), &[], b"").0,
+        404
+    );
+    assert_eq!(
+        dav("DELETE", &format!("{base}Docs/.DS_Store"), &[], b"").0,
+        204
+    );
+    assert_eq!(
+        dav("GET", &format!("{base}Docs/.DS_Store"), &[], b"").0,
+        404
+    );
+    assert!(child(&cl, &root, ".DS_Store").is_none());
+
+    // Changes made elsewhere show up once the feed is read: a new file, and
+    // one moved out of Docs.
+    assert!(!listing("").contains("elsewhere.txt"));
+    let local = tempfile::tempdir().unwrap();
+    fs::write(local.path().join("e.txt"), b"from the browser").unwrap();
+    cl.upload(&local.path().join("e.txt"), &root, "elsewhere.txt", None)
+        .unwrap();
+    let report = child(&cl, &docs, "report.txt").unwrap();
+    cl.update(&report, &root, report.meta.clone()).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(5500));
+    let xml = listing("");
+    assert!(
+        xml.contains("elsewhere.txt") && xml.contains("report.txt"),
+        "{xml}"
+    );
+    assert_eq!(
+        dav("GET", &format!("{base}report.txt"), &[], b"").1,
+        b"real"
+    );
+    assert_eq!(
+        dav("GET", &format!("{base}Docs/report.txt"), &[], b"").0,
+        404
+    );
+
+    cl.logout().unwrap();
+    assert_no_plaintext(&s, &[b"xattrs", b"view", b"from the browser"]);
+}

@@ -1114,9 +1114,9 @@ async fn login_password_change_and_enumeration() {
             None,
             Some(json!({
                 "username": "CAROL", "auth_key": ak.auth_key.to_b64(), "kdf_salt": c::b64_encode(&salt),
-                "kdf_params": FAST_KDF, "enc_master_key": c::b64_encode(&[0; 72]), "public_key": c::b64_encode(&[0; 32]),
-                "enc_private_key": c::b64_encode(&[0; 72]),
-                "root": {"id": c::new_id(), "enc_key": c::b64_encode(&[0; 72]), "enc_metadata": c::b64_encode(&[0; 64])}
+                "kdf_params": FAST_KDF, "enc_master_key": c::b64_encode(&[0; 73]), "public_key": c::b64_encode(&[0; 32]),
+                "enc_private_key": c::b64_encode(&[0; 73]),
+                "root": {"id": c::new_id(), "enc_key": c::b64_encode(&[0; 73]), "enc_metadata": c::b64_encode(&[0; 64])}
             })),
         )
         .await;
@@ -1141,10 +1141,11 @@ async fn login_is_rate_limited() {
 
 #[tokio::test]
 async fn quota_is_enforced_and_uploads_can_be_aborted() {
-    let h = Harness::with_config(|c| c.default_quota = 1024).await;
+    // Every file takes at least 16 KiB (the padding floor).
+    let h = Harness::with_config(|c| c.default_quota = 20_000).await;
     let e = register(&h, "erin", "pw").await;
     let err = e
-        .upload(&h, &e.root, None, "big.bin", &[7u8; 2048])
+        .upload(&h, &e.root, None, "big.bin", &[7u8; 30_000])
         .await
         .unwrap_err();
     assert_eq!(err.status, StatusCode::INSUFFICIENT_STORAGE);
@@ -1184,9 +1185,9 @@ async fn registration_can_be_closed_but_first_user_is_allowed() {
     let r = h
         .call(Method::POST, "/api/auth/register", None, Some(json!({
             "username": "mallory", "auth_key": c::b64_encode(&[1; 32]), "kdf_salt": c::b64_encode(&salt),
-            "kdf_params": FAST_KDF, "enc_master_key": c::b64_encode(&[0; 72]), "public_key": c::b64_encode(&[0; 32]),
-            "enc_private_key": c::b64_encode(&[0; 72]),
-            "root": {"id": c::new_id(), "enc_key": c::b64_encode(&[0; 72]), "enc_metadata": c::b64_encode(&[0; 64])}
+            "kdf_params": FAST_KDF, "enc_master_key": c::b64_encode(&[0; 73]), "public_key": c::b64_encode(&[0; 32]),
+            "enc_private_key": c::b64_encode(&[0; 73]),
+            "root": {"id": c::new_id(), "enc_key": c::b64_encode(&[0; 73]), "enc_metadata": c::b64_encode(&[0; 64])}
         })))
         .await;
     assert_eq!(r.status, StatusCode::FORBIDDEN);
@@ -2593,7 +2594,8 @@ async fn duplicate_names_are_refused_by_name_tag() {
 
 #[tokio::test]
 async fn drop_visitors_cannot_prune_the_owners_versions() {
-    let h = Harness::with_config(|c| c.default_quota = 4000).await;
+    // Two versions of 16,425 bytes each; a third file only fits without one.
+    let h = Harness::with_config(|c| c.default_quota = 40_000).await;
     let alice = register(&h, "alice", "pw").await;
     let (inbox, _) = alice.mkdir(&h, &alice.root, "Inbox").await;
     let f = alice
@@ -2678,8 +2680,8 @@ async fn janitor_thins_old_versions_by_age() {
 
 #[tokio::test]
 async fn full_quota_prunes_old_versions_first() {
-    // Each 1000-byte upload is padded to 1024 bytes, 1064 of ciphertext.
-    let h = Harness::with_config(|c| c.default_quota = 3000).await;
+    // Each 1000-byte upload is padded to 16 KiB, 16,425 bytes of ciphertext.
+    let h = Harness::with_config(|c| c.default_quota = 48_000).await;
     let a = register(&h, "alice", "pw").await;
     let f = a
         .upload(&h, &a.root, None, "big.bin", &[1u8; 1000])
@@ -2702,10 +2704,10 @@ async fn full_quota_prunes_old_versions_first() {
         !after.iter().any(|v| v.id == before[1].id),
         "oldest version pruned"
     );
-    assert!(a.me(&h).await.used_bytes <= 3000);
+    assert!(a.me(&h).await.used_bytes <= 48_000);
     // Current files are never pruned: a second file that can't fit fails.
     let err = a
-        .upload(&h, &a.root, None, "other.bin", &[4u8; 2000])
+        .upload(&h, &a.root, None, "other.bin", &[4u8; 40_000])
         .await
         .unwrap_err();
     assert_eq!(err.status, StatusCode::INSUFFICIENT_STORAGE);

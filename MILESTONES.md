@@ -131,19 +131,19 @@ Smaller things:
 ## Milestone 7: Clients and self-hosting
 
 - [x] **Installable app (PWA)**: a manifest and icons. No share target: its POST would reach the server with the plaintext files whenever the service worker isn't running
-- [ ] **Local WebDAV bridge** in the CLI (`thencloud serve`): serves your files decrypted on 127.0.0.1 only, so macOS Finder, Windows Explorer and iOS Files apps can use them while the server still sees only ciphertext
-- [ ] **Import from Nextcloud**: the CLI reads a Nextcloud account over WebDAV, encrypts locally and uploads, keeping folders and dates
+- [x] **Local WebDAV bridge** in the CLI (`thencloud serve`): serves your files decrypted on 127.0.0.1 only, so macOS Finder, Windows Explorer and iOS Files apps can use them while the server still sees only ciphertext. Every path starts with a random secret printed at start (or kept in `THENCLOUD_SERVE_SECRET`), so other local users and web pages reaching for localhost get nothing, and a `Host` that isn't loopback is refused. Reads are decrypted a chunk at a time, writes over a file make a new version, deletes go to the trash. iOS Files can't reach a loopback address, so it's left out for now
+- [x] **Import from Nextcloud**: the CLI reads a Nextcloud account over WebDAV, encrypts locally and uploads, keeping folders and dates. `thencloud import-nextcloud <server> <user> [folder] [--from <folder>]` with a Nextcloud app password; files stream through the cipher without touching disk, a size that doesn't match the listing stops the import instead of saving a cut-short file, and a second run skips what's already there. The listing parser is fuzzed
 - [x] **Container image and release binaries**: a Dockerfile, a compose example with a reverse proxy, and binaries built in CI for each release. The image builds the web client like a release, so `verify-web` passes; `--trust-proxy` keeps rate limits per client behind the proxy
 - [x] **Backup and restore**: a server command that takes a consistent snapshot of SQLite and the blob store, and a documented restore (`thencloud-server backup DIR`, safe while running)
 - [x] **Health and metrics**: a health check and Prometheus metrics with the same counts the admin view shows, nothing more (`/api/health`; `/api/metrics` only with `--metrics-token`)
 - [x] **Integrity check**: the server checks every blob it expects exists with the right size; the client can verify that everything decrypts and flags what doesn't (`thencloud-server check`, and Settings > Check your files)
-- [ ] **Translations**: move UI strings into message files and pick the language from the browser
+- [x] **Translations**: move UI strings into message files and pick the language from the browser. English, Polish and German (`lib/messages/`), loaded on demand, with plural and grammatical-gender forms; a test fails on any string missing a translation. Dates, numbers, 12/24-hour time and units follow a separate region setting
 - [x] **Accessibility pass**: screen reader labels, focus handling in dialogs and menus, and colour contrast checked in both themes and with the tint on. Every text element on the main pages and dialogs measured in the browser against WCAG AA in dark, light and both tinted themes: the faint grey and danger buttons were below 4.5:1 and are fixed. Menus take Home/End, and Tab closes them; icon-only buttons all have names
 
 ## Milestone 8: Hardening
 
 - [x] **Format spec**: a written description of every ciphertext format, key derivation and wire type, with test vectors that the Rust tests, the WASM build and any other client check against. `docs/format/README.md` and `vectors.json`: every wrapped key, sealed box, metadata and chunk format with its associated data, the KDFs, name tags, fingerprints, padding and the recovery key encoding, plus ciphertexts that must not open (moved, swapped, cut short)
-- [ ] **Format versions**: a version byte on every ciphertext and a tested path for moving old data to a new format
+- [x] **Format versions**: a version byte on every ciphertext and a tested path for moving old data to a new format. Every symmetric ciphertext starts with `0x01` and every sealed box with its kind (`0x01` X25519, `0x02` hybrid, no longer told apart by length); an unknown one is refused with "update to open it" rather than misread, and the vectors include such ciphertexts. The spec describes how a later layout moves data over (readers take both, writers the new one, data rewritten as it changes); there is no older data to move yet
 - [x] **Fuzzing**: `cargo-fuzz` targets for the crypto decoders and the server's request parsing, and fuzz tests for the untrusted parsers in the browser (`tags.js`, `videotags.js`, the zip and PDF link handling). Also sealed boxes, WebAuthn, and in the browser photos, CSV, subtitles and episode names; in CI on every push and weekly for longer
 - [x] **Browser tests**: Playwright in CI for sign-up, upload, share, public links and previews, including a check that no request carries a name, key or plaintext
 - [x] **Dependency checks**: `cargo-deny` (advisories and licences) and `npm audit` in CI, on every push and weekly
@@ -156,7 +156,7 @@ Smaller things:
 - [x] **Coarse timestamps**: the server records created and changed times rounded to the hour (the exact times stay in the encrypted metadata). Nodes, versions and the trash; the metadata's new `changed` field holds the exact time, and items from before fall back to the server's
 - [ ] **Hide file vs folder**: store the node type in the encrypted metadata, so the server sees only nodes that have children or content
 - [x] **Onion service**: document and test running thencloud as a Tor onion service, so the server doesn't learn clients' IP addresses. `--limit-by-address false` keeps one visitor's wrong guesses from locking everyone out (all arrive from Tor's address); passkeys work on `http://…onion`; the browser tests run through Tor with `THENCLOUD_E2E_URL` and `THENCLOUD_E2E_PROXY`
-- [ ] **Uniform upload sizes**: small files uploaded in batches padded to fixed sizes, so upload timing and count give away less
+- [x] **Uniform upload sizes**: small files uploaded in batches padded to fixed sizes, so upload timing and count give away less. Every file under 16 KiB is now stored as 16 KiB, so small files all look alike; batching was left out, since the server learns the count once they're stored anyway
 
 ## Milestone 10: More ways to open files
 
@@ -165,7 +165,7 @@ Smaller things:
 - [x] **Audiobooks and podcasts**: remember the position per file, chapters from MP4/M4B, and playback speed. Tracks over 20 minutes (and any .m4b) pick up where they were left, on any device (kept in the encrypted music data); chapters come from the Nero `chpl` box, which ffmpeg and most audiobook tools write
 - [x] **Tables**: CSV and TSV shown as a sortable table instead of plain text, with a Source toggle and editing as text
 - [ ] **Office previews**: DOCX, XLSX, ODT and PPTX rendered in the browser, loaded only when needed and sanitised like Markdown
-- [ ] **PDF tools**: merge, split, rotate and reorder pages in the browser, saved as a new encrypted file
+- [x] **PDF tools**: merge, split, rotate and reorder pages in the browser, saved as a new encrypted file. Also remove or extract pages; pdf-lib is loaded only when the dialog opens, and new documents carry no producer or dates
 - [x] **Notes view**: a folder of Markdown files as a notebook, with a list, search and pinned notes. Saved as you type as new versions, with a choice when a note changed elsewhere; search reads notes' text in the browser; pins are kept in the encrypted app data
 
 ## Milestone 11: People and organisations
@@ -174,13 +174,13 @@ Smaller things:
 - [ ] **Team spaces**: folders owned by a group rather than a person, with their own quota, so work doesn't disappear when someone leaves
 - [ ] **Single sign-on (OIDC)** as a gate on login for organisations; the encryption password or passkey stays separate, since the identity provider must never hold keys
 - [ ] **Federation**: share with `user@other-server`, with public keys fetched and pinned like local ones (and checked against key transparency once that exists)
-- [ ] **Per-user limits** on bandwidth and upload rate, set by admins
+- [x] **Per-user limits** on bandwidth and upload rate, set by admins. Daily download and upload limits in encrypted bytes per UTC day, counted per chunk (a public link's traffic counts for its owner); 429 once reached, and users see theirs
 
 ## Milestone 12: Sync and scale
 
-- [ ] **Change feed**: `GET /api/changes?since=<cursor>` returns what changed in your trees and shares, so sync clients and the mount don't have to walk the whole tree
+- [x] **Change feed**: `GET /api/changes?since=<cursor>` returns what changed in your trees and shares, so sync clients and the mount don't have to walk the whole tree. Node ids only, in order, pruned with the activity (an older cursor is told to resync); the mount keeps listings until the feed marks them stale
 - [x] **Live updates**: open views refresh when something changes in a shared folder (Server-Sent Events carrying only node ids). `GET /api/nodes/<id>/changes`, fed by the same hook as the activity history; access is checked again for each event. The browser reads it with fetch (the token stays in a header, not the URL) and reloads the folder quietly, waiting while the tab is hidden or a name is being edited
-- [ ] **Large folders**: paginated listings on the server and a virtualised file table, so a folder with 100,000 items stays fast
+- [x] **Large folders**: paginated listings on the server and a virtualised file table, so a folder with 100,000 items stays fast. `?limit=` with an opaque cursor in index order; past 400 items the list renders only the rows near the screen, and the grid adds tiles as you scroll
 - [ ] **PostgreSQL** as an alternative to SQLite for bigger installs
 - [ ] **Several server instances** behind a load balancer, sharing PostgreSQL and the S3 blob store
 
