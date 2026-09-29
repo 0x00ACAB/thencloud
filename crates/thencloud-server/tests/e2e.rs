@@ -5929,6 +5929,8 @@ fn now_secs() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_secs() as i64
+}
+
 // --- a fake S3 server, for the blob store's S3 side ------------------------
 //
 // Just enough of the REST API for the AWS SDK: path-style object PUT/GET/

@@ -165,7 +165,7 @@ pub async fn children_response(
          AND (?2 = 0 OR n.kind < ?3 OR (n.kind = ?3 AND (n.created_at > ?4 OR (n.created_at = ?4 AND n.id > ?5)))) \
          ORDER BY n.kind DESC, n.created_at, n.id LIMIT ?6"
     );
-    let mut rows = sqlx::query_as::<_, NodeRow>(&sql)
+    let mut rows = sqlx::query_as::<_, NodeRow>(AssertSqlSafe(sql))
         .bind(parent_id)
         .bind(q.after.is_some())
         .bind(&k)

@@ -7,6 +7,7 @@
 use crate::AppState;
 use crate::error::{AppError, Result};
 use crate::util::now;
+use sqlx::AssertSqlSafe;
 
 #[derive(Clone, Copy)]
 pub enum Dir {
@@ -36,10 +37,10 @@ pub fn resets_at() -> i64 {
 /// Refuse if `user_id` has used up today's limit in that direction.
 pub async fn check(state: &AppState, user_id: &str, dir: Dir) -> Result<()> {
     let (limit_col, used_col) = dir.columns();
-    let row: Option<(Option<i64>, i64)> = sqlx::query_as(&format!(
+    let row: Option<(Option<i64>, i64)> = sqlx::query_as(AssertSqlSafe(format!(
         "SELECT u.{limit_col}, COALESCE(t.{used_col}, 0) FROM users u \
          LEFT JOIN transfer_usage t ON t.user_id = u.id AND t.day = ? WHERE u.id = ?"
-    ))
+    )))
     .bind(today())
     .bind(user_id)
     .fetch_optional(&state.db)
@@ -56,10 +57,10 @@ pub async fn check(state: &AppState, user_id: &str, dir: Dir) -> Result<()> {
 /// Count `bytes` moved by `user_id` today.
 pub async fn add(state: &AppState, user_id: &str, dir: Dir, bytes: i64) -> Result<()> {
     let (_, used_col) = dir.columns();
-    sqlx::query(&format!(
+    sqlx::query(AssertSqlSafe(format!(
         "INSERT INTO transfer_usage (user_id, day, {used_col}) VALUES (?, ?, ?) \
          ON CONFLICT (user_id, day) DO UPDATE SET {used_col} = {used_col} + excluded.{used_col}"
-    ))
+    )))
     .bind(user_id)
     .bind(today())
     .bind(bytes)
