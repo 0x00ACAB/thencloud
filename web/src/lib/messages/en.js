@@ -55,4 +55,7 @@ export default {
   'Save {count} pages on their own': { one: 'Save {count} page on its own', other: 'Save {count} pages on their own' },
   'Download {count} pages on their own': { one: 'Download {count} page on its own', other: 'Download {count} pages on their own' },
   '{count} videos': { one: '{count} video', other: '{count} videos' },
+  '{count} lines added': { one: '{count} line added', other: '{count} lines added' },
+  '{count} lines removed': { one: '{count} line removed', other: '{count} lines removed' },
+  '{count} unchanged lines': { one: '{count} unchanged line', other: '{count} unchanged lines' },
 };
