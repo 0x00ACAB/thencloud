@@ -774,4 +774,27 @@ export default {
 
   // Images
   "That image couldn't be read.": 'Dieses Bild konnte nicht gelesen werden.',
+
+  // Player
+  Position: 'Position',
+  Previous: 'Zurück',
+  Pause: 'Pause',
+  Next: 'Weiter',
+  Repeat: 'Wiederholen',
+  'Repeat all': 'Alle wiederholen',
+  'Repeat one': 'Einen wiederholen',
+  'Playback speed': 'Wiedergabegeschwindigkeit',
+  Normal: 'Normal',
+  Chapters: 'Kapitel',
+  'Now playing': 'Läuft gerade',
+  'Next up': 'Als Nächstes',
+  'Remove {title} from the queue': '{title} aus der Warteschlange entfernen',
+  'Open player': 'Player öffnen',
+  Queue: 'Warteschlange',
+  Unmute: 'Ton an',
+  Mute: 'Stumm',
+  Volume: 'Lautstärke',
+  'Stop and clear the queue': 'Stoppen und Warteschlange leeren',
+  Stop: 'Stopp',
+  'Close player': 'Player schließen',
 };
