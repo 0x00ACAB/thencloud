@@ -44,7 +44,13 @@ pub const SALT_LEN: usize = 16;
 /// Plaintext bytes per content chunk.
 pub const CHUNK_SIZE: usize = 4 * 1024 * 1024;
 /// Upper bound on the size of one encrypted chunk.
-pub const MAX_ENCRYPTED_CHUNK: usize = CHUNK_SIZE + NONCE_LEN + TAG_LEN;
+pub const MAX_ENCRYPTED_CHUNK: usize = CHUNK_SIZE + SEALED_OVERHEAD;
+/// The first byte of every symmetric ciphertext: the layout that follows.
+/// A new layout gets a new number, and `open` refuses numbers it doesn't
+/// know instead of misreading them.
+pub const FORMAT_VERSION: u8 = 1;
+/// What `seal` adds to a plaintext: the version byte, nonce and tag.
+pub const SEALED_OVERHEAD: usize = 1 + NONCE_LEN + TAG_LEN;
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum Error {
@@ -62,6 +68,8 @@ pub enum Error {
     Rng,
     #[error("that recovery key isn't valid; check it for typos")]
     RecoveryKey,
+    #[error("this was encrypted in a format this version doesn't know ({0}); update to open it")]
+    Format(u8),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
@@ -140,7 +148,8 @@ pub fn b64_decode(s: &str) -> Result<Vec<u8>> {
 }
 
 // ---------------------------------------------------------------------------
-// AEAD primitive: XChaCha20-Poly1305, output = nonce || ciphertext || tag
+// AEAD primitive: XChaCha20-Poly1305, output =
+// FORMAT_VERSION || nonce || ciphertext || tag
 // ---------------------------------------------------------------------------
 
 pub fn seal(key: &Key, plaintext: &[u8], aad: &[u8]) -> Vec<u8> {
@@ -156,17 +165,23 @@ pub fn seal(key: &Key, plaintext: &[u8], aad: &[u8]) -> Vec<u8> {
             },
         )
         .expect("XChaCha20-Poly1305 encryption cannot fail for in-range inputs");
-    let mut out = Vec::with_capacity(NONCE_LEN + ct.len());
+    let mut out = Vec::with_capacity(1 + NONCE_LEN + ct.len());
+    out.push(FORMAT_VERSION);
     out.extend_from_slice(&nonce);
     out.extend_from_slice(&ct);
     out
 }
 
 pub fn open(key: &Key, sealed: &[u8], aad: &[u8]) -> Result<Vec<u8>> {
-    if sealed.len() < NONCE_LEN + TAG_LEN {
+    match sealed.first() {
+        Some(&FORMAT_VERSION) => {}
+        Some(&v) => return Err(Error::Format(v)),
+        None => return Err(Error::Decrypt),
+    }
+    if sealed.len() < SEALED_OVERHEAD {
         return Err(Error::Decrypt);
     }
-    let (nonce, ct) = sealed.split_at(NONCE_LEN);
+    let (nonce, ct) = sealed[1..].split_at(NONCE_LEN);
     let nonce = XNonce::try_from(nonce).map_err(|_| Error::Decrypt)?;
     let cipher = XChaCha20Poly1305::new(key.as_bytes().into());
     cipher
@@ -694,18 +709,13 @@ fn hybrid_box_key(
     Key(k)
 }
 
-/// Marks a hybrid sealed box. Classic ones start with a random X25519 key,
-/// so they're told apart by length too: every sealed payload is a 32-byte
-/// key, far shorter than an ML-KEM ciphertext.
-const HYBRID_TAG: u8 = 2;
-const HYBRID_HEADER: usize = 1 + 32 + PQ_CIPHERTEXT_LEN;
-
-fn is_hybrid(sealed: &[u8]) -> bool {
-    sealed.len() >= HYBRID_HEADER + NONCE_LEN + TAG_LEN && sealed[0] == HYBRID_TAG
-}
+/// The first byte of a sealed box: which kind it is. Like `FORMAT_VERSION`,
+/// a new layout gets a new number.
+const BOX_X25519: u8 = 1;
+const BOX_HYBRID: u8 = 2;
 
 /// Anonymous public-key encryption. To a plain X25519 key (32 bytes):
-/// `eph_pub || seal(k, plaintext)`. To an X25519 + ML-KEM-768 key (see
+/// `1 || eph_pub || seal(k, plaintext)`. To an X25519 + ML-KEM-768 key (see
 /// `KeyPair::sealing_key`): `2 || eph_pub || ml_kem_ct || seal(k, plaintext)`.
 pub fn seal_to_public(recipient_pub: &[u8], plaintext: &[u8], aad: &[u8]) -> Result<Vec<u8>> {
     let (x, pq) = match recipient_pub.len() {
@@ -719,7 +729,8 @@ pub fn seal_to_public(recipient_pub: &[u8], plaintext: &[u8], aad: &[u8]) -> Res
     let shared = eph.diffie_hellman(&x25519_dalek::PublicKey::from(rp));
     let Some(pq) = pq else {
         let k = seal_box_key(shared.as_bytes(), &eph_pub, &rp);
-        let mut out = eph_pub.to_vec();
+        let mut out = vec![BOX_X25519];
+        out.extend_from_slice(&eph_pub);
         out.extend(seal(&k, plaintext, aad));
         return Ok(out);
     };
@@ -730,7 +741,7 @@ pub fn seal_to_public(recipient_pub: &[u8], plaintext: &[u8], aad: &[u8]) -> Res
     let (ct, pq_shared) = ek.encapsulate_deterministic(&m.into());
     m.zeroize();
     let k = hybrid_box_key(shared.as_bytes(), &pq_shared, &eph_pub, &rp, &ct, pq);
-    let mut out = vec![HYBRID_TAG];
+    let mut out = vec![BOX_HYBRID];
     out.extend_from_slice(&eph_pub);
     out.extend_from_slice(&ct);
     out.extend(seal(&k, plaintext, aad));
@@ -743,9 +754,13 @@ pub fn open_sealed(kp: &KeyPair, sealed: &[u8], aad: &[u8]) -> Result<Vec<u8>> {
         let sk = x25519_dalek::StaticSecret::from(*kp.secret.as_bytes());
         sk.diffie_hellman(&x25519_dalek::PublicKey::from(eph))
     };
-    if is_hybrid(sealed) {
+    let (&kind, body) = sealed.split_first().ok_or(Error::Decrypt)?;
+    if kind == BOX_HYBRID {
         let pq = kp.pq.as_ref().ok_or(Error::Decrypt)?;
-        let (eph_pub, rest) = sealed[1..].split_at(32);
+        if body.len() < 32 + PQ_CIPHERTEXT_LEN {
+            return Err(Error::Decrypt);
+        }
+        let (eph_pub, rest) = body.split_at(32);
         let (ct, rest) = rest.split_at(PQ_CIPHERTEXT_LEN);
         let pq_shared = dk(&pq.seed)
             .decapsulate_slice(ct)
@@ -760,10 +775,13 @@ pub fn open_sealed(kp: &KeyPair, sealed: &[u8], aad: &[u8]) -> Result<Vec<u8>> {
         );
         return open(&k, rest, aad);
     }
-    if sealed.len() < 32 {
+    if kind != BOX_X25519 {
+        return Err(Error::Format(kind));
+    }
+    if body.len() < 32 {
         return Err(Error::Decrypt);
     }
-    let (eph_pub, rest) = sealed.split_at(32);
+    let (eph_pub, rest) = body.split_at(32);
     let k = seal_box_key(x_shared(eph_pub).as_bytes(), eph_pub, &kp.public);
     open(&k, rest, aad)
 }
@@ -826,7 +844,7 @@ pub const MAX_DISPLAY_NAME_CHARS: usize = 64;
 /// ciphertext doesn't give away their length.
 pub const DISPLAY_NAME_PADDED: usize = 256;
 /// The size of every encrypted display name.
-pub const DISPLAY_NAME_SEALED_LEN: usize = NONCE_LEN + DISPLAY_NAME_PADDED + TAG_LEN;
+pub const DISPLAY_NAME_SEALED_LEN: usize = SEALED_OVERHEAD + DISPLAY_NAME_PADDED;
 
 /// A display name as it's stored: NFC, trimmed, 1 to 64 characters, with no
 /// control or bidirectional formatting characters (which could make it look
@@ -910,7 +928,7 @@ pub const MAX_PRONOUN_CHARS: usize = 24;
 /// Person details are padded to this many bytes before encryption.
 pub const PERSON_DETAILS_PADDED: usize = 256;
 /// The size of every encrypted set of person details.
-pub const PERSON_DETAILS_SEALED_LEN: usize = NONCE_LEN + PERSON_DETAILS_PADDED + TAG_LEN;
+pub const PERSON_DETAILS_SEALED_LEN: usize = SEALED_OVERHEAD + PERSON_DETAILS_PADDED;
 
 /// A pronoun as it's stored: NFC, trimmed, at most 24 characters, no control
 /// or bidirectional formatting characters. Empty is fine (not said).
@@ -1098,12 +1116,14 @@ pub fn unwrap_content_key(
     )
 }
 
-/// Smallest padded file size.
-const MIN_PADDED: u64 = 256;
+/// Smallest padded file size: every file under 16 KiB is stored as 16 KiB,
+/// so notes, configs and other small files all look the same size.
+pub const MIN_PADDED: u64 = 16 * 1024;
 
 /// The size a file is padded to before encryption (Padmé: at most about
-/// 12% more), so the stored size gives away only a rough bucket. The real
-/// size is in the encrypted metadata; readers drop the zeros after it.
+/// 12% more, and at least `MIN_PADDED`), so the stored size gives away only
+/// a rough bucket. The real size is in the encrypted metadata; readers drop
+/// the zeros after it.
 pub fn padded_size(size: u64) -> u64 {
     let l = size.max(MIN_PADDED);
     let e = 63 - l.leading_zeros() as u64; // floor(log2 l)
@@ -1285,11 +1305,14 @@ mod tests {
 
     #[test]
     fn padding() {
-        assert_eq!(padded_size(0), 256);
-        assert_eq!(padded_size(1000), 1024);
-        for size in [1u64, 300, 5000, 123_456, 9_999_999, 3_000_000_000] {
+        // Small files all look the same size.
+        for size in [0u64, 1, 1000, 16 * 1024] {
+            assert_eq!(padded_size(size), MIN_PADDED, "{size}");
+        }
+        assert!(padded_size(16 * 1024 + 1) > MIN_PADDED);
+        for size in [1u64, 300, 5000, 20_000, 123_456, 9_999_999, 3_000_000_000] {
             let p = padded_size(size);
-            let l = size.max(256);
+            let l = size.max(MIN_PADDED);
             assert!(p >= l && (p - l) as f64 <= l as f64 * 0.12, "{size} -> {p}");
         }
         let k = Key::generate();
@@ -1472,6 +1495,35 @@ mod tests {
     }
 
     #[test]
+    fn unknown_versions_are_refused() {
+        let k = Key::generate();
+        let mut s = seal(&k, b"hi", b"ctx");
+        assert_eq!(s[0], FORMAT_VERSION);
+        assert_eq!(s.len(), 2 + SEALED_OVERHEAD);
+        assert_eq!(open(&k, &s, b"ctx").unwrap(), b"hi");
+        s[0] = 2;
+        assert!(matches!(open(&k, &s, b"ctx"), Err(Error::Format(2))));
+        assert!(matches!(open(&k, &[], b"ctx"), Err(Error::Decrypt)));
+        assert!(matches!(
+            open(&k, &[FORMAT_VERSION], b"ctx"),
+            Err(Error::Decrypt)
+        ));
+
+        let kp = KeyPair::generate();
+        let mut b = seal_to_public(&kp.public, b"hi", b"ctx").unwrap();
+        assert_eq!(b[0], BOX_X25519);
+        assert_eq!(open_sealed(&kp, &b, b"ctx").unwrap(), b"hi");
+        b[0] = 9;
+        assert!(matches!(
+            open_sealed(&kp, &b, b"ctx"),
+            Err(Error::Format(9))
+        ));
+        // A hybrid box to someone without an ML-KEM key doesn't open.
+        b[0] = BOX_HYBRID;
+        assert!(open_sealed(&kp, &b, b"ctx").is_err());
+    }
+
+    #[test]
     fn hybrid_sealed_box() {
         let kp = KeyPair::generate().with_pq(PqKeyPair::generate());
         assert_eq!(kp.sealing_key().len(), 32 + PQ_PUBLIC_LEN);
@@ -1480,7 +1532,7 @@ mod tests {
         let s = seal_share_key(&kp.sealing_key(), &nk, &id).unwrap();
         assert_eq!(
             s.len(),
-            1 + 32 + PQ_CIPHERTEXT_LEN + NONCE_LEN + KEY_LEN + TAG_LEN
+            1 + 32 + PQ_CIPHERTEXT_LEN + SEALED_OVERHEAD + KEY_LEN
         );
         assert!(open_share_key(&kp, &s, &id).unwrap() == nk);
         assert!(open_share_key(&kp, &s, &new_id()).is_err());
@@ -1552,7 +1604,7 @@ mod tests {
         assert_eq!(c.len(), 1);
         assert_eq!(
             decrypt_chunk(&ck, &v, 0, true, &c[0]).unwrap(),
-            vec![0; 256]
+            vec![0; MIN_PADDED as usize]
         );
     }
 

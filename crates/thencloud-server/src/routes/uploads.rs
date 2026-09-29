@@ -12,7 +12,7 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use sqlx::AssertSqlSafe;
 use thencloud_crypto::api::*;
-use thencloud_crypto::{MAX_ENCRYPTED_CHUNK, NONCE_LEN, TAG_LEN};
+use thencloud_crypto::{MAX_ENCRYPTED_CHUNK, SEALED_OVERHEAD};
 
 use crate::AppState;
 use crate::access::{self, Access};
@@ -295,7 +295,7 @@ pub async fn store_chunk(
         Uploader::Link(l) => l.owner_id.as_str(),
     };
     crate::transfer::check(state, payer, crate::transfer::Dir::Up).await?;
-    if body.len() < NONCE_LEN + TAG_LEN || body.len() > MAX_ENCRYPTED_CHUNK {
+    if body.len() < SEALED_OVERHEAD || body.len() > MAX_ENCRYPTED_CHUNK {
         return Err(AppError::bad("chunk has an invalid size"));
     }
     let old: Option<i64> =

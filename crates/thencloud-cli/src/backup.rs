@@ -27,8 +27,8 @@ use crate::{Error, Result};
 const ENTRY: u8 = b'E';
 const DATA: u8 = b'D';
 const END: u8 = b'Z';
-/// The largest record: a data piece, its type byte, nonce and tag.
-const MAX_RECORD: usize = CHUNK_SIZE + 1 + c::NONCE_LEN + c::TAG_LEN;
+/// The largest record: a data piece, its type byte, and what sealing adds.
+const MAX_RECORD: usize = CHUNK_SIZE + 1 + c::SEALED_OVERHEAD;
 
 /// A file or folder in a backup. `path` runs from the folder backed up
 /// (not included) to this item's own name.
