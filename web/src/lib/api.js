@@ -1,5 +1,7 @@
 // Thin fetch wrapper for the thencloud JSON API.
 
+import { apiUrl } from './server.svelte.js';
+
 export class ApiError extends Error {
   constructor(status, body) {
     super(body?.message || `Request failed (HTTP ${status})`);
@@ -25,7 +27,7 @@ export async function request(method, path, { token, body, raw, headers } = {}) 
   }
   let res;
   try {
-    res = await fetch(path, { method, headers: h, body: payload, cache: 'no-store', referrerPolicy: 'no-referrer' });
+    res = await fetch(apiUrl(path), { method, headers: h, body: payload, cache: 'no-store', referrerPolicy: 'no-referrer' });
   } catch {
     throw new ApiError(0, { message: 'Could not reach the server. Check your connection.' });
   }

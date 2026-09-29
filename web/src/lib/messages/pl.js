@@ -2,6 +2,13 @@
 // Plural forms: one (1), few (2-4, 22-24...), many (0, 5-21, 25...), other.
 export default {
   // Sign-in
+  'Server address': 'Adres serwera',
+  'The address you open thencloud at in a browser.': 'Adres, pod którym otwierasz thencloud w przeglądarce.',
+  Connect: 'Połącz',
+  'Change server': 'Zmień serwer',
+  'Use an https:// address.': 'Użyj adresu https://.',
+  "Couldn't find a thencloud server there.": 'Pod tym adresem nie ma serwera thencloud.',
+  "The app can't use passkeys yet. Sign in from a browser, or use your recovery key.": 'Aplikacja nie obsługuje jeszcze kluczy dostępu. Zaloguj się w przeglądarce albo użyj klucza odzyskiwania.',
   'Unlocking your files': 'Odblokowywanie plików',
   "That recovery key doesn't match this account.": 'Ten klucz odzyskiwania nie pasuje do tego konta.',
   'Wrong username or password.': 'Zła nazwa użytkownika lub hasło.',

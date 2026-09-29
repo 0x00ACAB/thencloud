@@ -3,6 +3,7 @@
   // key once. It's made in this browser and never sent to the server.
   import { formatDateTime } from '../../lib/locale.svelte.js';
   import { t } from '../../lib/i18n.svelte.js';
+  import { serverOrigin } from '../../lib/server.svelte.js';
   import Modal from '../Modal.svelte';
   import Icon from '../Icon.svelte';
   import { session, createRecoveryKey, avatar } from '../../lib/cloud.svelte.js';
@@ -37,7 +38,7 @@
       t('thencloud recovery key'),
       '',
       t('Account: {name}', { name: session.me.username }),
-      t('Server: {address}', { address: location.origin }),
+      t('Server: {address}', { address: serverOrigin() }),
       t('Created: {when}', { when: formatDateTime(Date.now()) }),
       '',
       key,
