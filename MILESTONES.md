@@ -197,7 +197,7 @@ Smaller things:
 - [x] **Metadata padding**: file contents are padded with zeros to a Padmé bucket (at most about 12% more) before encryption, and encrypted metadata to 128-byte steps, so the server sees only rough sizes. The real size lives in the encrypted metadata
 - [ ] **Calendar and contacts**, end-to-end encrypted
 - [x] **Linux mount**: `thencloud mount` shows My files (or a folder) as a drive through FUSE, for Dolphin, Nautilus and the shell. Reads are fetched and decrypted a chunk at a time; writes are uploaded as a new version on close; deletes go to the trash; an editor's save-and-rename becomes a new version of the original; conflicting edits are kept as a copy
-- [ ] **S3-compatible blob store** behind the existing `BlobStore` interface
+- [x] **S3-compatible blob store** behind the existing `BlobStore` interface (`--s3-endpoint`/`--s3-bucket`/`--s3-access-key`/`--s3-secret-key`/`--s3-prefix`, path-style, via `aws-sdk-s3`); `backup` also writes to `s3://bucket/prefix` and `check` works against the bucket. The database stays local (SQLite)
 - [x] Store the current path after the `#` so that it can persist through reloads
 - [ ] **Collaborative editing**: live Markdown editing with others in a shared folder, with every update encrypted under the file's key and the server only relaying them
 - [ ] **Mount on macOS and Windows** (FUSE-T, WinFsp), reusing the Linux mount's code

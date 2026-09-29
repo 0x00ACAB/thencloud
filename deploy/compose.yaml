@@ -18,6 +18,13 @@ services:
       THENCLOUD_TRUST_PROXY: "true"
       # THENCLOUD_ALLOW_REGISTRATION: "false"
       # THENCLOUD_METRICS_TOKEN: "a long random string"
+      # Keep the encrypted blobs in an S3-compatible bucket instead of the
+      # data volume (the SQLite database always stays in /data):
+      # THENCLOUD_S3_ENDPOINT: "https://s3.example.com"
+      # THENCLOUD_S3_BUCKET: "thencloud"
+      # THENCLOUD_S3_ACCESS_KEY: "..."
+      # THENCLOUD_S3_SECRET_KEY: "..."
+      # THENCLOUD_S3_PREFIX: "thencloud/"
     volumes:
       - thencloud-data:/data
     # No ports: only Caddy reaches it, over the compose network.

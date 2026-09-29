@@ -43,7 +43,7 @@ Files, folder names and keys are encrypted and decrypted **in your browser**. Th
 - **Music:** pick a folder and play it as a library of albums, with a queue, shuffle, cover art and media keys. Tracks are decrypted as they stream; tags are read in the browser.
 - **Accounts:** two-step sign-in with an authenticator app or passkeys (which can also sign in without the password), an optional recovery key, session and device list, and an admin view that counts things but can't read them.
 - **Command line and Linux drive:** a native client that signs in with an app password, syncs folders, makes encrypted backups you can restore to any server, and mounts your files as a drive (FUSE) for Dolphin, Nautilus or the shell. See [crates/thencloud-cli](crates/thencloud-cli/README.md).
-- **Self-hosted and small:** one Rust binary, SQLite and a folder of encrypted blobs. Nothing loads from a CDN.
+- **Self-hosted and small:** one Rust binary, SQLite and a folder of encrypted blobs (or an S3-compatible bucket). Nothing loads from a CDN.
 
 ## Quick start
 
@@ -95,7 +95,13 @@ Every flag can also be set as an environment variable.
 | Flag | Env | Default |
 |---|---|---|
 | `--bind` | `THENCLOUD_BIND` | `127.0.0.1:8080` |
-| `--data-dir` | `THENCLOUD_DATA_DIR` | `./data` (SQLite DB + encrypted blobs) |
+| `--data-dir` | `THENCLOUD_DATA_DIR` | `./data` (SQLite DB + encrypted blobs, unless S3 is configured) |
+| `--s3-endpoint` | `THENCLOUD_S3_ENDPOINT` | unset. Endpoint of an S3-compatible blob store (e.g. `https://s3.amazonaws.com`, or `http://127.0.0.1:9000` for MinIO). Set it with `--s3-bucket`, `--s3-access-key` and `--s3-secret-key` to keep the encrypted blobs in a bucket instead of the data directory; the database always stays local. Requests are path-style |
+| `--s3-region` | `THENCLOUD_S3_REGION` | `us-east-1` (most S3-compatible servers accept anything) |
+| `--s3-bucket` | `THENCLOUD_S3_BUCKET` | unset |
+| `--s3-access-key` | `THENCLOUD_S3_ACCESS_KEY` | unset |
+| `--s3-secret-key` | `THENCLOUD_S3_SECRET_KEY` | unset |
+| `--s3-prefix` | `THENCLOUD_S3_PREFIX` | empty (key prefix inside the bucket, e.g. `thencloud/`) |
 | `--web-dir` | `THENCLOUD_WEB_DIR` | `./web/dist` (the built web client) |
 | `--allow-registration` | `THENCLOUD_ALLOW_REGISTRATION` | `true` (the first user can always register, and becomes an admin). Admins can switch between open, invite-only and closed at runtime in the Admin view, which overrides this |
 | `--default-quota` | `THENCLOUD_DEFAULT_QUOTA` | 10 GiB |
@@ -120,7 +126,9 @@ thencloud-server --data-dir ./data backup /backups/thencloud-2026-09-28
 
 This writes a consistent snapshot of the database and every blob it refers to into a new directory. It's safe while the server is running. On the same filesystem the blobs are hard links, which is instant and takes no extra space; elsewhere they're copied. If a file is deleted while the backup runs, its missing pieces are listed and the command exits with status 2. Like the server, a backup holds only ciphertext and wrapped keys.
 
-To restore, stop the server, copy the backup to where the data should live, and start the server with `--data-dir` pointing at it. Then run `thencloud-server --data-dir <dir> check`: it checks that every blob the database expects is there with the right size, and lists any that nothing refers to. To check that files also decrypt, use Settings > Check your files in the web client.
+The destination can also be a bucket: `backup s3://my-backups/thencloud/` (using the configured `--s3-endpoint` and credentials), from either a local or an S3 blob store.
+
+To restore, stop the server, copy the backup to where the data should live, and start the server with `--data-dir` pointing at it. Then run `thencloud-server --data-dir <dir> check`: it checks that every blob the database expects is there with the right size, and lists any that nothing refers to. To restore an S3 backup, put its `thencloud.db` in a data directory and run with `--s3-prefix` pointing at the backup's `blobs/` prefix. To check that files also decrypt, use Settings > Check your files in the web client.
 
  (for example, behind a reverse proxy). The crypto protects data at rest on the server, but the page and its WASM must reach the browser intact.
 
@@ -129,7 +137,7 @@ To restore, stop the server, copy the backup to where the data should live, and 
 ```
 crates/thencloud-crypto   All cryptography + shared JSON wire types (native & WASM)
 crates/thencloud-wasm     wasm-bindgen bindings used by the web client
-crates/thencloud-server   axum + SQLite server, local blob store
+crates/thencloud-server   axum + SQLite server, local or S3 blob store
 crates/thencloud-cli      command-line client and FUSE mount (`thencloud`)
 web/                      browser client: Svelte 5 + Vite + Tailwind CSS
 docs/format               the ciphertext formats and key derivations, with test vectors
