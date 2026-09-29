@@ -1011,13 +1011,12 @@ const versionNode = (entry, v) => ({
   version: { id: v.id, enc_content_key: v.enc_content_key, chunk_count: v.chunk_count, size: v.size, created_at: v.created_at },
 });
 
+/** Download and decrypt one version into memory: { blob, meta }. */
+export const fetchVersion = (entry, v, onProgress) =>
+  fetchFile(versionNode(entry, v), entry.key, (i) => api('GET', `/api/nodes/${entry.node.id}/versions/${v.id}/chunks/${i}`), onProgress);
+
 export async function downloadVersion(entry, v, onProgress) {
-  const { blob, meta } = await fetchFile(
-    versionNode(entry, v),
-    entry.key,
-    (i) => api('GET', `/api/nodes/${entry.node.id}/versions/${v.id}/chunks/${i}`),
-    onProgress,
-  );
+  const { blob, meta } = await fetchVersion(entry, v, onProgress);
   saveBlob(blob, meta.name);
 }
 

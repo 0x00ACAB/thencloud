@@ -1453,4 +1453,19 @@ export default {
   'Image to crop': 'Obraz do kadrowania',
   'Crop area, {width} by {height} pixels. Arrow keys move it.': 'Obszar kadru, {width} na {height} pikseli. Strzałki go przesuwają.',
   'as is': 'bez zmian',
+
+  // Comparing versions
+  'These versions are too large to compare here (over {size}).': 'Te wersje są za duże, by je tu porównać (ponad {size}).',
+  "One of these versions isn't text, so there are no lines to compare.": 'Jedna z tych wersji nie jest tekstem, więc nie ma wierszy do porównania.',
+  'These versions are too different to compare line by line.': 'Te wersje różnią się za bardzo, by porównać je wiersz po wierszu.',
+  'Changes in {name}': 'Zmiany w {name}',
+  'From the version of {from} to the version of {to}': 'Starsza wersja: {from} · nowsza: {to}',
+  '{count} lines added': { one: 'dodano {count} wiersz', few: 'dodano {count} wiersze', many: 'dodano {count} wierszy', other: 'dodano {count} wiersza' },
+  '{count} lines removed': { one: 'usunięto {count} wiersz', few: 'usunięto {count} wiersze', many: 'usunięto {count} wierszy', other: 'usunięto {count} wiersza' },
+  'The text is the same in both.': 'Tekst jest w obu taki sam.',
+  '{count} unchanged lines': { one: '{count} niezmieniony wiersz', few: '{count} niezmienione wiersze', many: '{count} niezmienionych wierszy', other: '{count} niezmienionego wiersza' },
+  Added: 'Dodano',
+  Removed: 'Usunięto',
+  'What changed in this version': 'Co zmieniło się w tej wersji',
+  Changes: 'Zmiany',
 };

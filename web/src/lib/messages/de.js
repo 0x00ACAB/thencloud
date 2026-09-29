@@ -1400,4 +1400,20 @@ export default {
   'Image to crop': 'Zuzuschneidendes Bild',
   'Crop area, {width} by {height} pixels. Arrow keys move it.': 'Zuschnitt, {width} mal {height} Pixel. Mit den Pfeiltasten verschieben.',
   'as is': 'wie es ist',
+
+  // Comparing versions
+  'These versions are too large to compare here (over {size}).': 'Diese Versionen sind zu groß, um sie hier zu vergleichen (über {size}).',
+  "One of these versions isn't text, so there are no lines to compare.":
+    'Eine dieser Versionen ist kein Text, also gibt es keine Zeilen zu vergleichen.',
+  'These versions are too different to compare line by line.': 'Diese Versionen sind zu verschieden, um sie Zeile für Zeile zu vergleichen.',
+  'Changes in {name}': 'Änderungen in {name}',
+  'From the version of {from} to the version of {to}': 'Ältere Version: {from} · neuere: {to}',
+  '{count} lines added': { one: '{count} Zeile hinzugefügt', other: '{count} Zeilen hinzugefügt' },
+  '{count} lines removed': { one: '{count} Zeile entfernt', other: '{count} Zeilen entfernt' },
+  'The text is the same in both.': 'Der Text ist in beiden gleich.',
+  '{count} unchanged lines': { one: '{count} unveränderte Zeile', other: '{count} unveränderte Zeilen' },
+  Added: 'Hinzugefügt',
+  Removed: 'Entfernt',
+  'What changed in this version': 'Was sich in dieser Version geändert hat',
+  Changes: 'Änderungen',
 };

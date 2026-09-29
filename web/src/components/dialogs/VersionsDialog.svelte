@@ -6,6 +6,8 @@
   import { toast, toastError, trackTransfer, errorMessage } from '../../lib/ui.svelte.js';
   import { formatSize, formatWhen, fullDate } from '../../lib/format.js';
   import { fly, slide } from '../../lib/motion.js';
+  import { previewKind } from '../../lib/preview.js';
+  import DiffDialog from './DiffDialog.svelte';
   import { t } from '../../lib/i18n.svelte.js';
 
   let { entry, canWrite, onchanged, onclose } = $props();
@@ -17,6 +19,9 @@
   let file = $state(untrack(() => entry));
   let list = $state(null);
   let busy = $state(null); // version id with an action in flight
+  let comparing = $state(null); // { before, after }
+  // Text, Markdown, CSV and code can show what each version changed.
+  const textual = $derived(['text', 'markdown'].includes(previewKind(file.meta)?.kind));
 
   async function load() {
     try {
@@ -84,7 +89,7 @@
     </ul>
   {:else}
     <ul class="max-h-80 divide-y divide-line overflow-y-auto rounded-md border border-line" in:fly>
-      {#each list as v (v.id)}
+      {#each list as v, i (v.id)}
         <li class="flex items-center gap-3 px-3 py-2.5" out:slide>
           <div class="min-w-0 flex-1">
             <p class="flex items-center gap-2 text-sm">
@@ -95,6 +100,11 @@
               {v.meta ? formatSize(v.meta.size) : t("Can't read this version's details")}{v.created_by ? ` · ${t('uploaded by {name}', { name: v.created_by })}` : ''}
             </p>
           </div>
+          {#if textual && list[i + 1]?.meta && v.meta}
+            <button type="button" class="btn btn-ghost btn-icon" aria-label={t('What changed in this version')} title={t('Changes')} onclick={() => (comparing = { before: list[i + 1], after: v })}>
+              <Icon name="file-diff" />
+            </button>
+          {/if}
           <button type="button" class="btn btn-ghost btn-icon" aria-label={t('Download this version')} title={t('Download')} disabled={!v.meta} onclick={() => download(v)}>
             <Icon name="download" />
           </button>
@@ -118,3 +128,7 @@
     <button type="button" class="btn btn-secondary" onclick={onclose}>{t('Done')}</button>
   {/snippet}
 </Modal>
+
+{#if comparing}
+  <DiffDialog entry={file} before={comparing.before} after={comparing.after} at={versionAt} onclose={() => (comparing = null)} />
+{/if}
