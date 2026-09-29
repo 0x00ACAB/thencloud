@@ -147,6 +147,7 @@ Smaller things:
 - [x] **Fuzzing**: `cargo-fuzz` targets for the crypto decoders and the server's request parsing, and fuzz tests for the untrusted parsers in the browser (`tags.js`, `videotags.js`, the zip and PDF link handling). Also sealed boxes, WebAuthn, and in the browser photos, CSV, subtitles and episode names; in CI on every push and weekly for longer
 - [x] **Browser tests**: Playwright in CI for sign-up, upload, share, public links and previews, including a check that no request carries a name, key or plaintext
 - [x] **Dependency checks**: `cargo-deny` (advisories and licences) and `npm audit` in CI, on every push and weekly
+- [ ] **Turnstile on sign-in and registration**: Cloudflare Turnstile as a bot check on login, and on registration only when it's open to everyone (not with invite-only). The server verifies the token with Siteverify before checking the password. Opt-in by an admin with their own site key and secret, off by default: it loads a script and a frame from `challenges.cloudflare.com`, so the CSP may allow that host only on the sign-in and registration pages and only while it's on (`security_headers_are_set` and the "no third parties" promise in the README need to say so). The token and Cloudflare never see the password or any key
 - [ ] **Master key rotation**: after a suspected leak, re-wrap every key under a new master key and keypair, and re-seal shares
 - [ ] **Independent security audit** of the crypto crate, the web client and the server, with the report published
 
