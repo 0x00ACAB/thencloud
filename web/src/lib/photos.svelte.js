@@ -4,9 +4,11 @@
 // view does. Dates come from the encrypted metadata: `taken`, read from
 // EXIF at upload, else the file's modified time. Nothing is downloaded to
 // build the timeline; tiles use the encrypted thumbnails.
-import { session, resolvePath, walkTree } from './cloud.svelte.js';
+import { session, resolvePath, walkTree, folderLabel } from './cloud.svelte.js';
 import { errorMessage } from './ui.svelte.js';
 import { previewKind } from './preview.js';
+import { formatDateTime } from './locale.svelte.js';
+import { t } from './i18n.svelte.js';
 
 function readRoot() {
   try {
@@ -49,7 +51,7 @@ export async function scanPhotos() {
   try {
     const { items } = await resolvePath(photos.rootId);
     const root = items[items.length - 1];
-    if (root.node.kind !== 'folder') throw new Error('The photos folder is not a folder');
+    if (root.node.kind !== 'folder') throw new Error(t('The photos folder is not a folder'));
     const found = [];
     await walkTree(root, {
       signal: ctl.signal,
@@ -58,7 +60,7 @@ export async function scanPhotos() {
       },
     });
     if (ctl.signal.aborted) return;
-    photos.rootName = root.meta.name;
+    photos.rootName = folderLabel(root);
     photos.list = found.sort((a, b) => b.at - a.at);
   } catch (e) {
     if (!ctl.signal.aborted) photos.error = errorMessage(e);
@@ -67,7 +69,7 @@ export async function scanPhotos() {
   }
 }
 
-const monthFmt = new Intl.DateTimeFormat(undefined, { month: 'long', year: 'numeric' });
+
 
 /** Photos by month, newest first: [{ key, label, items }]. */
 export function byMonth(list) {
@@ -75,7 +77,7 @@ export function byMonth(list) {
   for (const p of list) {
     const d = new Date(p.at);
     const key = `${d.getFullYear()}-${d.getMonth()}`;
-    if (groups.at(-1)?.key !== key) groups.push({ key, label: monthFmt.format(d), items: [] });
+    if (groups.at(-1)?.key !== key) groups.push({ key, label: formatDateTime(d, { month: 'long', year: 'numeric' }), items: [] });
     groups.at(-1).items.push(p);
   }
   return groups;

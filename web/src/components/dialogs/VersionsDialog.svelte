@@ -6,6 +6,7 @@
   import { toast, toastError, trackTransfer, errorMessage } from '../../lib/ui.svelte.js';
   import { formatSize, formatWhen, fullDate } from '../../lib/format.js';
   import { fly, slide } from '../../lib/motion.js';
+  import { t } from '../../lib/i18n.svelte.js';
 
   let { entry, canWrite, onchanged, onclose } = $props();
 
@@ -29,13 +30,13 @@
   onMount(load);
 
   async function download(v) {
-    const t = trackTransfer('download', v.meta?.name ?? file.meta.name, v.meta?.size ?? v.size);
+    const job = trackTransfer('download', v.meta?.name ?? file.meta.name, v.meta?.size ?? v.size);
     try {
-      await downloadVersion(file, v, (p) => (t.progress = p));
-      t.status = 'done';
+      await downloadVersion(file, v, (p) => (job.progress = p));
+      job.status = 'done';
     } catch (e) {
-      t.status = 'error';
-      t.error = errorMessage(e);
+      job.status = 'error';
+      job.error = errorMessage(e);
     }
   }
 
@@ -44,7 +45,7 @@
     try {
       const node = await restoreVersion(file, v);
       file = { ...file, node, meta: { ...file.meta, size: v.meta.size, mtime: v.meta.mtime } };
-      toast(`Restored the version from ${formatWhen(versionAt(v))}`, { kind: 'success' });
+      toast(t('Restored the version from {when}', { when: formatWhen(versionAt(v)) }), { kind: 'success' });
       onchanged?.();
       await load();
     } catch (e) {
@@ -69,8 +70,8 @@
 </script>
 
 <Modal
-  title="Version history"
-  description="{entry.meta.name}. Up to {session.me.max_versions} versions are kept, and the oldest go first when you run out of space."
+  title={t('Version history')}
+  description={t('{name}. Up to {count} versions are kept, and the oldest go first when you run out of space.', { name: entry.meta.name, count: session.me.max_versions })}
   {onclose}
   class="max-w-lg">
   {#if list === null}
@@ -88,21 +89,21 @@
           <div class="min-w-0 flex-1">
             <p class="flex items-center gap-2 text-sm">
               <span class="font-medium" title={fullDate(versionAt(v))}>{formatWhen(versionAt(v))}</span>
-              {#if v.current}<span class="badge badge-accent">Current</span>{/if}
+              {#if v.current}<span class="badge badge-accent">{t('Current')}</span>{/if}
             </p>
             <p class="mt-0.5 truncate text-xs text-fg-muted">
-              {v.meta ? formatSize(v.meta.size) : "Can't read this version's details"}{v.created_by ? ` · uploaded by ${v.created_by}` : ''}
+              {v.meta ? formatSize(v.meta.size) : t("Can't read this version's details")}{v.created_by ? ` · ${t('uploaded by {name}', { name: v.created_by })}` : ''}
             </p>
           </div>
-          <button type="button" class="btn btn-ghost btn-icon" aria-label="Download this version" title="Download" disabled={!v.meta} onclick={() => download(v)}>
+          <button type="button" class="btn btn-ghost btn-icon" aria-label={t('Download this version')} title={t('Download')} disabled={!v.meta} onclick={() => download(v)}>
             <Icon name="download" />
           </button>
           {#if canWrite && !v.current}
             <button type="button" class="btn btn-secondary h-7 px-2.5 text-[13px]" disabled={busy !== null || !v.meta} onclick={() => restore(v)}>
               {#if busy === v.id}<Icon name="loader-circle" class="spinner" />{/if}
-              Restore
+              {t('Restore')}
             </button>
-            <button type="button" class="btn btn-ghost btn-icon" aria-label="Delete this version" title="Delete" disabled={busy !== null} onclick={() => remove(v)}>
+            <button type="button" class="btn btn-ghost btn-icon" aria-label={t('Delete this version')} title={t('Delete')} disabled={busy !== null} onclick={() => remove(v)}>
               <Icon name="trash-2" />
             </button>
           {/if}
@@ -110,10 +111,10 @@
       {/each}
     </ul>
     {#if list.length === 1}
-      <p class="hint">This is the only version so far. Uploading a new version keeps this one here.</p>
+      <p class="hint">{t('This is the only version so far. Uploading a new version keeps this one here.')}</p>
     {/if}
   {/if}
   {#snippet footer()}
-    <button type="button" class="btn btn-secondary" onclick={onclose}>Done</button>
+    <button type="button" class="btn btn-secondary" onclick={onclose}>{t('Done')}</button>
   {/snippet}
 </Modal>

@@ -4,7 +4,8 @@
 // in this module. Nothing is written to localStorage or sessionStorage, so a
 // reload signs you out.
 
-import { request } from './api.js';
+import { request, allChildren } from './api.js';
+import { t } from './i18n.svelte.js';
 import {
   tc, b64, unb64, decryptMeta, encryptMeta, unwrapChild, decryptChildren,
   deriveAccountKeys, deriveLinkKeys, fetchFile, openFile, encryptPiece, saveBlob,
@@ -309,6 +310,8 @@ export async function logout() {
 
 /** Signed-in sessions, most recently active first. */
 export const listSessions = () => api('GET', '/api/sessions');
+/** Daily transfer limits an admin set for us, and today's use. */
+export const myTransfer = () => api('GET', '/api/me/transfer');
 export const revokeSession = (id) => api('DELETE', `/api/sessions/${encodeURIComponent(id)}`);
 export const revokeOtherSessions = () => api('DELETE', '/api/sessions');
 
@@ -541,9 +544,18 @@ export async function keyOf(id) {
   return keyCache.get(id);
 }
 
+/**
+ * A folder's name as shown: the root folder's own name was set in English
+ * when the account was made, so it's shown in the current language.
+ */
+export const folderLabel = (e) => (e.node.id === session.me?.keys.root_node_id ? t('My files') : e.meta.name);
+
+/** A folder's child nodes (still encrypted), however many there are. */
+const children = (id) => allChildren((p) => api('GET', p), `/api/nodes/${id}/children`);
+
 export async function listFolder(id, key) {
   await adoptDrops();
-  const nodes = await api('GET', `/api/nodes/${id}/children`);
+  const nodes = await children(id);
   const rows = decryptChildren(key, nodes);
   for (const r of rows) keyCache.set(r.node.id, r.key);
   index.set(id, { at: Date.now(), rows });
@@ -561,7 +573,7 @@ const tagFor = (folderKey, name) => b64(tc.name_tag(folderKey, name));
 /** Lower-cased names already in a folder (straight from the server, no adoption). */
 async function namesIn(folderId, folderKey) {
   try {
-    const nodes = await api('GET', `/api/nodes/${folderId}/children`);
+    const nodes = await children(folderId);
     return new Set(decryptChildren(folderKey, nodes).map((r) => r.meta.name.toLowerCase()));
   } catch {
     return new Set();
@@ -600,7 +612,7 @@ const INDEX_TTL = 2 * 60 * 1000;
  * Unreadable folders are skipped; stops early when `signal` aborts.
  */
 export async function walkTree(top, { onEntry, signal } = {}) {
-  const queue = [{ entry: top, location: [top.meta.name] }];
+  const queue = [{ entry: top, location: [folderLabel(top)] }];
   const worker = async () => {
     while (queue.length && !signal?.aborted) {
       const { entry, location } = queue.shift();
@@ -632,7 +644,7 @@ export async function walkTree(top, { onEntry, signal } = {}) {
  * error })` for each item that fails; `name` is null when it can't be read.
  */
 export async function verifyTree(top, { signal, onProgress, onProblem } = {}) {
-  const queue = [{ entry: top, location: [top.meta.name] }];
+  const queue = [{ entry: top, location: [folderLabel(top)] }];
   const done = { files: 0, folders: 0, bytes: 0 };
   const problem = (location, node, name, e) =>
     onProblem?.({ location, name, id: node.id, error: typeof e === 'string' ? e : String(e?.message || e) });
@@ -640,7 +652,7 @@ export async function verifyTree(top, { signal, onProgress, onProblem } = {}) {
     const { entry, location } = queue.shift();
     let nodes;
     try {
-      nodes = await api('GET', `/api/nodes/${entry.node.id}/children`);
+      nodes = await children(entry.node.id);
     } catch (e) {
       problem(location.slice(0, -1), entry.node, entry.meta.name, e);
       continue;
@@ -925,7 +937,7 @@ export async function trashItems() {
         return { node, key, meta: decryptMeta(key, node) };
       });
       const entry = chain[chain.length - 1];
-      return { ...it, entry, chain, location: chain.slice(0, -1).map((c) => c.meta.name) };
+      return { ...it, entry, chain, location: chain.slice(0, -1).map(folderLabel) };
     } catch (e) {
       return { ...it, error: String(e?.message || e) };
     }
@@ -1052,7 +1064,7 @@ export async function exportAccount(onProgress) {
     return { node: { kind: 'file' }, meta: { name, size: bytes.length, mtime: now }, bytes };
   };
   const data = [];
-  for (const name of ['music', 'videos', 'files', 'notes', 'books']) {
+  for (const name of ['music', 'videos', 'files', 'notes', 'books', 'health', 'prefs']) {
     const d = await loadAppData(name);
     if (Object.keys(d).length) data.push(json(`${name}.json`, d));
   }
@@ -1637,13 +1649,14 @@ export async function addComment(entry, text) {
 export const deleteComment = (id) => api('DELETE', `/api/comments/${id}`);
 
 // ---------------------------------------------------------------------------
-// Profile pictures: encrypted under our avatar key, which is sealed to each
-// person we share with (either way round). The server can't see them.
+// Profile pictures, display names and pronouns: encrypted under our avatar
+// key, which is sealed to each person we share with (either way round). The
+// server can't see any of them.
 // ---------------------------------------------------------------------------
 
-export const avatar = $state({ url: null }); // our own picture, as a blob: URL
-let avatarState = null; // { key, grantees: Set }
-const avatarUrls = new Map(); // username -> Promise<url | null>
+export const avatar = $state({ url: null, name: null, details: {} }); // our own picture (a blob: URL), display name and person details
+let avatarState = null; // { key, grantees: Set, picture: bytes | null, name: string | null, details: object }
+const profiles = new Map(); // username -> Promise<{ url, name }>
 
 const imageType = (b) =>
   b[0] === 0x89 ? 'image/png' : b[0] === 0x52 && b[8] === 0x57 ? 'image/webp' : 'image/jpeg';
@@ -1652,23 +1665,31 @@ function avatarBlobUrl(bytes) {
   return URL.createObjectURL(new Blob([bytes], { type: imageType(bytes) }));
 }
 
-/** Load our own picture (once per session). */
+/** Load our own picture and display name (once per session). */
 export async function loadMyAvatar() {
   if (avatarState) return avatarState;
   const r = await api('GET', '/api/me/avatar');
   const me = session.me;
   let key = null;
-  if (r.data && r.enc_key) {
+  let picture = null;
+  let name = null;
+  let details = {};
+  if (r.enc_key) {
     key = tc.decrypt_private_data(mk, me.user_id, 'avatar-key', unb64(r.enc_key));
-    avatar.url = avatarBlobUrl(tc.decrypt_avatar(key, me.username, unb64(r.data)));
+    if (r.data) picture = tc.decrypt_avatar(key, me.username, unb64(r.data));
+    if (r.name) name = tc.decrypt_display_name(key, me.username, unb64(r.name));
+    if (r.details) details = JSON.parse(tc.decrypt_person_details(key, me.username, unb64(r.details)));
   }
-  avatarState = { key, grantees: new Set(r.grantees) };
+  avatarState = { key, grantees: new Set(r.grantees), picture, name, details };
+  avatar.url = picture ? avatarBlobUrl(picture) : null;
+  avatar.name = name;
+  avatar.details = details;
   return avatarState;
 }
 
 /**
- * Give `username` our avatar key, if we have a picture and haven't yet.
- * Only to a verified contact whose key still matches: the same rule as
+ * Give `username` our avatar key, if we have a picture or name and haven't
+ * yet. Only to a verified contact whose key still matches: the same rule as
  * sharing, so a key the server swapped in never gets it.
  */
 async function grantAvatar(user) {
@@ -1690,6 +1711,44 @@ async function sharePartners() {
   return partners;
 }
 
+const hasDetails = (d) => !!(d?.subject || d?.object || d?.possessive || d?.gender);
+
+/**
+ * Store our picture, name and person details, changing those given in
+ * `change` (null removes one; all gone removes the lot). A new key each
+ * time, given to the people we share with now, so someone we've stopped
+ * sharing with never gets a later one.
+ */
+async function saveProfile(change) {
+  const a = await loadMyAvatar();
+  const me = session.me;
+  const { picture, name, details } = { picture: a.picture, name: a.name, details: a.details, ...change };
+  if (!picture && !name && !hasDetails(details)) {
+    await api('DELETE', '/api/me/avatar');
+    Object.assign(a, { key: null, grantees: new Set(), picture: null, name: null, details: {} });
+  } else {
+    const key = tc.random_key();
+    await api('PUT', '/api/me/avatar', {
+      body: {
+        data: picture ? b64(tc.encrypt_avatar(key, me.username, picture)) : null,
+        name: name ? b64(tc.encrypt_display_name(key, me.username, name)) : null,
+        details: hasDetails(details) ? b64(tc.encrypt_person_details(key, me.username, JSON.stringify(details))) : null,
+        enc_key: b64(tc.encrypt_private_data(mk, me.user_id, 'avatar-key', key)),
+      },
+    });
+    Object.assign(a, { key, grantees: new Set(), picture, name, details: details ?? {} });
+  }
+  if (avatar.url) URL.revokeObjectURL(avatar.url);
+  avatar.url = a.picture ? avatarBlobUrl(a.picture) : null;
+  avatar.name = a.name;
+  avatar.details = a.details;
+  if (!a.key) return;
+  const pinned = (await loadContacts()).data;
+  for (const username of await sharePartners()) {
+    if (pinned[username]) await grantAvatar(await lookupUser(username)).catch(() => {});
+  }
+}
+
 /** Set our picture from an image file: cropped square, 256 px, encrypted here. */
 export async function setAvatar(file) {
   const bitmap = await createImageBitmap(file);
@@ -1700,51 +1759,71 @@ export async function setAvatar(file) {
   let blob = await canvas.convertToBlob({ type: 'image/webp', quality: 0.85 });
   if (blob.type !== 'image/webp') blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.85 });
   const bytes = new Uint8Array(await blob.arrayBuffer());
-  const a = await loadMyAvatar();
-  // A new key for each picture, given to the people we share with now, so
-  // someone we've stopped sharing with never gets a later one.
-  const key = tc.random_key();
-  const me = session.me;
-  await api('PUT', '/api/me/avatar', {
-    body: {
-      data: b64(tc.encrypt_avatar(key, me.username, bytes)),
-      enc_key: b64(tc.encrypt_private_data(mk, me.user_id, 'avatar-key', key)),
-    },
-  });
-  a.key = key;
-  a.grantees = new Set();
-  if (avatar.url) URL.revokeObjectURL(avatar.url);
-  avatar.url = avatarBlobUrl(bytes);
-  const pinned = (await loadContacts()).data;
-  for (const username of await sharePartners()) {
-    if (pinned[username]) await grantAvatar(await lookupUser(username)).catch(() => {});
-  }
+  await saveProfile({ picture: bytes });
 }
 
-/** Remove our picture and take back the key from everyone. */
+/** Remove our picture (the display name and pronouns stay). */
 export async function removeAvatar() {
-  await api('DELETE', '/api/me/avatar');
-  if (avatar.url) URL.revokeObjectURL(avatar.url);
-  avatar.url = null;
-  avatarState = { key: null, grantees: new Set() };
+  await saveProfile({ picture: null });
 }
 
-/** Someone's picture as a blob: URL, or null if they haven't given us one. */
-export function avatarUrl(username) {
-  if (username === session.me?.username) return loadMyAvatar().then(() => avatar.url);
-  if (!avatarUrls.has(username)) {
-    avatarUrls.set(
+/** The name as it would be stored, or null if it can't be one. */
+export const cleanDisplayName = (name) => tc.clean_display_name(name) ?? null;
+
+/** Set our display name, or remove it with an empty one. */
+export async function setDisplayName(name) {
+  const clean = name.trim() ? cleanDisplayName(name) : null;
+  if (name.trim() && !clean) throw new Error('That name has characters that can\'t be used.');
+  await saveProfile({ name: clean });
+}
+
+/** A pronoun as it would be stored, or null if it can't be one. */
+export const cleanPronoun = (p) => tc.clean_pronoun(p) ?? null;
+
+/**
+ * Set how we like to be referred to: { subject, object, possessive } (English
+ * pronouns, empty for "not said") and gender ('neuter', 'feminine',
+ * 'masculine' or null).
+ */
+export async function setPersonDetails({ subject = '', object = '', possessive = '', gender = null }) {
+  const d = {};
+  for (const [k, v] of Object.entries({ subject, object, possessive })) {
+    const clean = cleanPronoun(v);
+    if (clean === null) throw new Error(t("Those pronouns have characters that can't be used."));
+    if (clean) d[k] = clean;
+  }
+  if (gender) d.gender = gender;
+  await saveProfile({ details: d });
+}
+
+/**
+ * Someone's picture (a blob: URL), display name and person details ({}
+ * when not said), each empty if they haven't given us their avatar key.
+ */
+export function profileOf(username) {
+  if (username === session.me?.username) return loadMyAvatar().then(() => ({ url: avatar.url, name: avatar.name, details: avatar.details }));
+  if (!profiles.has(username)) {
+    profiles.set(
       username,
       api('GET', `/api/users/${encodeURIComponent(username)}/avatar`)
         .then((r) => {
-          if (!r) return null;
+          if (!r) return { url: null, name: null, details: {} };
           const key = tc.open_avatar_key(sk, unb64(r.sealed_key), username, session.me.username);
-          return avatarBlobUrl(tc.decrypt_avatar(key, username, unb64(r.data)));
+          const url = r.data ? avatarBlobUrl(tc.decrypt_avatar(key, username, unb64(r.data))) : null;
+          let name = null;
+          let details = {};
+          try {
+            if (r.name) name = tc.decrypt_display_name(key, username, unb64(r.name));
+          } catch {}
+          try {
+            if (r.details) details = JSON.parse(tc.decrypt_person_details(key, username, unb64(r.details)));
+          } catch {}
+          return { url, name, details };
         })
-        .catch(() => null),
+        .catch(() => ({ url: null, name: null, details: {} })),
     );
   }
-  return avatarUrls.get(username);
+  return profiles.get(username);
 }
 
 // ---------------------------------------------------------------------------

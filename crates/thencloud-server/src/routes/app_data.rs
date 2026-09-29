@@ -1,6 +1,7 @@
 //! App data: the music and video libraries' playlists and edits, the
-//! favourites and recent files, pinned notes, where books were left and the
-//! index for searching inside files, one blob per name,
+//! favourites and recent files, pinned notes, where books were left, the
+//! index for searching inside files, the health log and which optional
+//! modules are on (`prefs`), one blob per name,
 //! encrypted under the user's master key. The server keeps it and a
 //! revision number, and nothing else.
 
@@ -13,7 +14,9 @@ use crate::auth::AuthUser;
 use crate::error::{AppError, Result};
 use crate::util::now;
 
-const NAMES: &[&str] = &["music", "videos", "files", "notes", "books", "search"];
+const NAMES: &[&str] = &[
+    "music", "videos", "files", "notes", "books", "search", "health", "prefs",
+];
 const MAX_BYTES: usize = 2 * 1024 * 1024;
 /// The search index (the words in each text file, for searching inside
 /// them) is bigger than the libraries.

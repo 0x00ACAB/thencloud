@@ -6,7 +6,7 @@
   import { session, resolvePath, fetchEntry, openEntry, download } from '../../lib/cloud.svelte.js';
   import { photos, openPhotos, setPhotosRoot, scanPhotos, byMonth, albums } from '../../lib/photos.svelte.js';
   import { toastError, trackTransfer, errorMessage } from '../../lib/ui.svelte.js';
-  import { plural } from '../../lib/format.js';
+  import { t, slots } from '../../lib/i18n.svelte.js';
   import Icon from '../Icon.svelte';
   import Menu from '../Menu.svelte';
   import Thumb from '../Thumb.svelte';
@@ -38,13 +38,13 @@
   let viewing = $state(null); // index into `shown`
 
   async function downloadEntry(entry) {
-    const t = trackTransfer('download', entry.meta.name, entry.meta.size);
+    const job = trackTransfer('download', entry.meta.name, entry.meta.size);
     try {
-      await download(entry, (p) => (t.progress = p));
-      t.status = 'done';
+      await download(entry, (p) => (job.progress = p));
+      job.status = 'done';
     } catch (e) {
-      t.status = 'error';
-      t.error = errorMessage(e);
+      job.status = 'error';
+      job.error = errorMessage(e);
     }
   }
 </script>
@@ -53,23 +53,23 @@
   <div class="min-w-0">
     {#if openAlbum}
       <button type="button" class="mb-1 inline-flex cursor-pointer items-center gap-1 text-[13px] text-fg-muted hover:text-fg" onclick={() => (album = null)}>
-        <Icon name="arrow-left" class="size-3.5" /> Albums
+        <Icon name="arrow-left" class="size-3.5" /> {t('Albums')}
       </button>
       <h1 class="truncate text-xl font-semibold tracking-tight">{openAlbum.name}</h1>
-      <p class="mt-1 text-[13px] text-fg-muted">{plural(openAlbum.items.length, 'photo')}{openAlbum.location.length > 1 ? ` · ${openAlbum.location.slice(0, -1).join(' / ')}` : ''}</p>
+      <p class="mt-1 text-[13px] text-fg-muted">{t('{count} photos', { count: openAlbum.items.length })}{openAlbum.location.length > 1 ? ` · ${openAlbum.location.slice(0, -1).join(' / ')}` : ''}</p>
     {:else}
-      <h1 class="text-xl font-semibold tracking-tight">Photos</h1>
+      <h1 class="text-xl font-semibold tracking-tight">{t('Photos')}</h1>
       {#if photos.rootId}
         <p class="mt-1 text-[13px] text-fg-muted">
-          Images in <button type="button" class="link" onclick={() => go({ name: 'files', folderId: photos.rootId })}>{photos.rootName || 'your photos folder'}</button>, by the date they were taken.
+          {#each slots(t('Images in {folder}, by the date they were taken.')) as part, i (i)}{#if typeof part === 'string'}{part}{:else}<button type="button" class="link" onclick={() => go({ name: 'files', folderId: photos.rootId })}>{photos.rootName || t('your photos folder')}</button>{/if}{/each}
         </p>
       {/if}
     {/if}
   </div>
   {#if photos.rootId && !openAlbum}
     <div class="flex gap-2">
-      <div class="flex h-8 rounded-md border border-line p-0.5" role="radiogroup" aria-label="Show">
-        {#each [['timeline', 'Timeline'], ['albums', 'Albums']] as [value, label] (value)}
+      <div class="flex h-8 rounded-md border border-line p-0.5" role="radiogroup" aria-label={t('Show')}>
+        {#each [['timeline', t('Timeline')], ['albums', t('Albums')]] as [value, label] (value)}
           <button
             type="button"
             role="radio"
@@ -79,10 +79,10 @@
         {/each}
       </div>
       <Menu
-        label="Photos folder"
+        label={t('Photos folder')}
         items={[
-          { label: 'Choose another folder', icon: 'folder-open', onclick: choose },
-          { label: 'Look for new photos', icon: 'refresh-cw', onclick: scanPhotos },
+          { label: t('Choose another folder'), icon: 'folder-open', onclick: choose },
+          { label: t('Look for new photos'), icon: 'refresh-cw', onclick: scanPhotos },
         ]} />
     </div>
   {/if}
@@ -108,27 +108,27 @@
 {#if !photos.rootId}
   <div class="card mt-6 grid place-items-center gap-1 px-6 py-20 text-center">
     <div class="mb-3 grid size-11 place-items-center rounded-lg border border-line bg-subtle"><Icon name="image" class="size-5 text-fg-muted" /></div>
-    <p class="font-medium">Pick a folder for your photos</p>
-    <p class="max-w-sm text-[13px] text-fg-muted">Its images, and those in folders below it, become a timeline by date taken, with each folder as an album.</p>
-    <button type="button" class="btn btn-primary mt-4" onclick={choose}><Icon name="folder-open" /> Choose a folder</button>
+    <p class="font-medium">{t('Pick a folder for your photos')}</p>
+    <p class="max-w-sm text-[13px] text-fg-muted">{t('Its images, and those in folders below it, become a timeline by date taken, with each folder as an album.')}</p>
+    <button type="button" class="btn btn-primary mt-4" onclick={choose}><Icon name="folder-open" /> {t('Choose a folder')}</button>
   </div>
 {:else if photos.error}
   <div class="card mt-6 grid place-items-center gap-3 px-6 py-16 text-center">
     <Icon name="circle-alert" class="size-6 text-danger" />
     <p class="text-fg-muted">{photos.error}</p>
     <div class="flex gap-2">
-      <button type="button" class="btn btn-secondary" onclick={scanPhotos}><Icon name="refresh-cw" /> Try again</button>
-      <button type="button" class="btn btn-ghost" onclick={choose}>Choose another folder</button>
+      <button type="button" class="btn btn-secondary" onclick={scanPhotos}><Icon name="refresh-cw" /> {t('Try again')}</button>
+      <button type="button" class="btn btn-ghost" onclick={choose}>{t('Choose another folder')}</button>
     </div>
   </div>
 {:else if !photos.list}
-  <div class="mt-6 grid grid-cols-[repeat(auto-fill,minmax(7.5rem,1fr))] gap-1" aria-busy="true" aria-label="Loading">
+  <div class="mt-6 grid grid-cols-[repeat(auto-fill,minmax(7.5rem,1fr))] gap-1" aria-busy="true" aria-label={t('Loading')}>
     {#each Array(12) as _, i (i)}<div class="skeleton aspect-square rounded-md"></div>{/each}
   </div>
 {:else if !photos.list.length}
   <div class="card mt-6 grid place-items-center gap-1 px-6 py-20 text-center">
-    <p class="font-medium">No photos here yet</p>
-    <p class="max-w-sm text-[13px] text-fg-muted">Upload JPEG, PNG, WebP or other images into {photos.rootName}, or any folder in it.</p>
+    <p class="font-medium">{t('No photos here yet')}</p>
+    <p class="max-w-sm text-[13px] text-fg-muted">{t('Upload JPEG, PNG, WebP or other images into {folder}, or any folder in it.', { folder: photos.rootName })}</p>
   </div>
 {:else if tab === 'albums' && !openAlbum}
   <ul class="mt-6 grid grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-4">
@@ -140,7 +140,7 @@
           </span>
           <span class="grid min-w-0 px-0.5">
             <span class="truncate text-[13px] font-medium">{a.name}</span>
-            <span class="truncate text-xs text-fg-muted">{plural(a.items.length, 'photo')}</span>
+            <span class="truncate text-xs text-fg-muted">{t('{count} photos', { count: a.items.length })}</span>
           </span>
         </button>
       </li>
@@ -158,7 +158,7 @@
 {/if}
 
 {#if photos.scanning && photos.list}
-  <p class="mt-4 flex items-center gap-2 text-xs text-fg-faint" role="status"><Icon name="loader-circle" class="spinner size-3.5" /> Looking for new photos</p>
+  <p class="mt-4 flex items-center gap-2 text-xs text-fg-faint" role="status"><Icon name="loader-circle" class="spinner size-3.5" /> {t('Looking for new photos')}</p>
 {/if}
 
 {#if viewing !== null && shown[viewing]}
@@ -168,8 +168,8 @@
 {#if picking}
   <FolderPickDialog
     root={picking}
-    title="Photos folder"
-    description="Its images, in it and in folders below it, become your photos."
+    title={t('Photos folder')}
+    description={t('Its images, in it and in folders below it, become your photos.')}
     onpick={(id) => {
       album = null;
       setPhotosRoot(id);

@@ -5,6 +5,14 @@
   import Shell from './components/Shell.svelte';
   import Toasts from './components/Toasts.svelte';
   import Icon from './components/Icon.svelte';
+  import { t, language, loadLanguage } from './lib/i18n.svelte.js';
+
+  // The chosen language (loaded when it changes) and <html lang> to match.
+  $effect(() => {
+    const lang = language();
+    loadLanguage(lang);
+    document.documentElement.lang = lang;
+  });
 
   // A browser the user chose to keep signed in skips the sign-in screen.
   let resuming = $state(true);
@@ -18,7 +26,7 @@
 {#if session.me}
   <Shell />
 {:else if resuming}
-  <div class="grid min-h-dvh place-items-center text-fg-muted" aria-busy="true" aria-label="Unlocking your files">
+  <div class="grid min-h-dvh place-items-center text-fg-muted" aria-busy="true" aria-label={t('Unlocking your files')}>
     <Icon name="loader-circle" class="spinner size-5" />
   </div>
 {:else}

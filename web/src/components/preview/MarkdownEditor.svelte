@@ -3,6 +3,7 @@
   // owns saving; this reports every change through `onchange`.
   import { onMount } from 'svelte';
   import Icon from '../Icon.svelte';
+  import { t } from '../../lib/i18n.svelte.js';
 
   let { text, onchange, onready } = $props();
 
@@ -54,42 +55,42 @@
     if (/^(https?:|mailto:)/i.test(href)) run('link', { href });
   }
 
-  const groups = [
+  const groups = $derived([
     [
-      ['undo', 'undo-2', 'Undo'],
-      ['redo', 'redo-2', 'Redo'],
+      ['undo', 'undo-2', t('Undo')],
+      ['redo', 'redo-2', t('Redo')],
     ],
     [
-      ['h1', 'heading-1', 'Heading 1'],
-      ['h2', 'heading-2', 'Heading 2'],
-      ['h3', 'heading-3', 'Heading 3'],
+      ['h1', 'heading-1', t('Heading 1')],
+      ['h2', 'heading-2', t('Heading 2')],
+      ['h3', 'heading-3', t('Heading 3')],
     ],
     [
-      ['bold', 'bold', 'Bold'],
-      ['italic', 'italic', 'Italic'],
-      ['strike', 'strikethrough', 'Strikethrough'],
-      ['code', 'code', 'Inline code'],
-      ['link', 'link', 'Link'],
+      ['bold', 'bold', t('Bold')],
+      ['italic', 'italic', t('Italic')],
+      ['strike', 'strikethrough', t('Strikethrough')],
+      ['code', 'code', t('Inline code')],
+      ['link', 'link', t('Link')],
     ],
     [
-      ['bullets', 'list', 'Bulleted list'],
-      ['numbers', 'list-ordered', 'Numbered list'],
-      ['task', 'list-checks', 'Task list'],
-      ['quote', 'text-quote', 'Quote'],
-      ['codeBlock', 'square-code', 'Code block'],
-      ['rule', 'minus', 'Divider'],
-      ['table', 'table', 'Table'],
+      ['bullets', 'list', t('Bulleted list')],
+      ['numbers', 'list-ordered', t('Numbered list')],
+      ['task', 'list-checks', t('Task list')],
+      ['quote', 'text-quote', t('Quote')],
+      ['codeBlock', 'square-code', t('Code block')],
+      ['rule', 'minus', t('Divider')],
+      ['table', 'table', t('Table')],
     ],
-  ];
+  ]);
 
   // Shown while the cursor is in a table.
-  const tableTools = [
-    ['addRow', 'between-horizontal-end', 'Add row below'],
-    ['addCol', 'between-vertical-end', 'Add column to the right'],
-    ['deleteRow', 'grid-2x2-x', 'Delete row'],
-    ['deleteCol', 'columns-2', 'Delete column'],
-    ['deleteTable', 'trash-2', 'Delete table'],
-  ];
+  const tableTools = $derived([
+    ['addRow', 'between-horizontal-end', t('Add row below')],
+    ['addCol', 'between-vertical-end', t('Add column to the right')],
+    ['deleteRow', 'grid-2x2-x', t('Delete row')],
+    ['deleteCol', 'columns-2', t('Delete column')],
+    ['deleteTable', 'trash-2', t('Delete table')],
+  ]);
 
   function press(id) {
     if (id === 'link') return startLink();
@@ -110,7 +111,7 @@
 </script>
 
 <div class="flex h-full flex-col">
-  <div class="flex shrink-0 flex-wrap items-center gap-1 border-b border-line px-3 py-1.5" role="toolbar" aria-label="Formatting">
+  <div class="flex shrink-0 flex-wrap items-center gap-1 border-b border-line px-3 py-1.5" role="toolbar" aria-label={t('Formatting')}>
     {#each groups as group, g (g)}
       {#if g}<span class="mx-1 h-5 w-px bg-line" aria-hidden="true"></span>{/if}
       {#each group as [id, icon, label] (id)}
@@ -143,14 +144,14 @@
     {/if}
     {#if linking}
       <form class="ml-2 flex items-center gap-1" onsubmit={applyLink}>
-        <input bind:this={linkInput} class="input h-7 w-64 text-[13px]" bind:value={href} aria-label="Link address" onkeydown={(e) => e.key === 'Escape' && (e.stopPropagation(), e.preventDefault(), (linking = false), editor?.focus())} />
-        <button class="btn btn-secondary h-7 px-2.5 text-[13px]">Add link</button>
+        <input bind:this={linkInput} class="input h-7 w-64 text-[13px]" bind:value={href} aria-label={t('Link address')} onkeydown={(e) => e.key === 'Escape' && (e.stopPropagation(), e.preventDefault(), (linking = false), editor?.focus())} />
+        <button class="btn btn-secondary h-7 px-2.5 text-[13px]">{t('Add link')}</button>
       </form>
     {/if}
   </div>
   <div class="min-h-0 flex-1 overflow-auto">
     {#if failed}
-      <p class="p-6 text-center text-[13px] text-fg-muted">The editor couldn't be loaded. Your file hasn't changed.</p>
+      <p class="p-6 text-center text-[13px] text-fg-muted">{t("The editor couldn't be loaded. Your file hasn't changed.")}</p>
     {/if}
     <div bind:this={root} class="editor prose mx-auto max-w-3xl px-6 py-10"></div>
   </div>

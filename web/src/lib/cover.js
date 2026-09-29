@@ -2,6 +2,7 @@
 // uploaded, encrypted like any file, into the folder it belongs to
 // (cover.jpg, poster.jpg), so the music and video scans find it there.
 
+import { t } from './i18n.svelte.js';
 import { keyOf, upload } from './cloud.svelte.js';
 
 /** `file` as a JPEG no larger than `max` pixels on its longest side. */
@@ -28,4 +29,4 @@ export async function putFolderImage(folderId, name, file, existing) {
 }
 
 /** A friendlier error for an image the browser couldn't decode. */
-export const imageError = (e) => (e?.name === 'InvalidStateError' || e?.name === 'EncodingError' ? new Error("That image couldn't be read.") : e);
+export const imageError = (e) => (e?.name === 'InvalidStateError' || e?.name === 'EncodingError' ? new Error(t("That image couldn't be read.")) : e);

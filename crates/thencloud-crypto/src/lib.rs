@@ -820,6 +820,146 @@ pub fn decrypt_avatar(key: &Key, owner: &str, sealed: &[u8]) -> Result<Vec<u8>> 
     open(key, sealed, &aad("avatar", &[owner]))
 }
 
+/// Longest display name, in characters.
+pub const MAX_DISPLAY_NAME_CHARS: usize = 64;
+/// Display names are padded to this many bytes before encryption, so the
+/// ciphertext doesn't give away their length.
+pub const DISPLAY_NAME_PADDED: usize = 256;
+/// The size of every encrypted display name.
+pub const DISPLAY_NAME_SEALED_LEN: usize = NONCE_LEN + DISPLAY_NAME_PADDED + TAG_LEN;
+
+/// A display name as it's stored: NFC, trimmed, 1 to 64 characters, with no
+/// control or bidirectional formatting characters (which could make it look
+/// like someone else's name, or reorder the text around it). `None` if it
+/// can't be one.
+pub fn clean_display_name(name: &str) -> Option<String> {
+    let name = nfc(name.trim());
+    let n = name.chars().count();
+    (n > 0 && n <= MAX_DISPLAY_NAME_CHARS && !name.chars().any(hides_text)).then_some(name)
+}
+
+/// Control and bidirectional formatting characters: kept out of names and
+/// pronouns, where they could make text read as something else.
+fn hides_text(c: char) -> bool {
+    c.is_control()
+        || matches!(c, '\u{200e}' | '\u{200f}' | '\u{061c}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+}
+
+/// A display name, encrypted under the same per-user key as the avatar (see
+/// `seal_avatar_key`), padded with zeros to `DISPLAY_NAME_PADDED` bytes.
+pub fn encrypt_display_name(key: &Key, owner: &str, name: &str) -> Result<Vec<u8>> {
+    let name = clean_display_name(name)
+        .ok_or_else(|| Error::Metadata("not a valid display name".into()))?;
+    let mut pt = name.into_bytes();
+    if pt.len() > DISPLAY_NAME_PADDED {
+        return Err(Error::Metadata("display name too long".into()));
+    }
+    pt.resize(DISPLAY_NAME_PADDED, 0);
+    let sealed = seal(key, &pt, &aad("display-name", &[owner]));
+    pt.zeroize();
+    Ok(sealed)
+}
+
+/// Opens a display name, and refuses one that `clean_display_name` wouldn't
+/// have let through (another client could have written anything).
+pub fn decrypt_display_name(key: &Key, owner: &str, sealed: &[u8]) -> Result<String> {
+    let pt = open(key, sealed, &aad("display-name", &[owner]))?;
+    let end = pt.iter().position(|&b| b == 0).unwrap_or(pt.len());
+    if pt.len() != DISPLAY_NAME_PADDED || pt[end..].iter().any(|&b| b != 0) {
+        return Err(Error::Metadata("bad display name padding".into()));
+    }
+    let name = std::str::from_utf8(&pt[..end])
+        .map_err(|_| Error::Metadata("display name isn't UTF-8".into()))?;
+    match clean_display_name(name) {
+        Some(clean) if clean == name => Ok(clean),
+        _ => Err(Error::Metadata("not a valid display name".into())),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Person details: how someone likes to be referred to, shown to the same
+// people as their display name and encrypted the same way.
+// ---------------------------------------------------------------------------
+
+/// A grammatical gender, for languages whose words change with it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Gender {
+    Neuter,
+    Feminine,
+    Masculine,
+}
+
+/// Someone's pronouns (English: "they", "them", "their", or their own) and
+/// grammatical gender. Empty pronouns and no gender mean "not said": the
+/// interface then uses neutral wording.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PersonDetails {
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub subject: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub object: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub possessive: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gender: Option<Gender>,
+}
+
+/// Longest pronoun, in characters.
+pub const MAX_PRONOUN_CHARS: usize = 24;
+/// Person details are padded to this many bytes before encryption.
+pub const PERSON_DETAILS_PADDED: usize = 256;
+/// The size of every encrypted set of person details.
+pub const PERSON_DETAILS_SEALED_LEN: usize = NONCE_LEN + PERSON_DETAILS_PADDED + TAG_LEN;
+
+/// A pronoun as it's stored: NFC, trimmed, at most 24 characters, no control
+/// or bidirectional formatting characters. Empty is fine (not said).
+pub fn clean_pronoun(p: &str) -> Option<String> {
+    let p = nfc(p.trim());
+    (p.chars().count() <= MAX_PRONOUN_CHARS && !p.chars().any(hides_text)).then_some(p)
+}
+
+impl PersonDetails {
+    /// Every pronoun already in its stored form.
+    fn is_clean(&self) -> bool {
+        [&self.subject, &self.object, &self.possessive]
+            .iter()
+            .all(|p| clean_pronoun(p).as_deref() == Some(p.as_str()))
+    }
+}
+
+/// Person details as JSON, padded with zeros to `PERSON_DETAILS_PADDED`
+/// bytes and encrypted under the avatar key (see `seal_avatar_key`).
+pub fn encrypt_person_details(key: &Key, owner: &str, details: &PersonDetails) -> Result<Vec<u8>> {
+    if !details.is_clean() {
+        return Err(Error::Metadata("not valid pronouns".into()));
+    }
+    let mut pt = serde_json::to_vec(details).map_err(|e| Error::Metadata(e.to_string()))?;
+    if pt.len() > PERSON_DETAILS_PADDED {
+        return Err(Error::Metadata("person details too long".into()));
+    }
+    pt.resize(PERSON_DETAILS_PADDED, 0);
+    let sealed = seal(key, &pt, &aad("person-details", &[owner]));
+    pt.zeroize();
+    Ok(sealed)
+}
+
+/// Opens person details, refusing any that `encrypt_person_details` wouldn't
+/// have written (another client could have written anything).
+pub fn decrypt_person_details(key: &Key, owner: &str, sealed: &[u8]) -> Result<PersonDetails> {
+    let pt = open(key, sealed, &aad("person-details", &[owner]))?;
+    let end = pt.iter().position(|&b| b == 0).unwrap_or(pt.len());
+    if pt.len() != PERSON_DETAILS_PADDED || pt[end..].iter().any(|&b| b != 0) {
+        return Err(Error::Metadata("bad person details padding".into()));
+    }
+    let details: PersonDetails =
+        serde_json::from_slice(&pt[..end]).map_err(|e| Error::Metadata(e.to_string()))?;
+    if !details.is_clean() {
+        return Err(Error::Metadata("not valid pronouns".into()));
+    }
+    Ok(details)
+}
+
 pub fn seal_avatar_key(
     grantee_pub: &[u8],
     key: &Key,
@@ -1269,6 +1409,66 @@ mod tests {
         let w = wrap_private_key(&mk, &kp.secret);
         assert_eq!(unwrap_private_key(&mk, &w).unwrap().public, kp.public);
         assert_eq!(fingerprint(&kp.public).len(), 39);
+    }
+
+    #[test]
+    fn person_details() {
+        let ak = Key::generate();
+        let d = PersonDetails {
+            subject: "she".into(),
+            object: "her".into(),
+            possessive: "her".into(),
+            gender: Some(Gender::Feminine),
+        };
+        let sealed = encrypt_person_details(&ak, "chloe", &d).unwrap();
+        assert_eq!(sealed.len(), PERSON_DETAILS_SEALED_LEN);
+        assert_eq!(decrypt_person_details(&ak, "chloe", &sealed).unwrap(), d);
+        assert!(decrypt_person_details(&ak, "alice", &sealed).is_err());
+        // Nothing said is fine, and just as long.
+        let none = encrypt_person_details(&ak, "chloe", &PersonDetails::default()).unwrap();
+        assert_eq!(none.len(), sealed.len());
+        assert_eq!(
+            decrypt_person_details(&ak, "chloe", &none).unwrap(),
+            PersonDetails::default()
+        );
+        for bad in [" she", "a\u{202e}b", "x\ny", &"x".repeat(25)] {
+            let d = PersonDetails {
+                subject: bad.into(),
+                ..Default::default()
+            };
+            assert!(encrypt_person_details(&ak, "chloe", &d).is_err(), "{bad:?}");
+        }
+        // Written by some other client: a bidi override, or an unknown gender.
+        for raw in [r#"{"subject":"a\u202eb"}"#, r#"{"gender":"other"}"#] {
+            let mut pt = raw.as_bytes().to_vec();
+            pt.resize(PERSON_DETAILS_PADDED, 0);
+            let s = seal(&ak, &pt, &aad("person-details", &["chloe"]));
+            assert!(decrypt_person_details(&ak, "chloe", &s).is_err(), "{raw}");
+        }
+    }
+
+    #[test]
+    fn display_names() {
+        let ak = Key::generate();
+        let sealed = encrypt_display_name(&ak, "chloe", "  Chloe\u{301} ").unwrap();
+        assert_eq!(sealed.len(), DISPLAY_NAME_SEALED_LEN);
+        assert_eq!(
+            decrypt_display_name(&ak, "chloe", &sealed).unwrap(),
+            "Chlo\u{e9}"
+        );
+        assert!(decrypt_display_name(&ak, "alice", &sealed).is_err());
+        assert_eq!(clean_display_name("くろえ").as_deref(), Some("くろえ"));
+        for bad in ["", "  ", "a\u{202e}b", "a\nb", "a\u{0}b", &"x".repeat(65)] {
+            assert!(clean_display_name(bad).is_none(), "{bad:?}");
+            assert!(encrypt_display_name(&ak, "chloe", bad).is_err());
+        }
+        // Written by some other client: not NFC, or not trimmed.
+        for raw in ["Chloe\u{301}", " Chloe"] {
+            let mut pt = raw.as_bytes().to_vec();
+            pt.resize(DISPLAY_NAME_PADDED, 0);
+            let s = seal(&ak, &pt, &aad("display-name", &["chloe"]));
+            assert!(decrypt_display_name(&ak, "chloe", &s).is_err());
+        }
     }
 
     #[test]

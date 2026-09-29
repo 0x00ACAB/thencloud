@@ -2,6 +2,7 @@
   // Full-screen video playback. Picks up where you left off, keeps your
   // place as you watch, and offers the next episode when one ends.
   import { onMount, onDestroy, untrack } from 'svelte';
+  import { t } from '../lib/i18n.svelte.js';
   import Icon from './Icon.svelte';
   import { fade, portal } from '../lib/motion.js';
   import { details, openVideo, saveProgress, resumeAt, seriesOf, subtitlesFor } from '../lib/videos.svelte.js';
@@ -42,10 +43,10 @@
     if (!matched.length) return;
     let live = true;
     let got = [];
-    loadSubtitles(matched, fetchEntry).then((t) => {
-      got = t;
-      if (live) subtitles = t;
-      else releaseSubtitles(t);
+    loadSubtitles(matched, fetchEntry).then((subs) => {
+      got = subs;
+      if (live) subtitles = subs;
+      else releaseSubtitles(subs);
     });
     return () => {
       live = false;
@@ -94,8 +95,8 @@
   }
 
   function onloadedmetadata() {
-    const t = resumeAt(v);
-    if (t) el.currentTime = t;
+    const at = resumeAt(v);
+    if (at) el.currentTime = at;
   }
 
   function onended() {
@@ -106,8 +107,8 @@
   $effect(() => {
     if (countdown === null) return;
     if (countdown <= 0) return untrack(() => go(nextVideo));
-    const t = setTimeout(() => (countdown -= 1), 1000);
-    return () => clearTimeout(t);
+    const tick = setTimeout(() => (countdown -= 1), 1000);
+    return () => clearTimeout(tick);
   });
 
   $effect(() => {
@@ -119,7 +120,7 @@
 
 <div class="fixed inset-0 z-50 flex flex-col bg-bg" role="dialog" aria-label={d.label} use:portal transition:fade>
   <div class="flex items-center gap-3 border-b border-line px-3 pt-[max(env(safe-area-inset-top),0.75rem)] pb-3 md:px-4">
-    <button type="button" class="btn btn-ghost btn-icon" aria-label="Close" onclick={onclose}><Icon name="arrow-left" /></button>
+    <button type="button" class="btn btn-ghost btn-icon" aria-label={t('Close')} onclick={onclose}><Icon name="arrow-left" /></button>
     <div class="grid min-w-0">
       <span class="truncate text-sm font-medium">{d.label}</span>
       {#if d.series}<span class="truncate text-xs text-fg-muted">{d.series}</span>{/if}
@@ -127,7 +128,7 @@
     <SubtitlePicker tracks={subtitles} video={el} class="ml-auto shrink-0" />
     {#if nextVideo}
       <button type="button" class="btn btn-ghost shrink-0 {subtitles.length ? '' : 'ml-auto'}" onclick={() => go(nextVideo)}>
-        <Icon name="skip-forward" /><span class="hidden sm:inline">Next episode</span>
+        <Icon name="skip-forward" /><span class="hidden sm:inline">{t('Next episode')}</span>
       </button>
     {/if}
   </div>
@@ -135,13 +136,13 @@
     {#if error}
       <div class="card grid max-w-sm place-items-center gap-1 px-6 py-8 text-center">
         <Icon name="circle-alert" class="mb-1 size-6 text-fg-muted" />
-        <p class="font-medium">This video can't be played here</p>
+        <p class="font-medium">{t("This video can't be played here")}</p>
         <p class="text-[13px] text-fg-muted">{error}</p>
       </div>
     {:else if src}
       <!-- svelte-ignore a11y_media_has_caption -->
       <video bind:this={el} {src} controls autoplay playsinline class="size-full object-contain" {ontimeupdate} {onloadedmetadata} {onended} onpause={save}>
-        {#each subtitles as t (t.url)}<track kind="subtitles" src={t.url} srclang={t.lang || undefined} label={t.label} />{/each}
+        {#each subtitles as sub (sub.url)}<track kind="subtitles" src={sub.url} srclang={sub.lang || undefined} label={sub.label} />{/each}
       </video>
     {:else}
       <Icon name="loader-circle" class="spinner size-6 text-fg-faint" />
@@ -150,12 +151,12 @@
     {#if countdown !== null && nextVideo}
       <div class="card absolute right-4 bottom-20 grid w-72 gap-3 p-4" transition:fade>
         <div class="grid min-w-0 gap-0.5">
-          <p class="text-xs text-fg-muted">Up next in {countdown}</p>
+          <p class="text-xs text-fg-muted">{t('Up next in {count}', { count: countdown })}</p>
           <p class="truncate text-sm font-medium">{details(nextVideo).label}</p>
         </div>
         <div class="flex gap-2">
-          <button type="button" class="btn btn-accent flex-1" onclick={() => go(nextVideo)}><Icon name="play" />Play now</button>
-          <button type="button" class="btn btn-secondary" onclick={() => (countdown = null)}>Cancel</button>
+          <button type="button" class="btn btn-accent flex-1" onclick={() => go(nextVideo)}><Icon name="play" />{t('Play now')}</button>
+          <button type="button" class="btn btn-secondary" onclick={() => (countdown = null)}>{t('Cancel')}</button>
         </div>
       </div>
     {/if}

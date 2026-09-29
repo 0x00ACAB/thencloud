@@ -1,4 +1,5 @@
 <script>
+  import { t } from '../../lib/i18n.svelte.js';
   // Asks for a name: "New folder" and "New note". (Renaming happens in place.)
   import { untrack } from 'svelte';
   import Modal from '../Modal.svelte';
@@ -7,7 +8,7 @@
   import { nameError } from '../../lib/format.js';
 
   // `initial` is a suggestion when `create` is set; otherwise keeping it unchanged just closes.
-  let { title, label = 'Name', initial = '', confirmLabel = 'Save', create = false, onsave, onclose } = $props();
+  let { title, label = t('Name'), initial = '', confirmLabel = t('Save'), create = false, onsave, onclose } = $props();
 
   let name = $state(untrack(() => initial));
   let busy = $state(false);
@@ -45,7 +46,7 @@
     {#if error}<p class="text-[13px] text-danger">{error}</p>{/if}
   </div>
   {#snippet footer()}
-    <button type="button" class="btn btn-secondary" onclick={onclose}>Cancel</button>
+    <button type="button" class="btn btn-secondary" onclick={onclose}>{t('Cancel')}</button>
     <button class="btn btn-primary" disabled={busy}>
       {#if busy}<Icon name="loader-circle" class="spinner" />{/if}
       {confirmLabel}

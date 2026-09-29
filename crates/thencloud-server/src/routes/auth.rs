@@ -283,6 +283,23 @@ pub async fn me(State(state): State<AppState>, user: AuthUser) -> Result<Json<Me
     ))
 }
 
+/// The caller's own daily transfer limits and what they've used today.
+pub async fn transfer(State(state): State<AppState>, user: AuthUser) -> Result<Json<TransferInfo>> {
+    let (daily_download_limit, daily_upload_limit): (Option<i64>, Option<i64>) =
+        sqlx::query_as("SELECT daily_download_limit, daily_upload_limit FROM users WHERE id = ?")
+            .bind(&user.id)
+            .fetch_one(&state.db)
+            .await?;
+    let (downloaded_today, uploaded_today) = crate::transfer::used_today(&state, &user.id).await?;
+    Ok(Json(TransferInfo {
+        daily_download_limit,
+        daily_upload_limit,
+        downloaded_today,
+        uploaded_today,
+        resets_at: crate::transfer::resets_at(),
+    }))
+}
+
 /// Re-wraps the master key under a new password. File keys are unaffected.
 /// All other sessions are signed out.
 pub async fn change_password(

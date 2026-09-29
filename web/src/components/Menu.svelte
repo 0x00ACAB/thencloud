@@ -1,4 +1,5 @@
 <script>
+  import { t } from '../lib/i18n.svelte.js';
   // Dropdown menu anchored to a trigger button. `items` is a list of
   // { label, icon, onclick, danger, checked } or 'sep' for a separator; items
   // with `checked` (true or false) show a check mark or the space for one.
@@ -6,7 +7,7 @@
   import Icon from './Icon.svelte';
   import { pop, fade, portal } from '../lib/motion.js';
 
-  let { items, label = 'More actions', trigger, align = 'end', buttonClass = 'btn btn-ghost btn-icon' } = $props();
+  let { items, label = t('More actions'), trigger, align = 'end', buttonClass = 'btn btn-ghost btn-icon' } = $props();
 
   let open = $state(false);
   let btn = $state();

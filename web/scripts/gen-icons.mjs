@@ -16,6 +16,7 @@ const ICONS = [
   'music', 'play', 'pause', 'skip-forward', 'skip-back', 'shuffle', 'repeat', 'repeat-1', 'volume-2', 'volume-1', 'volume-x',
   'list-music', 'disc-3', 'audio-lines', 'list-start', 'list-end',
   'list-plus', 'image', 'clapperboard', 'tv', 'film', 'star', 'star-off', 'clock', 'captions', 'notebook-pen', 'pin', 'pin-off',
+  'heart-pulse', 'scale', 'ruler', 'activity', 'file-stack',
 ];
 
 const out = {};

@@ -84,6 +84,12 @@
   --danger-strong: #d93036;
   --danger-soft: #fff0f0;
   --success: #1a7f37;
+  /* The mood meter's four corners (Health): unpleasant or pleasant, with
+   * lots of energy or little. Fills and marks only, never text colours. */
+  --mood-red: #e5484d;
+  --mood-yellow: #e0a800;
+  --mood-blue: #3e7bfa;
+  --mood-green: #2f9e5b;
   --ring: color-mix(in srgb, var(--accent-base) 35%, transparent);
   color-scheme: light;
 }
@@ -105,6 +111,10 @@
   --danger-strong: #c62a30;
   --danger-soft: #2a1113;
   --success: #3fb950;
+  --mood-red: #ff6369;
+  --mood-yellow: #f5c542;
+  --mood-blue: #6b9bff;
+  --mood-green: #4cc38a;
   --ring: color-mix(in srgb, var(--accent-base) 45%, transparent);
   color-scheme: dark;
 }
@@ -156,6 +166,10 @@
   --color-danger-strong: var(--danger-strong);
   --color-danger-soft: var(--danger-soft);
   --color-success: var(--success);
+  --color-mood-red: var(--mood-red);
+  --color-mood-yellow: var(--mood-yellow);
+  --color-mood-blue: var(--mood-blue);
+  --color-mood-green: var(--mood-green);
   --color-ring: var(--ring);
 }
 
@@ -269,7 +283,7 @@
   }
 
   .nav-item {
-    @apply flex h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2 text-sm text-fg-muted transition-colors hover:bg-muted hover:text-fg [&_svg]:size-4;
+    @apply flex min-h-8 w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-left text-sm leading-tight text-fg-muted transition-colors hover:bg-muted hover:text-fg [&_svg]:size-4;
   }
   .nav-item[aria-current="page"] {
     @apply bg-muted font-medium text-fg;

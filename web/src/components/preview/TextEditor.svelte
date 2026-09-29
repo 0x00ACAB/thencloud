@@ -2,6 +2,7 @@
   // Plain-text and code editing: a textarea in the editor font. Tab indents
   // the way the file already does (tabs or two spaces).
   import { onMount, untrack } from 'svelte';
+  import { t } from '../../lib/i18n.svelte.js';
 
   let { text, onchange } = $props();
 
@@ -41,7 +42,7 @@
   spellcheck="false"
   autocapitalize="off"
   autocomplete="off"
-  aria-label="File contents"
+  aria-label={t('File contents')}
   wrap="off"
   {onkeydown}
   oninput={() => onchange(area.value)}></textarea>

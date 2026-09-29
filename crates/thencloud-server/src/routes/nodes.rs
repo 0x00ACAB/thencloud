@@ -1,14 +1,15 @@
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use thencloud_crypto::api::*;
 
 use crate::access::{self, Access};
 use crate::auth::AuthUser;
-use crate::db::{NodeRow, get_children, get_node};
+use crate::db::{ChildrenQuery, NodeRow, children_response, get_node};
 use crate::error::{AppError, Result, is_unique_violation, name_conflict};
 use crate::routes::activity::{self, Event};
+use crate::transfer;
 use crate::util::*;
 use crate::{AppState, subtree_cte};
 
@@ -26,14 +27,14 @@ pub async fn children(
     State(state): State<AppState>,
     user: AuthUser,
     Path(id): Path<String>,
-) -> Result<Json<Vec<Node>>> {
+    Query(q): Query<ChildrenQuery>,
+) -> Result<Response> {
     access::require(&state.db, &user.id, &id, Access::Read).await?;
     let node = get_node(&state.db, &id).await?.ok_or(AppError::NotFound)?;
     if !node.is_folder() {
         return Err(AppError::bad("not a folder"));
     }
-    let kids = get_children(&state.db, &id).await?;
-    Ok(Json(kids.into_iter().map(NodeRow::into_api).collect()))
+    children_response(&state.db, &id, q).await
 }
 
 /// The chain of nodes the caller needs to derive this node's key: from
@@ -335,18 +336,24 @@ pub async fn chunk(
 ) -> Result<Response> {
     access::require(&state.db, &user.id, &id, Access::Read).await?;
     let node = get_node(&state.db, &id).await?.ok_or(AppError::NotFound)?;
-    current_chunk(&state, node, idx).await
+    current_chunk(&state, node, idx, &user.id).await
 }
 
-/// Serve one chunk of a file's current version.
-pub async fn current_chunk(state: &AppState, node: NodeRow, idx: u32) -> Result<Response> {
+/// Serve one chunk of a file's current version, counted against `payer`'s
+/// daily download limit.
+pub async fn current_chunk(
+    state: &AppState,
+    node: NodeRow,
+    idx: u32,
+    payer: &str,
+) -> Result<Response> {
     if node.is_folder() {
         return Err(AppError::bad("not a file"));
     }
     let (Some(vid), Some(count)) = (node.v_id, node.v_chunks) else {
         return Err(AppError::NotFound);
     };
-    chunk_response(state, &vid, count, idx).await
+    chunk_response(state, &vid, count, idx, payer).await
 }
 
 /// Serve one encrypted chunk of a version. The version id is returned in
@@ -357,10 +364,12 @@ pub async fn chunk_response(
     version_id: &str,
     chunk_count: i64,
     idx: u32,
+    payer: &str,
 ) -> Result<Response> {
     if i64::from(idx) >= chunk_count {
         return Err(AppError::NotFound);
     }
+    transfer::check(state, payer, transfer::Dir::Down).await?;
     let data = state.blobs.get_chunk(version_id, idx).await.map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
             AppError::Internal(format!("blob missing for version {version_id} chunk {idx}"))
@@ -368,6 +377,7 @@ pub async fn chunk_response(
             AppError::Io(e)
         }
     })?;
+    transfer::add(state, payer, transfer::Dir::Down, data.len() as i64).await?;
     let mut h = HeaderMap::new();
     h.insert(
         header::CONTENT_TYPE,

@@ -2,7 +2,7 @@
 // encrypted app data ("files"), so the server learns neither which files
 // they are nor their names; names are decrypted here by resolving each id's
 // path, and kept in memory only.
-import { resolvePath, loadAppData, saveAppData } from './cloud.svelte.js';
+import { resolvePath, loadAppData, saveAppData, folderLabel } from './cloud.svelte.js';
 
 const MAX_RECENT = 30;
 
@@ -71,7 +71,7 @@ export function resolvePlaces(ids) {
     ids.map(async (id) => {
       try {
         const { items } = await resolvePath(id);
-        return { id, entry: items.at(-1), parentId: items.at(-2)?.node.id ?? null, location: items.slice(0, -1).map((i) => i.meta.name) };
+        return { id, entry: items.at(-1), parentId: items.at(-2)?.node.id ?? null, location: items.slice(0, -1).map(folderLabel) };
       } catch (e) {
         // Only a missing node is forgotten; a network error isn't proof.
         return { id, entry: null, missing: e?.status === 404 };

@@ -2,6 +2,7 @@
   // CSV and TSV as a table: the first row is the header, and clicking a
   // header sorts by that column (numbers by value). Very long files show
   // their first rows only; the Source view still has everything.
+  import { formatNumber } from '../../lib/locale.svelte.js';
   import Icon from '../Icon.svelte';
   import { parseCsv, compareCells } from '../../lib/csv.js';
 
@@ -72,7 +73,7 @@
       </table>
     </div>
     <p class="shrink-0 border-t border-line px-4 py-2 text-xs text-fg-faint">
-      {body.length.toLocaleString()} {body.length === 1 ? 'row' : 'rows'}{truncated ? ` shown, the file has more. Use Source to see all of it.` : ''}
+      {formatNumber(body.length)} {body.length === 1 ? 'row' : 'rows'}{truncated ? ` shown, the file has more. Use Source to see all of it.` : ''}
     </p>
   {/if}
 </div>

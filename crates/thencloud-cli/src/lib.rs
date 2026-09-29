@@ -216,9 +216,42 @@ impl Client {
         Ok(Entry { node, key, meta })
     }
 
+    /// One page of the change feed: node ids that changed in our tree and
+    /// under anything shared with us after `since`. Without `since`, just
+    /// the current cursor (take it before walking the tree).
+    pub fn changes(&self, since: Option<i64>) -> Result<ChangeFeed> {
+        match since {
+            Some(s) => self.get_json(&format!("/api/changes?since={s}")),
+            None => self.get_json("/api/changes"),
+        }
+    }
+
+    /// The folder a node is in now, or `None` if it's gone (or no longer
+    /// ours to see).
+    pub fn parent_of(&self, id: &str) -> Result<Option<String>> {
+        match self.get_json::<Node>(&format!("/api/nodes/{id}")) {
+            Ok(n) => Ok(n.parent_id),
+            Err(Error::Api(404, ..)) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+
     /// A folder's children, folders first, then by name.
     pub fn list(&self, folder: &Entry) -> Result<Vec<Entry>> {
-        let nodes: Vec<Node> = self.get_json(&format!("/api/nodes/{}/children", folder.node.id))?;
+        let mut nodes = Vec::new();
+        let mut after: Option<String> = None;
+        loop {
+            let mut path = format!("/api/nodes/{}/children?limit=2000", folder.node.id);
+            if let Some(a) = &after {
+                path.push_str(&format!("&after={}", url_escape(a)));
+            }
+            let page: NodePage = self.get_json(&path)?;
+            nodes.extend(page.nodes);
+            match page.next {
+                Some(n) => after = Some(n),
+                None => break,
+            }
+        }
         let mut out = Vec::with_capacity(nodes.len());
         for node in nodes {
             let key = c::unwrap_node_key(&folder.key, &node.enc_key, &node.id)?;
@@ -735,6 +768,19 @@ fn same_file(path: &Path, size: u64, mtime_ms: i64) -> bool {
 
 /// A name that's safe as one path segment on disk: names come from whoever
 /// uploaded the file, so "../x" must not escape the target directory.
+/// Percent-encodes everything but unreserved characters, for a query value.
+fn url_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
 pub fn safe_name(name: &str) -> String {
     let clean: String = name
         .chars()
