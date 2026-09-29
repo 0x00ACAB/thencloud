@@ -2,6 +2,7 @@
   // Set up an authenticator app: confirm the password, scan the code (or
   // type the secret), then enter a code from the app to turn it on.
   import { t } from '../../lib/i18n.svelte.js';
+  import { serverOrigin } from '../../lib/server.svelte.js';
   import Modal from '../Modal.svelte';
   import Icon from '../Icon.svelte';
   import QrCode from '../QrCode.svelte';
@@ -18,7 +19,7 @@
 
   const uri = $derived.by(() => {
     if (!setup) return '';
-    const issuer = `thencloud (${location.host})`;
+    const issuer = `thencloud (${new URL(serverOrigin()).host})`;
     const label = encodeURIComponent(`${issuer}:${session.me.username}`);
     return `otpauth://totp/${label}?secret=${setup.secret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
   });

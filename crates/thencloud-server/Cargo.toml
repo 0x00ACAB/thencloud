@@ -26,7 +26,7 @@ futures-core = "0.3"
 futures-util = { version = "0.3", default-features = false }
 libc = "0.2"
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros"] }
-tower-http = { version = "0.7", features = ["fs", "trace", "set-header"] }
+tower-http = { version = "0.7", features = ["cors", "fs", "trace", "set-header"] }
 argon2 = "0.6"
 uuid = { version = "1", features = ["v4"] }
 clap = { version = "4", features = ["derive", "env"] }
@@ -34,7 +34,10 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ring = "0.17"
 ciborium = "0.2"
-aws-sdk-s3 = { version = "1", default-features = false, features = ["rt-tokio", "rustls"] }
+aws-sdk-s3 = { version = "1", default-features = false, features = ["rt-tokio"] }
+# The HTTPS client for S3, on rustls with ring (already used here) rather
+# than aws-lc, which needs a C toolchain and cmake to build.
+aws-smithy-http-client = { version = "1", default-features = false, features = ["rustls-ring"] }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["crates/thencloud-crypto", "crates/thencloud-wasm", "crates/thencloud-server", "crates/thencloud-cli"]
-exclude = ["fuzz"]
+exclude = ["fuzz", "crates/thencloud-app"]
 
 [workspace.package]
 version = "0.1.0"

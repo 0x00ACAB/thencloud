@@ -27,11 +27,24 @@ const pdfjsAssets = () =>
 // The Rust server serves `dist/` and enforces a strict CSP (same-origin
 // scripts only, no inline scripts/styles, no data: URIs). The build output
 // must stay compatible with that.
+let outDir = 'dist';
+let appBuild = false;
 export default defineConfig({
   plugins: [
     tailwindcss(),
     svelte(),
     fileIcons(),
+    {
+      // `--mode app` builds the copy the desktop and Android apps bundle
+      // (crates/thencloud-app) into dist-app/, without compressed copies,
+      // since nothing serves them there.
+      name: 'thencloud-app',
+      config: (_, { mode }) => (mode === 'app' ? { build: { outDir: 'dist-app' } } : undefined),
+      configResolved(c) {
+        outDir = c.build.outDir;
+        appBuild = c.mode === 'app';
+      },
+    },
     {
       // Files in public/ are copied as they are: minify the scripts and the
       // favicon. Then write foo.js.gz and foo.js.br next to every
@@ -41,14 +54,15 @@ export default defineConfig({
       apply: 'build',
       async closeBundle() {
         for (const f of ['sw.js', 'theme-init.js']) {
-          const path = join('dist', f);
+          const path = join(outDir, f);
           writeFileSync(path, minifySync(f, readFileSync(path, 'utf8'), { module: false }).code);
         }
-        writeFileSync('dist/favicon.svg', optimize(readFileSync('dist/favicon.svg', 'utf8'), SVGO).data);
+        writeFileSync(join(outDir, 'favicon.svg'), optimize(readFileSync(join(outDir, 'favicon.svg'), 'utf8'), SVGO).data);
+        if (appBuild) return;
 
         const walk = (dir) =>
           readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]));
-        const files = walk('dist').filter((f) => /\.(js|mjs|css|html|wasm|svg|json|bcmap|ttf|pfb|icc)$/.test(f) && statSync(f).size >= 1024);
+        const files = walk(outDir).filter((f) => /\.(js|mjs|css|html|wasm|svg|json|bcmap|ttf|pfb|icc)$/.test(f) && statSync(f).size >= 1024);
         await Promise.all(
           files.map(async (f) => {
             const raw = readFileSync(f);
