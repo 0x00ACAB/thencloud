@@ -143,7 +143,7 @@ Smaller things:
 ## Milestone 8: Hardening
 
 - [x] **Format spec**: a written description of every ciphertext format, key derivation and wire type, with test vectors that the Rust tests, the WASM build and any other client check against. `docs/format/README.md` and `vectors.json`: every wrapped key, sealed box, metadata and chunk format with its associated data, the KDFs, name tags, fingerprints, padding and the recovery key encoding, plus ciphertexts that must not open (moved, swapped, cut short)
-- [ ] **Format versions**: a version byte on every ciphertext and a tested path for moving old data to a new format
+- [x] **Format versions**: a version byte on every ciphertext and a tested path for moving old data to a new format. Every symmetric ciphertext starts with `0x01` and every sealed box with its kind (`0x01` X25519, `0x02` hybrid, no longer told apart by length); an unknown one is refused with "update to open it" rather than misread, and the vectors include such ciphertexts. The spec describes how a later layout moves data over (readers take both, writers the new one, data rewritten as it changes); there is no older data to move yet
 - [x] **Fuzzing**: `cargo-fuzz` targets for the crypto decoders and the server's request parsing, and fuzz tests for the untrusted parsers in the browser (`tags.js`, `videotags.js`, the zip and PDF link handling). Also sealed boxes, WebAuthn, and in the browser photos, CSV, subtitles and episode names; in CI on every push and weekly for longer
 - [x] **Browser tests**: Playwright in CI for sign-up, upload, share, public links and previews, including a check that no request carries a name, key or plaintext
 - [x] **Dependency checks**: `cargo-deny` (advisories and licences) and `npm audit` in CI, on every push and weekly
@@ -156,7 +156,7 @@ Smaller things:
 - [x] **Coarse timestamps**: the server records created and changed times rounded to the hour (the exact times stay in the encrypted metadata). Nodes, versions and the trash; the metadata's new `changed` field holds the exact time, and items from before fall back to the server's
 - [ ] **Hide file vs folder**: store the node type in the encrypted metadata, so the server sees only nodes that have children or content
 - [x] **Onion service**: document and test running thencloud as a Tor onion service, so the server doesn't learn clients' IP addresses. `--limit-by-address false` keeps one visitor's wrong guesses from locking everyone out (all arrive from Tor's address); passkeys work on `http://…onion`; the browser tests run through Tor with `THENCLOUD_E2E_URL` and `THENCLOUD_E2E_PROXY`
-- [ ] **Uniform upload sizes**: small files uploaded in batches padded to fixed sizes, so upload timing and count give away less
+- [x] **Uniform upload sizes**: small files uploaded in batches padded to fixed sizes, so upload timing and count give away less. Every file under 16 KiB is now stored as 16 KiB, so small files all look alike; batching was left out, since the server learns the count once they're stored anyway
 
 ## Milestone 10: More ways to open files
 
