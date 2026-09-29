@@ -17,6 +17,8 @@ use aws_sdk_s3::config::{
 };
 use aws_sdk_s3::error::SdkError;
 use aws_sdk_s3::types::{Delete, ObjectIdentifier};
+use aws_smithy_http_client::tls::Provider;
+use aws_smithy_http_client::tls::rustls_provider::CryptoMode;
 
 use crate::Config;
 
@@ -77,8 +79,12 @@ pub fn target(
     secret_key: &str,
     prefix: &str,
 ) -> S3Target {
+    let https = aws_smithy_http_client::Builder::new()
+        .tls_provider(Provider::Rustls(CryptoMode::Ring))
+        .build_https();
     let conf = aws_sdk_s3::config::Builder::new()
         .behavior_version(BehaviorVersion::latest())
+        .http_client(https)
         .endpoint_url(endpoint)
         .region(Region::new(region.to_string()))
         .credentials_provider(Credentials::new(
