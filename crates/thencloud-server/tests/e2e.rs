@@ -1188,6 +1188,37 @@ async fn security_headers_are_set() {
             .unwrap()
             .contains("default-src 'self'")
     );
+    // The page can only talk to this server: no analytics, fonts, CDNs or
+    // anything else elsewhere, now or by a later change to the policy.
+    let csp = r
+        .headers
+        .get("content-security-policy")
+        .unwrap()
+        .to_str()
+        .unwrap();
+    let mut directives = std::collections::HashMap::new();
+    for d in csp.split(';').map(str::trim).filter(|d| !d.is_empty()) {
+        let mut words = d.split_whitespace();
+        let name = words.next().unwrap();
+        let sources: Vec<&str> = words.collect();
+        for s in &sources {
+            assert!(
+                ["'self'", "'none'", "blob:", "'wasm-unsafe-eval'"].contains(s),
+                "{name} allows {s}"
+            );
+        }
+        directives.insert(name, sources);
+    }
+    // form-action and frame-ancestors don't fall back to default-src.
+    for name in [
+        "default-src",
+        "connect-src",
+        "form-action",
+        "frame-ancestors",
+        "base-uri",
+    ] {
+        assert!(directives.contains_key(name), "{name} is missing");
+    }
     assert_eq!(r.headers.get("cache-control").unwrap(), "no-store");
 
     // Pages are always revalidated; hashed assets are cached for good, but
