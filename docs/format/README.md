@@ -31,10 +31,13 @@ Everything symmetric is XChaCha20-Poly1305 with a 256-bit key and a fresh
 random 24-byte nonce:
 
 ```
-sealed = nonce (24) || ciphertext || tag (16)
+sealed = 0x01 || nonce (24) || ciphertext || tag (16)
 ```
 
-Anything shorter than 40 bytes fails to open. Every use binds its context as
+The first byte is the format version. A reader refuses a version it doesn't
+know (saying it needs a newer client) instead of trying to read it, so a new
+layout can be added without old clients misreading it. Anything shorter than
+41 bytes fails to open. Every use binds its context as
 associated data:
 
 ```
@@ -251,9 +254,13 @@ A file version's plaintext is padded with zeros to `padded_size(size)` and
 cut into 4 MiB (4194304-byte) chunks. The real size is in the metadata;
 readers drop the zeros after it.
 
+Every file under 16 KiB is padded to exactly 16 KiB, so small files (notes,
+configs, scripts) all look the same size to the server. Above that it's
+Padmé:
+
 ```
 padded_size(size):             # Padmé: at most about 12% larger
-    L = max(size, 256)
+    L = max(size, 16384)
     E = floor(log2(L))
     S = floor(log2(E)) + 1
     mask = 2^(E - S) - 1
@@ -271,7 +278,7 @@ chunk_i = seal(content_key, piece_i, aad("chunk", version_id, decimal(i), "last"
 
 Chunks can't be reordered, swapped between versions, or dropped from the end:
 a file cut short has no chunk marked `last`. An encrypted chunk is at most
-4194344 bytes.
+4194345 bytes.
 
 ## Sealed boxes
 
@@ -284,7 +291,7 @@ online together. They're used for shares, file drops and avatar keys.
 eph     = random X25519 secret
 shared  = X25519(eph, recipient_x25519)
 k       = HKDF(salt: eph_pub || recipient_x25519, ikm: shared, info: "thencloud/v1/sealed-box")
-box     = eph_pub (32) || seal(k, plaintext, aad)
+box     = 0x01 || eph_pub (32) || seal(k, plaintext, aad)
 ```
 
 **To an X25519 + ML-KEM-768 key** (1216 bytes). This stays closed as long as
@@ -300,9 +307,8 @@ k   = HKDF(salt: eph_pub || recipient_x25519 || SHA256(ct) || SHA256(recipient_m
 box = 0x02 || eph_pub (32) || ct (1088) || seal(k, plaintext, aad)
 ```
 
-A reader treats a box as hybrid when it starts with `0x02` and is at least
-1161 bytes long. Every payload is a 32-byte key, so a classic box is always
-shorter than that. A hybrid box can't be opened without the ML-KEM key.
+The first byte says which kind a box is; a reader refuses any other value.
+A hybrid box can't be opened without the ML-KEM key.
 
 | Format | Plaintext | Associated data |
 |---|---|---|
@@ -358,8 +364,18 @@ Chunks are uploaded and fetched as raw bytes at
 
 ## Versions
 
-Associated data starts with `thencloud/v1/`. Of the key derivation labels,
-only the hybrid sealed box uses `v2`, since it came later. A format that
-changes gets a new label, so old and new ciphertexts can't be confused. The
-vectors in this directory must keep passing: new formats add vectors and
-never replace old ones.
+Every symmetric ciphertext starts with a version byte (`0x01`), and every
+sealed box with a kind byte (`0x01` X25519, `0x02` hybrid). Associated data
+starts with `thencloud/v1/`; of the key derivation labels, only the hybrid
+sealed box uses `v2`, since it came later.
+
+A new layout gets a new version or kind byte and, if its associated data
+changes, a new label, so old and new ciphertexts can't be confused. Readers
+then accept both, writers write the new one, and data moves over as it's
+rewritten: wrapped keys and metadata when a node is next changed, file
+contents with the next version. The vectors keep the old layout's
+ciphertexts, so every client is checked against both.
+
+Until the first release a layout may still change in place, as the version
+byte itself did; `vectors.json` is then written again and every client
+follows it.
