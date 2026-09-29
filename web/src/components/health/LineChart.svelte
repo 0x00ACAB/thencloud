@@ -40,7 +40,7 @@
   const yHi = $derived(domain ? domain[1] : yTicks[yTicks.length - 1]);
   const plotW = $derived(Math.max(10, width - PAD.left - PAD.right));
   const plotH = $derived(height - PAD.top - PAD.bottom);
-  const x = (t) => PAD.left + ((t - from) / Math.max(1, to - from)) * plotW;
+  const x = (ms) => PAD.left + ((ms - from) / Math.max(1, to - from)) * plotW;
   const y = (v) => PAD.top + (1 - (v - yLo) / Math.max(1e-9, yHi - yLo)) * plotH;
 
   const xTicks = $derived.by(() => {
@@ -48,8 +48,8 @@
     const n = Math.max(2, Math.min(6, Math.floor(plotW / 110)));
     const opts = span > 400 * 86400e3 ? { month: 'short', year: 'numeric' } : { month: 'short', day: 'numeric' };
     return Array.from({ length: n }, (_, i) => {
-      const t = from + (span * i) / (n - 1);
-      return { t, text: formatDateTime(t, opts) };
+      const at = from + (span * i) / (n - 1);
+      return { t: at, text: formatDateTime(at, opts) };
     });
   });
 
