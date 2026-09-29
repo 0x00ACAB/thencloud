@@ -41,7 +41,7 @@ use crate::error::AppError;
 /// `location.hash` must come from this server.
 const CSP: &str = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; \
      img-src 'self' blob:; media-src 'self' blob:; style-src 'self'; object-src 'none'; base-uri 'none'; \
-     frame-ancestors 'none'";
+     form-action 'self'; frame-ancestors 'none'";
 
 pub fn router(state: AppState) -> Router {
     let api = Router::new()

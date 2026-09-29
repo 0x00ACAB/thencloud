@@ -1,10 +1,12 @@
-import { expect } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
 /**
  * Record every request a browser context makes, so a test can check none
  * of them carried a secret: a file's name or contents, a password, a key.
  * Requests the service worker answers itself (/_stream/) never reach the
- * server, but they're checked too.
+ * server, but they're checked too. Every request must also go to the
+ * server under test (or stay in the browser, as blob: and data: URLs do):
+ * the page talks to nothing else, no analytics, fonts or CDNs.
  */
 export function watchRequests(context) {
   const seen = [];
@@ -12,6 +14,7 @@ export function watchRequests(context) {
   context.on('request', (r) =>
     seen.push({
       what: `${r.method()} ${r.url()}`,
+      raw: r.url(),
       url: decodeURIComponent(r.url()),
       headers: r.allHeaders().then(JSON.stringify, () => JSON.stringify(r.headers())),
       body: r.postDataBuffer() ?? Buffer.alloc(0),
@@ -21,7 +24,10 @@ export function watchRequests(context) {
     async expectNone(secrets) {
       const needles = secrets.filter(Boolean).map((s) => Buffer.from(s));
       expect(seen.length).toBeGreaterThan(0);
+      const own = new URL(test.info().project.use.baseURL).origin;
       for (const r of seen) {
+        const { protocol, origin } = new URL(r.raw);
+        expect(['blob:', 'data:'].includes(protocol) || origin === own, `${r.what} goes somewhere other than ${own}`).toBe(true);
         const headers = await r.headers;
         for (const n of needles) {
           const what = `${r.what} carries ${JSON.stringify(n.toString())}`;
