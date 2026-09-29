@@ -14,9 +14,37 @@ pub struct Config {
     #[arg(long, env = "THENCLOUD_BIND", default_value = "127.0.0.1:8080")]
     pub bind: SocketAddr,
 
-    /// Directory for the database and encrypted blobs.
+    /// Directory for the database (and the encrypted blobs, unless an S3
+    /// bucket is configured below).
     #[arg(long, env = "THENCLOUD_DATA_DIR", default_value = "./data")]
     pub data_dir: PathBuf,
+
+    /// Endpoint of an S3-compatible blob store (e.g. https://s3.amazonaws.com
+    /// or http://127.0.0.1:9000 for MinIO). Set this, the bucket and both
+    /// keys to store blobs in S3 instead of the data directory; the database
+    /// always stays local. Requests are path-style.
+    #[arg(long, env = "THENCLOUD_S3_ENDPOINT")]
+    pub s3_endpoint: Option<String>,
+
+    /// S3 region; most S3-compatible servers accept anything.
+    #[arg(long, env = "THENCLOUD_S3_REGION", default_value = "us-east-1")]
+    pub s3_region: String,
+
+    /// S3 bucket for the blobs.
+    #[arg(long, env = "THENCLOUD_S3_BUCKET")]
+    pub s3_bucket: Option<String>,
+
+    /// S3 access key.
+    #[arg(long, env = "THENCLOUD_S3_ACCESS_KEY")]
+    pub s3_access_key: Option<String>,
+
+    /// S3 secret key.
+    #[arg(long, env = "THENCLOUD_S3_SECRET_KEY", hide_env_values = true)]
+    pub s3_secret_key: Option<String>,
+
+    /// Key prefix inside the bucket (e.g. "thencloud/").
+    #[arg(long, env = "THENCLOUD_S3_PREFIX", default_value = "")]
+    pub s3_prefix: String,
 
     /// Directory with the built web client (`web/dist`, see build.sh).
     #[arg(long, env = "THENCLOUD_WEB_DIR", default_value = "./web/dist")]
@@ -100,6 +128,12 @@ impl Config {
             bind: "127.0.0.1:0".parse().unwrap(),
             data_dir: dir.join("data"),
             web_dir: dir.join("web"),
+            s3_endpoint: None,
+            s3_region: "us-east-1".into(),
+            s3_bucket: None,
+            s3_access_key: None,
+            s3_secret_key: None,
+            s3_prefix: String::new(),
             allow_registration: true,
             default_quota: 1024 * 1024 * 1024,
             session_days: 30,

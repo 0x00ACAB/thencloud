@@ -1,8 +1,8 @@
 use std::path::Path;
 use std::time::Duration;
 
-use sqlx::SqlitePool;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
+use sqlx::{AssertSqlSafe, SqlitePool};
 use thencloud_crypto::api::{B64, Node, NodeKind, VersionInfo};
 
 use crate::error::{AppError, Result};
@@ -114,7 +114,7 @@ impl NodeRow {
 
 pub async fn get_node<'e, E: sqlx::SqliteExecutor<'e>>(e: E, id: &str) -> Result<Option<NodeRow>> {
     let sql = format!("{NODE_SELECT} WHERE n.id = ?");
-    Ok(sqlx::query_as::<_, NodeRow>(&sql)
+    Ok(sqlx::query_as::<_, NodeRow>(AssertSqlSafe(sql))
         .bind(id)
         .fetch_optional(e)
         .await?)
@@ -191,7 +191,7 @@ pub async fn get_children(db: &SqlitePool, parent_id: &str) -> Result<Vec<NodeRo
     let sql = format!(
         "{NODE_SELECT} WHERE n.parent_id = ? AND n.trashed_at IS NULL AND n.dropped = 0 ORDER BY n.kind DESC, n.created_at, n.id"
     );
-    Ok(sqlx::query_as::<_, NodeRow>(&sql)
+    Ok(sqlx::query_as::<_, NodeRow>(AssertSqlSafe(sql))
         .bind(parent_id)
         .fetch_all(db)
         .await?)

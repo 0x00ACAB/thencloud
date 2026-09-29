@@ -14,6 +14,7 @@ pub mod janitor;
 pub mod limiter;
 pub mod maintenance;
 pub mod routes;
+pub mod s3;
 pub mod settings;
 pub mod totp;
 pub mod transfer;
@@ -49,7 +50,10 @@ impl AppState {
         tokio::fs::create_dir_all(&config.data_dir).await?;
         let db = db::open(&config.data_dir.join("thencloud.db")).await?;
         let secret = db::server_secret(&db).await?;
-        let blobs = blob::BlobStore::new(config.data_dir.join("blobs"));
+        let blobs = match s3::target_from_config(&config)? {
+            Some(target) => blob::BlobStore::s3(target),
+            None => blob::BlobStore::local(config.data_dir.join("blobs")),
+        };
         let dummy_hash = util::hash_secret(b"thencloud-dummy".to_vec()).await?;
         let downloader = downloader::Downloader::new(
             config.yt_dlp.clone(),

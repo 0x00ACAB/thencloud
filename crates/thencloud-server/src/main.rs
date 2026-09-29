@@ -1,5 +1,4 @@
 use std::net::SocketAddr;
-use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
@@ -19,11 +18,14 @@ struct Cli {
 enum Command {
     /// Serve thencloud (the default).
     Serve,
-    /// Snapshot the database and the blobs it refers to into DIR, which
-    /// must be new or empty. Safe while the server runs. DIR is a data
-    /// directory of its own: to restore, stop the server and start it with
-    /// --data-dir pointing at a copy of DIR.
-    Backup { dir: PathBuf },
+    /// Snapshot the database and the blobs it refers to into DEST, which
+    /// must be new or empty: a directory, or s3://BUCKET/PREFIX (using the
+    /// configured S3 endpoint and credentials). Safe while the server runs.
+    /// A directory DEST is a data directory of its own: to restore, stop
+    /// the server and start it with --data-dir pointing at a copy of DEST.
+    /// To restore an S3 DEST, put its thencloud.db in a data directory and
+    /// point --s3-prefix at the backup's blobs/ prefix.
+    Backup { dest: String },
     /// Check that every blob the database expects exists with the right
     /// size, and list blob directories nothing refers to.
     Check,
@@ -40,7 +42,7 @@ async fn main() -> Result<ExitCode, Box<dyn std::error::Error + Send + Sync>> {
 
     let Cli { config, command } = Cli::parse();
     match command {
-        Some(Command::Backup { dir }) => return backup(config, dir).await,
+        Some(Command::Backup { dest }) => return backup(config, dest).await,
         Some(Command::Check) => return check(config).await,
         Some(Command::Serve) | None => {}
     }
@@ -78,15 +80,14 @@ async fn open(config: Config) -> Result<AppState, Box<dyn std::error::Error + Se
 
 async fn backup(
     config: Config,
-    dir: PathBuf,
+    dest: String,
 ) -> Result<ExitCode, Box<dyn std::error::Error + Send + Sync>> {
+    let parsed = maintenance::BackupDest::parse(&dest, &config)?;
     let state = open(config).await?;
-    let r = maintenance::backup(&state.db, &state.config.data_dir, &dir).await?;
+    let r = maintenance::backup(&state.db, &state.blobs, &parsed).await?;
     println!(
         "Backed up the database and {} chunks ({} bytes) to {}",
-        r.chunks,
-        r.bytes,
-        dir.display()
+        r.chunks, r.bytes, dest
     );
     if r.missing.is_empty() {
         return Ok(ExitCode::SUCCESS);
@@ -103,7 +104,7 @@ async fn backup(
 
 async fn check(config: Config) -> Result<ExitCode, Box<dyn std::error::Error + Send + Sync>> {
     let state = open(config).await?;
-    let r = maintenance::check(&state.db, &state.config.data_dir).await?;
+    let r = maintenance::check(&state.db, &state.blobs).await?;
     println!("Checked {} versions, {} chunks", r.versions, r.chunks);
     for (version, idx) in &r.missing {
         println!("missing: {version}/{idx}");
