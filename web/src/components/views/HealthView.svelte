@@ -27,8 +27,8 @@
   // Kept current, so the chart's right edge moves on while the page is open.
   let now = $state(Date.now());
   $effect(() => {
-    const t = setInterval(() => (now = Date.now()), 60_000);
-    return () => clearInterval(t);
+    const tick = setInterval(() => (now = Date.now()), 60_000);
+    return () => clearInterval(tick);
   });
   function span(list) {
     const days = RANGES.find((r) => r[0] === range)[2];

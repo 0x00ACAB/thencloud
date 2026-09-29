@@ -105,7 +105,7 @@
 
   // Daily transfer limits, shown only when an admin set some.
   let transfer = $state(null);
-  onMount(() => myTransfer().then((t) => (transfer = t)).catch(() => {}));
+  onMount(() => myTransfer().then((info) => (transfer = info)).catch(() => {}));
 
   // Optional modules (and the language and region settings, in the same app data).
   onMount(() => loadModules().catch(() => {}));

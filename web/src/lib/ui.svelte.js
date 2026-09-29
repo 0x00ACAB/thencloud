@@ -17,7 +17,7 @@ export function toast(message, { kind = 'info', timeout = 4000, action = null, i
 }
 
 export function dismissToast(id) {
-  const i = toasts.findIndex((t) => t.id === id);
+  const i = toasts.findIndex((x) => x.id === id);
   if (i >= 0) toasts.splice(i, 1);
 }
 

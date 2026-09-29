@@ -49,7 +49,7 @@
     </header>
     {#if !collapsed}
       <ul class="max-h-64 divide-y divide-line overflow-y-auto">
-        {#each transfers as t (job.id)}
+        {#each transfers as job (job.id)}
           <li class="grid gap-1.5 px-3.5 py-2.5" in:slide out:slide>
             <div class="flex items-center gap-2 text-[13px]">
               <Icon name={job.kind === 'upload' ? 'upload' : 'download'} class="size-3.5 shrink-0 text-fg-faint" />

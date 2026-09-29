@@ -25,7 +25,7 @@
     // Tracks can arrive after this runs.
     list.addEventListener('addtrack', apply);
     const sync = () => {
-      const i = [...list].findIndex((t) => t.mode === 'showing');
+      const i = [...list].findIndex((track) => track.mode === 'showing');
       if (i !== selected) selected = i;
     };
     list.addEventListener('change', sync);
@@ -42,7 +42,7 @@
     <Icon name="captions" class="pointer-events-none absolute left-2.5 size-4 text-fg-muted" />
     <select class="input h-8 w-auto max-w-44 pl-8 text-[13px]" bind:value={selected} title={t('Subtitles')}>
       <option value={-1}>{t('Subtitles off')}</option>
-      {#each tracks as t, i (t.url)}<option value={i}>{t.label}</option>{/each}
+      {#each tracks as track, i (track.url)}<option value={i}>{track.label}</option>{/each}
     </select>
   </label>
 {/if}
