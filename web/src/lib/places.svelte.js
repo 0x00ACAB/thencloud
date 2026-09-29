@@ -6,8 +6,11 @@ import { resolvePath, loadAppData, saveAppData, folderLabel } from './cloud.svel
 
 const MAX_RECENT = 30;
 
-/** `favourites`: [node id]; `recent`: [{ id, at }], newest first; `tags`: { node id: [tag] }. */
-export const places = $state({ favourites: [], recent: [], tags: {}, loaded: false });
+/**
+ * `favourites`: [node id]; `recent`: [{ id, at }], newest first; `tags`: { node id: [tag] };
+ * `searches`: [{ id, name, query, scope }] (scope 'all' or 'contents').
+ */
+export const places = $state({ favourites: [], recent: [], tags: {}, searches: [], loaded: false });
 
 let loading = null;
 
@@ -17,6 +20,7 @@ export function loadPlaces() {
       places.favourites = d.favourites ?? [];
       places.recent = d.recent ?? [];
       places.tags = d.tags ?? {};
+      places.searches = d.searches ?? [];
       places.loaded = true;
     },
     (e) => {
@@ -139,3 +143,23 @@ export async function setTags(id, tags) {
     throw e;
   }
 }
+
+// ---------------------------------------------------------------- saved searches
+
+const MAX_SEARCHES = 50;
+
+/** Keep a search (the search box's text and where it looked) under `name`. */
+export async function saveSearch(name, query, scope) {
+  const entry = { id: crypto.randomUUID(), name, query, scope };
+  places.searches = [...places.searches, entry];
+  const d = await saveAppData('files', (d) => (d.searches = [...(d.searches ?? []), entry].slice(-MAX_SEARCHES)));
+  places.searches = d.searches;
+  return entry;
+}
+
+export async function forgetSearch(id) {
+  places.searches = places.searches.filter((x) => x.id !== id);
+  const d = await saveAppData('files', (d) => (d.searches = (d.searches ?? []).filter((x) => x.id !== id)));
+  places.searches = d.searches;
+}
+

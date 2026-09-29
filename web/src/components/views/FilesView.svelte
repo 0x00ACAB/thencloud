@@ -31,11 +31,13 @@
   import PdfToolsDialog from '../dialogs/PdfToolsDialog.svelte';
   // Kept here: pdfedit.js pulls in pdf-lib, which loads only with the dialog.
   const isPdf = (meta) => meta.mime === 'application/pdf' || /\.pdf$/i.test(meta.name);
-  import { previewKind } from '../../lib/preview.js';
+  import { previewKind, extension } from '../../lib/preview.js';
   import { play, enqueue, makeTrack } from '../../lib/music.svelte.js';
-  import { isFavourite, toggleFavourite, noteRecent, tagsOf } from '../../lib/places.svelte.js';
+  import { isFavourite, toggleFavourite, noteRecent, tagsOf, places, saveSearch, forgetSearch } from '../../lib/places.svelte.js';
+  import { parseQuery, passes, hasFilters } from '../../lib/query.js';
 
-  let { folderId, openId = null, go, inShare = $bindable(false) } = $props();
+  // `search`: a saved search to start with ({ query, scope }).
+  let { folderId, openId = null, search = null, go, inShare = $bindable(false) } = $props();
 
   let path = $state([]); // [{ node, key, meta }] from the tree root down
   let share = $state(null); // set when browsing a folder shared with us
@@ -97,20 +99,26 @@
   $effect(() => {
     loading = true;
     rows = [];
-    query = '';
+    query = search?.query ?? '';
+    if (search) scope = search.scope;
     selected.clear();
     load(folderId);
   });
 
   // What the table shows: the folder filtered by the search box (names are
   // decrypted here, so this never involves the server), in the chosen order.
+  // type: and tag: in the search box filter by kind and tags (lib/query.js).
+  const parsed = $derived(parseQuery(query));
+  const filterEnv = { kind: (m) => previewKind(m)?.kind ?? null, ext: extension, tagsOf };
   const visible = $derived.by(() => {
-    const q = query.trim().toLowerCase();
+    const q = parsed.text.toLowerCase();
     return sortEntries(
-      rows.filter((r) => !q || r.meta.name.toLowerCase().includes(q)),
+      rows.filter((r) => (!q || r.meta.name.toLowerCase().includes(q)) && passes(r, parsed, filterEnv)),
       sort,
     );
   });
+  // The saved search this box shows, if it's one.
+  const savedHere = $derived(places.searches.find((x) => x.query === query.trim() && x.scope === scope));
 
   const open = (id) => go({ name: 'files', folderId: id });
   // The root folder's own name was set when the account was made; show it in the current language.
@@ -184,24 +192,24 @@
   let reading = $state(null); // { done, total } while files are read to search inside them
   let searchRun = null;
   $effect(() => {
-    const q = query.trim();
+    const q = parsed;
     const top = path[0];
     searchRun?.abort();
     found = [];
     reading = null;
-    if (scope === 'folder' || !q || !top) return;
+    if (scope === 'folder' || (!q.text && !hasFilters(q)) || !top) return;
     const run = (searchRun = new AbortController());
     const timer = setTimeout(async () => {
       searching = true;
       const hits = new Map();
       const onResult = (r) => {
-        if (hits.has(r.node.id)) return;
+        if (hits.has(r.node.id) || !passes(r, q, filterEnv)) return;
         hits.set(r.node.id, r);
         if (hits.size <= 500) found = sortEntries([...hits.values()], sort);
       };
-      await searchTree(top, q, { signal: run.signal, onResult });
-      if (scope === 'contents' && !run.signal.aborted) {
-        await searchContents(top, q, {
+      await searchTree(top, q.text, { signal: run.signal, onResult });
+      if (scope === 'contents' && q.text && !run.signal.aborted) {
+        await searchContents(top, q.text, {
           signal: run.signal,
           onResult,
           onProgress: (done, total) => !run.signal.aborted && (reading = done < total ? { done, total } : null),
@@ -920,6 +928,17 @@
               onclick={() => (scope = value)}>{label}</button>
           {/each}
         </div>
+        {#if scope !== 'folder' && !share}
+          {#if savedHere}
+            <button type="button" class="btn btn-ghost btn-icon" aria-label={t('Forget this saved search')} title={t('Forget this saved search')} onclick={() => forgetSearch(savedHere.id).catch(toastError)}>
+              <Icon name="bookmark-x" />
+            </button>
+          {:else}
+            <button type="button" class="btn btn-ghost btn-icon" aria-label={t('Save this search')} title={t('Save this search')} onclick={() => (dialog = { type: 'save-search' })}>
+              <Icon name="bookmark-plus" />
+            </button>
+          {/if}
+        {/if}
       {/if}
     {/if}
     <button type="button" class="btn btn-ghost btn-icon" aria-label={t('Activity in this folder')} title={t('Activity')} disabled={!here} onclick={() => (dialog = { type: 'activity', entry: here })}>
@@ -1004,7 +1023,7 @@
         {#if !found.length}
           <tr>
             <td colspan="3" class="h-24 text-center text-[13px] text-fg-muted">
-              {#if reading}<Icon name="loader-circle" class="spinner mr-1.5 inline size-4 align-[-3px]" />Reading files to search inside them ({reading.done} of {reading.total}){:else if searching}<Icon name="loader-circle" class="spinner mr-1.5 inline size-4 align-[-3px]" />Looking through your folders{:else}Nothing matches "{query.trim()}".{/if}
+              {#if reading}<Icon name="loader-circle" class="spinner mr-1.5 inline size-4 align-[-3px]" />{t('Reading files to search inside them ({done} of {total})', { done: reading.done, total: reading.total })}{:else if searching}<Icon name="loader-circle" class="spinner mr-1.5 inline size-4 align-[-3px]" />{t('Looking through your folders')}{:else}{t('Nothing matches "{query}"', { query: query.trim() })}.{/if}
             </td>
           </tr>
         {/if}
@@ -1385,6 +1404,15 @@
       open(e.folder ? e.node_id : e.parentId);
     }}
     onclose={close} />
+{:else if dialog?.type === 'save-search'}
+  <NameDialog
+    title={t('Save this search')}
+    initial={query.trim()}
+    onsave={async (name) => {
+      await saveSearch(name, query.trim(), scope);
+      toast(t('Saved. It is under My files in the sidebar.'), { kind: 'success' });
+    }}
+    onclose={() => (dialog = null)} />
 {:else if dialog?.type === 'tags'}
   <TagsDialog entry={dialog.entry} onclose={() => (dialog = null)} />
 {:else if dialog?.type === 'comments'}

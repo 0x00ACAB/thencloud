@@ -1450,4 +1450,11 @@ export default {
     'Dateien und Ordner nach den Tags, die du ihnen gegeben hast. Deine Tags siehst nur du.',
   'No tags yet': 'Noch keine Tags',
   'Use "Tags" in the menu on any file or folder.': 'Nutze "Tags" im Menü einer Datei oder eines Ordners.',
+
+  // Saved searches
+  'Forget this saved search': 'Gespeicherte Suche vergessen',
+  'Save this search': 'Diese Suche speichern',
+  'Reading files to search inside them ({done} of {total})': 'Dateien werden gelesen, um in ihnen zu suchen ({done} von {total})',
+  'Looking through your folders': 'Deine Ordner werden durchsucht',
+  'Saved. It is under My files in the sidebar.': 'Gespeichert. Du findest sie unter Meine Dateien in der Seitenleiste.',
 };
