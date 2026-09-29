@@ -7,6 +7,7 @@
   import Icon from './Icon.svelte';
   import { t, language, LANGUAGES } from '../lib/i18n.svelte.js';
   import { format, setFormat } from '../lib/locale.svelte.js';
+  import { hasToken, takeToken, goToCheck, returned } from '../lib/turnstile.js';
 
   let mode = $state('signin'); // signin | signup | recover
   let recoveryKey = $state('');
@@ -42,11 +43,21 @@
   }
 
   let registration = $state('open'); // open | invite | closed
+  // Set when this server asks for a Turnstile check (see lib/turnstile.js).
+  let turnstile = $state(null);
+  let checked = $state(hasToken());
   const loadOptions = () =>
     authOptions()
-      .then((o) => (registration = o.registration))
+      .then((o) => {
+        registration = o.registration;
+        turnstile = o.turnstile ?? null;
+      })
       .catch(() => {});
   onMount(() => {
+    // Back from /auth: the same tab, and the invite if there was one.
+    const back = returned();
+    if (back?.invite) invite = back.invite;
+    if (back?.mode === 'signup' || back?.mode === 'signin') switchMode(back.mode);
     readInvite();
     if (serverOrigin()) loadOptions();
     // Also when the link is pasted into a tab that's already here.
@@ -84,6 +95,9 @@
 
   const signup = $derived(mode === 'signup');
   const recover = $derived(mode === 'recover');
+  // Whether this form needs the check first. Recovery keys and passkeys don't.
+  const needsCheck = $derived(!!turnstile && (signup ? turnstile.register : !recover && turnstile.login));
+  const checkFirst = $derived(needsCheck && !checked);
   // Both creating an account and resetting a password choose a new one.
   const choosing = $derived(signup || recover);
 
@@ -107,6 +121,7 @@
         account_disabled: t('This account has been disabled. Ask the person who runs this server.'),
         invalid_invite: t('This invite link has already been used or has expired. Ask for a new one.'),
         registration_closed: t('New accounts are not being accepted on this server right now.'),
+        turnstile_failed: t("The check that you're a person expired or didn't go through. Do it again, then try once more."),
         ...overrides,
       }[err?.code] ?? errorMessage(err)
     );
@@ -130,10 +145,17 @@
       error = t("The passwords don't match.");
       return;
     }
+    // A check token is good once: whatever happens next, it's used up.
+    const token = needsCheck ? takeToken() : null;
+    if (needsCheck) checked = false;
+    if (needsCheck && !token) {
+      error = t("The check that you're a person expired or didn't go through. Do it again, then try once more.");
+      return;
+    }
     run(async () => {
-      if (signup) await register(username, password, invite, remember);
+      if (signup) await register(username, password, invite, remember, token);
       else if (recover) await recoverAccount(username.trim(), recoveryKey, password, remember);
-      else pending = await login(username, password, remember);
+      else pending = await login(username, password, remember, token);
     });
   }
 
@@ -255,6 +277,29 @@
       </p>
     {/if}
 
+    {#if checkFirst && inApp}
+      <p class="mt-6 flex items-start gap-2 rounded-md border border-line bg-subtle p-3 text-[13px] text-fg-muted">
+        <Icon name="shield-check" class="mt-0.5 size-4 shrink-0" />
+        {t("This server asks for a check that you're a person, which the app can't show yet. Sign in from a browser, or use your recovery key.")}
+      </p>
+    {:else if checkFirst}
+      <div class="mt-6 grid gap-4">
+        <p class="flex items-start gap-2 text-[13px] leading-5 text-fg-muted">
+          <Icon name="shield-check" class="mt-0.5 size-4 shrink-0" />
+          {t("Before you continue, this server asks for a quick check that you're a person. It's run by Cloudflare on a page of its own, which never sees your password.")}
+        </p>
+        {#if error}
+          <p class="flex items-center gap-2 text-[13px] text-danger" role="alert"><Icon name="circle-alert" />{error}</p>
+        {/if}
+        <button class="btn btn-primary btn-lg w-full" onclick={() => goToCheck({ mode, invite })} disabled={signup && !canSignUp}>{t('Continue')}</button>
+        {#if mode === 'signin' && canPasskey}
+          <button type="button" class="btn btn-secondary btn-lg -mt-1 w-full" disabled={busy} onclick={() => run(() => loginWithPasskey(remember), { invalid_credentials: t("That passkey isn't set up on this account.") })}>
+            <Icon name="fingerprint" />{t('Sign in with a passkey')}
+          </button>
+          <button type="button" class="w-fit cursor-pointer text-xs text-fg-muted hover:text-fg" onclick={() => switchMode('recover')}>{t('Forgot your password?')}</button>
+        {/if}
+      </div>
+    {:else}
     <form class="mt-6 grid gap-4" onsubmit={submit}>
       <div class="field">
         <label class="label" for="username">{t('Username')}</label>
@@ -349,6 +394,7 @@
         </button>
       {/if}
     </form>
+    {/if}
     {/if}
 
     <p class="mt-8 flex items-start gap-2 text-[13px] leading-5 text-fg-muted">

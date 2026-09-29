@@ -1,6 +1,6 @@
 use axum::Json;
 use axum::extract::State;
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use sqlx::AssertSqlSafe;
 use thencloud_crypto::api::*;
 use thencloud_crypto::{KEY_LEN, KdfParams, SALT_LEN};
@@ -120,6 +120,7 @@ pub async fn prelogin(
 
 pub async fn register(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Json(req): Json<RegisterRequest>,
 ) -> Result<(StatusCode, Json<SessionResponse>)> {
     let username = normalize_username(&req.username)?;
@@ -131,7 +132,10 @@ pub async fn register(
         None
     } else {
         match (settings::registration(&state).await?, req.invite.as_deref()) {
-            (Registration::Open, _) => None,
+            (Registration::Open, _) => {
+                crate::turnstile::check(&state, req.turnstile.as_deref(), &headers).await?;
+                None
+            }
             (Registration::Invite, Some(token)) => Some(sha256(token.as_bytes())),
             (Registration::Invite, None) | (Registration::Closed, _) => {
                 return Err(AppError::RegistrationClosed);
@@ -226,8 +230,11 @@ pub async fn register(
 pub async fn login(
     State(state): State<AppState>,
     ip: ClientIp,
+    headers: HeaderMap,
     Json(req): Json<LoginRequest>,
 ) -> Result<Json<LoginResponse>> {
+    // Before the password is looked at, so a bot gets nothing from trying.
+    crate::turnstile::check(&state, req.turnstile.as_deref(), &headers).await?;
     let username = req.username.trim().to_lowercase();
     let (ukey, ikey) = (
         format!("login-user:{username}"),
@@ -381,7 +388,16 @@ pub async fn options(State(state): State<AppState>) -> Result<Json<AuthOptions>>
     } else {
         settings::registration(&state).await?
     };
-    Ok(Json(AuthOptions { registration }))
+    let turnstile = crate::turnstile::site_key(&state).map(|k| TurnstileOptions {
+        site_key: k.to_string(),
+        login: true,
+        // The first account and invited people don't need it.
+        register: users > 0 && registration == Registration::Open,
+    });
+    Ok(Json(AuthOptions {
+        registration,
+        turnstile,
+    }))
 }
 
 // ---------------------------------------------------------------------------

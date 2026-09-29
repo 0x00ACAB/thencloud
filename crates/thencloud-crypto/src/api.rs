@@ -103,6 +103,9 @@ pub struct RegisterRequest {
     /// Invite token, needed when registration is invite-only.
     #[serde(default)]
     pub invite: Option<String>,
+    /// A Turnstile token, when the server asks for one.
+    #[serde(default)]
+    pub turnstile: Option<String>,
 }
 
 /// Who may create an account.
@@ -118,6 +121,20 @@ pub enum Registration {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthOptions {
     pub registration: Registration,
+    /// Set when this server asks for a Cloudflare Turnstile check.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turnstile: Option<TurnstileOptions>,
+}
+
+/// Where a Turnstile token is needed. The check runs on `/auth`, a page of
+/// its own; the token then goes with the request as `turnstile`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TurnstileOptions {
+    pub site_key: String,
+    /// Signing in with a password.
+    pub login: bool,
+    /// Creating an account (only while registration is open to everyone).
+    pub register: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -126,6 +143,9 @@ pub struct LoginRequest {
     pub auth_key: B64,
     #[serde(default)]
     pub device_name: Option<String>,
+    /// A Turnstile token, when the server asks for one.
+    #[serde(default)]
+    pub turnstile: Option<String>,
 }
 
 /// Encrypted key material the client needs after login.
