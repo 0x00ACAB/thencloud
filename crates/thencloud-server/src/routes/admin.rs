@@ -65,20 +65,22 @@ fn to_admin_user(r: UserRow) -> AdminUser {
 }
 
 async fn admin_user(state: &AppState, id: &str) -> Result<AdminUser> {
-    let row: Option<UserRow> = sqlx::query_as(&format!("{USER_QUERY} WHERE u.id = ?"))
-        .bind(crate::transfer::today())
-        .bind(id)
-        .fetch_optional(&state.db)
-        .await?;
+    let row: Option<UserRow> =
+        sqlx::query_as(AssertSqlSafe(format!("{USER_QUERY} WHERE u.id = ?")))
+            .bind(crate::transfer::today())
+            .bind(id)
+            .fetch_optional(&state.db)
+            .await?;
     row.map(to_admin_user).ok_or(AppError::NotFound)
 }
 
 pub async fn users(State(state): State<AppState>, user: AuthUser) -> Result<Json<Vec<AdminUser>>> {
     require_admin(&user)?;
-    let rows: Vec<UserRow> = sqlx::query_as(&format!("{USER_QUERY} ORDER BY u.created_at"))
-        .bind(crate::transfer::today())
-        .fetch_all(&state.db)
-        .await?;
+    let rows: Vec<UserRow> =
+        sqlx::query_as(AssertSqlSafe(format!("{USER_QUERY} ORDER BY u.created_at")))
+            .bind(crate::transfer::today())
+            .fetch_all(&state.db)
+            .await?;
     Ok(Json(rows.into_iter().map(to_admin_user).collect()))
 }
 
@@ -115,11 +117,13 @@ pub async fn update_user(
         if !(0..=1 << 50).contains(&v) {
             return Err(AppError::bad(format!("{col} is out of range")));
         }
-        sqlx::query(&format!("UPDATE users SET {col} = ? WHERE id = ?"))
-            .bind((v > 0).then_some(v))
-            .bind(&id)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query(AssertSqlSafe(format!(
+            "UPDATE users SET {col} = ? WHERE id = ?"
+        )))
+        .bind((v > 0).then_some(v))
+        .bind(&id)
+        .execute(&mut *tx)
+        .await?;
     }
     if let Some(a) = req.is_admin {
         sqlx::query("UPDATE users SET is_admin = ? WHERE id = ?")
