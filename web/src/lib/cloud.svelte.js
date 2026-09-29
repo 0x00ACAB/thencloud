@@ -17,6 +17,7 @@ import { photoTaken } from './exif.js';
 import { wordsOf, queryWords, matchesWords } from './fulltext.js';
 import { previewKind } from './preview.js';
 import { rememberSession, rememberedSession, forgetSession } from './remember.js';
+import { arrivedFromCheck } from './turnstile.js';
 import { streamsAvailable, streamDownload } from './stream.js';
 import { createPasskey, usePasskey, passkeysSupported } from './passkeys.js';
 import { apiUrl, serverOrigin, setServer } from './server.svelte.js';
@@ -74,7 +75,7 @@ const deviceName = () => {
 // Account
 // ---------------------------------------------------------------------------
 
-export async function register(username, password, invite = null, remember = false) {
+export async function register(username, password, invite = null, remember = false, turnstile = null) {
   const salt = tc.random_salt();
   const params = JSON.parse(tc.default_kdf_params());
   const ak = await deriveAccountKeys(password, salt, params);
@@ -101,6 +102,7 @@ export async function register(username, password, invite = null, remember = fal
       },
       device_name: deviceName(),
       invite: invite || undefined,
+      turnstile: turnstile || undefined,
     },
   });
   kp.free();
@@ -114,11 +116,11 @@ export async function register(username, password, invite = null, remember = fal
  * account asks for a second factor, `{ totp, passkey, withCode, withPasskey }`
  * to finish with one.
  */
-export async function login(username, password, remember = false) {
+export async function login(username, password, remember = false, turnstile = null) {
   const pre = await request('POST', '/api/auth/prelogin', { body: { username } });
   const ak = await deriveAccountKeys(password, unb64(pre.kdf_salt), pre.kdf_params);
   const s = await request('POST', '/api/auth/login', {
-    body: { username, auth_key: b64(ak.authKey), device_name: deviceName() },
+    body: { username, auth_key: b64(ak.authKey), device_name: deviceName(), turnstile: turnstile || undefined },
   });
   if (!s.second_factor) {
     start(s, ak.kek);
@@ -259,6 +261,12 @@ export async function changeServer(origin) {
  */
 export async function resume() {
   if (!serverOrigin()) return false;
+  // /auth ran Cloudflare's script with this origin's storage; a kept
+  // sign-in that appeared meanwhile isn't to be trusted.
+  if (arrivedFromCheck()) {
+    await forgetSession();
+    return false;
+  }
   const saved = await rememberedSession();
   if (!saved) return false;
   let me;

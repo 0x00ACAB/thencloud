@@ -58,6 +58,15 @@ export async function rememberSession({ userId, token, masterKey }) {
   await run('readwrite', (s) => s.put({ v: 1, userId, key, iv, data, savedAt: Date.now() }, KEY));
 }
 
+/** Whether a session is saved, without opening it. */
+export async function hasRememberedSession() {
+  try {
+    return !!(await run('readonly', (s) => s.get(KEY)));
+  } catch {
+    return false;
+  }
+}
+
 /** The saved session, or null. A record that won't decrypt is removed. */
 export async function rememberedSession() {
   let rec;

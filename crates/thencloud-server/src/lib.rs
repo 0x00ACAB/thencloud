@@ -19,6 +19,7 @@ pub mod s3;
 pub mod settings;
 pub mod totp;
 pub mod transfer;
+pub mod turnstile;
 pub mod util;
 pub mod webauthn;
 
@@ -44,6 +45,8 @@ pub struct AppState {
     pub downloader: Arc<downloader::Downloader>,
     /// Changes to nodes, as they happen, for live updates (see routes/activity.rs).
     pub changes: tokio::sync::broadcast::Sender<routes::activity::Change>,
+    /// Turnstile tokens already used (see turnstile.rs).
+    pub turnstile_used: Arc<turnstile::Used>,
 }
 
 impl AppState {
@@ -68,6 +71,7 @@ impl AppState {
             config: Arc::new(config),
             secret: Arc::new(secret),
             limiter: Arc::new(limiter::Limiter::new(10, 15 * 60)),
+            turnstile_used: Arc::default(),
             dummy_hash: Arc::new(dummy_hash),
             downloader: Arc::new(downloader),
             changes: tokio::sync::broadcast::channel(1024).0,

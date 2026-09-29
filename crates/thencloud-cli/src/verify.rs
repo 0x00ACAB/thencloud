@@ -81,9 +81,13 @@ fn encode_path(p: &str) -> String {
         .collect()
 }
 
+/// Where the Turnstile check's script comes from; `/auth` may allow it.
+const TURNSTILE: &str = "https://challenges.cloudflare.com";
+
 /// Only same-origin scripts and connections: otherwise verified files could
-/// still be joined by code from elsewhere.
-fn check_csp(csp: Option<&str>) -> Option<String> {
+/// still be joined by code from elsewhere. `/auth` (the Turnstile page, which
+/// holds no password or key) may also load Cloudflare's script.
+fn check_csp(csp: Option<&str>, turnstile_page: bool) -> Option<String> {
     let Some(csp) = csp else {
         return Some("no Content-Security-Policy header".into());
     };
@@ -93,11 +97,13 @@ fn check_csp(csp: Option<&str>) -> Option<String> {
                 .map(|v| v.split_whitespace().collect::<Vec<_>>())
         })
     };
+    let scripts_ok = match directive("script-src ").as_deref() {
+        Some(["'self'"] | ["'self'", "'wasm-unsafe-eval'"]) => true,
+        Some(["'self'", t]) => turnstile_page && *t == TURNSTILE,
+        _ => false,
+    };
     let ok = directive("default-src ") == Some(vec!["'self'"])
-        && matches!(
-            directive("script-src ").as_deref(),
-            Some(["'self'"] | ["'self'", "'wasm-unsafe-eval'"])
-        )
+        && scripts_ok
         && directive("connect-src ") == Some(vec!["'self'"]);
     (!ok).then(|| format!("the Content-Security-Policy allows more than this server: {csp}"))
 }
@@ -146,6 +152,9 @@ pub fn verify_web(server: &str, manifest: &Manifest) -> Result<Report> {
         "/s/verify-web".into(),
         manifest.files["share.html"].as_str(),
     ));
+    if let Some(auth) = manifest.files.get("auth.html") {
+        jobs.push(("/auth".into(), auth.as_str()));
+    }
 
     let report = Mutex::new(Report::default());
     let next = Mutex::new(jobs.iter());
@@ -168,8 +177,9 @@ pub fn verify_web(server: &str, manifest: &Manifest) -> Result<Report> {
                                         "{path} ({encoding}): different content (sha256 {got})"
                                     ));
                                 }
-                                if path == "/" && encoding == "identity" {
-                                    r.problems.extend(check_csp(csp.as_deref()));
+                                if (path == "/" || path == "/auth") && encoding == "identity" {
+                                    r.problems
+                                        .extend(check_csp(csp.as_deref(), path == "/auth"));
                                 }
                             }
                             Err(e) => r.problems.push(format!("{path} ({encoding}): {e}")),
@@ -191,16 +201,28 @@ mod tests {
     #[test]
     fn csp_rules() {
         let ours = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; img-src 'self' blob:";
-        assert_eq!(check_csp(Some(ours)), None);
-        assert!(check_csp(None).is_some());
+        assert_eq!(check_csp(Some(ours), false), None);
+        assert!(check_csp(None, false).is_some());
         assert!(
-            check_csp(Some(&ours.replace(
-                "script-src 'self'",
-                "script-src 'self' https://evil.test"
-            )))
+            check_csp(
+                Some(&ours.replace("script-src 'self'", "script-src 'self' https://evil.test")),
+                false
+            )
             .is_some()
         );
-        assert!(check_csp(Some("default-src 'self'; connect-src *")).is_some());
+        assert!(check_csp(Some("default-src 'self'; connect-src *"), false).is_some());
+        // Cloudflare's script only on /auth.
+        let auth = "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; \
+                    frame-src https://challenges.cloudflare.com; connect-src 'self'";
+        assert_eq!(check_csp(Some(auth), true), None);
+        assert!(check_csp(Some(auth), false).is_some());
+        assert!(
+            check_csp(
+                Some(&auth.replace("challenges.cloudflare.com;", "evil.test;")),
+                true
+            )
+            .is_some()
+        );
     }
 
     #[test]

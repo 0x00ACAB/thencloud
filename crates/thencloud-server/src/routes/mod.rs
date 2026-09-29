@@ -44,6 +44,13 @@ const CSP: &str = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; con
      img-src 'self' blob:; media-src 'self' blob:; style-src 'self'; object-src 'none'; base-uri 'none'; \
      form-action 'self'; frame-ancestors 'none'";
 
+/// The CSP of `/auth`, the page that runs the Turnstile check, when it's on:
+/// Cloudflare's script and frame, and nothing else from outside. That page
+/// has no password field and holds no key; it only hands the token back.
+const AUTH_CSP: &str = "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; \
+     frame-src https://challenges.cloudflare.com; connect-src 'self'; img-src 'self'; style-src 'self'; \
+     object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+
 /// Origins of the desktop and Android apps (`crates/thencloud-app`), which
 /// bundle the web client instead of loading it from here: `tauri://localhost`
 /// on Linux, `http(s)://tauri.localhost` on Windows and Android. Sessions are
@@ -235,8 +242,26 @@ pub fn router(state: AppState) -> Router {
         .layer(app_cors());
 
     let web = state.config.web_dir.clone();
+    let auth_csp = if crate::turnstile::enabled(&state) {
+        AUTH_CSP
+    } else {
+        CSP
+    };
     Router::new()
         .nest("/api", api)
+        .merge(
+            Router::new()
+                .route_service(
+                    "/auth",
+                    ServeFile::new(web.join("auth.html"))
+                        .precompressed_br()
+                        .precompressed_gzip(),
+                )
+                .layer(SetResponseHeaderLayer::overriding(
+                    header::CONTENT_SECURITY_POLICY,
+                    HeaderValue::from_static(auth_csp),
+                )),
+        )
         // The web build writes .br and .gz copies of static files; send one
         // of those when the browser accepts it.
         .route_service(
