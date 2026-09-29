@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte';
-  import { login, loginWithPasskey, register, authOptions, recoverAccount } from '../lib/cloud.svelte.js';
+  import { login, loginWithPasskey, register, authOptions, recoverAccount, changeServer } from '../lib/cloud.svelte.js';
+  import { inApp, serverOrigin, parseServer } from '../lib/server.svelte.js';
   import { passkeysSupported, cancelled } from '../lib/passkeys.js';
   import { errorMessage } from '../lib/ui.svelte.js';
   import Icon from './Icon.svelte';
@@ -41,15 +42,44 @@
   }
 
   let registration = $state('open'); // open | invite | closed
-  onMount(() => {
-    readInvite();
+  const loadOptions = () =>
     authOptions()
       .then((o) => (registration = o.registration))
       .catch(() => {});
+  onMount(() => {
+    readInvite();
+    if (serverOrigin()) loadOptions();
     // Also when the link is pasted into a tab that's already here.
     addEventListener('hashchange', readInvite);
     return () => removeEventListener('hashchange', readInvite);
   });
+  // The apps ask which server to use first.
+  let editingServer = $state(inApp && !serverOrigin());
+  let serverInput = $state(serverOrigin() ?? '');
+  const serverHost = $derived(serverOrigin() && new URL(serverOrigin()).host);
+
+  function connect(e) {
+    e.preventDefault();
+    const origin = parseServer(serverInput);
+    if (!origin) {
+      error = t('Use an https:// address.');
+      return;
+    }
+    run(async () => {
+      let o = null;
+      try {
+        const res = await fetch(`${origin}/api/auth/options`, { cache: 'no-store', referrerPolicy: 'no-referrer' });
+        o = res.ok ? await res.json() : null;
+      } catch {
+        /* unreachable, or not letting the app in */
+      }
+      if (!o?.registration) throw new Error(t("Couldn't find a thencloud server there."));
+      await changeServer(origin);
+      registration = o.registration;
+      editingServer = false;
+    });
+  }
+
   const canSignUp = $derived(registration === 'open' || (registration === 'invite' && !!invite));
 
   const signup = $derived(mode === 'signup');
@@ -117,7 +147,25 @@
   <img src="/img/logo.webp" alt="thencloud" width="715" height="349" class="h-auto w-56 select-none" draggable="false" />
 
   <div class="mt-8 w-full max-w-sm">
-    {#if pending}
+    {#if editingServer}
+      <form class="grid gap-4" onsubmit={connect}>
+        <div class="field">
+          <label class="label" for="server">{t('Server address')}</label>
+          <!-- svelte-ignore a11y_autofocus -->
+          <input id="server" class="input" bind:value={serverInput} placeholder="cloud.example.com" inputmode="url" autocapitalize="none" autocomplete="url" spellcheck="false" autofocus required />
+          <p class="hint">{t('The address you open thencloud at in a browser.')}</p>
+        </div>
+        {#if error}
+          <p class="flex items-center gap-2 text-[13px] text-danger" role="alert"><Icon name="circle-alert" />{error}</p>
+        {/if}
+        <button class="btn btn-primary btn-lg w-full" disabled={busy}>
+          {#if busy}<Icon name="loader-circle" class="spinner" />{/if}{t('Connect')}
+        </button>
+        {#if serverOrigin()}
+          <button type="button" class="btn btn-secondary btn-lg -mt-1 w-full" disabled={busy} onclick={() => ((editingServer = false), (error = ''))}>{t('Cancel')}</button>
+        {/if}
+      </form>
+    {:else if pending}
       <div class="grid gap-1">
         <button type="button" class="flex w-fit cursor-pointer items-center gap-1 text-[13px] text-fg-muted hover:text-fg" onclick={() => switchMode('signin')}>
           <Icon name="arrow-left" class="size-3.5" /> {t('Back')}
@@ -132,7 +180,9 @@
         </p>
       </div>
       <div class="mt-6 grid gap-4">
-        {#if pending.passkey}
+        {#if pending.passkey && !canPasskey && !pending.totp}
+          <p class="flex items-start gap-2 text-[13px] text-fg-muted"><Icon name="circle-alert" class="mt-0.5 size-4 shrink-0" />{t("The app can't use passkeys yet. Sign in from a browser, or use your recovery key.")}</p>
+        {:else if pending.passkey && canPasskey}
           <button type="button" class="btn {pending.totp ? 'btn-secondary' : 'btn-primary'} btn-lg w-full" disabled={busy} onclick={() => run(pending.withPasskey)}>
             <Icon name="fingerprint" />{t('Use a passkey')}
           </button>
@@ -165,6 +215,12 @@
         <p class="text-xs leading-5 text-fg-muted">{t('Lost them? A recovery key still resets your password without the second step.')}</p>
       </div>
     {:else}
+    {#if inApp}
+      <p class="mb-4 flex items-center justify-between gap-3 text-[13px] text-fg-muted">
+        <span class="flex min-w-0 items-center gap-2"><Icon name="hard-drive" class="size-4 shrink-0" /><span class="truncate font-mono">{serverHost}</span></span>
+        <button type="button" class="shrink-0 cursor-pointer text-xs hover:text-fg" onclick={() => ((editingServer = true), (error = ''))}>{t('Change server')}</button>
+      </p>
+    {/if}
     {#if recover}
       <div class="grid gap-1">
         <button type="button" class="flex w-fit cursor-pointer items-center gap-1 text-[13px] text-fg-muted hover:text-fg" onclick={() => switchMode('signin')}>
