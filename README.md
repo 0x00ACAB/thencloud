@@ -198,7 +198,7 @@ As a result, a malicious server cannot swap files, move ciphertexts between node
 - Usernames and public keys.
 - The shape of the folder tree: which node is inside which, and file vs folder.
 - Whether two items in the same folder have the same name (each carries a keyed hash of its lower-cased name under the folder key, so duplicates can be refused), but not what the names are.
-- Ciphertext sizes and chunk counts. File contents are padded (Padmé, at most about 12% extra) and metadata to 128-byte steps, so these give only rough sizes.
+- Ciphertext sizes and chunk counts. File contents are padded (every file under 16 KiB to 16 KiB, larger ones with Padmé, at most about 12% extra) and metadata to 128-byte steps, so these give only rough sizes.
 - Timestamps.
 - Who shares with whom, with what permission, and which nodes have public links.
 - IP addresses and access patterns.
