@@ -1005,3 +1005,99 @@ fn import_from_nextcloud_refuses_a_short_download() {
     assert!(cl.import_nextcloud(&nc, "", &root, &mut |_| {}).is_err());
     assert!(child(&cl, &root, "cut.txt").is_none());
 }
+
+#[test]
+fn webdav_bridge_keeps_finder_files_local_and_follows_changes() {
+    let s = start();
+    let cl = client(&s);
+    let root = cl.root().unwrap();
+    let b = bridge(&s, &s.app_password);
+    let base = b.url();
+    let listing = |path: &str| {
+        let (st, xml) = dav("PROPFIND", &format!("{base}{path}"), &[("Depth", "1")], b"");
+        assert_eq!(st, 207);
+        String::from_utf8(xml).unwrap()
+    };
+
+    // Finder's files work, but only here.
+    assert_eq!(dav("MKCOL", &format!("{base}Docs"), &[], b"").0, 201);
+    assert_eq!(
+        dav("PUT", &format!("{base}Docs/report.txt"), &[], b"real").0,
+        201
+    );
+    assert_eq!(
+        dav("PUT", &format!("{base}Docs/._report.txt"), &[], b"xattrs").0,
+        201
+    );
+    assert_eq!(
+        dav("PUT", &format!("{base}Docs/.DS_Store"), &[], b"view").0,
+        201
+    );
+    assert_eq!(
+        dav("GET", &format!("{base}Docs/._report.txt"), &[], b"").1,
+        b"xattrs"
+    );
+    let xml = listing("Docs/");
+    assert!(
+        xml.contains("._report.txt") && xml.contains(".DS_Store"),
+        "{xml}"
+    );
+    let docs = child(&cl, &root, "Docs").unwrap();
+    let names: Vec<String> = cl
+        .list(&docs)
+        .unwrap()
+        .into_iter()
+        .map(|e| e.meta.name)
+        .collect();
+    assert_eq!(names, ["report.txt"]);
+    // Renamed alongside their file, and deleted.
+    let dest = format!("{base}Docs/._renamed.txt");
+    let (st, _) = dav(
+        "MOVE",
+        &format!("{base}Docs/._report.txt"),
+        &[("Destination", &dest)],
+        b"",
+    );
+    assert_eq!(st, 201);
+    assert_eq!(dav("GET", &dest, &[], b"").1, b"xattrs");
+    assert_eq!(
+        dav("GET", &format!("{base}Docs/._report.txt"), &[], b"").0,
+        404
+    );
+    assert_eq!(
+        dav("DELETE", &format!("{base}Docs/.DS_Store"), &[], b"").0,
+        204
+    );
+    assert_eq!(
+        dav("GET", &format!("{base}Docs/.DS_Store"), &[], b"").0,
+        404
+    );
+    assert!(child(&cl, &root, ".DS_Store").is_none());
+
+    // Changes made elsewhere show up once the feed is read: a new file, and
+    // one moved out of Docs.
+    assert!(!listing("").contains("elsewhere.txt"));
+    let local = tempfile::tempdir().unwrap();
+    fs::write(local.path().join("e.txt"), b"from the browser").unwrap();
+    cl.upload(&local.path().join("e.txt"), &root, "elsewhere.txt", None)
+        .unwrap();
+    let report = child(&cl, &docs, "report.txt").unwrap();
+    cl.update(&report, &root, report.meta.clone()).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(5500));
+    let xml = listing("");
+    assert!(
+        xml.contains("elsewhere.txt") && xml.contains("report.txt"),
+        "{xml}"
+    );
+    assert_eq!(
+        dav("GET", &format!("{base}report.txt"), &[], b"").1,
+        b"real"
+    );
+    assert_eq!(
+        dav("GET", &format!("{base}Docs/report.txt"), &[], b"").0,
+        404
+    );
+
+    cl.logout().unwrap();
+    assert_no_plaintext(&s, &[b"xattrs", b"view", b"from the browser"]);
+}
