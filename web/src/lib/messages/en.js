@@ -43,4 +43,8 @@ export default {
   'Stopped after {count} files.': { one: 'Stopped after {count} file.', other: 'Stopped after {count} files.' },
   "{count} items can't be read.": { one: "{count} item can't be read.", other: "{count} items can't be read." },
   'The other {count} files are fine.': { one: 'The other file is fine.', other: 'The other {count} files are fine.' },
+  '{count} active sessions': { one: '{count} active session', other: '{count} active sessions' },
+  '{count} stored versions': { one: '{count} stored version', other: '{count} stored versions' },
+  '{count} public links': { one: '{count} public link', other: '{count} public links' },
+  '{count} days': { one: '{count} day', other: '{count} days' },
 };

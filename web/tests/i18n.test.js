@@ -65,3 +65,13 @@ test('i18n: English plural forms are for strings in use', () => {
   const used = usedKeys();
   for (const key of Object.keys(en)) assert.ok(used.has(key), `en: ${key} is not used`);
 });
+
+test('i18n: no catalog lists a key twice', () => {
+  // A second entry would silently replace the first.
+  for (const lang of ['en', 'pl', 'de']) {
+    const src = readFileSync(new URL(`../src/lib/messages/${lang}.js`, import.meta.url), 'utf8');
+    const keys = [...src.matchAll(/^ {2}('(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"|\w+):/gm)].map((m) => (/^\w/.test(m[1]) ? m[1] : Function(`return ${m[1]}`)()));
+    const twice = keys.filter((k, i) => keys.indexOf(k) !== i);
+    assert.deepEqual(twice, [], `${lang} lists these twice`);
+  }
+});
