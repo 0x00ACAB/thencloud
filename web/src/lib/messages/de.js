@@ -676,4 +676,22 @@ export default {
   "Images in Markdown files aren't loaded": 'Bilder in Markdown-Dateien werden nicht geladen',
   'Image: {alt}': 'Bild: {alt}',
   Image: 'Bild',
+
+  // Photos
+  Albums: 'Alben',
+  '{count} photos': { one: '{count} Foto', other: '{count} Fotos' },
+  'Images in {folder}, by the date they were taken.': 'Bilder in {folder}, nach Aufnahmedatum.',
+  'your photos folder': 'deinem Fotoordner',
+  Timeline: 'Zeitleiste',
+  'Photos folder': 'Fotoordner',
+  'Look for new photos': 'Nach neuen Fotos suchen',
+  'Pick a folder for your photos': 'Wähle einen Ordner für deine Fotos',
+  'Its images, and those in folders below it, become a timeline by date taken, with each folder as an album.':
+    'Seine Bilder und die in Ordnern darunter werden zu einer Zeitleiste nach Aufnahmedatum, jeder Ordner zu einem Album.',
+  'No photos here yet': 'Noch keine Fotos hier',
+  'Upload JPEG, PNG, WebP or other images into {folder}, or any folder in it.':
+    'Lade JPEG-, PNG-, WebP- oder andere Bilder in {folder} oder einen Ordner darin hoch.',
+  'Looking for new photos': 'Suche nach neuen Fotos',
+  'Its images, in it and in folders below it, become your photos.': 'Seine Bilder, darin und in Ordnern darunter, werden zu deinen Fotos.',
+  'The photos folder is not a folder': 'Der Fotoordner ist kein Ordner',
 };
