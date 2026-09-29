@@ -9,7 +9,9 @@
 # Requires what build.sh does, plus the Tauri CLI
 # (`cargo install tauri-cli --version "^2" --locked`) and, for Android, the
 # Android SDK and NDK (ANDROID_HOME, NDK_HOME). TAURI overrides how the CLI
-# is run (CI uses `npx @tauri-apps/cli@2`).
+# is run (CI's desktop builds use `npx @tauri-apps/cli@2`). Not for Android:
+# `android init` writes that command into the Gradle project, and there
+# `npm run tauri` needs a package.json.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
