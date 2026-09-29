@@ -12,6 +12,8 @@ use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 #[cfg(target_os = "linux")]
 use thencloud_cli::mount::{self, MountOptions};
+use thencloud_cli::nextcloud::Nextcloud;
+use thencloud_cli::serve::{self, ServeOptions};
 use thencloud_cli::{Client, Error, Result, parse_app_password, safe_name, verify};
 use thencloud_crypto::{self as c, Key};
 
@@ -57,6 +59,21 @@ enum Command {
     /// Save a folder ("" is My files) as one encrypted file, under a new
     /// backup key that's shown once. It can be restored anywhere.
     Backup { remote: String, file: PathBuf },
+    /// Copy files from a Nextcloud account into a folder ("" is My files),
+    /// encrypting them here. Reads the Nextcloud password (an app password
+    /// is best) from NEXTCLOUD_PASSWORD or stdin. Safe to run again: files
+    /// already copied are skipped.
+    ImportNextcloud {
+        /// The Nextcloud address, e.g. https://cloud.example.com.
+        server: String,
+        /// The Nextcloud user name.
+        user: String,
+        #[arg(default_value = "")]
+        remote: String,
+        /// Only this folder on Nextcloud [default: all files].
+        #[arg(long, default_value = "")]
+        from: String,
+    },
     /// Restore a backup into a folder, on this server or any other. Reads
     /// the backup key from THENCLOUD_BACKUP_KEY or stdin.
     Restore { file: PathBuf, remote: String },
@@ -76,6 +93,22 @@ enum Command {
         /// Skip the signature, to compare with a manifest you built yourself.
         #[arg(long, conflicts_with_all = ["signature", "key"])]
         unsigned: bool,
+    },
+    /// Serve a folder ("" is My files) over WebDAV on 127.0.0.1, decrypted,
+    /// for Finder, Explorer and other file managers. Runs until Ctrl+C.
+    Serve {
+        #[arg(default_value = "")]
+        remote: String,
+        /// The port on 127.0.0.1 to listen on.
+        #[arg(long, default_value_t = 4918)]
+        port: u16,
+        /// Refuse all changes (always the case with a read-only app password).
+        #[arg(long)]
+        read_only: bool,
+        /// Keep the secret in the address the same across restarts, so a
+        /// mapped drive keeps working (at least 32 characters) [default: a new one each time].
+        #[arg(long, env = "THENCLOUD_SERVE_SECRET", hide_env_values = true)]
+        secret: Option<String>,
     },
     /// Mount a folder ("" is My files) as a drive with FUSE. Runs until
     /// unmounted with `fusermount3 -u <mountpoint>` or Ctrl+C.
@@ -225,6 +258,47 @@ fn run(cmd: Command) -> Result<()> {
         return Ok(mount::mount(client, root, &mountpoint, opts)?);
     }
 
+    if let Command::Serve {
+        remote,
+        port,
+        read_only,
+        secret,
+    } = cmd
+    {
+        let secret = match secret {
+            Some(s) if s.len() >= 32 && s.bytes().all(|b| b.is_ascii_alphanumeric()) => s,
+            Some(_) => {
+                return Err(Error::Usage(
+                    "THENCLOUD_SERVE_SECRET must be at least 32 letters and digits".into(),
+                ));
+            }
+            None => serve::new_secret(),
+        };
+        let listener = std::net::TcpListener::bind(("127.0.0.1", port))
+            .map_err(|e| Error::Usage(format!("can't listen on 127.0.0.1:{port}: {e}")))?;
+        let client = connect()?;
+        let root = client.resolve(&remote)?;
+        if !root.is_folder() {
+            let _ = client.logout();
+            return Err(Error::Usage(format!("{remote} is a file")));
+        }
+        eprintln!(
+            "Serving {} at\n\n  http://127.0.0.1:{port}/{secret}/\n\n\
+             Files are decrypted on this machine only. Anyone with this address who can\n\
+             connect to 127.0.0.1 can read them, so don't share it. Stop with Ctrl+C.",
+            if remote.trim_matches('/').is_empty() {
+                "My files"
+            } else {
+                &remote
+            },
+        );
+        let opts = ServeOptions {
+            read_only,
+            temp_dir: std::env::temp_dir(),
+        };
+        return Ok(serve::serve(client, root, listener, secret, opts)?);
+    }
+
     let client = connect()?;
     let result = (|| -> Result<()> {
         match cmd {
@@ -350,9 +424,37 @@ fn run(cmd: Command) -> Result<()> {
                 })?;
                 println!("{} files restored", s.transferred);
             }
+            Command::ImportNextcloud {
+                server,
+                user,
+                remote,
+                from,
+            } => {
+                let folder = client.resolve(&remote)?;
+                if !folder.is_folder() {
+                    return Err(Error::Usage(format!("{remote} is a file")));
+                }
+                let password = match std::env::var("NEXTCLOUD_PASSWORD") {
+                    Ok(t) => t,
+                    Err(_) => {
+                        eprint!("Nextcloud password for {user}: ");
+                        io::stderr().flush()?;
+                        let mut line = String::new();
+                        io::stdin().lock().read_line(&mut line)?;
+                        line.trim_end_matches(['\r', '\n']).to_string()
+                    }
+                };
+                let nc = Nextcloud::connect(&server, &user, &password)?;
+                let s = client
+                    .import_nextcloud(&nc, &from, &folder, &mut |p| println!("copied {p}"))?;
+                println!("{} copied, {} already here", s.transferred, s.unchanged);
+            }
             #[cfg(target_os = "linux")]
             Command::Mount { .. } => unreachable!(),
-            Command::Login { .. } | Command::Logout | Command::VerifyWeb { .. } => unreachable!(),
+            Command::Login { .. }
+            | Command::Logout
+            | Command::VerifyWeb { .. }
+            | Command::Serve { .. } => unreachable!(),
         }
         Ok(())
     })();
