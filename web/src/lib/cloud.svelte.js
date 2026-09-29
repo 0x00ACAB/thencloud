@@ -19,6 +19,7 @@ import { previewKind } from './preview.js';
 import { rememberSession, rememberedSession, forgetSession } from './remember.js';
 import { streamsAvailable, streamDownload } from './stream.js';
 import { createPasskey, usePasskey, passkeysSupported } from './passkeys.js';
+import { apiUrl, serverOrigin, setServer } from './server.svelte.js';
 
 export const session = $state({
   token: null,
@@ -246,11 +247,18 @@ async function keepSignedIn(token) {
   }
 }
 
+/** In the apps: talk to another server. A kept sign-in was for the old one. */
+export async function changeServer(origin) {
+  await forgetSession();
+  setServer(origin);
+}
+
 /**
  * Sign back in from a saved session, if there is one. Returns true if that
  * worked. A session the server no longer knows is forgotten.
  */
 export async function resume() {
+  if (!serverOrigin()) return false;
   const saved = await rememberedSession();
   if (!saved) return false;
   let me;
@@ -1477,7 +1485,7 @@ export const deleteShare = (id) => api('DELETE', `/api/shares/${id}`);
  * nothing, and neither does a server that skips the password check.
  */
 export function linkUrl(token, fragment, withPassword = false) {
-  return `${location.origin}/s/${token}#${withPassword ? 'p.' : ''}${b64(fragment)}`;
+  return `${serverOrigin()}/s/${token}#${withPassword ? 'p.' : ''}${b64(fragment)}`;
 }
 
 /**
@@ -1544,7 +1552,7 @@ export function watchFolder(id, onChange) {
     let wait = 2000;
     while (!ctl.signal.aborted) {
       try {
-        const res = await fetch(`/api/nodes/${id}/changes`, {
+        const res = await fetch(apiUrl(`/api/nodes/${id}/changes`), {
           headers: { Authorization: `Bearer ${session.token}` },
           cache: 'no-store',
           signal: ctl.signal,
@@ -1843,7 +1851,7 @@ export const adminStats = () => api('GET', '/api/admin/stats');
 export const adminAudit = (before = null) => api('GET', before ? `/api/admin/audit?before=${before}` : '/api/admin/audit');
 
 /** Invite links carry the token in the fragment, which is never sent to the server. */
-export const inviteUrl = (token) => `${location.origin}/#invite=${encodeURIComponent(token)}`;
+export const inviteUrl = (token) => `${serverOrigin()}/#invite=${encodeURIComponent(token)}`;
 
 // ---------------------------------------------------------------------------
 // Tools that need the server: the video downloader (off unless an admin
@@ -1871,7 +1879,7 @@ export const videoInfo = (url) => api('POST', '/api/tools/video/info', { body: {
 export async function downloadVideo(url, kind, { quality, onProgress, signal } = {}) {
   let res;
   try {
-    res = await fetch('/api/tools/video/download', {
+    res = await fetch(apiUrl('/api/tools/video/download'), {
       method: 'POST',
       headers: { Authorization: `Bearer ${session.token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ url, kind, quality }),

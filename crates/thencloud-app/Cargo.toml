@@ -1,0 +1,30 @@
+[package]
+name = "thencloud-app"
+description = "thencloud for Linux, Windows and Android: the web client, bundled, in a Tauri window"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-or-later"
+repository = "https://github.com/0x00ACAB/thencloud"
+publish = false
+
+# Not in the workspace: Tauri needs WebKitGTK (or the Android NDK) to build,
+# which the rest of the project doesn't.
+
+[lib]
+name = "thencloud_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
