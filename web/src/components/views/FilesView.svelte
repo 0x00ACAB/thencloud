@@ -12,6 +12,7 @@
   import NameDialog from '../dialogs/NameDialog.svelte';
   import VersionsDialog from '../dialogs/VersionsDialog.svelte';
   import CommentsDialog from '../dialogs/CommentsDialog.svelte';
+  import TagsDialog from '../dialogs/TagsDialog.svelte';
   import ActivityDialog from '../dialogs/ActivityDialog.svelte';
   import { fade, fly, flip, flipParams } from '../../lib/motion.js';
   import { SvelteSet } from 'svelte/reactivity';
@@ -32,7 +33,7 @@
   const isPdf = (meta) => meta.mime === 'application/pdf' || /\.pdf$/i.test(meta.name);
   import { previewKind } from '../../lib/preview.js';
   import { play, enqueue, makeTrack } from '../../lib/music.svelte.js';
-  import { isFavourite, toggleFavourite, noteRecent } from '../../lib/places.svelte.js';
+  import { isFavourite, toggleFavourite, noteRecent, tagsOf } from '../../lib/places.svelte.js';
 
   let { folderId, openId = null, go, inShare = $bindable(false) } = $props();
 
@@ -760,6 +761,7 @@
       isFavourite(entry.node.id)
         ? { label: t('Remove from favourites'), icon: 'star-off', onclick: () => star(entry) }
         : { label: t('Add to favourites'), icon: 'star', onclick: () => star(entry) },
+      { label: t('Tags'), icon: 'tag', onclick: () => (dialog = { type: 'tags', entry }) },
       ...(isOwner
         ? [
             { label: t('Share'), icon: 'share-2', onclick: () => (dialog = { type: 'share', entry }) },
@@ -1219,7 +1221,10 @@
                   oncontextmenu={(e) => e.pointerType !== 'mouse' && touch && e.preventDefault()}>
                   {#if folder}<FolderIcon name={entry.meta.name} />{:else}<FileIcon meta={entry.meta} />{/if}
                   <span class="grid min-w-0">
-                    <span class="truncate font-medium group-hover:underline group-hover:underline-offset-4 group-hover:decoration-line-strong">{entry.meta.name}</span>
+                    <span class="flex min-w-0 items-center gap-1.5">
+                      <span class="truncate font-medium group-hover:underline group-hover:underline-offset-4 group-hover:decoration-line-strong">{entry.meta.name}</span>
+                      {#each tagsOf(entry.node.id).slice(0, 3) as tag (tag)}<span class="badge hidden shrink-0 text-[11px] sm:inline-flex">{tag}</span>{/each}
+                    </span>
                     <span class="truncate text-xs text-fg-muted md:hidden">
                       {#if !folder}<span class="sm:hidden">{formatSize(entry.meta.size)}{' · '}</span>{/if}{formatWhen(changedAt(entry))}
                     </span>
@@ -1380,6 +1385,8 @@
       open(e.folder ? e.node_id : e.parentId);
     }}
     onclose={close} />
+{:else if dialog?.type === 'tags'}
+  <TagsDialog entry={dialog.entry} onclose={() => (dialog = null)} />
 {:else if dialog?.type === 'comments'}
   <CommentsDialog entry={dialog.entry} {isOwner} onclose={close} />
 {:else if dialog?.type === 'versions'}

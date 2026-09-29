@@ -2,7 +2,7 @@
   import { t } from '../../lib/i18n.svelte.js';
   // Favourites and Recent: node ids from the encrypted app data, resolved
   // and decrypted here. Items that are gone are quietly dropped.
-  import { places, loadPlaces, resolvePlaces, forgetPlaces, toggleFavourite } from '../../lib/places.svelte.js';
+  import { places, loadPlaces, resolvePlaces, forgetPlaces, toggleFavourite, allTags, taggedWith } from '../../lib/places.svelte.js';
   import { toastError } from '../../lib/ui.svelte.js';
   import { formatSize, changedAt } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
@@ -10,11 +10,17 @@
   import FileIcon from '../FileIcon.svelte';
   import FolderIcon from '../FolderIcon.svelte';
 
-  let { mode, go } = $props(); // mode: 'favourites' | 'recent'
+  let { mode, go } = $props(); // mode: 'favourites' | 'recent' | 'tags'
 
   let items = $state(null);
+  // Tags: which one is picked. Kept here, not in the address: only ids go there.
+  let tag = $state(null);
+  const tags = $derived(mode === 'tags' ? allTags() : []);
+  const picked = $derived(tag && tags.some((x) => x.tag === tag) ? tag : (tags[0]?.tag ?? null));
 
-  const ids = $derived(mode === 'favourites' ? [...places.favourites].reverse() : places.recent.map((r) => r.id));
+  const ids = $derived(
+    mode === 'favourites' ? [...places.favourites].reverse() : mode === 'tags' ? (picked ? taggedWith(picked) : []) : places.recent.map((r) => r.id),
+  );
   const openedAt = $derived(new Map(places.recent.map((r) => [r.id, r.at])));
 
   $effect(() => {
@@ -47,15 +53,30 @@
     }
   }
 
-  const title = $derived(mode === 'favourites' ? t('Favourites') : t('Recent'));
+  const title = $derived(mode === 'favourites' ? t('Favourites') : mode === 'tags' ? t('Tags') : t('Recent'));
 </script>
 
 <div>
   <h1 class="text-xl font-semibold tracking-tight">{title}</h1>
   <p class="mt-1 text-[13px] text-fg-muted">
-    {mode === 'favourites' ? t('Files and folders you starred.') : t('Files you opened lately, on any device.')}
+    {mode === 'favourites' ? t('Files and folders you starred.') : mode === 'tags' ? t('Files and folders by the tags you gave them. Only you see your tags.') : t('Files you opened lately, on any device.')}
   </p>
 </div>
+
+{#if mode === 'tags' && tags.length}
+  <div class="mt-5 flex flex-wrap gap-1.5" role="radiogroup" aria-label={t('Tags')}>
+    {#each tags as x (x.tag)}
+      <button
+        type="button"
+        role="radio"
+        aria-checked={picked === x.tag}
+        class="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 text-[13px] transition-colors {picked === x.tag
+          ? 'border-accent bg-accent-soft font-medium text-accent-text'
+          : 'border-line text-fg-muted hover:bg-subtle hover:text-fg'}"
+        onclick={() => (tag = x.tag)}>{x.tag}<span class="text-xs tabular-nums opacity-80">{x.n}</span></button>
+    {/each}
+  </div>
+{/if}
 
 <div class="card mt-6 overflow-hidden">
   {#if items === null}
@@ -63,11 +84,11 @@
   {:else if !items.length}
     <div class="grid place-items-center gap-1 px-6 py-20 text-center">
       <div class="mb-3 grid size-11 place-items-center rounded-lg border border-line bg-subtle">
-        <Icon name={mode === 'favourites' ? 'star' : 'clock'} class="size-5 text-fg-muted" />
+        <Icon name={mode === 'favourites' ? 'star' : mode === 'tags' ? 'tag' : 'clock'} class="size-5 text-fg-muted" />
       </div>
-      <p class="font-medium">{mode === 'favourites' ? t('No favourites yet') : t('Nothing opened yet')}</p>
+      <p class="font-medium">{mode === 'favourites' ? t('No favourites yet') : mode === 'tags' ? t('No tags yet') : t('Nothing opened yet')}</p>
       <p class="text-[13px] text-fg-muted">
-        {mode === 'favourites' ? t('Use "Add to favourites" in the menu on any file or folder.') : t('Files you preview or download show up here.')}
+        {mode === 'favourites' ? t('Use "Add to favourites" in the menu on any file or folder.') : mode === 'tags' ? t('Use "Tags" in the menu on any file or folder.') : t('Files you preview or download show up here.')}
       </p>
     </div>
   {:else}

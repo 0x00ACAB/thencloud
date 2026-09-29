@@ -1491,4 +1491,14 @@ export default {
   'Admin activity': 'Działania administratorów',
   'What admins changed on this server, kept for a year.': 'Co administratorzy zmienili na tym serwerze, przechowywane przez rok.',
   'Nothing yet.': 'Na razie nic.',
+
+  // Tags
+  Tags: 'Tagi',
+  'On {name}. Only you see them.': 'Na {name}. Widzisz je tylko ty.',
+  'Remove {tag}': 'Usuń {tag}',
+  'Add a tag': 'Dodaj tag',
+  'Press Enter after each tag.': 'Po każdym tagu naciśnij Enter.',
+  'Files and folders by the tags you gave them. Only you see your tags.': 'Pliki i foldery według nadanych im tagów. Twoje tagi widzisz tylko ty.',
+  'No tags yet': 'Nie ma jeszcze tagów',
+  'Use "Tags" in the menu on any file or folder.': 'Użyj "Tagi" w menu dowolnego pliku lub folderu.',
 };
