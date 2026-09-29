@@ -137,7 +137,7 @@ Smaller things:
 - [x] **Backup and restore**: a server command that takes a consistent snapshot of SQLite and the blob store, and a documented restore (`thencloud-server backup DIR`, safe while running)
 - [x] **Health and metrics**: a health check and Prometheus metrics with the same counts the admin view shows, nothing more (`/api/health`; `/api/metrics` only with `--metrics-token`)
 - [x] **Integrity check**: the server checks every blob it expects exists with the right size; the client can verify that everything decrypts and flags what doesn't (`thencloud-server check`, and Settings > Check your files)
-- [ ] **Translations**: move UI strings into message files and pick the language from the browser
+- [x] **Translations**: move UI strings into message files and pick the language from the browser. English, Polish and German (`lib/messages/`), loaded on demand, with plural and grammatical-gender forms; a test fails on any string missing a translation. Dates, numbers, 12/24-hour time and units follow a separate region setting
 - [x] **Accessibility pass**: screen reader labels, focus handling in dialogs and menus, and colour contrast checked in both themes and with the tint on. Every text element on the main pages and dialogs measured in the browser against WCAG AA in dark, light and both tinted themes: the faint grey and danger buttons were below 4.5:1 and are fixed. Menus take Home/End, and Tab closes them; icon-only buttons all have names
 
 ## Milestone 8: Hardening
@@ -164,7 +164,7 @@ Smaller things:
 - [x] **Audiobooks and podcasts**: remember the position per file, chapters from MP4/M4B, and playback speed. Tracks over 20 minutes (and any .m4b) pick up where they were left, on any device (kept in the encrypted music data); chapters come from the Nero `chpl` box, which ffmpeg and most audiobook tools write
 - [x] **Tables**: CSV and TSV shown as a sortable table instead of plain text, with a Source toggle and editing as text
 - [ ] **Office previews**: DOCX, XLSX, ODT and PPTX rendered in the browser, loaded only when needed and sanitised like Markdown
-- [ ] **PDF tools**: merge, split, rotate and reorder pages in the browser, saved as a new encrypted file
+- [x] **PDF tools**: merge, split, rotate and reorder pages in the browser, saved as a new encrypted file. Also remove or extract pages; pdf-lib is loaded only when the dialog opens, and new documents carry no producer or dates
 - [x] **Notes view**: a folder of Markdown files as a notebook, with a list, search and pinned notes. Saved as you type as new versions, with a choice when a note changed elsewhere; search reads notes' text in the browser; pins are kept in the encrypted app data
 
 ## Milestone 11: People and organisations
@@ -173,13 +173,13 @@ Smaller things:
 - [ ] **Team spaces**: folders owned by a group rather than a person, with their own quota, so work doesn't disappear when someone leaves
 - [ ] **Single sign-on (OIDC)** as a gate on login for organisations; the encryption password or passkey stays separate, since the identity provider must never hold keys
 - [ ] **Federation**: share with `user@other-server`, with public keys fetched and pinned like local ones (and checked against key transparency once that exists)
-- [ ] **Per-user limits** on bandwidth and upload rate, set by admins
+- [x] **Per-user limits** on bandwidth and upload rate, set by admins. Daily download and upload limits in encrypted bytes per UTC day, counted per chunk (a public link's traffic counts for its owner); 429 once reached, and users see theirs
 
 ## Milestone 12: Sync and scale
 
-- [ ] **Change feed**: `GET /api/changes?since=<cursor>` returns what changed in your trees and shares, so sync clients and the mount don't have to walk the whole tree
+- [x] **Change feed**: `GET /api/changes?since=<cursor>` returns what changed in your trees and shares, so sync clients and the mount don't have to walk the whole tree. Node ids only, in order, pruned with the activity (an older cursor is told to resync); the mount keeps listings until the feed marks them stale
 - [x] **Live updates**: open views refresh when something changes in a shared folder (Server-Sent Events carrying only node ids). `GET /api/nodes/<id>/changes`, fed by the same hook as the activity history; access is checked again for each event. The browser reads it with fetch (the token stays in a header, not the URL) and reloads the folder quietly, waiting while the tab is hidden or a name is being edited
-- [ ] **Large folders**: paginated listings on the server and a virtualised file table, so a folder with 100,000 items stays fast
+- [x] **Large folders**: paginated listings on the server and a virtualised file table, so a folder with 100,000 items stays fast. `?limit=` with an opaque cursor in index order; past 400 items the list renders only the rows near the screen, and the grid adds tiles as you scroll
 - [ ] **PostgreSQL** as an alternative to SQLite for bigger installs
 - [ ] **Several server instances** behind a load balancer, sharing PostgreSQL and the S3 blob store
 
