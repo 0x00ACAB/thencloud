@@ -8,13 +8,14 @@
 // the videos. Only the root folder's id is remembered in this browser.
 
 import { SvelteMap } from 'svelte/reactivity';
-import { session, resolvePath, walkTree, openEntry, fetchEntry, loadAppData, saveAppData, rename } from './cloud.svelte.js';
+import { session, resolvePath, walkTree, openEntry, fetchEntry, loadAppData, saveAppData, rename, folderLabel } from './cloud.svelte.js';
 import { isSubtitle, matchSubtitles } from './subtitles.js';
 import { previewKind, extension, MAX_PREVIEW } from './preview.js';
 import { parseEpisode, fromTitle, episodeLabel, safeName } from './episodes.js';
 import { readVideoTags } from './videotags.js';
 import { putFolderImage } from './cover.js';
 import { errorMessage } from './ui.svelte.js';
+import { t, language } from './i18n.svelte.js';
 
 // ---------------------------------------------------------------- library
 
@@ -101,7 +102,7 @@ export async function scanVideos() {
   try {
     const { items: path } = await resolvePath(videos.rootId);
     const root = path[path.length - 1];
-    if (root.node.kind !== 'folder') throw new Error('The videos folder is not a folder');
+    if (root.node.kind !== 'folder') throw new Error(t('The videos folder is not a folder'));
     const rootId = root.node.id;
     const folders = new Map([[rootId, { path: [], names: [] }]]);
     const images = new Map(); // folder id -> poster.jpg and the like
@@ -131,7 +132,7 @@ export async function scanVideos() {
       const f = folders.get(r.parentId);
       return { id: r.node.id, entry: r, parentId: r.parentId, path: [rootId, ...f.path], guess: parseEpisode(r.meta.name, f.names) };
     });
-    videos.rootName = root.meta.name;
+    videos.rootName = folderLabel(root);
     scanned.value = { rootId, items, images, named, subtitles };
   } catch (e) {
     if (!ctl.signal.aborted) videos.error = errorMessage(e);
@@ -154,8 +155,8 @@ export function details(v, { edited = true } = {}) {
     const title = d.title || bare(v.entry.meta.name);
     return { series: '', season: null, episode: null, title, label: title };
   }
-  const ep = { series: d.series || 'Unknown series', season: d.season ?? 1, episode: +d.episode, title: d.title || '' };
-  return { ...ep, label: episodeLabel(ep) };
+  const ep = { series: d.series || t('Unknown series'), season: d.season ?? 1, episode: +d.episode, title: d.title || '' };
+  return { ...ep, label: episodeLabel(ep, t('Episode {n}', { n: ep.episode })) };
 }
 
 const seasonOrder = (s) => (s === 0 ? 1e6 : s); // specials last
@@ -245,7 +246,7 @@ export async function setPoster(target, file) {
   const s = scanned.value;
   const series = !!target.episodes;
   const folderId = series ? target.folderId : target.parentId;
-  if (!folderId) throw new Error('Put the episodes in a folder of their own first');
+  if (!folderId) throw new Error(t('Put the episodes in a folder of their own first'));
   const name = series ? 'poster.jpg' : `${bare(target.entry.meta.name)}-poster.jpg`;
   const existing = series ? target.poster : moviePoster(target);
   const { entry, blob } = await putFolderImage(folderId, name, file, existing);
@@ -302,7 +303,7 @@ export async function renameFiles(list) {
       // Subtitles keep going with it: "Old.en.srt" becomes "New.en.srt".
       const oldBase = v.entry.meta.name.replace(/\.[^.]+$/, '').length;
       const newBase = name.replace(/\.[^.]+$/, '');
-      for (const t of subs) await rename(t.entry, newBase + t.entry.meta.name.slice(oldBase)).catch(() => {});
+      for (const sub of subs) await rename(sub.entry, newBase + sub.entry.meta.name.slice(oldBase)).catch(() => {});
     }
   } finally {
     if (n) await scanVideos();
@@ -316,7 +317,7 @@ function learn(v, head, chunkSize) {
   if (v.id in saved.value.found || isEdited(v)) return;
   const noMore = { size: v.entry.meta.size, chunkSize, count: 1, read: () => Promise.reject(new Error('head only')) };
   readVideoTags(noMore, head)
-    .then((t) => t && update((d) => (d.found[v.id] = t)))
+    .then((tags) => tags && update((d) => (d.found[v.id] = tags)))
     .catch(() => {});
 }
 
@@ -383,12 +384,12 @@ export function resumeAt(v) {
 
 const KEEP_PROGRESS = 1000;
 
-export function saveProgress(v, t, duration) {
+export function saveProgress(v, at, duration) {
   if (!duration || !Number.isFinite(duration)) return;
   const p = saved.value.progress[v.id];
-  if (p && Math.abs(p.t - t) < 5) return;
+  if (p && Math.abs(p.t - at) < 5) return;
   update((d) => {
-    d.progress[v.id] = { t: Math.round(t), d: Math.round(duration), at: Date.now() };
+    d.progress[v.id] = { t: Math.round(at), d: Math.round(duration), at: Date.now() };
     const ids = Object.keys(d.progress);
     if (ids.length > KEEP_PROGRESS) {
       ids.sort((a, b) => d.progress[a].at - d.progress[b].at);
@@ -428,7 +429,7 @@ export const seriesOf = (v) => catalogue.value?.series.find((s) => s.episodes.in
 
 /** Subtitle files named after `v`, in its folder: [{ entry, lang, label }]. */
 export function subtitlesFor(v) {
-  return matchSubtitles(v.entry.meta.name, scanned.value?.subtitles?.get(v.parentId) ?? []);
+  return matchSubtitles(v.entry.meta.name, scanned.value?.subtitles?.get(v.parentId) ?? [], { locale: language(), unnamed: t('Subtitles') });
 }
 
 /** A URL `v` plays from: streamed through the worker, else the whole file in memory. { url, close }. */
@@ -448,7 +449,7 @@ export async function openVideo(v) {
       },
     });
   }
-  if (v.entry.meta.size > MAX_PREVIEW) throw new Error('This video is too large to play without streaming. Reload the page and try again');
+  if (v.entry.meta.size > MAX_PREVIEW) throw new Error(t('This video is too large to play without streaming. Reload the page and try again'));
   const { blob } = await fetchEntry(v.entry);
   const url = URL.createObjectURL(new Blob([blob], { type }));
   return { url, close: () => URL.revokeObjectURL(url) };
