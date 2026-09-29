@@ -34,7 +34,10 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 ring = "0.17"
 ciborium = "0.2"
-aws-sdk-s3 = { version = "1", default-features = false, features = ["rt-tokio", "rustls"] }
+aws-sdk-s3 = { version = "1", default-features = false, features = ["rt-tokio"] }
+# The HTTPS client for S3, on rustls with ring (already used here) rather
+# than aws-lc, which needs a C toolchain and cmake to build.
+aws-smithy-http-client = { version = "1", default-features = false, features = ["rustls-ring"] }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
