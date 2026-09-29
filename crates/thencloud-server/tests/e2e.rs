@@ -1173,6 +1173,38 @@ async fn registration_can_be_closed_but_first_user_is_allowed() {
 }
 
 #[tokio::test]
+async fn only_the_apps_get_cors() {
+    let h = Harness::new().await;
+    let preflight = |origin: &'static str| {
+        let h = &h;
+        async move {
+            h.raw(
+                Method::OPTIONS,
+                "/api/me",
+                None,
+                &[
+                    ("origin", origin),
+                    ("access-control-request-method", "GET"),
+                    ("access-control-request-headers", "authorization"),
+                ],
+                Body::empty(),
+                None,
+            )
+            .await
+        }
+    };
+    for origin in ["tauri://localhost", "http://tauri.localhost"] {
+        let r = preflight(origin).await;
+        assert_eq!(
+            r.headers.get("access-control-allow-origin").unwrap(),
+            origin
+        );
+    }
+    let r = preflight("https://evil.example").await;
+    assert!(r.headers.get("access-control-allow-origin").is_none());
+}
+
+#[tokio::test]
 async fn security_headers_are_set() {
     let h = Harness::new().await;
     let r = h

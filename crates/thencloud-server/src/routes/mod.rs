@@ -24,11 +24,12 @@ pub mod versions;
 
 use axum::Router;
 use axum::extract::{DefaultBodyLimit, Request};
-use axum::http::{HeaderName, HeaderValue, header};
+use axum::http::{HeaderName, HeaderValue, Method, header};
 use axum::middleware::{self, Next};
 use axum::response::Response;
 use axum::routing::{delete, get, patch, post, put};
 use thencloud_crypto::MAX_ENCRYPTED_CHUNK;
+use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::set_header::SetResponseHeaderLayer;
 use tower_http::trace::TraceLayer;
@@ -42,6 +43,32 @@ use crate::error::AppError;
 const CSP: &str = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'; \
      img-src 'self' blob:; media-src 'self' blob:; style-src 'self'; object-src 'none'; base-uri 'none'; \
      form-action 'self'; frame-ancestors 'none'";
+
+/// Origins of the desktop and Android apps (`crates/thencloud-app`), which
+/// bundle the web client instead of loading it from here: `tauri://localhost`
+/// on Linux, `http(s)://tauri.localhost` on Windows and Android. Sessions are
+/// bearer tokens, never cookies, so letting them in exposes nothing a
+/// request from outside a browser couldn't already do.
+const APP_ORIGINS: [&str; 3] = [
+    "tauri://localhost",
+    "http://tauri.localhost",
+    "https://tauri.localhost",
+];
+
+fn app_cors() -> CorsLayer {
+    CorsLayer::new()
+        .allow_origin(APP_ORIGINS.map(HeaderValue::from_static))
+        .allow_methods([
+            Method::GET,
+            Method::HEAD,
+            Method::POST,
+            Method::PUT,
+            Method::PATCH,
+            Method::DELETE,
+        ])
+        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE])
+        .max_age(std::time::Duration::from_secs(3600))
+}
 
 pub fn router(state: AppState) -> Router {
     let api = Router::new()
@@ -204,7 +231,8 @@ pub fn router(state: AppState) -> Router {
             "/public/{token}/uploads/{id}/finish",
             post(public::upload_finish),
         )
-        .fallback(|| async { AppError::NotFound });
+        .fallback(|| async { AppError::NotFound })
+        .layer(app_cors());
 
     let web = state.config.web_dir.clone();
     Router::new()
