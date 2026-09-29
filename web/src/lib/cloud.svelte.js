@@ -6,6 +6,7 @@
 
 import { request, allChildren } from './api.js';
 import { t } from './i18n.svelte.js';
+import { padJson } from './appdata.js';
 import {
   tc, b64, unb64, decryptMeta, encryptMeta, unwrapChild, decryptChildren,
   deriveAccountKeys, deriveLinkKeys, fetchFile, openFile, encryptPiece, saveBlob,
@@ -1301,7 +1302,7 @@ export async function loadAppData(name) {
     try {
       data = JSON.parse(dec.decode(tc.decrypt_private_data(mk, session.me.user_id, name, unb64(r.data))));
     } catch {
-      throw new Error(`Your ${name} library data couldn't be decrypted. It may have been tampered with.`);
+      throw new Error(t("Your {name} library data couldn't be decrypted. It may have been tampered with.", { name }));
     }
   }
   appData.set(name, { data, revision: r.revision });
@@ -1342,7 +1343,7 @@ export function saveAppData(name, change) {
       const current = appData.get(name);
       const next = structuredClone(current.data);
       change(next);
-      const sealed = tc.encrypt_private_data(mk, session.me.user_id, name, enc.encode(JSON.stringify(next)));
+      const sealed = tc.encrypt_private_data(mk, session.me.user_id, name, padJson(JSON.stringify(next), name, tc.padded_size));
       try {
         const r = await api('PUT', `/api/me/data/${name}`, { body: { data: b64(sealed), if_revision: current.revision } });
         appData.set(name, { data: next, revision: r.revision });
