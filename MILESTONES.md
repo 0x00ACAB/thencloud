@@ -131,7 +131,7 @@ Smaller things:
 ## Milestone 7: Clients and self-hosting
 
 - [x] **Installable app (PWA)**: a manifest and icons. No share target: its POST would reach the server with the plaintext files whenever the service worker isn't running
-- [ ] **Local WebDAV bridge** in the CLI (`thencloud serve`): serves your files decrypted on 127.0.0.1 only, so macOS Finder, Windows Explorer and iOS Files apps can use them while the server still sees only ciphertext
+- [x] **Local WebDAV bridge** in the CLI (`thencloud serve`): serves your files decrypted on 127.0.0.1 only, so macOS Finder, Windows Explorer and iOS Files apps can use them while the server still sees only ciphertext. Every path starts with a random secret printed at start (or kept in `THENCLOUD_SERVE_SECRET`), so other local users and web pages reaching for localhost get nothing, and a `Host` that isn't loopback is refused. Reads are decrypted a chunk at a time, writes over a file make a new version, deletes go to the trash. iOS Files can't reach a loopback address, so it's left out for now
 - [ ] **Import from Nextcloud**: the CLI reads a Nextcloud account over WebDAV, encrypts locally and uploads, keeping folders and dates
 - [x] **Container image and release binaries**: a Dockerfile, a compose example with a reverse proxy, and binaries built in CI for each release. The image builds the web client like a release, so `verify-web` passes; `--trust-proxy` keeps rate limits per client behind the proxy
 - [x] **Backup and restore**: a server command that takes a consistent snapshot of SQLite and the blob store, and a documented restore (`thencloud-server backup DIR`, safe while running)

@@ -12,6 +12,7 @@ use clap::{Parser, Subcommand};
 use serde::{Deserialize, Serialize};
 #[cfg(target_os = "linux")]
 use thencloud_cli::mount::{self, MountOptions};
+use thencloud_cli::serve::{self, ServeOptions};
 use thencloud_cli::{Client, Error, Result, parse_app_password, safe_name, verify};
 use thencloud_crypto::{self as c, Key};
 
@@ -76,6 +77,22 @@ enum Command {
         /// Skip the signature, to compare with a manifest you built yourself.
         #[arg(long, conflicts_with_all = ["signature", "key"])]
         unsigned: bool,
+    },
+    /// Serve a folder ("" is My files) over WebDAV on 127.0.0.1, decrypted,
+    /// for Finder, Explorer and other file managers. Runs until Ctrl+C.
+    Serve {
+        #[arg(default_value = "")]
+        remote: String,
+        /// The port on 127.0.0.1 to listen on.
+        #[arg(long, default_value_t = 4918)]
+        port: u16,
+        /// Refuse all changes (always the case with a read-only app password).
+        #[arg(long)]
+        read_only: bool,
+        /// Keep the secret in the address the same across restarts, so a
+        /// mapped drive keeps working (at least 32 characters) [default: a new one each time].
+        #[arg(long, env = "THENCLOUD_SERVE_SECRET", hide_env_values = true)]
+        secret: Option<String>,
     },
     /// Mount a folder ("" is My files) as a drive with FUSE. Runs until
     /// unmounted with `fusermount3 -u <mountpoint>` or Ctrl+C.
@@ -225,6 +242,47 @@ fn run(cmd: Command) -> Result<()> {
         return Ok(mount::mount(client, root, &mountpoint, opts)?);
     }
 
+    if let Command::Serve {
+        remote,
+        port,
+        read_only,
+        secret,
+    } = cmd
+    {
+        let secret = match secret {
+            Some(s) if s.len() >= 32 && s.bytes().all(|b| b.is_ascii_alphanumeric()) => s,
+            Some(_) => {
+                return Err(Error::Usage(
+                    "THENCLOUD_SERVE_SECRET must be at least 32 letters and digits".into(),
+                ));
+            }
+            None => serve::new_secret(),
+        };
+        let listener = std::net::TcpListener::bind(("127.0.0.1", port))
+            .map_err(|e| Error::Usage(format!("can't listen on 127.0.0.1:{port}: {e}")))?;
+        let client = connect()?;
+        let root = client.resolve(&remote)?;
+        if !root.is_folder() {
+            let _ = client.logout();
+            return Err(Error::Usage(format!("{remote} is a file")));
+        }
+        eprintln!(
+            "Serving {} at\n\n  http://127.0.0.1:{port}/{secret}/\n\n\
+             Files are decrypted on this machine only. Anyone with this address who can\n\
+             connect to 127.0.0.1 can read them, so don't share it. Stop with Ctrl+C.",
+            if remote.trim_matches('/').is_empty() {
+                "My files"
+            } else {
+                &remote
+            },
+        );
+        let opts = ServeOptions {
+            read_only,
+            temp_dir: std::env::temp_dir(),
+        };
+        return Ok(serve::serve(client, root, listener, secret, opts)?);
+    }
+
     let client = connect()?;
     let result = (|| -> Result<()> {
         match cmd {
@@ -352,7 +410,10 @@ fn run(cmd: Command) -> Result<()> {
             }
             #[cfg(target_os = "linux")]
             Command::Mount { .. } => unreachable!(),
-            Command::Login { .. } | Command::Logout | Command::VerifyWeb { .. } => unreachable!(),
+            Command::Login { .. }
+            | Command::Logout
+            | Command::VerifyWeb { .. }
+            | Command::Serve { .. } => unreachable!(),
         }
         Ok(())
     })();

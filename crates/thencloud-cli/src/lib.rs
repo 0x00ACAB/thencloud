@@ -11,6 +11,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 pub mod backup;
 #[cfg(target_os = "linux")]
 pub mod mount;
+pub mod serve;
 pub mod verify;
 
 use serde::Serialize;
