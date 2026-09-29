@@ -961,8 +961,8 @@ dependencies = [
  "futures-util",
  "headers",
  "htmlescape",
- "http 1.5.0",
- "http-body 1.1.0",
+ "http",
+ "http-body",
  "http-body-util",
  "log",
  "mime_guess",
@@ -1368,7 +1368,7 @@ dependencies = [
  "base64 0.22.1",
  "bytes",
  "headers-core",
- "http 1.5.0",
+ "http",
  "httpdate",
  "mime",
  "sha1 0.10.7",
@@ -1380,7 +1380,7 @@ version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "54b4a22553d4242c49fddb9ba998a99962b5cc6f22cb5a3482bec22522403ce4"
 dependencies = [
- "http 1.5.0",
+ "http",
 ]
 
 [[package]]
@@ -2831,7 +2831,7 @@ dependencies = [
  "fuser",
  "futures-util",
  "httpdate",
- "hyper 1.11.1",
+ "hyper",
  "hyper-util",
  "libc",
  "minisign-verify",
