@@ -1410,4 +1410,42 @@ export default {
   'Download and save {count}': 'Pobierz i zapisz ({count})',
   'Download {count}': 'Pobierz ({count})',
   'Download and save': 'Pobierz i zapisz',
+
+  // Public link page
+  'This link is incomplete': 'Ten link jest niepełny',
+  'The part after the # is missing or damaged. It holds the decryption key, so ask the sender for the full link.':
+    'Brakuje części po # albo jest uszkodzona. To w niej jest klucz do odszyfrowania, więc poproś nadawcę o pełny link.',
+  'This link has expired or was removed': 'Ten link wygasł albo został usunięty',
+  'Ask the person who shared it for a new link.': 'Poproś osobę, która go udostępniła, o nowy link.',
+  "Couldn't open this link": 'Nie udało się otworzyć tego linku',
+  "This link doesn't match its owner's key": 'Ten link nie pasuje do klucza właściciela',
+  "The server gave a different key than the link names, so nothing can be sent safely. Don't upload anything; let the owner know.":
+    'Serwer podał inny klucz niż ten wskazany w linku, więc nie da się niczego bezpiecznie wysłać. Nie wysyłaj niczego; daj znać właścicielowi.',
+  'The key in this link is wrong': 'Klucz w tym linku jest nieprawidłowy',
+  'The password was accepted, but it and the link together do not open this. Make sure you copied the whole link.':
+    'Hasło zostało przyjęte, ale razem z linkiem tego nie otwiera. Upewnij się, że skopiowano cały link.',
+  'The part after the # does not match. Make sure you copied the whole link.': 'Część po # się nie zgadza. Upewnij się, że skopiowano cały link.',
+  'That password is not right.': 'To hasło jest nieprawidłowe.',
+  "Couldn't list this folder": 'Nie udało się wyświetlić zawartości tego folderu',
+  "There's no room left in this folder.": 'W tym folderze nie ma już miejsca.',
+  'This link is password protected': 'Ten link jest chroniony hasłem',
+  'Enter the password the sender gave you.': 'Wpisz hasło od nadawcy.',
+  Unlock: 'Odblokuj',
+  'Send files to {name}': 'Wyślij pliki do {name}',
+  "Only {name} can open the files you send. You can't see what's already in this folder.":
+    'Tylko {name} może otworzyć wysłane pliki. Nie widzisz, co już jest w tym folderze.',
+  'Drop files here or choose them': 'Upuść pliki tutaj albo je wybierz',
+  Sent: 'Wysłano',
+  '{percent}% of {size}': '{percent}% z {size}',
+  "{name}'s key fingerprint is {fingerprint}. If it matters who can read these files, check it with them.":
+    'Odcisk klucza {name} to {fingerprint}. Jeśli ważne jest, kto może czytać te pliki, sprawdź go z tą osobą.',
+  'modified {date}': 'zmieniono {date}',
+  'Download all': 'Pobierz wszystko',
+  'This folder is empty.': 'Ten folder jest pusty.',
+  'Encrypted in your browser before upload.': 'Szyfrowane w twojej przeglądarce przed wysłaniem.',
+  'Decrypted in your browser. The key is never sent to the server.': 'Odszyfrowywane w twojej przeglądarce. Klucz nigdy nie trafia na serwer.',
+  'Link expires {date}': 'Link wygasa {date}',
+
+  // Public link page title
+  'Shared with you': 'Udostępnione tobie',
 };
