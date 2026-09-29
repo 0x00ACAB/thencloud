@@ -197,6 +197,11 @@ owner's copy of their avatar key), `music`, `videos`, `files`, `notes`,
 each under its label and user, and the associated data stops it from handing
 one back as another.
 
+App data is UTF-8 JSON followed by ASCII spaces up to `padded_size` of its
+length (the same buckets as file contents), but never past the server's
+limit for that label less 64 bytes; readers parse it as JSON, which ignores
+the spaces. Data written before the padding has none and reads the same.
+
 ## Node metadata
 
 Everything the server must not know about a node is JSON:

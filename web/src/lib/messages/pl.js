@@ -1468,4 +1468,8 @@ export default {
   Removed: 'Usunięto',
   'What changed in this version': 'Co zmieniło się w tej wersji',
   Changes: 'Zmiany',
+
+  // App data
+  "Your {name} library data couldn't be decrypted. It may have been tampered with.":
+    'Nie udało się odszyfrować danych biblioteki ({name}). Ktoś mógł przy nich majstrować.',
 };
