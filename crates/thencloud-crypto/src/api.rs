@@ -862,6 +862,26 @@ pub struct CreatedInvite {
     pub token: String,
 }
 
+/// One admin action (see the server's audit.rs). `target` is the account
+/// it was about, `detail` the new value where there is one (bytes, a mode,
+/// days), both as they were at the time.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditEntry {
+    pub id: i64,
+    pub at: i64,
+    pub actor: String,
+    pub action: String,
+    pub target: Option<String>,
+    pub detail: Option<String>,
+}
+
+/// Newest first; `more` when there are older ones (ask with `?before=<last id>`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuditPage {
+    pub entries: Vec<AuditEntry>,
+    pub more: bool,
+}
+
 /// Counts only; nothing about what is stored.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerStats {

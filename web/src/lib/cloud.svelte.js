@@ -1839,6 +1839,8 @@ export const adminInvites = () => api('GET', '/api/admin/invites');
 export const adminCreateInvite = (days) => api('POST', '/api/admin/invites', { body: { days } });
 export const adminDeleteInvite = (id) => api('DELETE', `/api/admin/invites/${encodeURIComponent(id)}`);
 export const adminStats = () => api('GET', '/api/admin/stats');
+/** What admins did, newest first: { entries, more }; `before` is the last id seen, for older ones. */
+export const adminAudit = (before = null) => api('GET', before ? `/api/admin/audit?before=${before}` : '/api/admin/audit');
 
 /** Invite links carry the token in the fragment, which is never sent to the server. */
 export const inviteUrl = (token) => `${location.origin}/#invite=${encodeURIComponent(token)}`;

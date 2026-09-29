@@ -13,6 +13,7 @@
     adminCreateInvite,
     adminDeleteInvite,
     adminStats,
+    adminAudit,
     inviteUrl,
     resetToolsInfo,
     refreshMe,
@@ -32,6 +33,8 @@
   let settings = $state(null);
   let invites = $state(null);
   let stats = $state(null);
+  let audit = $state(null); // { entries, more }
+  let auditLoading = $state(false);
   let dialog = $state(null); // { type: 'quota' | 'delete', user }
   let created = $state(null); // the invite just made: { url, expires_at }
   let inviteDays = $state(7);
@@ -39,12 +42,61 @@
 
   async function load() {
     try {
-      [users, settings, invites, stats] = await Promise.all([adminUsers(), adminSettings(), adminInvites(), adminStats()]);
+      [users, settings, invites, stats, audit] = await Promise.all([adminUsers(), adminSettings(), adminInvites(), adminStats(), adminAudit()]);
     } catch (e) {
       toastError(e);
     }
   }
   onMount(load);
+
+  // The first page again, after this admin did something.
+  const refreshAudit = () => adminAudit().then((a) => (audit = a), () => {});
+
+  async function olderAudit() {
+    auditLoading = true;
+    try {
+      const page = await adminAudit(audit.entries.at(-1).id);
+      audit = { entries: [...audit.entries, ...page.entries], more: page.more };
+    } catch (e) {
+      toastError(e);
+    } finally {
+      auditLoading = false;
+    }
+  }
+
+  const bytes = (v) => formatSize(Number(v));
+  /** One entry as a sentence. Values are as the server stored them (bytes, a mode, days). */
+  function describe(e) {
+    const p = { actor: e.actor, target: e.target ?? '' };
+    switch (e.action) {
+      case 'quota':
+        return t("{actor} set {target}'s storage to {value}", { ...p, value: bytes(e.detail) });
+      case 'download_limit':
+        return Number(e.detail) ? t("{actor} limited {target}'s downloads to {value} a day", { ...p, value: bytes(e.detail) }) : t("{actor} removed {target}'s download limit", p);
+      case 'upload_limit':
+        return Number(e.detail) ? t("{actor} limited {target}'s uploads to {value} a day", { ...p, value: bytes(e.detail) }) : t("{actor} removed {target}'s upload limit", p);
+      case 'admin_granted':
+        return t('{actor} made {target} an admin', p);
+      case 'admin_removed':
+        return t("{actor} took {target}'s admin rights away", p);
+      case 'disabled':
+        return t("{actor} disabled {target}'s account", p);
+      case 'enabled':
+        return t("{actor} enabled {target}'s account again", p);
+      case 'deleted':
+        return t("{actor} deleted {target}'s account", p);
+      case 'registration':
+        return t('{actor} set registration to {value}', { ...p, value: modes.find((m) => m[0] === e.detail)?.[1] ?? e.detail });
+      case 'downloader':
+        return t('{actor} set the video downloader to {value}', { ...p, value: downloaderModes.find((m) => m[0] === e.detail)?.[1] ?? e.detail });
+      case 'invite_created':
+        return t('{actor} made an invite link valid for {count} days', { actor: e.actor, count: Number(e.detail) });
+      case 'invite_deleted':
+        return t('{actor} deleted an invite link', p);
+      default:
+        return `${e.actor}: ${e.action}`;
+    }
+  }
 
   const modes = $derived([
     ['open', t('Open to anyone'), t('Anyone who can reach this server can create an account.')],
@@ -56,6 +108,7 @@
     if (settings.registration === registration) return;
     try {
       settings = await adminUpdateSettings({ registration });
+      refreshAudit();
     } catch (e) {
       toastError(e);
     }
@@ -71,6 +124,7 @@
     if (settings.downloader === downloader) return;
     try {
       settings = await adminUpdateSettings({ downloader });
+      refreshAudit();
       resetToolsInfo();
     } catch (e) {
       toastError(e);
@@ -83,6 +137,7 @@
       const r = await adminCreateInvite(inviteDays);
       created = { url: inviteUrl(r.token), expires_at: r.invite.expires_at };
       invites = [r.invite, ...invites];
+      refreshAudit();
     } catch (e) {
       toastError(e);
     } finally {
@@ -94,6 +149,7 @@
     try {
       await adminDeleteInvite(inv.id);
       invites = invites.filter((i) => i.id !== inv.id);
+      refreshAudit();
     } catch (e) {
       toastError(e);
     }
@@ -115,6 +171,7 @@
       users = users.map((u) => (u.id === next.id ? next : u));
       if (message) toast(message, { kind: 'success' });
       if (user.id === session.me.user_id) refreshMe().catch(() => {});
+      refreshAudit();
       stats = await adminStats();
     } catch (e) {
       toastError(e);
@@ -197,7 +254,7 @@
   {t("Accounts and server settings. Admins can't see anyone's files, file names or keys; the numbers below are plain counts.")}
 </p>
 
-{#if !users || !stats || !settings || !invites}
+{#if !users || !stats || !settings || !invites || !audit}
   <div class="mt-6 grid gap-4" aria-hidden="true">
     <div class="grid grid-cols-2 gap-3 md:grid-cols-4">{#each [0, 1, 2, 3] as i (i)}<div class="skeleton h-24"></div>{/each}</div>
     <div class="skeleton h-64"></div>
@@ -366,6 +423,33 @@
       </tbody>
     </table>
   </section>
+
+  <section class="card mt-6 overflow-hidden">
+    <div class="grid gap-1 p-6 pb-4">
+      <h2 class="text-base font-semibold tracking-tight">{t('Admin activity')}</h2>
+      <p class="text-[13px] text-fg-muted">{t('What admins changed on this server, kept for a year.')}</p>
+    </div>
+    {#if !audit.entries.length}
+      <p class="px-6 pb-6 text-[13px] text-fg-muted">{t('Nothing yet.')}</p>
+    {:else}
+      <ul class="divide-y divide-line border-t border-line">
+        {#each audit.entries as e (e.id)}
+          <li class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 px-6 py-2.5 text-[13px]">
+            <span class="min-w-0 break-words">{describe(e)}</span>
+            <span class="text-xs text-fg-muted"><Time ms={e.at * 1000} relative /></span>
+          </li>
+        {/each}
+      </ul>
+      {#if audit.more}
+        <div class="border-t border-line p-2 text-center">
+          <button type="button" class="btn btn-ghost" disabled={auditLoading} onclick={olderAudit}>
+            {#if auditLoading}<Icon name="loader-circle" class="spinner" />{/if}
+            {t('Show older')}
+          </button>
+        </div>
+      {/if}
+    {/if}
+  </section>
 {/if}
 
 {#if dialog?.type === 'quota'}
@@ -413,6 +497,7 @@
       const u = dialog.user;
       await adminDeleteUser(u.id);
       users = users.filter((x) => x.id !== u.id);
+      refreshAudit();
       stats = await adminStats();
       toast(t('Deleted {name}', { name: u.username }), { kind: 'success' });
     }}
