@@ -40,4 +40,7 @@ export default {
   'Looking through folders: {count} videos so far': { one: 'Looking through folders: {count} video so far', other: 'Looking through folders: {count} videos so far' },
   'Rename {count} files?': { one: 'Rename {count} file?', other: 'Rename {count} files?' },
   'Renamed {count} files': { one: 'Renamed {count} file', other: 'Renamed {count} files' },
+  'Stopped after {count} files.': { one: 'Stopped after {count} file.', other: 'Stopped after {count} files.' },
+  "{count} items can't be read.": { one: "{count} item can't be read.", other: "{count} items can't be read." },
+  'The other {count} files are fine.': { one: 'The other file is fine.', other: 'The other {count} files are fine.' },
 };
