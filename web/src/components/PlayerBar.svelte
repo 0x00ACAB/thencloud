@@ -6,6 +6,7 @@
   import { fly, pop, portal } from '../lib/motion.js';
   import { player, current, info, toggle, next, previous, seek, jump, removeFromQueue, setVolume, toggleMute, toggleShuffle, cycleRepeat, stop, formatTime, library, unloadMusic, RATES, setRate, chapterAt, longForm } from '../lib/music.svelte.js';
   import Menu from './Menu.svelte';
+  import { t } from '../lib/i18n.svelte.js';
 
   let { go } = $props();
 
@@ -84,7 +85,7 @@
       step="any"
       value={shown}
       style:--pct="{pct}%"
-      aria-label="Position"
+      aria-label={t('Position')}
       disabled={!player.duration}
       oninput={(e) => (scrub = +e.currentTarget.value)}
       onchange={commit} />
@@ -95,24 +96,24 @@
 {#snippet controls(big)}
   {@const b = big ? 'size-11 [&_svg]:size-5' : 'size-8'}
   <div class="flex items-center justify-center gap-1 {big ? 'gap-4' : ''}">
-    <button type="button" class="btn btn-ghost btn-icon {b} {player.shuffle ? 'text-accent-text hover:text-accent-text' : ''}" aria-label="Shuffle" aria-pressed={player.shuffle} title="Shuffle" onclick={toggleShuffle}>
+    <button type="button" class="btn btn-ghost btn-icon {b} {player.shuffle ? 'text-accent-text hover:text-accent-text' : ''}" aria-label={t('Shuffle')} aria-pressed={player.shuffle} title={t('Shuffle')} onclick={toggleShuffle}>
       <Icon name="shuffle" />
     </button>
-    <button type="button" class="btn btn-ghost btn-icon {b} text-fg" aria-label="Previous" title="Previous" onclick={previous}><Icon name="skip-back" /></button>
+    <button type="button" class="btn btn-ghost btn-icon {b} text-fg" aria-label={t('Previous')} title={t('Previous')} onclick={previous}><Icon name="skip-back" /></button>
     <button
       type="button"
       class="btn btn-icon rounded-full bg-fg text-bg hover:bg-fg/85 {big ? 'size-16 [&_svg]:size-7' : 'size-9'}"
-      aria-label={player.playing ? 'Pause' : 'Play'}
-      title={player.playing ? 'Pause' : 'Play'}
+      aria-label={player.playing ? t('Pause') : t('Play')}
+      title={player.playing ? t('Pause') : t('Play')}
       onclick={toggle}>
       {#if player.buffering && !player.playing}<Icon name="loader-circle" class="spinner" />{:else}<Icon name={player.playing ? 'pause' : 'play'} />{/if}
     </button>
-    <button type="button" class="btn btn-ghost btn-icon {b} text-fg" aria-label="Next" title="Next" onclick={next}><Icon name="skip-forward" /></button>
+    <button type="button" class="btn btn-ghost btn-icon {b} text-fg" aria-label={t('Next')} title={t('Next')} onclick={next}><Icon name="skip-forward" /></button>
     <button
       type="button"
       class="btn btn-ghost btn-icon {b} {player.repeat !== 'off' ? 'text-accent-text hover:text-accent-text' : ''}"
-      aria-label={{ off: 'Repeat', all: 'Repeat all', one: 'Repeat one' }[player.repeat]}
-      title={{ off: 'Repeat', all: 'Repeat all', one: 'Repeat one' }[player.repeat]}
+      aria-label={{ off: t('Repeat'), all: t('Repeat all'), one: t('Repeat one') }[player.repeat]}
+      title={{ off: t('Repeat'), all: t('Repeat all'), one: t('Repeat one') }[player.repeat]}
       onclick={cycleRepeat}>
       <Icon name={player.repeat === 'one' ? 'repeat-1' : 'repeat'} />
     </button>
@@ -121,9 +122,9 @@
 
 {#snippet speed()}
   <Menu
-    label="Playback speed"
+    label={t('Playback speed')}
     buttonClass="btn btn-ghost h-8 px-2 text-xs font-medium tabular-nums {player.rate !== 1 ? 'text-accent-text hover:text-accent-text' : ''}"
-    items={RATES.map((r) => ({ label: r === 1 ? 'Normal' : rateLabel(r), checked: player.rate === r, onclick: () => setRate(r) }))}>
+    items={RATES.map((r) => ({ label: r === 1 ? t('Normal') : rateLabel(r), checked: player.rate === r, onclick: () => setRate(r) }))}>
     {#snippet trigger()}{rateLabel(player.rate)}{/snippet}
   </Menu>
 {/snippet}
@@ -131,7 +132,7 @@
 {#snippet chapterList()}
   {@const now = chapterAt(shown)}
   <div>
-    <p class="px-2 pb-1 text-xs font-medium text-fg-muted">Chapters</p>
+    <p class="px-2 pb-1 text-xs font-medium text-fg-muted">{t('Chapters')}</p>
     {#each player.chapters as c, i (i)}
       <button type="button" class="flex w-full cursor-pointer items-baseline gap-3 rounded-md px-2 py-1.5 text-left hover:bg-muted" onclick={() => seek(c.start)}>
         <span class="w-14 shrink-0 text-xs text-fg-muted tabular-nums">{formatTime(c.start)}</span>
@@ -145,16 +146,16 @@
   <div class="grid gap-3">
     {#if player.chapters.length}{@render chapterList()}{/if}
     <div>
-      <p class="px-2 pb-1 text-xs font-medium text-fg-muted">Now playing</p>
+      <p class="px-2 pb-1 text-xs font-medium text-fg-muted">{t('Now playing')}</p>
       {@render row(track, player.index, true)}
     </div>
     <div>
       <div class="flex items-center px-2 pb-1">
-        <p class="mr-auto text-xs font-medium text-fg-muted">Next up</p>
-        {#if upNext.length}<button type="button" class="cursor-pointer text-xs text-fg-muted hover:text-fg" onclick={() => (player.queue = player.queue.slice(0, player.index + 1))}>Clear</button>{/if}
+        <p class="mr-auto text-xs font-medium text-fg-muted">{t('Next up')}</p>
+        {#if upNext.length}<button type="button" class="cursor-pointer text-xs text-fg-muted hover:text-fg" onclick={() => (player.queue = player.queue.slice(0, player.index + 1))}>{t('Clear')}</button>{/if}
       </div>
-      {#each upNext as t, i (i + ':' + t.id)}
-        {@render row(t, player.index + 1 + i, false)}
+      {#each upNext as tr, i (i + ':' + tr.id)}
+        {@render row(tr, player.index + 1 + i, false)}
       {:else}
         <p class="px-2 py-3 text-[13px] text-fg-muted">Nothing after this{player.repeat === 'all' ? '; the queue starts over' : ''}.</p>
       {/each}
@@ -162,8 +163,8 @@
   </div>
 {/snippet}
 
-{#snippet row(t, i, now)}
-  {@const ti = info(t)}
+{#snippet row(tr, i, now)}
+  {@const ti = info(tr)}
   <div class="group flex items-center gap-1 rounded-md hover:bg-muted">
     <button type="button" class="flex min-w-0 flex-1 cursor-pointer items-center gap-2 px-2 py-1.5 text-left" onclick={() => !now && jump(i)}>
       <span class="grid min-w-0">
@@ -172,7 +173,7 @@
       </span>
     </button>
     {#if !now}
-      <button type="button" class="btn btn-ghost btn-icon mr-1 size-7 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100" aria-label="Remove {ti.title} from the queue" onclick={() => removeFromQueue(i)}>
+      <button type="button" class="btn btn-ghost btn-icon mr-1 size-7 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100" aria-label={t('Remove {title} from the queue', { title: ti.title })} onclick={() => removeFromQueue(i)}>
         <Icon name="x" />
       </button>
     {/if}
@@ -185,7 +186,7 @@
     <div class="absolute inset-x-0 top-0 h-0.5 bg-line md:hidden"><div class="h-full bg-fg" style:width="{pct}%"></div></div>
     <div class="flex h-16 items-center gap-3 px-3 md:h-20 md:px-4">
       <div class="flex min-w-0 flex-1 items-center gap-3 md:w-[30%] md:flex-none">
-        <button type="button" class="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left md:hidden" onclick={() => ((queueOpen = false), (sheet = true))} aria-label="Open player">
+        <button type="button" class="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left md:hidden" onclick={() => ((queueOpen = false), (sheet = true))} aria-label={t('Open player')}>
           {@render art('size-10')}
           <span class="grid min-w-0">
             <span class="truncate text-sm font-medium">{it.title}</span>
@@ -212,13 +213,13 @@
           bind:this={queueBtn}
           type="button"
           class="btn btn-ghost btn-icon {queueOpen ? 'text-accent-text hover:text-accent-text' : ''}"
-          aria-label="Queue"
+          aria-label={t('Queue')}
           aria-expanded={queueOpen}
-          title="Queue"
+          title={t('Queue')}
           onclick={() => (queueOpen = !queueOpen)}>
           <Icon name="list-music" />
         </button>
-        <button type="button" class="btn btn-ghost btn-icon" aria-label={player.muted ? 'Unmute' : 'Mute'} title={player.muted ? 'Unmute' : 'Mute'} onclick={toggleMute}>
+        <button type="button" class="btn btn-ghost btn-icon" aria-label={player.muted ? t('Unmute') : t('Mute')} title={player.muted ? t('Unmute') : t('Mute')} onclick={toggleMute}>
           <Icon name={volumeIcon} />
         </button>
         <input
@@ -229,16 +230,16 @@
           step="0.01"
           value={player.muted ? 0 : player.volume}
           style:--pct="{(player.muted ? 0 : player.volume) * 100}%"
-          aria-label="Volume"
+          aria-label={t('Volume')}
           oninput={(e) => setVolume(+e.currentTarget.value)} />
-        <button type="button" class="btn btn-ghost btn-icon ml-1" aria-label="Stop and clear the queue" title="Stop" onclick={stop}><Icon name="x" /></button>
+        <button type="button" class="btn btn-ghost btn-icon ml-1" aria-label={t('Stop and clear the queue')} title={t('Stop')} onclick={stop}><Icon name="x" /></button>
       </div>
 
       <div class="flex items-center md:hidden">
-        <button type="button" class="btn btn-ghost btn-icon size-10 text-fg [&_svg]:size-5" aria-label={player.playing ? 'Pause' : 'Play'} onclick={toggle}>
+        <button type="button" class="btn btn-ghost btn-icon size-10 text-fg [&_svg]:size-5" aria-label={player.playing ? t('Pause') : t('Play')} onclick={toggle}>
           {#if player.buffering && !player.playing}<Icon name="loader-circle" class="spinner" />{:else}<Icon name={player.playing ? 'pause' : 'play'} />{/if}
         </button>
-        <button type="button" class="btn btn-ghost btn-icon size-10 text-fg [&_svg]:size-5" aria-label="Next" onclick={next}><Icon name="skip-forward" /></button>
+        <button type="button" class="btn btn-ghost btn-icon size-10 text-fg [&_svg]:size-5" aria-label={t('Next')} onclick={next}><Icon name="skip-forward" /></button>
       </div>
     </div>
   </div>
@@ -248,7 +249,7 @@
       bind:this={queueBox}
       class="menu bottom-[calc(var(--bottom-bar)+0.5rem)] right-4 hidden max-h-[min(32rem,60vh)] w-80 overflow-y-auto p-2 md:block"
       role="dialog"
-      aria-label="Queue"
+      aria-label={t('Queue')}
       use:portal
       transition:pop>
       {@render queueList()}
@@ -256,11 +257,11 @@
   {/if}
 
   {#if sheet}
-    <div class="fixed inset-0 z-50 flex flex-col bg-bg px-5 pt-[max(env(safe-area-inset-top),1rem)] pb-[max(env(safe-area-inset-bottom),1.5rem)] md:hidden" role="dialog" aria-label="Now playing" use:portal transition:fly={{ y: 48 }}>
+    <div class="fixed inset-0 z-50 flex flex-col bg-bg px-5 pt-[max(env(safe-area-inset-top),1rem)] pb-[max(env(safe-area-inset-bottom),1.5rem)] md:hidden" role="dialog" aria-label={t('Now playing')} use:portal transition:fly={{ y: 48 }}>
       <div class="flex items-center">
-        <button type="button" class="btn btn-ghost btn-icon size-10 [&_svg]:size-5" aria-label="Close player" onclick={() => (sheet = false)}><Icon name="chevron-down" /></button>
-        <p class="flex-1 text-center text-xs font-medium text-fg-muted">{queueOpen ? 'Queue' : 'Now playing'}</p>
-        <button type="button" class="btn btn-ghost btn-icon size-10 [&_svg]:size-5 {queueOpen ? 'text-accent-text' : ''}" aria-label="Queue" aria-pressed={queueOpen} onclick={() => (queueOpen = !queueOpen)}>
+        <button type="button" class="btn btn-ghost btn-icon size-10 [&_svg]:size-5" aria-label={t('Close player')} onclick={() => (sheet = false)}><Icon name="chevron-down" /></button>
+        <p class="flex-1 text-center text-xs font-medium text-fg-muted">{queueOpen ? t('Queue') : t('Now playing')}</p>
+        <button type="button" class="btn btn-ghost btn-icon size-10 [&_svg]:size-5 {queueOpen ? 'text-accent-text' : ''}" aria-label={t('Queue')} aria-pressed={queueOpen} onclick={() => (queueOpen = !queueOpen)}>
           <Icon name="list-music" />
         </button>
       </div>
