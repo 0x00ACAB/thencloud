@@ -3,6 +3,7 @@
   // readable maximum) and rendered only as they scroll into view, with
   // selectable text and clickable links over each.
   import { onMount } from 'svelte';
+  import { t } from '../../lib/i18n.svelte.js';
   import Icon from '../Icon.svelte';
 
   let { blob } = $props();
@@ -39,7 +40,7 @@
         }
         if (live) pages = list;
       } catch (e) {
-        if (live) error = e?.name === 'PasswordException' ? "This PDF is password protected, which the preview doesn't support yet." : "This PDF couldn't be read. It may be damaged.";
+        if (live) error = e?.name === 'PasswordException' ? t("This PDF is password protected, which the preview doesn't support yet.") : t("This PDF couldn't be read. It may be damaged.");
       }
     })();
     return () => {
@@ -112,7 +113,7 @@
               a.title = l.url;
             } else {
               a.href = '#';
-              a.title = `Go to page ${l.page}`;
+              a.title = t('Go to page {n}', { n: l.page });
               a.onclick = (ev) => {
                 ev.preventDefault();
                 scroller.querySelector(`[data-page="${l.page}"]`)?.scrollIntoView({ block: 'start' });
@@ -147,17 +148,17 @@
           style:width="{pageWidth}px"
           style:height="{Math.round(pageWidth * p.ratio)}px"
           style:--total-scale-factor={pageWidth / p.w}>
-          <canvas use:page={{ n: p.n, w: pageWidth }} class="block size-full" aria-label="Page {p.n} of {pages.length}"></canvas>
+          <canvas use:page={{ n: p.n, w: pageWidth }} class="block size-full" aria-label={t('Page {n} of {total}', { n: p.n, total: pages.length })}></canvas>
         </div>
       {/each}
     </div>
     <div class="sticky bottom-4 flex justify-center">
       <div class="flex items-center gap-1 rounded-lg border border-line bg-bg p-1 shadow-sm">
-        <button type="button" class="btn btn-ghost btn-icon h-7" aria-label="Zoom out" disabled={zoom <= 0.5} onclick={() => (zoom = Math.max(0.5, zoom - 0.25))}><Icon name="zoom-out" /></button>
-        <button type="button" class="h-7 min-w-12 cursor-pointer rounded px-1 text-xs text-fg-muted tabular-nums hover:text-fg" title="Fit to width" onclick={() => (zoom = 1)}>{Math.round(zoom * 100)}%</button>
-        <button type="button" class="btn btn-ghost btn-icon h-7" aria-label="Zoom in" disabled={zoom >= 3} onclick={() => (zoom = Math.min(3, zoom + 0.25))}><Icon name="zoom-in" /></button>
+        <button type="button" class="btn btn-ghost btn-icon h-7" aria-label={t('Zoom out')} disabled={zoom <= 0.5} onclick={() => (zoom = Math.max(0.5, zoom - 0.25))}><Icon name="zoom-out" /></button>
+        <button type="button" class="h-7 min-w-12 cursor-pointer rounded px-1 text-xs text-fg-muted tabular-nums hover:text-fg" title={t('Fit to width')} onclick={() => (zoom = 1)}>{Math.round(zoom * 100)}%</button>
+        <button type="button" class="btn btn-ghost btn-icon h-7" aria-label={t('Zoom in')} disabled={zoom >= 3} onclick={() => (zoom = Math.min(3, zoom + 0.25))}><Icon name="zoom-in" /></button>
         <span class="mx-1 h-4 w-px bg-line" aria-hidden="true"></span>
-        <span class="px-1 text-xs text-fg-muted">{pages.length} {pages.length === 1 ? 'page' : 'pages'}</span>
+        <span class="px-1 text-xs text-fg-muted">{t('{count} pages', { count: pages.length })}</span>
       </div>
     </div>
   {/if}

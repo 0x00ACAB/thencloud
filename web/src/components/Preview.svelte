@@ -9,6 +9,7 @@
   // on the server as you type and offered back next time.
   import { onMount, untrack } from 'svelte';
   import { t, language } from '../lib/i18n.svelte.js';
+  import Sentence from './Sentence.svelte';
   import Icon from './Icon.svelte';
   import Time from './Time.svelte';
   import FileIcon from './FileIcon.svelte';
@@ -243,9 +244,9 @@
     } catch (e) {
       saveError =
         e?.code === 'conflict'
-          ? 'Someone else changed this file since you opened it. Copy your changes, then reopen the file.'
+          ? t('Someone else changed this file since you opened it. Copy your changes, then reopen the file.')
           : e?.code === 'quota_exceeded'
-            ? 'Not enough storage left to save.'
+            ? t('Not enough storage left to save.')
             : errorMessage(e);
     } finally {
       saving = false;
@@ -307,7 +308,7 @@
 
 <svelte:window {onkeydown} {onbeforeunload} />
 
-<dialog bind:this={dlg} class="preview" aria-label="Preview of {entry.meta.name}" onclose={() => onclose()} {oncancel}>
+<dialog bind:this={dlg} class="preview" aria-label={t('Preview of {name}', { name: entry.meta.name })} onclose={() => onclose()} {oncancel}>
   <header class="flex h-14 shrink-0 items-center gap-3 border-b border-line px-4">
     <FileIcon meta={entry.meta} />
     <div class="min-w-0 flex-1">
@@ -319,16 +320,16 @@
 
     {#if editing}
       <p class="hidden truncate text-xs sm:block {saveError ? 'text-danger' : 'text-fg-muted'}" role="status" title={saveError}>
-        {saveError || (saving ? 'Saving' : dirty ? 'Unsaved changes' : 'All changes saved')}
+        {saveError || (saving ? t('Saving') : dirty ? t('Unsaved changes') : t('All changes saved'))}
       </p>
-      <button type="button" class="btn btn-secondary" onclick={() => guard(stopEditing)}>Done</button>
-      <button type="button" class="btn btn-primary" disabled={!dirty || saving} title="Save (Ctrl+S)" onclick={saveDraft}>
+      <button type="button" class="btn btn-secondary" onclick={() => guard(stopEditing)}>{t('Done')}</button>
+      <button type="button" class="btn btn-primary" disabled={!dirty || saving} title={t('Save (Ctrl+S)')} onclick={saveDraft}>
         {#if saving}<Icon name="loader-circle" class="spinner" />{:else}<Icon name="save" />{/if}
-        Save
+        {t('Save')}
       </button>
     {:else if (kind?.kind === 'markdown' || kind?.table) && view.status === 'ready'}
-      <div class="hidden rounded-md border border-line p-0.5 sm:flex" role="radiogroup" aria-label="Show">
-        {#each [[false, kind.table ? 'table' : 'book-open', kind.table ? 'Table' : 'Preview'], [true, 'code', 'Source']] as [value, icon, label] (value)}
+      <div class="hidden rounded-md border border-line p-0.5 sm:flex" role="radiogroup" aria-label={t('Show')}>
+        {#each [[false, kind.table ? 'table' : 'book-open', kind.table ? t('Table') : t('Preview')], [true, 'code', t('Source')]] as [value, icon, label] (value)}
           <button
             type="button"
             role="radio"
@@ -348,16 +349,16 @@
     {/if}
 
     {#if canEdit && !editing}
-      <button type="button" class="btn btn-secondary" onclick={startEditing}><Icon name="pencil" /><span class="hidden sm:inline">Edit</span></button>
+      <button type="button" class="btn btn-secondary" onclick={startEditing}><Icon name="pencil" /><span class="hidden sm:inline">{t('Edit')}</span></button>
     {/if}
 
     {#if entries.length > 1 && !editing}
       <div class="flex items-center gap-1">
-        <button type="button" class="btn btn-ghost btn-icon" aria-label="Previous file" title="Previous (←)" disabled={index === 0} onclick={() => step(-1)}>
+        <button type="button" class="btn btn-ghost btn-icon" aria-label={t('Previous file')} title={t('Previous (←)')} disabled={index === 0} onclick={() => step(-1)}>
           <Icon name="chevron-left" />
         </button>
-        <span class="hidden min-w-12 text-center text-xs text-fg-muted tabular-nums sm:inline">{index + 1} of {entries.length}</span>
-        <button type="button" class="btn btn-ghost btn-icon" aria-label="Next file" title="Next (→)" disabled={index === entries.length - 1} onclick={() => step(1)}>
+        <span class="hidden min-w-12 text-center text-xs text-fg-muted tabular-nums sm:inline">{t('{n} of {total}', { n: index + 1, total: entries.length })}</span>
+        <button type="button" class="btn btn-ghost btn-icon" aria-label={t('Next file')} title={t('Next (→)')} disabled={index === entries.length - 1} onclick={() => step(1)}>
           <Icon name="chevron-right" />
         </button>
       </div>
@@ -366,10 +367,10 @@
 
     {#if !editing}
       <button type="button" class="btn btn-secondary" onclick={download}>
-        <Icon name="download" /><span class="hidden sm:inline">Download</span>
+        <Icon name="download" /><span class="hidden sm:inline">{t('Download')}</span>
       </button>
     {/if}
-    <button type="button" class="btn btn-ghost btn-icon" aria-label="Close preview" title="Close (Esc)" onclick={requestClose}>
+    <button type="button" class="btn btn-ghost btn-icon" aria-label={t('Close preview')} title={t('Close (Esc)')} onclick={requestClose}>
       <Icon name="x" />
     </button>
   </header>
@@ -378,11 +379,11 @@
     <div class="flex flex-wrap items-center gap-3 border-b border-line bg-subtle px-4 py-2 text-[13px]" role="status">
       <Icon name="circle-alert" class="size-4 shrink-0 text-fg-muted" />
       <p class="min-w-0 flex-1">
-        You have unsaved changes from <Time ms={offer.updatedAt * 1000} relative />.
-        {#if offer.baseRevision !== entry.node.revision}<span class="text-fg-muted">The file has changed since, so restoring replaces those changes when you save.</span>{/if}
+        <Sentence text={t('You have unsaved changes from {when}.')}>{#snippet when()}<Time ms={offer.updatedAt * 1000} relative />{/snippet}</Sentence>
+        {#if offer.baseRevision !== entry.node.revision}<span class="text-fg-muted">{t('The file has changed since, so restoring replaces those changes when you save.')}</span>{/if}
       </p>
-      <button type="button" class="btn btn-ghost h-7 px-2.5 text-[13px]" onclick={() => (drafts.drop(entry), (offer = null))}>Discard</button>
-      <button type="button" class="btn btn-secondary h-7 px-2.5 text-[13px]" onclick={restoreDraft}>Restore</button>
+      <button type="button" class="btn btn-ghost h-7 px-2.5 text-[13px]" onclick={() => (drafts.drop(entry), (offer = null))}>{t('Discard')}</button>
+      <button type="button" class="btn btn-secondary h-7 px-2.5 text-[13px]" onclick={restoreDraft}>{t('Restore')}</button>
     </div>
   {/if}
 
@@ -391,7 +392,7 @@
       {#if view.status === 'loading'}
         <div class="absolute inset-0 grid place-items-center" in:fade={{ delay: 150 }}>
           <div class="grid w-56 gap-3 text-center">
-            <p class="text-[13px] text-fg-muted">Decrypting</p>
+            <p class="text-[13px] text-fg-muted">{t('Decrypting')}</p>
             <div class="progress"><div style:width="{Math.round(view.progress * 100)}%"></div></div>
           </div>
         </div>
@@ -402,14 +403,14 @@
               <button
                 type="button"
                 class={zoomed ? 'grid min-h-full w-max min-w-full cursor-zoom-out place-items-center p-6' : 'absolute inset-0 flex cursor-zoom-in items-center justify-center p-6'}
-                aria-label={zoomed ? 'Fit to window' : 'Show actual size'}
+                aria-label={zoomed ? t('Fit to window') : t('Show actual size')}
                 onclick={() => (zoomed = !zoomed)}>
                 <img
                   src={view.url}
                   alt={entry.meta.name}
                   class="checkerboard rounded border border-line {zoomed ? 'max-w-none' : 'max-h-full max-w-full object-contain'}"
                   onload={imageLoaded}
-                  onerror={() => (loaded = { id: entry.node.id, status: 'error', message: "This image couldn't be displayed. It may be damaged, or in a format your browser doesn't support." })} />
+                  onerror={() => (loaded = { id: entry.node.id, status: 'error', message: t("This image couldn't be displayed. It may be damaged, or in a format your browser doesn't support.") })} />
               </button>
             </div>
           {:else if kind.kind === 'video'}
@@ -445,10 +446,10 @@
         </div>
       {:else}
         {@const notice = {
-          unsupported: ['No preview for this type of file', 'Download it to open it with an app on your device.'],
-          large: ['Too large to preview', `Previews are decrypted in memory, so they're limited to ${formatSize(kind?.kind === 'text' || kind?.kind === 'markdown' ? MAX_TEXT : MAX_PREVIEW)}. Download it instead.`],
-          binary: ["This doesn't look like text", 'It has binary content, so there is nothing to show here. Download it instead.'],
-          error: ["Couldn't open this file", view.message],
+          unsupported: [t('No preview for this type of file'), t('Download it to open it with an app on your device.')],
+          large: [t('Too large to preview'), t("Previews are made in memory, so they're limited to {size}. Download it instead.", { size: formatSize(kind?.kind === 'text' || kind?.kind === 'markdown' ? MAX_TEXT : MAX_PREVIEW) })],
+          binary: [t("This doesn't look like text"), t('It has binary content, so there is nothing to show here. Download it instead.')],
+          error: [t("Couldn't open this file"), view.message],
         }[view.status]}
         <div class="absolute inset-0 grid place-items-center p-6 animate-enter">
           <div class="grid max-w-sm justify-items-center gap-1 text-center">
@@ -457,7 +458,7 @@
             </div>
             <p class="font-medium">{notice[0]}</p>
             <p class="text-[13px] text-fg-muted">{notice[1]}</p>
-            <button type="button" class="btn btn-secondary mt-4" onclick={download}><Icon name="download" /> Download</button>
+            <button type="button" class="btn btn-secondary mt-4" onclick={download}><Icon name="download" /> {t('Download')}</button>
           </div>
         </div>
       {/if}
@@ -465,9 +466,9 @@
   </div>
   {#if confirm}
     <ConfirmDialog
-      title="Discard your changes?"
-      description="Your edits to {entry.meta.name} haven't been saved."
-      confirmLabel="Discard"
+      title={t('Discard your changes?')}
+      description={t("Your edits to {name} haven't been saved.", { name: entry.meta.name })}
+      confirmLabel={t('Discard')}
       danger
       onconfirm={() => {
         const then = confirm.then;

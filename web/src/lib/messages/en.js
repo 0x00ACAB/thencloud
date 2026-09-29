@@ -47,4 +47,7 @@ export default {
   '{count} stored versions': { one: '{count} stored version', other: '{count} stored versions' },
   '{count} public links': { one: '{count} public link', other: '{count} public links' },
   '{count} days': { one: '{count} day', other: '{count} days' },
+  '{count} pages': { one: '{count} page', other: '{count} pages' },
+  '{count} rows': { one: '{count} row', other: '{count} rows' },
+  '{count} rows shown, the file has more. Use Source to see all of it.': { one: '{count} row shown, the file has more. Use Source to see all of it.', other: '{count} rows shown, the file has more. Use Source to see all of it.' },
 };
