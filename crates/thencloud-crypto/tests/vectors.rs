@@ -10,8 +10,9 @@
 //! Everything deterministic (key derivation, tags, fingerprints, padding) is
 //! compared exactly.
 //!
-//! To write the file again (only when a format is added; the old vectors
-//! must keep passing):
+//! To write the file again (when a format is added; until the first
+//! release a format may also change in place, and then every client must
+//! follow the new file):
 //!
 //!     THENCLOUD_WRITE_VECTORS=1 cargo test -p thencloud-crypto --test vectors -- --ignored
 
@@ -412,6 +413,10 @@ fn write_vectors() {
         257,
         1000,
         5000,
+        16_383,
+        16_384,
+        16_385,
+        20_000,
         123_456,
         4 * 1024 * 1024,
         4 * 1024 * 1024 + 1,
@@ -742,6 +747,19 @@ fn write_vectors() {
             v["sealed"] = b64(&s);
             reject(&v, json!({}), "one bit of the tag flipped")
         },
+        {
+            let mut v = find(&symmetric, "node-key");
+            let mut s = raw(&v, "sealed");
+            s[0] = FORMAT_VERSION + 1;
+            v["sealed"] = b64(&s);
+            reject(&v, json!({}), "a format version this client doesn't know")
+        },
+        {
+            let mut v = find(&symmetric, "node-key");
+            let s = raw(&v, "sealed");
+            v["sealed"] = b64(&s[1..]);
+            reject(&v, json!({}), "the version byte left out")
+        },
     ];
     symmetric.extend(rejects);
 
@@ -803,6 +821,15 @@ fn write_vectors() {
             json!({ "secret": b64(hybrid.secret.as_bytes()) }),
             "a box opened by someone else",
         ),
+        {
+            let mut s = raw(&classic_share, "sealed");
+            s[0] = 3;
+            reject(
+                &classic_share,
+                json!({ "sealed": b64(&s) }),
+                "a sealed box of a kind this client doesn't know",
+            )
+        },
     ]);
 
     let file = json!({

@@ -4,14 +4,14 @@ use argon2::{PasswordHasher, PasswordVerifier};
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::{Digest, Sha256};
 use thencloud_crypto::api::B64;
-use thencloud_crypto::{KEY_LEN, NONCE_LEN, TAG_LEN};
+use thencloud_crypto::{KEY_LEN, SEALED_OVERHEAD};
 
 use crate::error::{AppError, Result};
 
 /// A symmetric key wrapped with XChaCha20-Poly1305.
-pub const WRAPPED_KEY_LEN: usize = NONCE_LEN + KEY_LEN + TAG_LEN;
-/// A key sealed to an X25519 public key (ephemeral pubkey + wrapped key).
-pub const SEALED_KEY_LEN: usize = 32 + WRAPPED_KEY_LEN;
+pub const WRAPPED_KEY_LEN: usize = SEALED_OVERHEAD + KEY_LEN;
+/// A key sealed to an X25519 public key (kind, ephemeral pubkey, wrapped key).
+pub const SEALED_KEY_LEN: usize = 1 + 32 + WRAPPED_KEY_LEN;
 /// A key sealed with X25519 and ML-KEM-768 together.
 pub const HYBRID_SEALED_KEY_LEN: usize =
     1 + 32 + thencloud_crypto::PQ_CIPHERTEXT_LEN + WRAPPED_KEY_LEN;
@@ -104,7 +104,7 @@ pub fn check_pq_key(public: &Option<B64>, wrapped: &Option<B64>) -> Result<()> {
             check_len(p, thencloud_crypto::PQ_PUBLIC_LEN, "pq_public_key")?;
             check_len(
                 w,
-                NONCE_LEN + thencloud_crypto::PQ_SEED_LEN + TAG_LEN,
+                SEALED_OVERHEAD + thencloud_crypto::PQ_SEED_LEN,
                 "enc_pq_private_key",
             )
         }
@@ -115,7 +115,7 @@ pub fn check_pq_key(public: &Option<B64>, wrapped: &Option<B64>) -> Result<()> {
 }
 
 pub fn check_metadata(b: &[u8]) -> Result<()> {
-    if b.len() < NONCE_LEN + TAG_LEN || b.len() > MAX_METADATA_LEN {
+    if b.len() < SEALED_OVERHEAD || b.len() > MAX_METADATA_LEN {
         return Err(AppError::bad("enc_metadata has an invalid size"));
     }
     Ok(())
