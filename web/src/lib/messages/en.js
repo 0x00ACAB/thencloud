@@ -50,4 +50,5 @@ export default {
   '{count} pages': { one: '{count} page', other: '{count} pages' },
   '{count} rows': { one: '{count} row', other: '{count} rows' },
   '{count} rows shown, the file has more. Use Source to see all of it.': { one: '{count} row shown, the file has more. Use Source to see all of it.', other: '{count} rows shown, the file has more. Use Source to see all of it.' },
+  'Convert {count} files': { one: 'Convert {count} file', other: 'Convert {count} files' },
 };
