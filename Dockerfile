@@ -15,6 +15,9 @@ ARG RUST_VERSION=1.94.1
 # --- web client: Rust crypto -> WASM, then Svelte + Tailwind via Vite -------
 FROM node:24-bookworm AS web
 ARG RUST_VERSION
+# The release this is (a tag, as release-web.sh gets it): it's in every page,
+# so a server running this image passes verify-web against that release.
+ARG THENCLOUD_VERSION=dev
 ENV CARGO_HOME=/cargo RUSTUP_HOME=/rustup PATH=/cargo/bin:$PATH
 RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal \
       --default-toolchain "$RUST_VERSION" --target wasm32-unknown-unknown \
@@ -29,7 +32,7 @@ COPY web web
 # paths release-web.sh maps them to, which the remaps spell out.
 RUN RUSTFLAGS="--cfg getrandom_backend=\"wasm_js\" --remap-path-prefix=/thencloud=/thencloud --remap-path-prefix=/cargo=/cargo" \
       wasm-pack build crates/thencloud-wasm --release --target web --out-dir ../../web/src/wasm --no-typescript --no-pack \
- && cd web && npm ci --no-audit --no-fund && npm run build
+ && cd web && npm ci --no-audit --no-fund && THENCLOUD_VERSION="$THENCLOUD_VERSION" npm run build
 
 # --- server ---------------------------------------------------------------
 FROM rust:${RUST_VERSION}-bookworm AS server

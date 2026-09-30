@@ -18,6 +18,12 @@ export default {
   "The check that you're a person expired or didn't go through. Do it again, then try once more.": "Sprawdzenie, czy jesteś człowiekiem, wygasło albo się nie powiodło. Zrób je jeszcze raz i spróbuj ponownie.",
   "This server asks for a check that you're a person, which the app can't show yet. Sign in from a browser, or use your recovery key.": "Ten serwer wymaga sprawdzenia, czy jesteś człowiekiem, a aplikacja nie potrafi go jeszcze pokazać. Zaloguj się w przeglądarce albo użyj klucza odzyskiwania.",
   "Before you continue, this server asks for a quick check that you're a person. It's run by Cloudflare on a page of its own, which never sees your password.": "Zanim przejdziesz dalej, ten serwer prosi o szybkie sprawdzenie, czy jesteś człowiekiem. Przeprowadza je Cloudflare na osobnej stronie, która nigdy nie widzi twojego hasła.",
+  "That setup code isn't right, or the name isn't {name}.": "Ten kod konfiguracyjny jest błędny albo nazwa to nie {name}.",
+  "That setup code isn't right. It's in the server's log from when it started.": "Ten kod konfiguracyjny jest błędny. Znajdziesz go w logu serwera z chwili uruchomienia.",
+  "This server is new.": "To nowy serwer.",
+  "The first account is its admin, and is called {name}. To make it, enter the setup code the server printed in its log when it started (it is also in the file setup-code in its data directory).": "Pierwsze konto jest jego administratorem i nazywa się {name}. Aby je utworzyć, wpisz kod konfiguracyjny, który serwer wypisał w logu przy uruchomieniu (jest też w pliku setup-code w jego katalogu danych).",
+  "The first account is its admin. To make it, enter the setup code the server printed in its log when it started (it is also in the file setup-code in its data directory).": "Pierwsze konto jest jego administratorem. Aby je utworzyć, wpisz kod konfiguracyjny, który serwer wypisał w logu przy uruchomieniu (jest też w pliku setup-code w jego katalogu danych).",
+  "Setup code": "Kod konfiguracyjny",
   'Wrong username or password.': 'Zła nazwa użytkownika lub hasło.',
   "That didn't work. Codes change every 30 seconds; try the newest one.": 'Nie udało się. Kody zmieniają się co 30 sekund; spróbuj najnowszego.',
   'That took too long. Sign in again.': 'To trwało zbyt długo. Zaloguj się ponownie.',
@@ -1533,4 +1539,8 @@ export default {
   "This document has no text.": "Ten dokument nie zawiera tekstu.",
   "This is as far as the preview goes. Download the file to see the rest.": "Podgląd kończy się tutaj. Pobierz plik, żeby zobaczyć resztę.",
   "A simple preview: the text, tables and pictures, without the original layout.": "Prosty podgląd: tekst, tabele i obrazy, bez oryginalnego układu.",
+  // Checking the web app
+  "This is version {version} of the web app.": "To wersja {version} aplikacji webowej.",
+  "This browser remembers the app it was sent and tells you before opening a changed one; that isn't proof against a server set on changing it, so check it too.": "Ta przeglądarka pamięta wysłaną jej aplikację i uprzedzi Cię, zanim otworzy zmienioną; to nie jest dowód przeciw serwerowi, który chce ją zmienić, więc sprawdź ją też.",
+  "This browser isn't watching the app for changes right now (it needs a service worker, which some private windows don't allow).": "Ta przeglądarka nie pilnuje teraz zmian w aplikacji (potrzebuje do tego service workera, na którego niektóre okna prywatne nie pozwalają).",
 };

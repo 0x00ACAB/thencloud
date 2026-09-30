@@ -59,7 +59,7 @@ Requirements:
 # open http://127.0.0.1:8080
 ```
 
-The first account to register becomes the admin.
+The first account to register becomes the admin. So that nobody else can claim a new server first, making it needs the **setup code** the server prints in its log on first start (and keeps in `setup-code` in the data directory until it's used); `--admin-username` also fixes that account's name. With Docker: `docker compose logs thencloud | grep "setup code"`.
 
 ### With Docker
 
@@ -74,7 +74,7 @@ For a server on the internet, `deploy/compose.yaml` runs thencloud behind [Caddy
 THENCLOUD_DOMAIN=cloud.example.com docker compose -f deploy/compose.yaml up -d
 ```
 
-The image builds the web client the same way releases do, so `thencloud verify-web` can check it against a signed release. Each release also has server and CLI binaries for Linux (x86_64, arm64) and macOS (arm64); the server needs the release's web client unpacked next to it (`--web-dir`).
+The image builds the web client the same way releases do, so `thencloud verify-web` can check it against a signed release: build it from the release's tag with `--build-arg THENCLOUD_VERSION=<tag>` (the version is part of every page). Each release also has server and CLI binaries for Linux (x86_64, arm64) and macOS (arm64); the server needs the release's web client unpacked next to it (`--web-dir`).
 
 ### As a Tor onion service
 
@@ -107,7 +107,8 @@ Every flag can also be set as an environment variable.
 | `--s3-snapshot-hours` | `THENCLOUD_S3_SNAPSHOT_HOURS` | `24`. With S3 configured, put a snapshot of the database in the bucket (under `db/`) this often, so the server can be rebuilt from the bucket alone. `0` turns it off |
 | `--s3-snapshots-kept` | `THENCLOUD_S3_SNAPSHOTS_KEPT` | `7` (older database snapshots are deleted) |
 | `--web-dir` | `THENCLOUD_WEB_DIR` | `./web/dist` (the built web client) |
-| `--allow-registration` | `THENCLOUD_ALLOW_REGISTRATION` | `true` (the first user can always register, and becomes an admin). Admins can switch between open, invite-only and closed at runtime in the Admin view, which overrides this |
+| `--admin-username` | `THENCLOUD_ADMIN_USERNAME` | unset. The name the first account (the admin) must have; it also needs the setup code from the log |
+| `--allow-registration` | `THENCLOUD_ALLOW_REGISTRATION` | `true` (the first user can always register, with the setup code, and becomes an admin). Admins can switch between open, invite-only and closed at runtime in the Admin view, which overrides this |
 | `--default-quota` | `THENCLOUD_DEFAULT_QUOTA` | 10 GiB |
 | `--session-days` | `THENCLOUD_SESSION_DAYS` | `30` |
 | `--max-versions` | `THENCLOUD_MAX_VERSIONS` | `10` (versions kept per file, including the current one) |
@@ -219,7 +220,7 @@ As a result, a malicious server cannot swap files, move ciphertexts between node
 **Optional bot check.** A server can ask for a Cloudflare Turnstile check before sign-in, and before registration while it's open to everyone (`--turnstile-site-key` and `--turnstile-secret`, off by default). It's the one exception above, so it's kept to a page of its own, `/auth`: only that page's CSP lets in Cloudflare's script, and it has no password field and loads no keys. It hands the app page a one-time token and sends you back. The server checks the token with Cloudflare, sending the secret and the token and nothing else (not your username or address), and takes each token once. The app page's CSP doesn't change, and a sign-in kept on the browser is dropped after a visit to `/auth`, since Cloudflare's script shared the site's storage there. The first account, invited people, recovery keys, passkeys and app passwords skip the check; the desktop and Android app can't show it yet.
 
 **Known limitations**, most of them tracked in [MILESTONES.md](MILESTONES.md):
-- **The web client is served by the server.** A malicious or compromised server could serve modified JavaScript. This is inherent to every browser-based E2EE app. The native client (`crates/thencloud-cli`) and the apps (`crates/thencloud-app`, which bundle the web client) avoid it, and releases make it checkable: the web client builds reproducibly (`scripts/release-web.sh`, byte for byte the same on any machine with the pinned toolchain), each release publishes a minisign-signed manifest of every file's SHA-256, and `thencloud verify-web https://your.server --manifest thencloud-web-<version>.json` fetches every file in every encoding the server offers and compares. That shows what the server sends to anyone who asks; a server that singles out one browser needs a check inside the browser to catch.
+- **The web client is served by the server.** A malicious or compromised server could serve modified JavaScript. This is inherent to every browser-based E2EE app. The native client (`crates/thencloud-cli`) and the apps (`crates/thencloud-app`, which bundle the web client) avoid it, and releases make it checkable: the web client builds reproducibly (`scripts/release-web.sh`, byte for byte the same on any machine with the pinned toolchain), each release publishes a minisign-signed manifest of every file's SHA-256, and `thencloud verify-web https://your.server --manifest thencloud-web-<version>.json` fetches every file in every encoding the server offers and compares. That shows what the server sends to anyone who asks; a server that singles out one browser needs a check inside the browser to catch. As a tripwire for that, the web client's service worker remembers the SHA-256 of each app page and of each code file (which have content-hashed names, so a name must always hold the same bytes). When a page changes, it shows a notice before opening it, with the old and new version and how to check them; a code file that changes under the same name is refused. Settings shows the running version and the `verify-web` command for it. It's not proof: the browser fetches the service worker itself from the server, so a server that replaces it first can get past it.
 - **Public keys are trust-on-first-use.** Compare fingerprints out of band the first time you share with someone, or a malicious server could substitute its own key. After that the key is pinned in your verified contacts (encrypted under your master key and bound to your account), and a different key for that person blocks sharing until you check again.
 - **Revoking a share** stops the server from serving the data, but it does not re-key. A former recipient who kept the key could decrypt ciphertext they get from elsewhere.
 - **File drop links** (upload-only) carry your public key instead of a folder key. Visitors seal each file's key to it, and your client wraps it under the folder key the next time you browse, but only for folders that have a file drop link. When a dropped file is taken in, it gets a fresh key, so the key the visitor chose can't read later versions. Files dropped through a link that has since gone are never taken in automatically; they wait for you to keep or delete them. Anyone with the link, the server included, can add files to that folder, but nobody but you can read them. A drop can't make the server delete your old versions to make room.

@@ -75,7 +75,7 @@ const deviceName = () => {
 // Account
 // ---------------------------------------------------------------------------
 
-export async function register(username, password, invite = null, remember = false, turnstile = null) {
+export async function register(username, password, invite = null, remember = false, turnstile = null, setupCode = null) {
   const salt = tc.random_salt();
   const params = JSON.parse(tc.default_kdf_params());
   const ak = await deriveAccountKeys(password, salt, params);
@@ -103,6 +103,7 @@ export async function register(username, password, invite = null, remember = fal
       device_name: deviceName(),
       invite: invite || undefined,
       turnstile: turnstile || undefined,
+      setup_code: setupCode || undefined,
     },
   });
   kp.free();

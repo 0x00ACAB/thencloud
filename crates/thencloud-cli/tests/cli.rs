@@ -92,6 +92,7 @@ fn start() -> Server {
         None,
         &RegisterRequest {
             turnstile: None,
+            setup_code: None,
             username: "alice".into(),
             auth_key: B64(ak.auth_key.as_bytes().to_vec()),
             kdf_salt: B64(salt),
@@ -1147,7 +1148,7 @@ fn webdav_saving_over_a_file_keeps_it() {
 
     // A file from elsewhere moved over it goes to the trash instead.
     let local = tempfile::tempdir().unwrap();
-    std::fs::write(local.path().join("other.txt"), b"third draft").unwrap();
+    fs::write(local.path().join("other.txt"), b"third draft").unwrap();
     cl.upload(&local.path().join("other.txt"), &root, "other.txt", None)
         .unwrap();
     let (st, _) = dav(
