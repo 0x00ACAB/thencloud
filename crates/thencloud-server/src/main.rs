@@ -58,16 +58,54 @@ async fn main() -> Result<ExitCode, Box<dyn std::error::Error + Send + Sync>> {
 
     let listener = tokio::net::TcpListener::bind(config.bind).await?;
     tracing::info!("thencloud listening on http://{}", listener.local_addr()?);
-    axum::serve(
+    let shutdown = state.shutdown.clone();
+    let server = axum::serve(
         listener,
         router(state).into_make_service_with_connect_info::<SocketAddr>(),
     )
-    .with_graceful_shutdown(async {
-        let _ = tokio::signal::ctrl_c().await;
+    .with_graceful_shutdown(shutdown.clone().cancelled_owned());
+    // On Ctrl+C or SIGTERM (docker stop): stop taking connections, end the
+    // live-update streams, and give requests under way a moment to finish.
+    let deadline = async {
+        stop_signal().await;
         tracing::info!("shutting down");
-    })
-    .await?;
+        shutdown.cancel();
+        tokio::time::sleep(SHUTDOWN_GRACE).await;
+    };
+    tokio::select! {
+        r = server => r?,
+        () = deadline => tracing::warn!(
+            "requests still running after {} s; stopping anyway",
+            SHUTDOWN_GRACE.as_secs()
+        ),
+    }
     Ok(ExitCode::SUCCESS)
+}
+
+/// How long requests under way (downloads, uploads) get to finish.
+const SHUTDOWN_GRACE: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Ctrl+C, or SIGTERM where there is one.
+async fn stop_signal() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        match signal(SignalKind::terminate()) {
+            Ok(mut term) => {
+                tokio::select! {
+                    _ = tokio::signal::ctrl_c() => {}
+                    _ = term.recv() => {}
+                }
+            }
+            Err(_) => {
+                let _ = tokio::signal::ctrl_c().await;
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
 }
 
 /// Open an existing data directory without serving it.
