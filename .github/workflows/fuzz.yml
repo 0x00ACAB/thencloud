@@ -1,16 +1,28 @@
 name: Fuzz
 
-# cargo-fuzz targets in fuzz/: a minute each on every push and pull request,
-# and a quarter of an hour each weekly. The corpus is kept between runs, and
-# a crash uploads its input.
+# cargo-fuzz targets in fuzz/, built once and run one after another in a
+# single job: four minutes each weekly, and twenty seconds each on pull
+# requests that change fuzzed code. The corpus is kept between runs, and a
+# crash uploads its input. Run it by hand for a longer go.
 
 on:
-  push:
-    branches: [main]
   pull_request:
+    paths:
+      - fuzz/**
+      - crates/thencloud-crypto/**
+      - crates/thencloud-server/src/webauthn.rs
+      - crates/thencloud-server/src/totp.rs
+      - crates/thencloud-server/src/util.rs
+      - crates/thencloud-cli/src/backup.rs
+      - crates/thencloud-cli/src/nextcloud.rs
+      - .github/workflows/fuzz.yml
   schedule:
     - cron: '41 4 * * 0'
   workflow_dispatch:
+    inputs:
+      seconds:
+        description: Seconds per target
+        default: '300'
 
 permissions:
   contents: read
@@ -19,14 +31,15 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  TARGETS: crypto-decode sealed-box webauthn-register webauthn-assert api-json server-input backup-read nextcloud-listing
+  SECONDS_EACH: ${{ github.event_name == 'schedule' && 240 || github.event_name == 'workflow_dispatch' && inputs.seconds || 20 }}
+
 jobs:
   fuzz:
-    name: ${{ matrix.target }}
+    name: Fuzz every target
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        target: [crypto-decode, sealed-box, webauthn-register, webauthn-assert, api-json, server-input, backup-read, nextcloud-listing]
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@nightly
@@ -38,16 +51,27 @@ jobs:
           tool: cargo-fuzz
       - uses: actions/cache@v4
         with:
-          path: fuzz/corpus/${{ matrix.target }}
-          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
-          restore-keys: fuzz-corpus-${{ matrix.target }}-
-      - name: Fuzz
+          path: fuzz/corpus
+          key: fuzz-corpus-${{ github.run_id }}
+          restore-keys: fuzz-corpus-
+      - name: Build
         working-directory: fuzz
         # The prebuilt cargo-fuzz is a musl binary and would build for musl,
         # which the sanitizers don't support.
-        run: cargo fuzz run --target x86_64-unknown-linux-gnu ${{ matrix.target }} -- -max_total_time=${{ github.event_name == 'schedule' && 900 || 60 }} -max_len=4096
+        run: cargo fuzz build --target x86_64-unknown-linux-gnu
+      - name: Fuzz
+        working-directory: fuzz
+        # Every target runs even if one finds a crash; the job fails at the end.
+        run: |
+          failed=""
+          for t in $TARGETS; do
+            echo "::group::$t"
+            cargo fuzz run --target x86_64-unknown-linux-gnu "$t" -- -max_total_time="$SECONDS_EACH" -max_len=4096 || failed="$failed $t"
+            echo "::endgroup::"
+          done
+          if [ -n "$failed" ]; then echo "::error::crashes in:$failed"; exit 1; fi
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: crash-${{ matrix.target }}
-          path: fuzz/artifacts/${{ matrix.target }}
+          name: fuzz-crashes
+          path: fuzz/artifacts

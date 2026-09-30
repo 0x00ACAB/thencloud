@@ -1,9 +1,23 @@
 name: CI
 
+# Pull requests: a merge to main is the code its pull request already
+# tested, so it isn't run again (CI minutes are limited), and documentation
+# alone doesn't run it. The one exception: when a lockfile changes on main,
+# the Rust and Web jobs run there to refresh the build caches, since caches
+# saved in a pull request can't be used by the next one.
 on:
   push:
     branches: [main]
+    paths:
+      - Cargo.lock
+      - web/package-lock.json
   pull_request:
+    paths-ignore:
+      - '**.md'
+      - docs/**
+      - LICENSE
+      - .github/scripts/roadmap.js
+      - .github/workflows/roadmap.yml
   workflow_dispatch:
 
 permissions:
@@ -65,6 +79,8 @@ jobs:
 
   browser:
     name: Browser tests (Playwright)
+    # Nothing to cache here that the other jobs don't.
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
