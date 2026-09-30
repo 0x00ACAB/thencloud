@@ -18,6 +18,7 @@
   import PersonName from '../PersonName.svelte';
   import Time from '../Time.svelte';
   import Sentence from '../Sentence.svelte';
+  import { serverOrigin, inApp } from '../../lib/server.svelte.js';
   import FileIcon from '../FileIcon.svelte';
   import FolderIcon from '../FolderIcon.svelte';
   import { ICON_PACKS, hasFolderIcons } from '../../lib/file-icons.svelte.js';
@@ -37,6 +38,10 @@
   const packNames = $derived({ minimal: t('Minimal'), documents: t('Documents') });
 
   // Checking that everything decrypts.
+  // The release this page is (from the build) and how to check a server sends it.
+  const appVersion = document.querySelector('meta[name="thencloud-version"]')?.getAttribute('content') || 'dev';
+  const verifyCommand = $derived(`thencloud verify-web ${serverOrigin() ?? location.origin} --manifest thencloud-web-${appVersion}.json`);
+  const watched = typeof navigator !== 'undefined' && !!navigator.serviceWorker?.controller;
   let checkRun = $state(null); // { files, folders, bytes, problems, done, stopped }
   let checkCtl = null;
   onMount(() => () => checkCtl?.abort());
@@ -937,6 +942,22 @@
           {#snippet command()}<code class="font-mono text-fg">thencloud verify-web</code>{/snippet}
         </Sentence>
       </p>
+      <p>
+        <Sentence text={t('This is version {version} of the web app.')}>
+          {#snippet version()}<code class="font-mono text-fg">{appVersion}</code>{/snippet}
+        </Sentence>
+        {#if !inApp}
+          {watched
+            ? t("This browser remembers the app it was sent and tells you before opening a changed one; that isn't proof against a server set on changing it, so check it too.")
+            : t("This browser isn't watching the app for changes right now (it needs a service worker, which some private windows don't allow).")}
+        {/if}
+      </p>
+      {#if appVersion !== 'dev'}
+        <div class="flex items-center gap-2">
+          <code class="min-w-0 flex-1 truncate rounded-md border border-line bg-subtle px-2.5 py-1.5 font-mono text-xs text-fg">{verifyCommand}</code>
+          <button type="button" class="btn btn-secondary btn-sm" onclick={() => copyText(verifyCommand)}><Icon name="copy" />{t('Copy')}</button>
+        </div>
+      {/if}
     </div>
   {/snippet}
   {@render section(t('About'), null, aboutBody)}

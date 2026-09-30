@@ -29,7 +29,7 @@ wasm-pack build crates/thencloud-wasm --release --target web --out-dir ../../web
 (
   cd web
   npm ci --no-audit --no-fund
-  npm run build
+  THENCLOUD_VERSION="$version" npm run build
   THENCLOUD_VERSION="$version" node scripts/manifest.mjs "../thencloud-web-$version.json"
 )
 tar --sort=name --mtime="@$SOURCE_DATE_EPOCH" --owner=0 --group=0 --numeric-owner -C web -cf - dist |

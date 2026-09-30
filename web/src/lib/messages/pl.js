@@ -1539,4 +1539,8 @@ export default {
   "This document has no text.": "Ten dokument nie zawiera tekstu.",
   "This is as far as the preview goes. Download the file to see the rest.": "Podgląd kończy się tutaj. Pobierz plik, żeby zobaczyć resztę.",
   "A simple preview: the text, tables and pictures, without the original layout.": "Prosty podgląd: tekst, tabele i obrazy, bez oryginalnego układu.",
+  // Checking the web app
+  "This is version {version} of the web app.": "To wersja {version} aplikacji webowej.",
+  "This browser remembers the app it was sent and tells you before opening a changed one; that isn't proof against a server set on changing it, so check it too.": "Ta przeglądarka pamięta wysłaną jej aplikację i uprzedzi Cię, zanim otworzy zmienioną; to nie jest dowód przeciw serwerowi, który chce ją zmienić, więc sprawdź ją też.",
+  "This browser isn't watching the app for changes right now (it needs a service worker, which some private windows don't allow).": "Ta przeglądarka nie pilnuje teraz zmian w aplikacji (potrzebuje do tego service workera, na którego niektóre okna prywatne nie pozwalają).",
 };
