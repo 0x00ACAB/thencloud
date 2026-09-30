@@ -254,7 +254,13 @@ pub async fn live(
         (rx, state, user.id, id),
         |(mut rx, state, user_id, folder)| async move {
             loop {
-                match rx.recv().await {
+                // Shutting down: end the stream (the browser reconnects to
+                // whatever comes up next), or the server would wait for it.
+                let next = tokio::select! {
+                    r = rx.recv() => r,
+                    () = state.shutdown.cancelled() => return None,
+                };
+                match next {
                     Ok(c) if c.folders.contains(&folder) => {
                         access::access(&state.db, &user_id, &folder)
                             .await

@@ -6680,3 +6680,28 @@ async fn without_turnstile_auth_page_keeps_the_strict_policy() {
         .json();
     assert!(opts.turnstile.is_none());
 }
+
+/// Live-update streams never end on their own, so when the server starts
+/// shutting down they must, or it waits for them forever (issue #127).
+#[tokio::test]
+async fn live_changes_end_when_the_server_shuts_down() {
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "pw").await;
+    let req = Request::builder()
+        .uri(format!("/api/nodes/{}/changes", alice.root))
+        .header("authorization", format!("Bearer {}", alice.token))
+        .body(Body::empty())
+        .unwrap();
+    let res = h.app.clone().oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+    let mut body = res.into_body();
+    h.state.shutdown.cancel();
+    let end = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        // Keep-alive comments may come first; the stream must then end.
+        while let Some(frame) = body.frame().await {
+            frame.unwrap();
+        }
+    })
+    .await;
+    assert!(end.is_ok(), "the stream is still open after shutdown began");
+}
