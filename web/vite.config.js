@@ -46,6 +46,17 @@ export default defineConfig({
       },
     },
     {
+      // Every page says which release it is, for Settings and for the
+      // service worker, which tells people when the app they're sent changes
+      // (see public/sw.js). THENCLOUD_VERSION is set by release builds.
+      name: 'thencloud-version',
+      transformIndexHtml: (html) =>
+        html.replace(
+          '<meta charset="utf-8" />',
+          `<meta charset="utf-8" />\n    <meta name="thencloud-version" content="${(process.env.THENCLOUD_VERSION || 'dev').replace(/[^\w.+-]/g, '')}" />`,
+        ),
+    },
+    {
       // Files in public/ are copied as they are: minify the scripts and the
       // favicon. Then write foo.js.gz and foo.js.br next to every
       // compressible file; the server sends the smallest one the browser
