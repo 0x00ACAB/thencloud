@@ -8,3 +8,5 @@
 *.db-wal
 /thencloud-web-*
 /web/dist-app
+.idea
+.claude
