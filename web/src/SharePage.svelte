@@ -173,8 +173,8 @@
       await saveZip(rows, name, { list: listFolder, open: openEntry, onProgress: (p) => (job.progress = p) });
       job.status = 'done';
     } catch (e) {
-      t.status = 'error';
-      t.error = errorMessage(e);
+      job.status = 'error';
+      job.error = errorMessage(e);
     }
   }
 
@@ -187,10 +187,10 @@
         const { blob, meta } = await fetchEntry(entry, (p) => (job.progress = p));
         saveBlob(blob, meta.name);
       }
-      t.status = 'done';
+      job.status = 'done';
     } catch (e) {
-      t.status = 'error';
-      t.error = errorMessage(e);
+      job.status = 'error';
+      job.error = errorMessage(e);
     }
   }
 
