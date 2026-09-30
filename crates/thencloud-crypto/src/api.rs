@@ -611,6 +611,13 @@ pub struct UpdateShareRequest {
     pub permission: Permission,
 }
 
+/// A share's node key sealed again by its recipient, to their own
+/// X25519 + ML-KEM-768 key (for shares made before they had one).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResealShareRequest {
+    pub wrapped_key: B64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IncomingShare {
     pub id: String,

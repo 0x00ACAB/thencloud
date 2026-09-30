@@ -219,6 +219,41 @@ pub async fn update(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// The recipient seals a share's node key again, to their own hybrid
+/// X25519 + ML-KEM-768 key: shares made before they had an ML-KEM key were
+/// sealed to X25519 alone, which a future quantum computer could open from
+/// a recording. Only the recipient can do it (they can open the old box),
+/// only to a hybrid box, and only once they have an ML-KEM key. The server
+/// can't check what's inside; a recipient could only lock themselves out.
+pub async fn reseal(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<String>,
+    Json(req): Json<ResealShareRequest>,
+) -> Result<StatusCode> {
+    if req.wrapped_key.len() != HYBRID_SEALED_KEY_LEN {
+        return Err(AppError::bad("wrapped_key must be a hybrid sealed box"));
+    }
+    let has_pq: Option<bool> =
+        sqlx::query_scalar("SELECT pq_public_key IS NOT NULL FROM users WHERE id = ?")
+            .bind(&user.id)
+            .fetch_optional(&state.db)
+            .await?;
+    if has_pq != Some(true) {
+        return Err(AppError::bad("you have no ML-KEM key to seal to"));
+    }
+    let res = sqlx::query("UPDATE shares SET wrapped_key = ? WHERE id = ? AND recipient_id = ?")
+        .bind(&req.wrapped_key.0)
+        .bind(&id)
+        .bind(&user.id)
+        .execute(&state.db)
+        .await?;
+    if res.rows_affected() == 0 {
+        return Err(AppError::NotFound);
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
 /// Revoke (owner) or leave (recipient) a share.
 ///
 /// Note: revocation stops the server from serving the data, but a former
