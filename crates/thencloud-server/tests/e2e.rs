@@ -988,6 +988,58 @@ async fn reports_from_public_links() {
     let r = post(with_token.clone(), body(ReportReason::Other)).await;
     assert_eq!(r.status, StatusCode::TOO_MANY_REQUESTS);
     assert_eq!(r.error(), "too_many_reports");
+
+    // A file drop (upload-only link) never reveals the admins' keys or
+    // accepts a report: visitors to it only ever add files.
+    let drop: Link = h
+        .call(
+            Method::POST,
+            "/api/links",
+            Some(&alice.token),
+            Some(CreateLinkRequest {
+                node_id: folder.clone(),
+                password_auth: None,
+                enc_link_key: None,
+                enc_link_secret: None,
+                expires_at: None,
+                upload_only: true,
+                max_opens: None,
+            }),
+        )
+        .await
+        .json();
+    let dbase = format!("/api/public/{}", drop.token);
+    let before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM reports")
+        .fetch_one(&h.state.db)
+        .await
+        .unwrap();
+    let r = h
+        .raw(
+            Method::GET,
+            &format!("{dbase}/report-keys"),
+            None,
+            &[],
+            Body::empty(),
+            None,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN);
+    let r = h
+        .raw(
+            Method::POST,
+            &format!("{dbase}/reports"),
+            None,
+            &[],
+            Body::from(body(ReportReason::Other)),
+            Some("application/json"),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN);
+    let after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM reports")
+        .fetch_one(&h.state.db)
+        .await
+        .unwrap();
+    assert_eq!(before, after);
 }
 
 #[tokio::test]
