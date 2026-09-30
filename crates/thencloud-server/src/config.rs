@@ -46,6 +46,22 @@ pub struct Config {
     #[arg(long, env = "THENCLOUD_S3_PREFIX", default_value = "")]
     pub s3_prefix: String,
 
+    /// With S3 configured, keep every blob in the data directory as well:
+    /// written to both, read from the disk (free) and from the bucket when
+    /// the disk doesn't have it, which puts it back on the disk.
+    #[arg(long, env = "THENCLOUD_S3_MIRROR", default_value_t = false, action = ArgAction::Set)]
+    pub s3_mirror: bool,
+
+    /// With S3 configured, put a snapshot of the database in the bucket (under
+    /// `db/`) this often, so the server can be rebuilt from the bucket alone
+    /// (see `restore-snapshot`). 0 turns it off.
+    #[arg(long, env = "THENCLOUD_S3_SNAPSHOT_HOURS", default_value_t = 24)]
+    pub s3_snapshot_hours: u64,
+
+    /// Database snapshots kept in the bucket; older ones are deleted.
+    #[arg(long, env = "THENCLOUD_S3_SNAPSHOTS_KEPT", default_value_t = 7)]
+    pub s3_snapshots_kept: usize,
+
     /// Directory with the built web client (`web/dist`, see build.sh).
     #[arg(long, env = "THENCLOUD_WEB_DIR", default_value = "./web/dist")]
     pub web_dir: PathBuf,
@@ -154,6 +170,9 @@ impl Config {
             s3_access_key: None,
             s3_secret_key: None,
             s3_prefix: String::new(),
+            s3_mirror: false,
+            s3_snapshot_hours: 0,
+            s3_snapshots_kept: 7,
             allow_registration: true,
             default_quota: 1024 * 1024 * 1024,
             session_days: 30,

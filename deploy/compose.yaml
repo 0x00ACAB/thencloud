@@ -25,6 +25,10 @@ services:
       # THENCLOUD_S3_ACCESS_KEY: "..."
       # THENCLOUD_S3_SECRET_KEY: "..."
       # THENCLOUD_S3_PREFIX: "thencloud/"
+      # Keep the blobs on the data volume too (read from there, the bucket
+      # as the copy); the database is snapshotted to the bucket daily either
+      # way, so `restore-snapshot` can rebuild from the bucket alone:
+      # THENCLOUD_S3_MIRROR: "true"
     volumes:
       - thencloud-data:/data
     # No ports: only Caddy reaches it, over the compose network.
