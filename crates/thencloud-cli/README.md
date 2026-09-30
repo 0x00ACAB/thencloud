@@ -103,6 +103,7 @@ How it behaves:
 - Files are fetched and decrypted 4 MiB at a time as they're read; seeking in a video fetches only the pieces it needs.
 - Uploads are kept in an unlinked temporary file in `$TMPDIR` until the request ends, then encrypted and uploaded. Writing over a file makes a new version of it.
 - Deleting moves things to the trash (a folder goes as one item). Moving and renaming keep a file's history and shares.
+- Saving from an editor (write a temporary file, move it over the original) makes a new version of the original, so its history, shares and links stay; the temporary file is deleted. Up to 64 MB; a bigger file replaces the original, which goes to the trash.
 - It only ever listens on `127.0.0.1`. A read-only app password (or `--read-only`) refuses every change.
 - Folder listings are kept until the server's change feed says something in them changed (checked every five seconds), so changes made elsewhere show up shortly after.
 - Finder's own files (`.DS_Store`, and `._name` files for extended attributes) are kept in memory while `serve` runs and never uploaded, so they don't clutter your folders elsewhere. They're gone when it stops.

@@ -56,6 +56,9 @@ const LIST_TTL: Duration = Duration::from_secs(5);
 /// More changes than this at once and every listing is dropped, rather than
 /// looking up where each changed node is now.
 const FEED_LOOKUPS: usize = 64;
+/// Moving a file over another uploads it as a new version of the target,
+/// up to this size (editors save this way; see `move_over_file`).
+const REPLACE_MAX: u64 = 64 * 1024 * 1024;
 /// Memory for Finder's own files, all together.
 const SCRATCH_MAX: u64 = 64 * 1024 * 1024;
 
@@ -104,6 +107,9 @@ struct Tree {
     quota: Mutex<Option<(Instant, u64, u64)>>,
     scratch: Mutex<HashMap<ScratchKey, Arc<Mutex<Scratch>>>>,
     scratch_bytes: AtomicU64,
+    /// Files this bridge created: safe to delete for good once they've
+    /// been moved over another file (an editor's temporary copy).
+    created: Mutex<std::collections::HashSet<String>>,
 }
 
 fn fs_error(e: &Error) -> FsError {
@@ -672,6 +678,13 @@ impl DavFile for WriteFile {
                 r.map_err(|e| tree.fail(e))
             })
             .await?;
+            if self.existing.is_none() {
+                self.tree
+                    .created
+                    .lock()
+                    .unwrap()
+                    .insert(uploaded.node.id.clone());
+            }
             self.existing = Some(uploaded);
             self.dirty = false;
             Ok(())
@@ -1076,6 +1089,92 @@ async fn delete_folder(
     }
 }
 
+/// An editor saving through WebDAV writes a temporary file and moves it over
+/// the original. Left to the WebDAV handler, that trashes the original and
+/// puts the temporary file in its place: a different node, without the
+/// original's shares, links, comments or history. So a MOVE of a file onto
+/// an existing file (up to `REPLACE_MAX`) uploads the content as a new
+/// version of the target instead, and then removes the source. `None` for
+/// anything else, which the handler does as usual.
+async fn move_over_file(
+    tree: &Arc<Tree>,
+    prefix: &str,
+    req: &Request<Incoming>,
+) -> Option<Response<Body>> {
+    let dest = req.headers().get("Destination")?.to_str().ok()?;
+    let overwrite = req
+        .headers()
+        .get("Overwrite")
+        .and_then(|v| v.to_str().ok())
+        .is_none_or(|v| !v.trim().eq_ignore_ascii_case("F"));
+    if !overwrite {
+        return None;
+    }
+    // The destination is a full URL or a path; either way, this bridge's.
+    let dest_path = match dest.find("://") {
+        Some(i) => &dest[dest[i + 3..].find('/').map(|j| i + 3 + j)?..],
+        None => dest,
+    };
+    let base = prefix.trim_end_matches('/');
+    let mut from = DavPath::new(req.uri().path()).ok()?;
+    from.set_prefix(base).ok()?;
+    let mut to = DavPath::new(dest_path).ok()?;
+    to.set_prefix(base).ok()?;
+    let tree = tree.clone();
+    let r = blocking(move || {
+        if tree.scratch_key(&from)?.is_some() || tree.scratch_key(&to)?.is_some() {
+            return Ok(false);
+        }
+        let source = tree.resolve(&from)?;
+        let (parent, name) = tree.parent(&to)?;
+        let Some(target) = tree.child(&parent, &name)? else {
+            return Ok(false);
+        };
+        if source.is_folder()
+            || target.is_folder()
+            || source.node.id == target.node.id
+            || source.meta.size > REPLACE_MAX
+        {
+            return Ok(false);
+        }
+        tree.writable()?;
+        let mut temp = tempfile::tempfile_in(&tree.temp_dir).map_err(io_error)?;
+        let size = tree
+            .client
+            .download(&source, &mut temp)
+            .map_err(|e| tree.fail(e))?;
+        temp.seek(SeekFrom::Start(0)).map_err(io_error)?;
+        let r = tree.client.upload_from(
+            &mut temp,
+            size,
+            source.meta.mtime,
+            &parent,
+            &target.meta.name,
+            Some(&target),
+        );
+        tree.stale(&parent.node.id);
+        r.map_err(|e| tree.fail(e))?;
+        let trashed = tree.client.trash(&source);
+        if let Some(p) = &source.node.parent_id {
+            tree.stale(p);
+        }
+        trashed.map_err(|e| tree.fail(e))?;
+        // A temporary file this bridge wrote has no history worth keeping.
+        if tree.created.lock().unwrap().remove(&source.node.id) {
+            let _ = tree.client.purge(&source.node.id);
+        }
+        Ok(true)
+    })
+    .await;
+    match r {
+        Ok(false) | Err(FsError::NotFound) => None,
+        Ok(true) => Some(plain(StatusCode::NO_CONTENT)),
+        Err(FsError::Forbidden) => Some(plain(StatusCode::FORBIDDEN)),
+        Err(FsError::InsufficientStorage) => Some(plain(StatusCode::INSUFFICIENT_STORAGE)),
+        Err(_) => Some(plain(StatusCode::INTERNAL_SERVER_ERROR)),
+    }
+}
+
 async fn handle(
     dav: DavHandler,
     tree: Arc<Tree>,
@@ -1103,6 +1202,11 @@ async fn handle(
     }
     if req.method() == Method::DELETE
         && let Some(res) = delete_folder(&tree, &prefix, req.uri()).await
+    {
+        return res;
+    }
+    if req.method().as_str() == "MOVE"
+        && let Some(res) = move_over_file(&tree, &prefix, &req).await
     {
         return res;
     }
@@ -1171,6 +1275,7 @@ async fn run(
         quota: Mutex::new(None),
         scratch: Mutex::new(HashMap::new()),
         scratch_bytes: AtomicU64::new(0),
+        created: Mutex::default(),
     });
     let prefix: Arc<str> = format!("/{secret}/").into();
     let mut builder = DavHandler::builder()
