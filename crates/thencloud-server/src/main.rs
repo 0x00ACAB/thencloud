@@ -62,6 +62,7 @@ async fn main() -> Result<ExitCode, Box<dyn std::error::Error + Send + Sync>> {
 
     let state = AppState::new(config.clone()).await?;
     janitor::spawn(state.clone());
+    thencloud_server::setup::prepare(&state).await?;
     snapshot::spawn(state.clone());
 
     let listener = tokio::net::TcpListener::bind(config.bind).await?;

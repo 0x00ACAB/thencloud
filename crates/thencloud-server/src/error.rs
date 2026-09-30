@@ -36,6 +36,9 @@ pub enum AppError {
     TransferLimit(&'static str),
     #[error("registration is disabled on this server")]
     RegistrationClosed,
+    /// Making the first account: the setup code or the name is wrong.
+    #[error("{0}")]
+    SetupRequired(String),
     #[error("the check that you're a person didn't go through; try again")]
     TurnstileFailed,
     #[error("this account has been disabled by an administrator")]
@@ -79,6 +82,7 @@ impl AppError {
             RateLimited => (StatusCode::TOO_MANY_REQUESTS, "rate_limited"),
             TransferLimit(_) => (StatusCode::TOO_MANY_REQUESTS, "transfer_limit"),
             RegistrationClosed => (StatusCode::FORBIDDEN, "registration_closed"),
+            SetupRequired(_) => (StatusCode::FORBIDDEN, "setup_required"),
             TurnstileFailed => (StatusCode::FORBIDDEN, "turnstile_failed"),
             AccountDisabled => (StatusCode::FORBIDDEN, "account_disabled"),
             InvalidInvite => (StatusCode::FORBIDDEN, "invalid_invite"),

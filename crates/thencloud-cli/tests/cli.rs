@@ -92,6 +92,7 @@ fn start() -> Server {
         None,
         &RegisterRequest {
             turnstile: None,
+            setup_code: None,
             username: "alice".into(),
             auth_key: B64(ak.auth_key.as_bytes().to_vec()),
             kdf_salt: B64(salt),

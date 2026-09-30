@@ -46,11 +46,21 @@
   // Set when this server asks for a Turnstile check (see lib/turnstile.js).
   let turnstile = $state(null);
   let checked = $state(hasToken());
+  // A new server: the first account needs the setup code from its log.
+  let setup = $state(false);
+  let setupCode = $state('');
+  let adminName = $state(null);
   const loadOptions = () =>
     authOptions()
       .then((o) => {
         registration = o.registration;
         turnstile = o.turnstile ?? null;
+        setup = !!o.setup;
+        adminName = o.admin_username ?? null;
+        if (setup) {
+          switchMode('signup');
+          if (adminName && !username) username = adminName;
+        }
       })
       .catch(() => {});
   onMount(() => {
@@ -122,6 +132,9 @@
         invalid_invite: t('This invite link has already been used or has expired. Ask for a new one.'),
         registration_closed: t('New accounts are not being accepted on this server right now.'),
         turnstile_failed: t("The check that you're a person expired or didn't go through. Do it again, then try once more."),
+        setup_required: adminName
+          ? t("That setup code isn't right, or the name isn't {name}.", { name: adminName })
+          : t("That setup code isn't right. It's in the server's log from when it started."),
         ...overrides,
       }[err?.code] ?? errorMessage(err)
     );
@@ -153,7 +166,7 @@
       return;
     }
     run(async () => {
-      if (signup) await register(username, password, invite, remember, token);
+      if (signup) await register(username, password, invite, remember, token, setup ? setupCode : null);
       else if (recover) await recoverAccount(username.trim(), recoveryKey, password, remember);
       else pending = await login(username, password, remember, token);
     });
@@ -301,6 +314,21 @@
       </div>
     {:else}
     <form class="mt-6 grid gap-4" onsubmit={submit}>
+      {#if signup && setup}
+        <div class="flex gap-2.5 rounded-md border border-line bg-subtle p-3 text-[13px] text-fg-muted">
+          <Icon name="key-round" class="mt-0.5 size-4 shrink-0 text-fg" />
+          <p>
+            <span class="font-medium text-fg">{t('This server is new.')}</span>
+            {adminName
+              ? t('The first account is its admin, and is called {name}. To make it, enter the setup code the server printed in its log when it started (it is also in the file setup-code in its data directory).', { name: adminName })
+              : t('The first account is its admin. To make it, enter the setup code the server printed in its log when it started (it is also in the file setup-code in its data directory).')}
+          </p>
+        </div>
+        <div class="field">
+          <label class="label" for="setup-code">{t('Setup code')}</label>
+          <input id="setup-code" class="input font-mono" bind:value={setupCode} autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXXX-XXXXX-XXXXX-XXXXX-XXXXX" required />
+        </div>
+      {/if}
       <div class="field">
         <label class="label" for="username">{t('Username')}</label>
         <input id="username" class="input" bind:value={username} autocomplete="username" autocapitalize="none" spellcheck="false" required />
