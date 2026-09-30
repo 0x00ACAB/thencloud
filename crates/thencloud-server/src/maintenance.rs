@@ -212,7 +212,9 @@ pub async fn backup(db: &SqlitePool, blobs: &BlobStore, dest: &BackupDest) -> Re
 
     let mut report = BackupReport::default();
     // Local to local: hard-link (or copy) straight from the blob root.
-    if let (BlobStore::Local { root }, BackupDest::Dir(dir)) = (blobs, dest) {
+    if let (BlobStore::Local { root } | BlobStore::Mirror { root, .. }, BackupDest::Dir(dir)) =
+        (blobs, dest)
+    {
         let from = root.clone();
         let to = dir.join("blobs");
         for (version, idx, _) in chunks {

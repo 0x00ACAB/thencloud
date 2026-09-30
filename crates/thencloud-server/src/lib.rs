@@ -17,6 +17,7 @@ pub mod maintenance;
 pub mod routes;
 pub mod s3;
 pub mod settings;
+pub mod snapshot;
 pub mod totp;
 pub mod transfer;
 pub mod turnstile;
@@ -47,6 +48,9 @@ pub struct AppState {
     pub changes: tokio::sync::broadcast::Sender<routes::activity::Change>,
     /// Turnstile tokens already used (see turnstile.rs).
     pub turnstile_used: Arc<turnstile::Used>,
+    /// Cancelled when the server starts shutting down: streams that would
+    /// otherwise stay open for good (live updates) and the janitor stop.
+    pub shutdown: tokio_util::sync::CancellationToken,
 }
 
 impl AppState {
@@ -54,9 +58,13 @@ impl AppState {
         tokio::fs::create_dir_all(&config.data_dir).await?;
         let db = db::open(&config.data_dir.join("thencloud.db")).await?;
         let secret = db::server_secret(&db).await?;
-        let blobs = match s3::target_from_config(&config)? {
-            Some(target) => blob::BlobStore::s3(target),
-            None => blob::BlobStore::local(config.data_dir.join("blobs")),
+        let blobs = match (s3::target_from_config(&config)?, config.s3_mirror) {
+            (Some(target), true) => blob::BlobStore::mirror(config.data_dir.join("blobs"), target),
+            (Some(target), false) => blob::BlobStore::s3(target),
+            (None, true) => {
+                return Err("--s3-mirror needs S3 configured (--s3-endpoint and the rest)".into());
+            }
+            (None, false) => blob::BlobStore::local(config.data_dir.join("blobs")),
         };
         let dummy_hash = util::hash_secret(b"thencloud-dummy".to_vec()).await?;
         let downloader = downloader::Downloader::new(
@@ -72,6 +80,7 @@ impl AppState {
             secret: Arc::new(secret),
             limiter: Arc::new(limiter::Limiter::new(10, 15 * 60)),
             turnstile_used: Arc::default(),
+            shutdown: tokio_util::sync::CancellationToken::new(),
             dummy_hash: Arc::new(dummy_hash),
             downloader: Arc::new(downloader),
             changes: tokio::sync::broadcast::channel(1024).0,
