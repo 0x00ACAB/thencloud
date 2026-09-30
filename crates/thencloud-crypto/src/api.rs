@@ -106,6 +106,9 @@ pub struct RegisterRequest {
     /// A Turnstile token, when the server asks for one.
     #[serde(default)]
     pub turnstile: Option<String>,
+    /// The setup code, for the first account on a new server.
+    #[serde(default)]
+    pub setup_code: Option<String>,
 }
 
 /// Who may create an account.
@@ -121,6 +124,12 @@ pub enum Registration {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthOptions {
     pub registration: Registration,
+    /// The first account on this new server needs the setup code.
+    #[serde(default)]
+    pub setup: bool,
+    /// ...and must have this username, when set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub admin_username: Option<String>,
     /// Set when this server asks for a Cloudflare Turnstile check.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub turnstile: Option<TurnstileOptions>,

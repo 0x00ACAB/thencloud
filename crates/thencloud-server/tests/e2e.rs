@@ -188,6 +188,17 @@ async fn try_register_with(
     invite: Option<&str>,
     turnstile: Option<&str>,
 ) -> Result<Client, Box<Resp>> {
+    try_register_full(h, username, password, invite, turnstile, None).await
+}
+
+async fn try_register_full(
+    h: &Harness,
+    username: &str,
+    password: &str,
+    invite: Option<&str>,
+    turnstile: Option<&str>,
+    setup_code: Option<&str>,
+) -> Result<Client, Box<Resp>> {
     let salt = c::random_bytes(c::SALT_LEN);
     let ak = c::derive_account_keys(password, &salt, FAST_KDF).unwrap();
     let mk = Key::generate();
@@ -197,6 +208,7 @@ async fn try_register_with(
     let root_key = Key::generate();
     let req = RegisterRequest {
         turnstile: turnstile.map(Into::into),
+        setup_code: setup_code.map(Into::into),
         username: username.into(),
         auth_key: B64(ak.auth_key.as_bytes().to_vec()),
         kdf_salt: B64(salt),
@@ -4439,6 +4451,7 @@ async fn post_quantum_keys_seal_shares_and_drops() {
             None,
             Some(RegisterRequest {
                 turnstile: None,
+                setup_code: None,
                 username: "old".into(),
                 auth_key: B64(ak.auth_key.as_bytes().to_vec()),
                 kdf_salt: B64(salt),
@@ -6960,4 +6973,85 @@ async fn database_snapshots_go_to_the_bucket_and_restore() {
         .unwrap();
     assert_eq!(users, ["alice"]);
     assert!(snapshot::restore(&t, fresh.path()).await.is_err());
+}
+
+/// Issue #128: on a new server, the first account (the admin) can only be
+/// made with the setup code the server prints at start.
+#[tokio::test]
+async fn the_first_account_needs_the_setup_code() {
+    use thencloud_server::setup;
+
+    let h = Harness::with_config(|c| c.admin_username = Some("Bob".into())).await;
+    let code = setup::prepare(&h.state)
+        .await
+        .unwrap()
+        .expect("a code on a new server");
+    let file = h.state.config.data_dir.join("setup-code");
+    assert!(file.exists());
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(&file).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+    }
+    // A restart keeps the same code.
+    assert_eq!(setup::prepare(&h.state).await.unwrap(), Some(code.clone()));
+    let opts: AuthOptions = h
+        .call(Method::GET, "/api/auth/options", None, None::<()>)
+        .await
+        .json();
+    assert!(opts.setup);
+    assert_eq!(opts.admin_username.as_deref(), Some("Bob"));
+
+    let refused = |r: Result<Client, Box<Resp>>| {
+        let r = r.err().expect("refused");
+        assert_eq!(r.status, StatusCode::FORBIDDEN);
+        r.error()
+    };
+    // No code, a wrong code, the right code for the wrong name.
+    assert_eq!(
+        refused(try_register_full(&h, "bob", "pw", None, None, None).await),
+        "setup_required"
+    );
+    assert_eq!(
+        refused(
+            try_register_full(
+                &h,
+                "bob",
+                "pw",
+                None,
+                None,
+                Some("AAAAA-AAAAA-AAAAA-AAAAA-AAAAA")
+            )
+            .await
+        ),
+        "setup_required"
+    );
+    assert_eq!(
+        refused(try_register_full(&h, "mallory", "pw", None, None, Some(&code)).await),
+        "setup_required"
+    );
+    // The right code, typed loosely, and the right name.
+    let typed = code.to_lowercase().replace('-', " ");
+    try_register_full(&h, "bob", "pw", None, None, Some(&typed))
+        .await
+        .unwrap();
+    assert!(!file.exists(), "the code is used up");
+    let opts: AuthOptions = h
+        .call(Method::GET, "/api/auth/options", None, None::<()>)
+        .await
+        .json();
+    assert!(!opts.setup && opts.admin_username.is_none());
+
+    // Everyone after needs no code, and a restart makes none.
+    register(&h, "carol", "pw").await;
+    assert_eq!(setup::prepare(&h.state).await.unwrap(), None);
+    assert!(!file.exists());
+    let admins: Vec<String> = sqlx::query_scalar("SELECT username FROM users WHERE is_admin")
+        .fetch_all(&h.state.db)
+        .await
+        .unwrap();
+    assert_eq!(admins, ["bob"]);
 }

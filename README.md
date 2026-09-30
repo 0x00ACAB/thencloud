@@ -59,7 +59,7 @@ Requirements:
 # open http://127.0.0.1:8080
 ```
 
-The first account to register becomes the admin.
+The first account to register becomes the admin. So that nobody else can claim a new server first, making it needs the **setup code** the server prints in its log on first start (and keeps in `setup-code` in the data directory until it's used); `--admin-username` also fixes that account's name. With Docker: `docker compose logs thencloud | grep "setup code"`.
 
 ### With Docker
 
@@ -107,7 +107,8 @@ Every flag can also be set as an environment variable.
 | `--s3-snapshot-hours` | `THENCLOUD_S3_SNAPSHOT_HOURS` | `24`. With S3 configured, put a snapshot of the database in the bucket (under `db/`) this often, so the server can be rebuilt from the bucket alone. `0` turns it off |
 | `--s3-snapshots-kept` | `THENCLOUD_S3_SNAPSHOTS_KEPT` | `7` (older database snapshots are deleted) |
 | `--web-dir` | `THENCLOUD_WEB_DIR` | `./web/dist` (the built web client) |
-| `--allow-registration` | `THENCLOUD_ALLOW_REGISTRATION` | `true` (the first user can always register, and becomes an admin). Admins can switch between open, invite-only and closed at runtime in the Admin view, which overrides this |
+| `--admin-username` | `THENCLOUD_ADMIN_USERNAME` | unset. The name the first account (the admin) must have; it also needs the setup code from the log |
+| `--allow-registration` | `THENCLOUD_ALLOW_REGISTRATION` | `true` (the first user can always register, with the setup code, and becomes an admin). Admins can switch between open, invite-only and closed at runtime in the Admin view, which overrides this |
 | `--default-quota` | `THENCLOUD_DEFAULT_QUOTA` | 10 GiB |
 | `--session-days` | `THENCLOUD_SESSION_DAYS` | `30` |
 | `--max-versions` | `THENCLOUD_MAX_VERSIONS` | `10` (versions kept per file, including the current one) |

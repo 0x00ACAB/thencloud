@@ -17,6 +17,7 @@ pub mod maintenance;
 pub mod routes;
 pub mod s3;
 pub mod settings;
+pub mod setup;
 pub mod snapshot;
 pub mod totp;
 pub mod transfer;
