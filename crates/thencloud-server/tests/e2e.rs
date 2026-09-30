@@ -6705,3 +6705,169 @@ async fn live_changes_end_when_the_server_shuts_down() {
     .await;
     assert!(end.is_ok(), "the stream is still open after shutdown began");
 }
+
+fn s3_config(c: &mut Config, endpoint: &str) {
+    c.s3_endpoint = Some(endpoint.into());
+    c.s3_bucket = Some("main".into());
+    c.s3_access_key = Some("access".into());
+    c.s3_secret_key = Some("secret".into());
+    c.s3_prefix = "tc/".into();
+}
+
+/// Issue #130: blobs on the disk and in the bucket; the disk is read first,
+/// and a chunk missing there comes from the bucket and is put back.
+#[tokio::test]
+async fn s3_mirror_keeps_both_copies_and_refills_the_disk() {
+    use thencloud_server::maintenance;
+
+    let (store, endpoint) = fake_s3::spawn().await;
+    let h = Harness::with_config(|c| {
+        s3_config(c, &endpoint);
+        c.s3_mirror = true;
+    })
+    .await;
+    let alice = register(&h, "alice", "pw").await;
+    let (folder, folder_key) = alice.mkdir(&h, &alice.root, "Mirrored").await;
+    let data = secret_payload(c::CHUNK_SIZE + 99);
+    let file = alice
+        .upload(&h, &folder, None, "both.bin", &data)
+        .await
+        .unwrap();
+    let version = file.version.as_ref().unwrap().id.clone();
+    let local = h
+        .dir
+        .path()
+        .join("data/blobs")
+        .join(&version[..2])
+        .join(&version);
+    let in_bucket = |store: fake_s3::Store| {
+        let prefix = format!("main/tc/{}/{version}/", &version[..2]);
+        async move {
+            store
+                .lock()
+                .await
+                .keys()
+                .filter(|k| k.starts_with(&prefix))
+                .count()
+        }
+    };
+    assert!(local.join("0").exists() && local.join("1").exists());
+    assert_eq!(in_bucket(store.clone()).await, 2);
+
+    // The disk loses it: the download still works, and puts it back.
+    std::fs::remove_dir_all(&local).unwrap();
+    let kids: Vec<Node> = alice.children(&h, &folder).await.json();
+    let f = find_by_name(&kids, &folder_key, "both.bin");
+    let fk = c::unwrap_node_key(&folder_key, &f.enc_key, &f.id).unwrap();
+    assert_eq!(alice.download(&h, f, &fk).await.1, data);
+    assert!(local.join("0").exists() && local.join("1").exists());
+
+    // check() looks at each copy on its own.
+    let copies = h.state.blobs.copies();
+    assert_eq!(copies.len(), 2);
+    store
+        .lock()
+        .await
+        .remove(&format!("main/tc/{}/{version}/1", &version[..2]));
+    let on_disk = maintenance::check(&h.state.db, &copies[0]).await.unwrap();
+    let in_s3 = maintenance::check(&h.state.db, &copies[1]).await.unwrap();
+    assert!(on_disk.is_ok(), "{on_disk:?}");
+    assert_eq!(in_s3.missing, vec![(version.clone(), 1)]);
+
+    // Deleting for good deletes both.
+    assert_eq!(alice.delete(&h, &file.id).await, StatusCode::NO_CONTENT);
+    let r = h
+        .call(
+            Method::DELETE,
+            &format!("/api/trash/{}", file.id),
+            Some(&alice.token),
+            None::<()>,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    assert!(!local.exists());
+    assert_eq!(in_bucket(store.clone()).await, 0);
+}
+
+#[tokio::test]
+async fn mirror_without_s3_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut cfg = Config::for_dir(dir.path());
+    cfg.s3_mirror = true;
+    let err = AppState::new(cfg).await.err().expect("refused");
+    assert!(err.to_string().contains("--s3-mirror"), "{err}");
+}
+
+/// Issue #131: the database goes to the bucket too, so the server can be
+/// rebuilt from the bucket alone, and holds nothing the server can't see.
+#[tokio::test]
+async fn database_snapshots_go_to_the_bucket_and_restore() {
+    use thencloud_server::snapshot;
+
+    let (store, endpoint) = fake_s3::spawn().await;
+    let h = Harness::with_config(|c| s3_config(c, &endpoint)).await;
+    let alice = register(&h, "alice", "a password nobody knows").await;
+    let (folder, _) = alice.mkdir(&h, &alice.root, "Secret plans").await;
+    alice
+        .upload(&h, &folder, None, "plan.txt", &secret_payload(500))
+        .await
+        .unwrap();
+
+    // Two older snapshots are already there; with two kept, the oldest goes.
+    for old in ["20250101T000000Z", "20260101T000000Z"] {
+        store
+            .lock()
+            .await
+            .insert(format!("main/tc/db/thencloud-{old}.db"), b"old".to_vec());
+    }
+    let t = h.state.blobs.s3_target().unwrap().clone();
+    let key = snapshot::take(&h.state.db, &t, &h.state.config.data_dir, 2)
+        .await
+        .unwrap();
+    let names: Vec<String> = snapshot::list(&t)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|(k, _)| k)
+        .collect();
+    assert_eq!(names.len(), 2);
+    assert_eq!(names[0], "tc/db/thencloud-20260101T000000Z.db");
+    assert_eq!(names[1], key);
+    // No temporary file left in the data directory.
+    let leftovers: Vec<_> = std::fs::read_dir(&h.state.config.data_dir)
+        .unwrap()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().starts_with(".snapshot"))
+        .collect();
+    assert!(leftovers.is_empty());
+
+    // Zero-knowledge: the snapshot holds no names, contents or password.
+    let snap = store.lock().await[&format!("main/{key}")].clone();
+    for n in [
+        MARKER,
+        b"plan.txt",
+        b"Secret plans",
+        b"a password nobody knows",
+    ] {
+        assert!(
+            !contains(&snap, n),
+            "plaintext {:?} in the snapshot",
+            String::from_utf8_lossy(n)
+        );
+    }
+
+    // Restoring puts it back in an empty data directory, and not over one.
+    let fresh = tempfile::tempdir().unwrap();
+    let (got, _) = snapshot::restore(&t, fresh.path()).await.unwrap();
+    assert_eq!(got, key);
+    let mut cfg = Config::for_dir(fresh.path());
+    cfg.data_dir = fresh.path().to_path_buf();
+    s3_config(&mut cfg, &endpoint);
+    let restored = AppState::new(cfg).await.unwrap();
+    let users: Vec<String> = sqlx::query_scalar("SELECT username FROM users")
+        .fetch_all(&restored.db)
+        .await
+        .unwrap();
+    assert_eq!(users, ["alice"]);
+    assert!(snapshot::restore(&t, fresh.path()).await.is_err());
+}
