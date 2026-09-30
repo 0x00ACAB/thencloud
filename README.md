@@ -103,6 +103,9 @@ Every flag can also be set as an environment variable.
 | `--s3-access-key` | `THENCLOUD_S3_ACCESS_KEY` | unset |
 | `--s3-secret-key` | `THENCLOUD_S3_SECRET_KEY` | unset |
 | `--s3-prefix` | `THENCLOUD_S3_PREFIX` | empty (key prefix inside the bucket, e.g. `thencloud/`) |
+| `--s3-mirror` | `THENCLOUD_S3_MIRROR` | `false`. With S3 configured, keep every blob in the data directory too: written to both, read from the disk (free), and from the bucket only when the disk doesn't have it, which puts it back on the disk |
+| `--s3-snapshot-hours` | `THENCLOUD_S3_SNAPSHOT_HOURS` | `24`. With S3 configured, put a snapshot of the database in the bucket (under `db/`) this often, so the server can be rebuilt from the bucket alone. `0` turns it off |
+| `--s3-snapshots-kept` | `THENCLOUD_S3_SNAPSHOTS_KEPT` | `7` (older database snapshots are deleted) |
 | `--web-dir` | `THENCLOUD_WEB_DIR` | `./web/dist` (the built web client) |
 | `--allow-registration` | `THENCLOUD_ALLOW_REGISTRATION` | `true` (the first user can always register, and becomes an admin). Admins can switch between open, invite-only and closed at runtime in the Admin view, which overrides this |
 | `--default-quota` | `THENCLOUD_DEFAULT_QUOTA` | 10 GiB |
@@ -128,6 +131,8 @@ thencloud-server --data-dir ./data backup /backups/thencloud-2026-09-28
 This writes a consistent snapshot of the database and every blob it refers to into a new directory. It's safe while the server is running. On the same filesystem the blobs are hard links, which is instant and takes no extra space; elsewhere they're copied. If a file is deleted while the backup runs, its missing pieces are listed and the command exits with status 2. Like the server, a backup holds only ciphertext and wrapped keys.
 
 The destination can also be a bucket: `backup s3://my-backups/thencloud/` (using the configured `--s3-endpoint` and credentials), from either a local or an S3 blob store.
+
+With S3 configured, the bucket is a backup in its own right: the database goes there as a snapshot once a day (`--s3-snapshot-hours`), next to the blobs, and with `--s3-mirror` the blobs are on the local disk as well. If the disk is lost, `thencloud-server --data-dir <new dir> <the same S3 options> restore-snapshot` puts the newest snapshot back, and the server starts as it was then. Files uploaded after that snapshot aren't in its database, and `check` lists their blobs as not referred to. Snapshots hold what the server already has, wrapped keys and ciphertext, never a key or a name.
 
 To restore, stop the server, copy the backup to where the data should live, and start the server with `--data-dir` pointing at it. Then run `thencloud-server --data-dir <dir> check`: it checks that every blob the database expects is there with the right size, and lists any that nothing refers to. To restore an S3 backup, put its `thencloud.db` in a data directory and run with `--s3-prefix` pointing at the backup's `blobs/` prefix. To check that files also decrypt, use Settings > Check your files in the web client.
 

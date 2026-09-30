@@ -2,7 +2,7 @@ use std::net::SocketAddr;
 use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
-use thencloud_server::{AppState, Config, janitor, maintenance, router};
+use thencloud_server::{AppState, Config, janitor, maintenance, router, snapshot};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser)]
@@ -27,8 +27,14 @@ enum Command {
     /// point --s3-prefix at the backup's blobs/ prefix.
     Backup { dest: String },
     /// Check that every blob the database expects exists with the right
-    /// size, and list blob directories nothing refers to.
+    /// size, and list blob directories nothing refers to. With
+    /// --s3-mirror, each copy is checked on its own.
     Check,
+    /// Put the newest database snapshot from the S3 bucket (see
+    /// --s3-snapshot-hours) into the data directory, which must not have a
+    /// database yet. With the same S3 options, the server then starts as it
+    /// was at that snapshot.
+    RestoreSnapshot,
 }
 
 #[tokio::main]
@@ -44,6 +50,7 @@ async fn main() -> Result<ExitCode, Box<dyn std::error::Error + Send + Sync>> {
     match command {
         Some(Command::Backup { dest }) => return backup(config, dest).await,
         Some(Command::Check) => return check(config).await,
+        Some(Command::RestoreSnapshot) => return restore_snapshot(config).await,
         Some(Command::Serve) | None => {}
     }
     if !config.web_dir.join("index.html").exists() {
@@ -55,6 +62,7 @@ async fn main() -> Result<ExitCode, Box<dyn std::error::Error + Send + Sync>> {
 
     let state = AppState::new(config.clone()).await?;
     janitor::spawn(state.clone());
+    snapshot::spawn(state.clone());
 
     let listener = tokio::net::TcpListener::bind(config.bind).await?;
     tracing::info!("thencloud listening on http://{}", listener.local_addr()?);
@@ -142,21 +150,45 @@ async fn backup(
 
 async fn check(config: Config) -> Result<ExitCode, Box<dyn std::error::Error + Send + Sync>> {
     let state = open(config).await?;
-    let r = maintenance::check(&state.db, &state.blobs).await?;
-    println!("Checked {} versions, {} chunks", r.versions, r.chunks);
-    for (version, idx) in &r.missing {
-        println!("missing: {version}/{idx}");
+    let copies = state.blobs.copies();
+    let mut ok = true;
+    for store in &copies {
+        if copies.len() > 1 {
+            println!("In {}:", store.describe());
+        }
+        let r = maintenance::check(&state.db, store).await?;
+        println!("Checked {} versions, {} chunks", r.versions, r.chunks);
+        for (version, idx) in &r.missing {
+            println!("missing: {version}/{idx}");
+        }
+        for (what, expected, found) in &r.wrong_size {
+            println!("wrong size: {what} (expected {expected} bytes, found {found})");
+        }
+        for dir in &r.orphans {
+            println!("not referred to: blobs/{}/{dir}", &dir[..2.min(dir.len())]);
+        }
+        if r.is_ok() {
+            println!("Everything the database expects is there.");
+        }
+        ok &= r.is_ok();
     }
-    for (what, expected, found) in &r.wrong_size {
-        println!("wrong size: {what} (expected {expected} bytes, found {found})");
-    }
-    for dir in &r.orphans {
-        println!("not referred to: blobs/{}/{dir}", &dir[..2.min(dir.len())]);
-    }
-    if r.is_ok() {
-        println!("Everything the database expects is there.");
-        Ok(ExitCode::SUCCESS)
+    Ok(if ok {
+        ExitCode::SUCCESS
     } else {
-        Ok(ExitCode::FAILURE)
-    }
+        ExitCode::FAILURE
+    })
+}
+
+async fn restore_snapshot(
+    config: Config,
+) -> Result<ExitCode, Box<dyn std::error::Error + Send + Sync>> {
+    let target = thencloud_server::s3::target_from_config(&config)?
+        .ok_or("restore-snapshot needs the S3 options (--s3-endpoint and the rest)")?;
+    let (key, at) = snapshot::restore(&target, &config.data_dir).await?;
+    println!(
+        "Restored {key} ({} seconds old) as {}",
+        thencloud_server::util::now() - at,
+        config.data_dir.join("thencloud.db").display()
+    );
+    Ok(ExitCode::SUCCESS)
 }
