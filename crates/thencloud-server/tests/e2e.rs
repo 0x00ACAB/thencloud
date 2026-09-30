@@ -6681,6 +6681,96 @@ async fn without_turnstile_auth_page_keeps_the_strict_policy() {
     assert!(opts.turnstile.is_none());
 }
 
+/// Issue #106: a share sealed to X25519 alone (made before the recipient
+/// had an ML-KEM key) can be sealed again by its recipient to their hybrid
+/// key, and only by them, and only to a hybrid box.
+#[tokio::test]
+async fn recipients_reseal_old_shares_to_their_post_quantum_key() {
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "pw").await;
+    let bob = register(&h, "bob", "pw").await;
+    let (folder, folder_key) = alice.mkdir(&h, &alice.root, "Shared").await;
+    // An old share: sealed to Bob's X25519 key only.
+    let classic = c::seal_share_key(&bob.kp.public, &folder_key, &folder).unwrap();
+    let r = h
+        .call(
+            Method::POST,
+            "/api/shares",
+            Some(&alice.token),
+            Some(&CreateShareRequest {
+                node_id: folder.clone(),
+                recipient: "bob".into(),
+                wrapped_key: B64(classic.clone()),
+                permission: Permission::Read,
+                expires_at: None,
+            }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED);
+    let share: OutgoingShare = r.json();
+    let uri = format!("/api/shares/{}/key", share.id);
+
+    let hybrid = c::seal_share_key(&bob.kp.sealing_key(), &folder_key, &folder).unwrap();
+    let put = |token: &str, key: Vec<u8>| {
+        let (h, uri, token) = (&h, uri.clone(), token.to_string());
+        async move {
+            h.call(
+                Method::PUT,
+                &uri,
+                Some(&token),
+                Some(&ResealShareRequest {
+                    wrapped_key: B64(key),
+                }),
+            )
+            .await
+            .status
+        }
+    };
+    // Not the owner, not a classic box.
+    assert_eq!(
+        put(&alice.token, hybrid.clone()).await,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        put(&bob.token, classic.clone()).await,
+        StatusCode::BAD_REQUEST
+    );
+    // The recipient, to their hybrid key.
+    assert_eq!(
+        put(&bob.token, hybrid.clone()).await,
+        StatusCode::NO_CONTENT
+    );
+    let incoming: Vec<IncomingShare> = h.get("/api/shares/incoming", &bob.token).await.json();
+    assert_eq!(incoming[0].wrapped_key.0, hybrid);
+    let key = c::open_share_key(&bob.kp, &incoming[0].wrapped_key, &folder).unwrap();
+    assert!(key == folder_key);
+    // Without the ML-KEM half it no longer opens: it's really hybrid now.
+    let x_only = KeyPair::from_secret(bob.kp.secret.clone());
+    assert!(c::open_share_key(&x_only, &incoming[0].wrapped_key, &folder).is_err());
+
+    // Zero-knowledge: what's stored is still only ciphertext.
+    let mut files = Vec::new();
+    all_files(&h.dir.path().join("data"), &mut files);
+    for p in &files {
+        let bytes = std::fs::read(p).unwrap();
+        for n in [
+            b"Shared".as_slice(),
+            folder_key.as_bytes(),
+            bob.kp.secret.as_bytes(),
+            alice.mk.as_bytes(),
+        ] {
+            assert!(!contains(&bytes, n), "plaintext found in {}", p.display());
+        }
+    }
+
+    // Someone with no ML-KEM key has nothing to seal to.
+    sqlx::query("UPDATE users SET pq_public_key = NULL WHERE username = 'bob'")
+        .execute(&h.state.db)
+        .await
+        .unwrap();
+    assert_eq!(put(&bob.token, hybrid).await, StatusCode::BAD_REQUEST);
+}
+
 /// Live-update streams never end on their own, so when the server starts
 /// shutting down they must, or it waits for them forever (issue #127).
 #[tokio::test]
