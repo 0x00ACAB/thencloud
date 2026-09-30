@@ -47,6 +47,9 @@ pub struct AppState {
     pub changes: tokio::sync::broadcast::Sender<routes::activity::Change>,
     /// Turnstile tokens already used (see turnstile.rs).
     pub turnstile_used: Arc<turnstile::Used>,
+    /// Cancelled when the server starts shutting down: streams that would
+    /// otherwise stay open for good (live updates) and the janitor stop.
+    pub shutdown: tokio_util::sync::CancellationToken,
 }
 
 impl AppState {
@@ -72,6 +75,7 @@ impl AppState {
             secret: Arc::new(secret),
             limiter: Arc::new(limiter::Limiter::new(10, 15 * 60)),
             turnstile_used: Arc::default(),
+            shutdown: tokio_util::sync::CancellationToken::new(),
             dummy_hash: Arc::new(dummy_hash),
             downloader: Arc::new(downloader),
             changes: tokio::sync::broadcast::channel(1024).0,
