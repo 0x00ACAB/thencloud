@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
 
 /**
@@ -44,9 +45,21 @@ let counter = 0;
 /** A username unique to this run. */
 export const uniqueName = (base) => `${base}${Date.now().toString(36)}${counter++}`;
 
+/**
+ * The setup code the first account on a new server needs: from the data
+ * directory of the server playwright.config.js starts, or THENCLOUD_E2E_SETUP_CODE.
+ */
+function setupCode() {
+  if (process.env.THENCLOUD_E2E_SETUP_CODE) return process.env.THENCLOUD_E2E_SETUP_CODE;
+  return readFileSync('../target/e2e-data/setup-code', 'utf8').trim();
+}
+
 export async function signUp(page, username, password) {
+  const options = page.waitForResponse((r) => r.url().includes('/api/auth/options'));
   await page.goto('/');
+  const setup = (await (await options).json()).setup;
   await page.getByRole('tab', { name: 'Create account' }).click();
+  if (setup) await page.getByLabel('Setup code').fill(setupCode());
   await expect(page.getByText('There is no password reset.')).toBeVisible();
   await page.getByLabel('Username').fill(username);
   await page.getByLabel('Password', { exact: true }).fill(password);

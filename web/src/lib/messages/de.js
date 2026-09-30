@@ -18,6 +18,12 @@ export default {
   "The check that you're a person expired or didn't go through. Do it again, then try once more.": "Die Prüfung, ob du ein Mensch bist, ist abgelaufen oder hat nicht geklappt. Mach sie noch einmal und versuch es dann erneut.",
   "This server asks for a check that you're a person, which the app can't show yet. Sign in from a browser, or use your recovery key.": "Dieser Server verlangt eine Prüfung, ob du ein Mensch bist, die die App noch nicht anzeigen kann. Melde dich im Browser an oder nutze deinen Wiederherstellungsschlüssel.",
   "Before you continue, this server asks for a quick check that you're a person. It's run by Cloudflare on a page of its own, which never sees your password.": "Bevor es weitergeht, verlangt dieser Server eine kurze Prüfung, ob du ein Mensch bist. Sie läuft bei Cloudflare auf einer eigenen Seite, die dein Passwort nie sieht.",
+  "That setup code isn't right, or the name isn't {name}.": "Dieser Einrichtungscode stimmt nicht, oder der Name ist nicht {name}.",
+  "That setup code isn't right. It's in the server's log from when it started.": "Dieser Einrichtungscode stimmt nicht. Er steht im Log des Servers vom Start.",
+  "This server is new.": "Dieser Server ist neu.",
+  "The first account is its admin, and is called {name}. To make it, enter the setup code the server printed in its log when it started (it is also in the file setup-code in its data directory).": "Das erste Konto ist sein Admin und heißt {name}. Gib zum Anlegen den Einrichtungscode ein, den der Server beim Start in sein Log geschrieben hat (er steht auch in der Datei setup-code in seinem Datenverzeichnis).",
+  "The first account is its admin. To make it, enter the setup code the server printed in its log when it started (it is also in the file setup-code in its data directory).": "Das erste Konto ist sein Admin. Gib zum Anlegen den Einrichtungscode ein, den der Server beim Start in sein Log geschrieben hat (er steht auch in der Datei setup-code in seinem Datenverzeichnis).",
+  "Setup code": "Einrichtungscode",
   'Wrong username or password.': 'Falscher Benutzername oder falsches Passwort.',
   "That didn't work. Codes change every 30 seconds; try the newest one.": 'Das hat nicht geklappt. Codes ändern sich alle 30 Sekunden; nimm den neuesten.',
   'That took too long. Sign in again.': 'Das hat zu lange gedauert. Melde dich erneut an.',
@@ -1482,4 +1488,8 @@ export default {
   "This document has no text.": "Dieses Dokument enthält keinen Text.",
   "This is as far as the preview goes. Download the file to see the rest.": "Weiter reicht die Vorschau nicht. Lade die Datei herunter, um den Rest zu sehen.",
   "A simple preview: the text, tables and pictures, without the original layout.": "Eine einfache Vorschau: Text, Tabellen und Bilder, ohne das ursprüngliche Layout.",
+  // Checking the web app
+  "This is version {version} of the web app.": "Das ist Version {version} der Web-App.",
+  "This browser remembers the app it was sent and tells you before opening a changed one; that isn't proof against a server set on changing it, so check it too.": "Dieser Browser merkt sich die App, die er bekommen hat, und sagt dir Bescheid, bevor er eine veränderte öffnet; gegen einen Server, der sie unbedingt ändern will, ist das kein Beweis, prüfe sie also auch.",
+  "This browser isn't watching the app for changes right now (it needs a service worker, which some private windows don't allow).": "Dieser Browser achtet gerade nicht auf Änderungen an der App (dafür braucht er einen Service Worker, den manche privaten Fenster nicht erlauben).",
 };

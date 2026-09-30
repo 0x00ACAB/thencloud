@@ -71,6 +71,12 @@ pub struct Config {
     #[arg(long, env = "THENCLOUD_ALLOW_REGISTRATION", default_value_t = true, action = ArgAction::Set)]
     pub allow_registration: bool,
 
+    /// The username the first account (the admin) must have. Either way,
+    /// on a new server it can only be made with the setup code the server
+    /// prints at start (and keeps in <data dir>/setup-code).
+    #[arg(long, env = "THENCLOUD_ADMIN_USERNAME")]
+    pub admin_username: Option<String>,
+
     /// Storage quota for new users, in bytes of ciphertext.
     #[arg(long, env = "THENCLOUD_DEFAULT_QUOTA", default_value_t = 10 * 1024 * 1024 * 1024)]
     pub default_quota: i64,
@@ -174,6 +180,7 @@ impl Config {
             s3_snapshot_hours: 0,
             s3_snapshots_kept: 7,
             allow_registration: true,
+            admin_username: None,
             default_quota: 1024 * 1024 * 1024,
             session_days: 30,
             max_versions: 10,
