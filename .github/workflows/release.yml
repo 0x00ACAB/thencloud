@@ -32,7 +32,7 @@ jobs:
       - run: scripts/release-web.sh "$VERSION"
         env:
           VERSION: ${{ github.ref_type == 'tag' && github.ref_name || github.sha }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: web-${{ matrix.os }}
           path: thencloud-web-*
@@ -60,7 +60,7 @@ jobs:
           mkdir "$dir"
           cp target/release/thencloud-server target/release/thencloud LICENSE README.md "$dir"
           tar czf "$dir.tar.gz" "$dir"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: bin-${{ matrix.target }}
           path: thencloud-*.tar.gz
@@ -72,7 +72,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
       - name: Both builds must be identical
         run: |
           cmp web-ubuntu-24.04/thencloud-web-*.json web-ubuntu-22.04/thencloud-web-*.json
