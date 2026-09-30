@@ -242,6 +242,8 @@ pub fn router(state: AppState) -> Router {
             "/public/{token}/uploads/{id}/finish",
             post(public::upload_finish),
         )
+        .route("/public/{token}/report-keys", get(public::report_keys))
+        .route("/public/{token}/reports", post(public::report))
         .fallback(|| async { AppError::NotFound })
         .layer(app_cors());
 

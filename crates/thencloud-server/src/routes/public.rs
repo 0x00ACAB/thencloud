@@ -295,3 +295,35 @@ pub async fn upload_abort(
     let link = drop_link(&state, &token, &headers).await?;
     uploads::cancel(&state, Uploader::Link(&link), &id).await
 }
+
+pub async fn report_keys(
+    State(state): State<AppState>,
+    Path(token): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<Vec<ReportKey>>> {
+    let link = resolve(&state, &token, &headers).await?;
+    if link.upload_only {
+        return Err(AppError::Forbidden);
+    }
+    Ok(Json(crate::routes::reports::admin_keys(&state.db).await?))
+}
+
+/// A visitor reports a file under the link to the admins.
+pub async fn report(
+    State(state): State<AppState>,
+    Path(token): Path<String>,
+    headers: HeaderMap,
+    ip: ClientIp,
+    Json(req): Json<CreateReportRequest>,
+) -> Result<StatusCode> {
+    let link = resolve(&state, &token, &headers).await?;
+    check_id(&req.node_id, "node_id")?;
+    let node = node_in_link(&state, &link, &req.node_id).await?;
+    crate::routes::reports::create(
+        &state,
+        crate::routes::reports::Reporter::Link { ip: ip.key() },
+        &node,
+        req,
+    )
+    .await
+}

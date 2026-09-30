@@ -795,6 +795,202 @@ async fn reports_by_share_recipients() {
 }
 
 #[tokio::test]
+async fn reports_from_public_links() {
+    let h = Harness::new().await;
+    let _admin = register(&h, "root", "admin pw").await;
+    let alice = register(&h, "alice", "alice pw").await;
+    let (folder, folder_key) = alice.mkdir(&h, &alice.root, "Public").await;
+    let file = alice
+        .upload(&h, &folder, None, "a.bin", b"payload")
+        .await
+        .unwrap();
+    let file_key = c::unwrap_node_key(&folder_key, &file.enc_key, &file.id).unwrap();
+
+    // A link with a password: nothing without the link token.
+    let (req, secret) = link_with_password(&folder, &folder_key, "pw");
+    let link: Link = h
+        .call(Method::POST, "/api/links", Some(&alice.token), Some(req))
+        .await
+        .json();
+    let base = format!("/api/public/{}", link.token);
+    let r = h
+        .raw(
+            Method::GET,
+            &format!("{base}/report-keys"),
+            None,
+            &[],
+            Body::empty(),
+            None,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::UNAUTHORIZED);
+    let u: UnlockLinkResponse = h
+        .call(
+            Method::POST,
+            &format!("{base}/unlock"),
+            None,
+            Some(unlock_body(&secret, "pw")),
+        )
+        .await
+        .json();
+    let lt = [("x-link-token", u.link_token.as_str())];
+    let boxes = report_boxes(
+        &h,
+        &format!("{base}/report-keys"),
+        None,
+        &lt,
+        &file,
+        &file_key,
+        "",
+    )
+    .await;
+    let body = |reason| serde_json::to_vec(&report_req(&file, reason, boxes.clone())).unwrap();
+    let post = |headers: Vec<(&'static str, String)>, b: Vec<u8>| {
+        let uri = format!("{base}/reports");
+        let h = &h;
+        async move {
+            let hs: Vec<(&str, &str)> = headers.iter().map(|(k, v)| (*k, v.as_str())).collect();
+            h.raw(
+                Method::POST,
+                &uri,
+                None,
+                &hs,
+                Body::from(b),
+                Some("application/json"),
+            )
+            .await
+        }
+    };
+    let with_token = vec![("x-link-token", u.link_token.clone())];
+    assert_eq!(
+        post(vec![], body(ReportReason::Illegal)).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        post(with_token.clone(), body(ReportReason::Illegal))
+            .await
+            .status,
+        StatusCode::NO_CONTENT
+    );
+
+    // A link with a limited number of opens needs the same visit token as
+    // any other route under it; a second file keeps this from disturbing the
+    // per-node cap tested below on `file`.
+    let file2 = alice
+        .upload(&h, &folder, None, "b.bin", b"other-payload")
+        .await
+        .unwrap();
+    let file2_key = c::unwrap_node_key(&folder_key, &file2.enc_key, &file2.id).unwrap();
+    let limited: Link = h
+        .call(
+            Method::POST,
+            "/api/links",
+            Some(&alice.token),
+            Some(CreateLinkRequest {
+                node_id: folder.clone(),
+                password_auth: None,
+                enc_link_key: None,
+                enc_link_secret: None,
+                expires_at: None,
+                upload_only: false,
+                max_opens: Some(1),
+            }),
+        )
+        .await
+        .json();
+    let lbase = format!("/api/public/{}", limited.token);
+    let boxes2 = report_boxes(
+        &h,
+        &format!("{base}/report-keys"),
+        None,
+        &lt,
+        &file2,
+        &file2_key,
+        "",
+    )
+    .await;
+    let body2 = serde_json::to_vec(&report_req(&file2, ReportReason::Other, boxes2)).unwrap();
+    let r = h
+        .raw(
+            Method::POST,
+            &format!("{lbase}/reports"),
+            None,
+            &[],
+            Body::from(body2.clone()),
+            Some("application/json"),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+    let info: PublicLinkInfo = h
+        .raw(Method::GET, &lbase, None, &[], Body::empty(), None)
+        .await
+        .json();
+    let visit = info.link_token.expect("a visit token");
+    let vt = [("x-link-token", visit.as_str())];
+    let r = h
+        .raw(
+            Method::POST,
+            &format!("{lbase}/reports"),
+            None,
+            &vt,
+            Body::from(body2),
+            Some("application/json"),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    // The in-process harness has no peer address, so limits by address fall
+    // back to one key for everyone; clear it so it doesn't count against the
+    // per-address window checked next.
+    h.state.limiter.clear("report:unknown");
+
+    // Ten reports per address per window; the eleventh is refused.
+    for i in 1..=10 {
+        assert_eq!(
+            post(with_token.clone(), body(ReportReason::Other))
+                .await
+                .status,
+            StatusCode::NO_CONTENT,
+            "report {i}"
+        );
+    }
+    let r = post(with_token.clone(), body(ReportReason::Other)).await;
+    assert_eq!(r.status, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(r.error(), "too_many_reports");
+
+    // A file outside the link can't be reported through it.
+    let other = alice
+        .upload(&h, &alice.root, None, "c.bin", b"x")
+        .await
+        .unwrap();
+    let mut outside = report_req(&file, ReportReason::Other, boxes.clone());
+    outside.node_id = other.id.clone();
+    outside.version_id = other.version.unwrap().id;
+    h.state.limiter.clear("report:unknown");
+    let r = post(with_token.clone(), serde_json::to_vec(&outside).unwrap()).await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+
+    // The per-node cap: `file` already has 11 open link reports (the one
+    // above plus the ten in the address-limit loop); nine more reaches the
+    // 20 cap. Clear the limiter first so the address limit doesn't get there
+    // before the cap does, then once more so the 21st report is refused only
+    // by the node cap, not a stale address count.
+    h.state.limiter.clear("report:unknown");
+    for i in 0..9 {
+        assert_eq!(
+            post(with_token.clone(), body(ReportReason::Other))
+                .await
+                .status,
+            StatusCode::NO_CONTENT,
+            "cap fill {i}"
+        );
+    }
+    h.state.limiter.clear("report:unknown");
+    let r = post(with_token.clone(), body(ReportReason::Other)).await;
+    assert_eq!(r.status, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(r.error(), "too_many_reports");
+}
+
+#[tokio::test]
 async fn full_lifecycle_is_zero_knowledge() {
     let h = Harness::new().await;
     let alice = register(&h, "alice", "correct horse battery staple").await;
