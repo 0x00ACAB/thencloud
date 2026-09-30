@@ -78,11 +78,12 @@ Routes (`routes/reports.rs`):
     with `audit::record` (`report_safe`, `report_removed`, with the owner's
     username as target and the reason as value). Removing closes every open
     report on that node as `removed`.
-- While a report is open, its version and node are kept from permanent
-  deletion: the trash purge, the janitor, version pruning and a user's
-  `delete_subtree` skip them (the owner's trash still hides the node from the
-  owner). Deleting a whole account still deletes everything, and closes its
-  reports.
+- While a report is open, the reported version's blobs are kept whatever
+  deletes the file or version (emptying the trash, the janitor, version
+  thinning or pruning, deleting an old version): the delete goes through for
+  the owner as usual, quota included, so they see nothing different, but the
+  blobs stay until the report is closed. Deleting a whole account deletes its
+  reports and those blobs too.
 - The janitor deletes closed reports after 90 days.
 - `/api/metrics` and the admin stats gain an open reports count.
 
