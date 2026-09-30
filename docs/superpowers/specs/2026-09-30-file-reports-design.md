@@ -24,12 +24,13 @@ rule that no key, password or plaintext reaches the server.
 
 ## Crypto (`thencloud-crypto`)
 
-- `ReportRecord { content_key, name, mime, note }`, JSON, padded to a Padmé
-  bucket, with the note capped at 2,000 characters.
+- `ReportRecord { content_key, name, mime, size, note }`, JSON, padded with
+  zeros to exactly 16,384 bytes (so every report box is the same size), with
+  the note capped at 2,000 characters and the name at 1,000.
 - `seal_report(admin_pub, record, node_id, version_id)` and
-  `open_report(kp, sealed, node_id, version_id)`: `seal_to_public` with a new
-  sealed-box kind byte, and associated data binding the label `report`, the
-  node id and the version id. Hybrid (X25519 + ML-KEM) when the admin has an
+  `open_report(kp, sealed, node_id, version_id)`: `seal_to_public` with
+  associated data binding the label `report`, the node id and the version id
+  (the existing box kind bytes stay; the label tells report boxes apart). Hybrid (X25519 + ML-KEM) when the admin has an
   ML-KEM key, as elsewhere.
 - WASM wrappers in `thencloud-wasm`. A `docs/format/README.md` entry and
   vectors in `tests/vectors.rs` (`vectors.json` regenerated; the format is
@@ -41,7 +42,8 @@ Migration `0026_reports.sql`:
 
 - `reports`: `id`, `node_id`, `version_id`, `owner_id`, `reason` (one of
   `illegal`, `malware`, `copyright`, `harassment`, `other`), `reporter_id`
-  (NULL for a link visitor), `link_id` (NULL for a signed-in reporter),
+  (NULL for a link visitor), `via_link` (whether it came through a public
+  link; the link itself isn't kept, since the report outlives it),
   `created_at` (coarse, `util::coarse_now`), `status` (`open`, `safe`,
   `removed`), `handled_by` (username text, like the audit log), `handled_at`.
 - `report_boxes`: `report_id`, `admin_id`, `sealed`, primary key
@@ -65,8 +67,8 @@ Routes (`routes/reports.rs`):
   - `GET /api/admin/reports?status=open&before=<id>`: a page of reports
     (id, node id, version id, reason, reporter username or "link", owner
     username, created time, whether this admin has a box).
-  - `GET /api/admin/reports/{id}`: the report plus this admin's box and the
-    version's chunk count and size.
+  - Each listed report carries this admin's box (if any), the chunk count, and
+    the admins who still lack a box.
   - `GET /api/admin/reports/{id}/chunks/{n}`: the version's ciphertext chunks,
     only while the report is open, through `chunk_response` (not counted
     against the owner's transfer limit).
