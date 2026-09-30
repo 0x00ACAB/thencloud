@@ -2,9 +2,10 @@ name: Release
 
 # Builds the web client reproducibly on two different runner images and
 # fails unless both come out byte for byte the same, and builds the server
-# and CLI binaries. On a tag, the manifest, the web build and the binaries
-# go into a draft release; a maintainer rebuilds the web client locally,
-# signs the manifest with minisign and publishes.
+# and CLI binaries. On a tag, every file is signed with Sigstore (keyless,
+# as this workflow at this tag) and they go into a draft release; a
+# maintainer rebuilds the web client locally, adds a minisign signature of
+# the manifest and publishes.
 
 on:
   push:
@@ -66,11 +67,14 @@ jobs:
           path: thencloud-*.tar.gz
 
   publish:
-    name: Compare and draft the release
+    name: Compare, sign and draft the release
     needs: [web, binaries]
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # For the Sigstore certificate: GitHub vouches that this workflow, at
+      # this tag, is signing.
+      id-token: write
     steps:
       - uses: actions/download-artifact@v8
       - name: Both builds must be identical
@@ -78,11 +82,25 @@ jobs:
           cmp web-ubuntu-24.04/thencloud-web-*.json web-ubuntu-22.04/thencloud-web-*.json
           cmp web-ubuntu-24.04/thencloud-web-*.tar.gz web-ubuntu-22.04/thencloud-web-*.tar.gz
           sha256sum web-ubuntu-24.04/thencloud-web-*
+      - uses: sigstore/cosign-installer@v4
+        if: github.ref_type == 'tag'
+      # Keyless: a short-lived certificate from Sigstore's Fulcio naming this
+      # workflow and tag, the signature logged in Rekor, all in a
+      # .sigstore.json bundle per file. `thencloud verify-web` checks the
+      # manifest's bundle offline. Pinned to Rekor v1, whose signed entry
+      # timestamps verify-web knows how to check.
+      - name: Sign with Sigstore
+        if: github.ref_type == 'tag'
+        run: |
+          for f in web-ubuntu-24.04/thencloud-web-* bin-*/thencloud-*.tar.gz; do
+            cosign sign-blob --yes --bundle "$f.sigstore.json" --use-signing-config=false \
+              --fulcio-url https://fulcio.sigstore.dev --rekor-url https://rekor.sigstore.dev "$f"
+          done
       - name: Draft the release
         if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" --draft --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" \
-            --notes "The server needs the web client next to it: unpack thencloud-web-$GITHUB_REF_NAME.tar.gz and pass --web-dir dist. Check a server runs this web client: thencloud verify-web https://your.server --manifest thencloud-web-$GITHUB_REF_NAME.json" \
-            web-ubuntu-24.04/thencloud-web-* bin-*/thencloud-*.tar.gz
+            --notes "The server needs the web client next to it: unpack thencloud-web-$GITHUB_REF_NAME.tar.gz and pass --web-dir dist. Check a server runs this web client: download thencloud-web-$GITHUB_REF_NAME.json and its .sigstore.json, then run thencloud verify-web https://your.server --manifest thencloud-web-$GITHUB_REF_NAME.json" \
+            web-ubuntu-24.04/thencloud-web-* bin-*/thencloud-*.tar.gz bin-*/thencloud-*.tar.gz.sigstore.json

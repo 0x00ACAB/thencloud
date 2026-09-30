@@ -109,15 +109,23 @@ How it behaves:
 
 ## Checking the web client a server sends
 
-The browser runs whatever JavaScript the server sends, so a compromised server could quietly send a version that leaks keys. Each release of the web client is built reproducibly and comes with a manifest of every file's SHA-256, signed with minisign. `verify-web` fetches every file from the server (plain, gzip and brotli, plus `/` and a share link) and compares:
+The browser runs whatever JavaScript the server sends, so a compromised server could quietly send a version that leaks keys. Each release of the web client is built reproducibly and comes with a manifest of every file's SHA-256. `verify-web` checks the manifest's signatures, then fetches every file from the server (plain, gzip and brotli, plus `/`, a share link and `/auth`) and compares:
 
 ```sh
-# from the release page: thencloud-web-v1.2.0.json and thencloud-web-v1.2.0.json.minisig
+# from the release page: thencloud-web-v1.2.0.json and thencloud-web-v1.2.0.json.sigstore.json
+thencloud verify-web https://cloud.example.com --manifest thencloud-web-v1.2.0.json
+
+# with a maintainer's minisign signature too (thencloud-web-v1.2.0.json.minisig)
 thencloud verify-web https://cloud.example.com --manifest thencloud-web-v1.2.0.json --key RWQ...
 
 # or build that release yourself and compare with your own build
 git checkout v1.2.0 && scripts/release-web.sh v1.2.0
 thencloud verify-web https://cloud.example.com --manifest thencloud-web-v1.2.0.json --unsigned
 ```
+
+The signatures, whichever are next to the manifest (all that are there must check out, and at least one must be there):
+
+- **Sigstore**, made by the release workflow with no long-lived key: a certificate from Sigstore naming `https://github.com/0x00ACAB/thencloud/.github/workflows/release.yml@refs/tags/<version>`, vouched for by GitHub Actions, and the signature logged in Sigstore's public transparency log (Rekor). `verify-web` checks the bundle offline, against the Sigstore trust root built into it: the certificate's chain and identity, the signature, and Rekor's signed promise that it logged exactly this. It says who signed and when it was logged. A fork's releases: `--repo owner/name`.
+- **minisign**, by a maintainer who rebuilt the release themselves, checked with `--key` (or the keys built into the CLI).
 
 It also checks that the Content-Security-Policy only lets in scripts and connections from the server itself. It needs no account. It shows what the server sends to anyone who asks, so run it from the network you use; it can't catch a server that sends a different page only to your browser.

@@ -13,6 +13,7 @@ pub mod backup;
 pub mod mount;
 pub mod nextcloud;
 pub mod serve;
+pub mod sigstore;
 pub mod verify;
 
 use serde::Serialize;

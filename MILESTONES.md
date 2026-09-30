@@ -104,6 +104,7 @@ Smaller things:
 ## Milestone 5: Trust and accounts
 
 - [x] **Verifiable web client**: the web client builds reproducibly (`scripts/release-web.sh`: pinned Rust toolchain, lockfiles, paths mapped out of the WASM), each release gets a manifest of every file's SHA-256 for maintainers to sign with minisign, and `thencloud verify-web` fetches every file in every encoding the server offers (plus `/`, a share link and the CSP) and compares. A release workflow builds on two runner images and fails unless they match byte for byte
+  - [x] Signed with Sigstore by the release workflow: keyless, every release file with a certificate naming the workflow and tag, logged in Rekor. `verify-web` checks the manifest's bundle offline against a built-in trust root (the chain, identity, signature and Rekor's signed entry timestamp), alongside a maintainer's minisign signature
   - [(postponed)] A small browser extension that checks what the browser itself was sent
 - [x] **Passkeys**: WebAuthn as a second step after the password, and with the PRF extension a way to sign in without it: the browser wraps a copy of the master key under a key from the passkey's PRF output, and the server hands that copy out only after checking the passkey. Settings shows which passkeys can sign in on their own
 - [x] **Two-factor codes (TOTP)** as a server-side gate on login, for people without passkeys. Set up with a QR code; only the TOTP secret is stored, never a key, and each code works once. App passwords and the recovery key skip the second step
