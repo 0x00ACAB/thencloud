@@ -43,4 +43,5 @@ fuzz_target!(|data: &[u8]| {
     parse::<RecoveryResetRequest>(data);
     parse::<PutPrivateData>(data);
     parse::<VideoLinkRequest>(data);
+    parse::<CreateReportRequest>(data);
 });

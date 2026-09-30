@@ -13,6 +13,7 @@ pub mod links;
 pub mod nodes;
 pub mod passkeys;
 pub mod public;
+pub mod reports;
 pub mod sessions;
 pub mod shares;
 pub mod thumbnails;
@@ -213,6 +214,8 @@ pub fn router(state: AppState) -> Router {
         .route("/shares/outgoing", get(shares::outgoing))
         .route("/shares/{id}", patch(shares::update).delete(shares::delete))
         .route("/shares/{id}/key", put(shares::reseal))
+        .route("/report-keys", get(reports::keys))
+        .route("/reports", post(reports::create_route))
         .route("/drops", get(drops::list))
         .route("/drops/{id}", delete(drops::discard))
         .route("/drops/{id}/adopt", post(drops::adopt))

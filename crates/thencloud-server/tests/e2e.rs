@@ -560,6 +560,171 @@ fn contains(hay: &[u8], needle: &[u8]) -> bool {
     hay.windows(needle.len()).any(|w| w == needle)
 }
 
+/// Seal a report of `node`'s current version to every admin the server lists.
+async fn report_boxes(
+    h: &Harness,
+    keys_uri: &str,
+    token: Option<&str>,
+    headers: &[(&str, &str)],
+    node: &Node,
+    node_key: &Key,
+    note: &str,
+) -> Vec<ReportBox> {
+    let r = h
+        .raw(Method::GET, keys_uri, token, headers, Body::empty(), None)
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{r:?}");
+    let keys: Vec<ReportKey> = r.json();
+    let v = node.version.as_ref().unwrap();
+    let ck = c::unwrap_content_key(node_key, &v.enc_content_key, &node.id, &v.id).unwrap();
+    let m = c::decrypt_metadata(node_key, &node.id, &node.enc_metadata).unwrap();
+    let rec = c::ReportRecord {
+        content_key: c::b64_encode(ck.as_bytes()),
+        name: m.name,
+        mime: m.mime,
+        size: m.size,
+        note: note.into(),
+    };
+    keys.iter()
+        .map(|k| {
+            let mut to = k.public_key.0.clone();
+            if let Some(pq) = &k.pq_public_key {
+                to.extend_from_slice(pq);
+            }
+            ReportBox {
+                admin_id: k.admin_id.clone(),
+                sealed: B64(c::seal_report(&to, &rec, &node.id, &v.id).unwrap()),
+            }
+        })
+        .collect()
+}
+
+fn report_req(node: &Node, reason: ReportReason, boxes: Vec<ReportBox>) -> CreateReportRequest {
+    CreateReportRequest {
+        id: c::new_id(),
+        node_id: node.id.clone(),
+        version_id: node.version.as_ref().unwrap().id.clone(),
+        reason,
+        boxes,
+    }
+}
+
+#[tokio::test]
+async fn reports_by_share_recipients() {
+    let h = Harness::new().await;
+    let admin = register(&h, "root", "admin pw").await;
+    let alice = register(&h, "alice", "alice pw").await;
+    let bob = register(&h, "bob", "bob pw").await;
+    let carol = register(&h, "carol", "carol pw").await;
+    let (folder, folder_key) = alice.mkdir(&h, &alice.root, "Shared").await;
+    let file = alice
+        .upload(&h, &folder, None, "invoice.pdf.exe", &secret_payload(5000))
+        .await
+        .unwrap();
+    let file_key = c::unwrap_node_key(&folder_key, &file.enc_key, &file.id).unwrap();
+    let pk: UserPublicKey = h
+        .get("/api/users/bob/public-key", &alice.token)
+        .await
+        .json();
+    let r = h
+        .call(
+            Method::POST,
+            "/api/shares",
+            Some(&alice.token),
+            Some(CreateShareRequest {
+                node_id: folder.clone(),
+                recipient: "bob".into(),
+                wrapped_key: B64(
+                    c::seal_share_key(&sealing_key(&pk), &folder_key, &folder).unwrap()
+                ),
+                permission: Permission::Read,
+                expires_at: None,
+            }),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CREATED);
+
+    let boxes = report_boxes(
+        &h,
+        "/api/report-keys",
+        Some(&bob.token),
+        &[],
+        &file,
+        &file_key,
+        "PHISHING-NOTE-MARKER",
+    )
+    .await;
+    assert_eq!(boxes.len(), 1, "one admin");
+    let post = |token: &str, req: &CreateReportRequest| {
+        let (token, req) = (token.to_string(), req.clone());
+        let h = &h;
+        async move {
+            h.call(Method::POST, "/api/reports", Some(&token), Some(req))
+                .await
+        }
+    };
+
+    // Owners can't report their own files, strangers can't see them.
+    let req = report_req(&file, ReportReason::Malware, boxes.clone());
+    assert_eq!(post(&alice.token, &req).await.status, StatusCode::FORBIDDEN);
+    assert_eq!(post(&carol.token, &req).await.status, StatusCode::NOT_FOUND);
+    // Every admin needs a box, and boxes must be report-sized.
+    let none = report_req(&file, ReportReason::Malware, vec![]);
+    assert_eq!(
+        post(&bob.token, &none).await.status,
+        StatusCode::BAD_REQUEST
+    );
+    let mut short = boxes.clone();
+    short[0].sealed.0.truncate(100);
+    let short = report_req(&file, ReportReason::Malware, short);
+    assert_eq!(
+        post(&bob.token, &short).await.status,
+        StatusCode::BAD_REQUEST
+    );
+    // A version that isn't the node's is refused.
+    let mut wrong = req.clone();
+    wrong.version_id = c::new_id();
+    assert_eq!(
+        post(&bob.token, &wrong).await.status,
+        StatusCode::BAD_REQUEST
+    );
+
+    assert_eq!(post(&bob.token, &req).await.status, StatusCode::NO_CONTENT);
+    // One open report per person per file.
+    let again = report_req(&file, ReportReason::Other, boxes.clone());
+    assert_eq!(post(&bob.token, &again).await.status, StatusCode::CONFLICT);
+
+    // The admin can open what bob sealed.
+    let sealed: Vec<u8> = sqlx::query_scalar("SELECT sealed FROM report_boxes")
+        .fetch_one(&h.state.db)
+        .await
+        .unwrap();
+    let rec = c::open_report(
+        &admin.kp,
+        &sealed,
+        &file.id,
+        &file.version.as_ref().unwrap().id,
+    )
+    .unwrap();
+    assert_eq!(rec.name, "invoice.pdf.exe");
+    assert_eq!(rec.note, "PHISHING-NOTE-MARKER");
+
+    // Zero knowledge: no name, note or content anywhere on disk.
+    let mut files = Vec::new();
+    all_files(h.dir.path(), &mut files);
+    for f in files {
+        let data = std::fs::read(&f).unwrap();
+        for needle in [&b"invoice.pdf.exe"[..], b"PHISHING-NOTE-MARKER", MARKER] {
+            assert!(
+                !contains(&data, needle),
+                "{} holds {:?}",
+                f.display(),
+                String::from_utf8_lossy(needle)
+            );
+        }
+    }
+}
+
 #[tokio::test]
 async fn full_lifecycle_is_zero_knowledge() {
     let h = Harness::new().await;

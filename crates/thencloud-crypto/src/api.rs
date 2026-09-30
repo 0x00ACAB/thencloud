@@ -1231,3 +1231,40 @@ pub struct VideoOption {
     #[serde(default)]
     pub quality: Option<VideoQuality>,
 }
+
+/// Why a file was reported (#108).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReportReason {
+    Illegal,
+    Malware,
+    Copyright,
+    Harassment,
+    Other,
+}
+
+/// One admin's sealing key, for sealing a report record to them
+/// (`seal_report`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReportKey {
+    pub admin_id: String,
+    pub public_key: B64,
+    #[serde(default)]
+    pub pq_public_key: Option<B64>,
+}
+
+/// A report record sealed to one admin.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReportBox {
+    pub admin_id: String,
+    pub sealed: B64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CreateReportRequest {
+    pub id: String,
+    pub node_id: String,
+    pub version_id: String,
+    pub reason: ReportReason,
+    pub boxes: Vec<ReportBox>,
+}

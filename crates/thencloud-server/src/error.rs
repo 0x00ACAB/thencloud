@@ -45,6 +45,8 @@ pub enum AppError {
     AccountDisabled,
     #[error("this invite link is invalid, used or expired")]
     InvalidInvite,
+    #[error("too many reports; try again later")]
+    TooManyReports,
     #[error("{0}")]
     Busy(String),
     #[error("{0}")]
@@ -86,6 +88,7 @@ impl AppError {
             TurnstileFailed => (StatusCode::FORBIDDEN, "turnstile_failed"),
             AccountDisabled => (StatusCode::FORBIDDEN, "account_disabled"),
             InvalidInvite => (StatusCode::FORBIDDEN, "invalid_invite"),
+            TooManyReports => (StatusCode::TOO_MANY_REQUESTS, "too_many_reports"),
             Busy(_) => (StatusCode::TOO_MANY_REQUESTS, "busy"),
             Unavailable(_) => (StatusCode::SERVICE_UNAVAILABLE, "unavailable"),
             Db(_) | Io(_) | Internal(_) => (StatusCode::INTERNAL_SERVER_ERROR, "internal"),
