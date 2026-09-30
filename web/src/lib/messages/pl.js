@@ -1522,4 +1522,15 @@ export default {
   'Reading files to search inside them ({done} of {total})': 'Odczytywanie plików, by przeszukać ich treść ({done} z {total})',
   'Looking through your folders': 'Przeszukiwanie twoich folderów',
   'Saved. It is under My files in the sidebar.': 'Zapisano. Jest pod Moimi plikami na pasku bocznym.',
+  // Office previews
+  "This file couldn't be opened.": "Nie udało się otworzyć tego pliku.",
+  "This sheet is empty.": "Ten arkusz jest pusty.",
+  "Show more rows": "Pokaż więcej wierszy",
+  "Only the first {rows} rows and {cols} columns are shown.": "Widać tylko pierwsze {rows} wierszy i {cols} kolumn.",
+  "Values as last saved. Number formats and charts aren't shown.": "Wartości z ostatniego zapisu. Formatów liczb i wykresów nie widać.",
+  "Slide {n}": "Slajd {n}",
+  "No text on this slide.": "Na tym slajdzie nie ma tekstu.",
+  "This document has no text.": "Ten dokument nie zawiera tekstu.",
+  "This is as far as the preview goes. Download the file to see the rest.": "Podgląd kończy się tutaj. Pobierz plik, żeby zobaczyć resztę.",
+  "A simple preview: the text, tables and pictures, without the original layout.": "Prosty podgląd: tekst, tabele i obrazy, bez oryginalnego układu.",
 };
