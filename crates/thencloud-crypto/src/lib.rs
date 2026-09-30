@@ -825,6 +825,85 @@ pub fn open_drop_key(kp: &KeyPair, sealed: &[u8], node_id: &str, folder_id: &str
 }
 
 // ---------------------------------------------------------------------------
+// File reports: someone who can open a file they don't own shows one version
+// of it to the server's admins. The record is sealed to each admin.
+// ---------------------------------------------------------------------------
+
+/// A report record is padded to this many bytes before sealing, so every
+/// report box is the same size whatever the name and note.
+pub const REPORT_PADDED: usize = 16384;
+pub const MAX_REPORT_NOTE_CHARS: usize = 2000;
+pub const MAX_REPORT_NAME_CHARS: usize = 1000;
+/// A report sealed to an X25519 key alone, and to an X25519 + ML-KEM key.
+pub const REPORT_SEALED_LEN: usize = 1 + 32 + SEALED_OVERHEAD + REPORT_PADDED;
+pub const REPORT_SEALED_HYBRID_LEN: usize = REPORT_SEALED_LEN + PQ_CIPHERTEXT_LEN;
+
+/// What a reporter shows the admins: the reported version's content key
+/// (base64url), the file's name, type and size, and a note.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReportRecord {
+    pub content_key: String,
+    pub name: String,
+    #[serde(default)]
+    pub mime: Option<String>,
+    pub size: u64,
+    #[serde(default)]
+    pub note: String,
+}
+
+impl ReportRecord {
+    fn check(&self) -> Result<()> {
+        let key = b64_decode(&self.content_key)?;
+        if key.len() != KEY_LEN
+            || self.name.chars().count() > MAX_REPORT_NAME_CHARS
+            || self.note.chars().count() > MAX_REPORT_NOTE_CHARS
+            || self.mime.as_ref().is_some_and(|m| m.len() > 255)
+        {
+            return Err(Error::Metadata("not a valid report".into()));
+        }
+        Ok(())
+    }
+}
+
+pub fn seal_report(
+    admin_pub: &[u8],
+    record: &ReportRecord,
+    node_id: &str,
+    version_id: &str,
+) -> Result<Vec<u8>> {
+    record.check()?;
+    let mut pt = serde_json::to_vec(record).map_err(|e| Error::Metadata(e.to_string()))?;
+    if pt.len() > REPORT_PADDED {
+        return Err(Error::Metadata("report too long".into()));
+    }
+    pt.resize(REPORT_PADDED, 0);
+    let sealed = seal_to_public(admin_pub, &pt, &aad("report", &[node_id, version_id]));
+    pt.zeroize();
+    sealed
+}
+
+/// Opens a report, refusing any that `seal_report` wouldn't have written.
+pub fn open_report(
+    kp: &KeyPair,
+    sealed: &[u8],
+    node_id: &str,
+    version_id: &str,
+) -> Result<ReportRecord> {
+    let mut pt = open_sealed(kp, sealed, &aad("report", &[node_id, version_id]))?;
+    let end = pt.iter().position(|&b| b == 0).unwrap_or(pt.len());
+    let parsed = if pt.len() != REPORT_PADDED || pt[end..].iter().any(|&b| b != 0) {
+        Err(Error::Metadata("bad report padding".into()))
+    } else {
+        serde_json::from_slice::<ReportRecord>(&pt[..end])
+            .map_err(|e| Error::Metadata(e.to_string()))
+    };
+    pt.zeroize();
+    let record = parsed?;
+    record.check()?;
+    Ok(record)
+}
+
+// ---------------------------------------------------------------------------
 // Profile pictures: encrypted under a per-user avatar key, which is sealed
 // to each person the user shares with (in either direction). The owner's
 // own copy is kept with `encrypt_private_data`.
@@ -1432,6 +1511,74 @@ mod tests {
         let w = wrap_private_key(&mk, &kp.secret);
         assert_eq!(unwrap_private_key(&mk, &w).unwrap().public, kp.public);
         assert_eq!(fingerprint(&kp.public).len(), 39);
+    }
+
+    #[test]
+    fn report_boxes_open_only_for_their_version() {
+        let admin = KeyPair::generate().with_pq(PqKeyPair::generate());
+        let rec = ReportRecord {
+            content_key: b64_encode(Key::generate().as_bytes()),
+            name: "evil.exe".into(),
+            mime: Some("application/octet-stream".into()),
+            size: 1234,
+            note: "phishing".into(),
+        };
+        let sealed = seal_report(&admin.sealing_key(), &rec, "node", "v1").unwrap();
+        assert_eq!(sealed.len(), REPORT_SEALED_HYBRID_LEN);
+        assert_eq!(open_report(&admin, &sealed, "node", "v1").unwrap(), rec);
+        assert!(open_report(&admin, &sealed, "node", "v2").is_err());
+        assert!(open_report(&admin, &sealed, "other", "v1").is_err());
+        let classic = KeyPair::generate();
+        let s2 = seal_report(&classic.public, &rec, "node", "v1").unwrap();
+        assert_eq!(s2.len(), REPORT_SEALED_LEN);
+    }
+
+    #[test]
+    fn report_records_are_checked() {
+        let admin = KeyPair::generate();
+        let ok = ReportRecord {
+            content_key: b64_encode(Key::generate().as_bytes()),
+            name: "a".into(),
+            mime: None,
+            size: 1,
+            note: String::new(),
+        };
+        for bad in [
+            ReportRecord {
+                note: "x".repeat(MAX_REPORT_NOTE_CHARS + 1),
+                ..ok.clone()
+            },
+            ReportRecord {
+                name: "x".repeat(MAX_REPORT_NAME_CHARS + 1),
+                ..ok.clone()
+            },
+            ReportRecord {
+                content_key: b64_encode(&[1; 16]),
+                ..ok.clone()
+            },
+        ] {
+            assert!(seal_report(&admin.public, &bad, "n", "v").is_err());
+        }
+        // Worst case still fits the padding: four-byte characters everywhere.
+        let big = ReportRecord {
+            name: "\u{1F600}".repeat(MAX_REPORT_NAME_CHARS),
+            note: "\u{1F600}".repeat(MAX_REPORT_NOTE_CHARS),
+            mime: Some("x".repeat(255)),
+            ..ok
+        };
+        assert!(seal_report(&admin.public, &big, "n", "v").is_ok());
+    }
+
+    #[test]
+    fn report_rejects_anything_seal_report_would_not_have_written() {
+        let admin = KeyPair::generate();
+        let context = aad("report", &["n", "v"]);
+        // Unpadded: too short to be a `seal_report` plaintext.
+        let unpadded = seal_to_public(&admin.public, b"{}", &context).unwrap();
+        assert!(open_report(&admin, &unpadded, "n", "v").is_err());
+        // Right length, but no JSON in it, zero-padded or not.
+        let garbage = seal_to_public(&admin.public, &[b'x'; REPORT_PADDED], &context).unwrap();
+        assert!(open_report(&admin, &garbage, "n", "v").is_err());
     }
 
     #[test]

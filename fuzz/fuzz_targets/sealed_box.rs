@@ -22,6 +22,7 @@ fuzz_target!(|data: &[u8]| {
     let _ = c::open_sealed(&PAIR, data, b"aad");
     let _ = c::open_sealed(&X25519_ONLY, data, b"aad");
     let _ = c::open_drop_key(&PAIR, data, ID, ID);
+    let _ = c::open_report(&PAIR, data, ID, ID);
     let _ = c::PqKeyPair::from_seed(data);
     let _ = c::seal_to_public(data, b"secret", b"aad");
 

@@ -62,6 +62,12 @@ function openBox(v) {
     case 'share': return tc.open_share_key(s, sealed, c[0]);
     case 'drop': return tc.open_drop_key(s, sealed, c[0], c[1]);
     case 'avatar-key': return tc.open_avatar_key(s, sealed, c[0], c[1]);
+    case 'report': {
+      const r = new TextEncoder().encode(tc.open_report(s, sealed, c[0], c[1]));
+      const out = new Uint8Array(v.plaintext ? bytes(v.plaintext).length : r.length);
+      out.set(r);
+      return out;
+    }
     default: throw new Error(`unknown format ${v.format}`);
   }
 }

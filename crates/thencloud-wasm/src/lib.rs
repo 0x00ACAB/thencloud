@@ -383,6 +383,26 @@ pub fn open_drop_key(secret: &[u8], sealed: &[u8], node_id: &str, folder_id: &st
     )
 }
 
+/// `record_json` is `ReportRecord` as JSON.
+#[wasm_bindgen]
+pub fn seal_report(
+    admin_public: &[u8],
+    record_json: &str,
+    node_id: &str,
+    version_id: &str,
+) -> R<Vec<u8>> {
+    let r: c::ReportRecord =
+        serde_json::from_str(record_json).map_err(|e| c::Error::Metadata(e.to_string()))?;
+    Ok(c::seal_report(admin_public, &r, node_id, version_id)?)
+}
+
+/// The record as JSON.
+#[wasm_bindgen]
+pub fn open_report(secret: &[u8], sealed: &[u8], node_id: &str, version_id: &str) -> R<String> {
+    let r = c::open_report(&keypair(secret)?, sealed, node_id, version_id)?;
+    Ok(serde_json::to_string(&r).map_err(|e| c::Error::Metadata(e.to_string()))?)
+}
+
 #[wasm_bindgen]
 pub fn derive_app_password_keys(k: &[u8]) -> R<AccountKeys> {
     let r = c::derive_app_password_keys(&key(k)?);

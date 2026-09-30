@@ -147,6 +147,12 @@ fn open_box(v: &Value) -> Result<Vec<u8>> {
     }
     let ctx = context(v);
     let sealed = raw(v, "sealed");
+    if text(v, "format") == "report" {
+        let r = open_report(&kp, &sealed, &ctx[0], &ctx[1])?;
+        let mut pt = serde_json::to_vec(&r).unwrap();
+        pt.resize(REPORT_PADDED, 0);
+        return Ok(pt);
+    }
     let k = match text(v, "format") {
         "share" => open_share_key(&kp, &sealed, &ctx[0])?,
         "drop" => open_drop_key(&kp, &sealed, &ctx[0], &ctx[1])?,
@@ -802,8 +808,25 @@ fn write_vectors() {
             seal_avatar_key(&to, &avatar_key, user, other_node).unwrap(),
             &avatar_key,
         ));
+        let record = ReportRecord {
+            content_key: b64_encode(content_key.as_bytes()),
+            name: "report.pdf".into(),
+            mime: Some("application/pdf".into()),
+            size: 4096,
+            note: "a note for the admins".into(),
+        };
+        let mut padded = serde_json::to_vec(&record).unwrap();
+        padded.resize(REPORT_PADDED, 0);
+        let mut e = entry(
+            "report",
+            &[node, version],
+            seal_report(&to, &record, node, version).unwrap(),
+            &avatar_key, // replaced below
+        );
+        e["plaintext"] = b64(&padded);
+        sealed_boxes.push(e);
     }
-    let hybrid_share = sealed_boxes[3].clone();
+    let hybrid_share = sealed_boxes[4].clone();
     let classic_share = sealed_boxes[0].clone();
     sealed_boxes.extend([
         reject(
@@ -830,6 +853,11 @@ fn write_vectors() {
                 "a sealed box of a kind this client doesn't know",
             )
         },
+        reject(
+            &find(&sealed_boxes, "report"),
+            json!({ "context": [node, other_node] }),
+            "a report opened as another version's",
+        ),
     ]);
 
     let file = json!({

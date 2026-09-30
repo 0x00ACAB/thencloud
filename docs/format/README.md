@@ -283,7 +283,8 @@ a file cut short has no chunk marked `last`. An encrypted chunk is at most
 ## Sealed boxes
 
 These send a key to another user's public key without either side being
-online together. They're used for shares, file drops and avatar keys.
+online together. They're used for shares, file drops, avatar keys and file
+reports.
 
 **To an X25519-only key** (32 bytes):
 
@@ -315,6 +316,7 @@ A hybrid box can't be opened without the ML-KEM key.
 | `share` | node key | `aad("share", node_id)` |
 | `drop` | a dropped file's node key, sealed to the folder's owner | `aad("drop", node_id, folder_id)` |
 | `avatar-key` | the owner's avatar key | `aad("avatar-key", owner_username, grantee_username)` |
+| `report` | a file report: JSON `{content_key, name, mime, size, note}` padded with zeros to 16,384 bytes, sealed to each admin | `aad("report", node_id, version_id)` |
 
 ## Public links
 
