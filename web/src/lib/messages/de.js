@@ -1471,4 +1471,15 @@ export default {
   'Reading files to search inside them ({done} of {total})': 'Dateien werden gelesen, um in ihnen zu suchen ({done} von {total})',
   'Looking through your folders': 'Deine Ordner werden durchsucht',
   'Saved. It is under My files in the sidebar.': 'Gespeichert. Du findest sie unter Meine Dateien in der Seitenleiste.',
+  // Office previews
+  "This file couldn't be opened.": "Diese Datei konnte nicht geöffnet werden.",
+  "This sheet is empty.": "Diese Tabelle ist leer.",
+  "Show more rows": "Mehr Zeilen anzeigen",
+  "Only the first {rows} rows and {cols} columns are shown.": "Nur die ersten {rows} Zeilen und {cols} Spalten werden angezeigt.",
+  "Values as last saved. Number formats and charts aren't shown.": "Werte wie zuletzt gespeichert. Zahlenformate und Diagramme werden nicht angezeigt.",
+  "Slide {n}": "Folie {n}",
+  "No text on this slide.": "Auf dieser Folie steht kein Text.",
+  "This document has no text.": "Dieses Dokument enthält keinen Text.",
+  "This is as far as the preview goes. Download the file to see the rest.": "Weiter reicht die Vorschau nicht. Lade die Datei herunter, um den Rest zu sehen.",
+  "A simple preview: the text, tables and pictures, without the original layout.": "Eine einfache Vorschau: Text, Tabellen und Bilder, ohne das ursprüngliche Layout.",
 };
