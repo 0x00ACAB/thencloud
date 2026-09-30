@@ -76,3 +76,10 @@ path = "fuzz_targets/nextcloud_listing.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "sigstore-bundle"
+path = "fuzz_targets/sigstore_bundle.rs"
+test = false
+doc = false
+bench = false

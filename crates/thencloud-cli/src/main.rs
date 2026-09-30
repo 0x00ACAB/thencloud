@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use thencloud_cli::mount::{self, MountOptions};
 use thencloud_cli::nextcloud::Nextcloud;
 use thencloud_cli::serve::{self, ServeOptions};
-use thencloud_cli::{Client, Error, Result, parse_app_password, safe_name, verify};
+use thencloud_cli::{Client, Error, Result, parse_app_password, safe_name, sigstore, verify};
 use thencloud_crypto::{self as c, Key};
 
 #[derive(Parser)]
@@ -84,14 +84,26 @@ enum Command {
         /// The release manifest (thencloud-web-<version>.json).
         #[arg(long)]
         manifest: PathBuf,
-        /// Its minisign signature [default: the manifest's path + .minisig].
+        /// Its Sigstore bundle, made by the release workflow [default: the
+        /// manifest's path + .sigstore.json, if it's there].
+        #[arg(long)]
+        sigstore: Option<PathBuf>,
+        /// The repository whose release workflow must have signed it.
+        #[arg(
+            long,
+            env = "THENCLOUD_RELEASE_REPO",
+            default_value = "0x00ACAB/thencloud"
+        )]
+        repo: String,
+        /// Its minisign signature by a maintainer [default: the manifest's
+        /// path + .minisig, if it's there].
         #[arg(long)]
         signature: Option<PathBuf>,
         /// The minisign public key the release is signed with.
         #[arg(long, env = "THENCLOUD_RELEASE_KEY")]
         key: Option<String>,
-        /// Skip the signature, to compare with a manifest you built yourself.
-        #[arg(long, conflicts_with_all = ["signature", "key"])]
+        /// Skip the signatures, to compare with a manifest you built yourself.
+        #[arg(long, conflicts_with_all = ["signature", "key", "sigstore"])]
         unsigned: bool,
     },
     /// Serve a folder ("" is My files) over WebDAV on 127.0.0.1, decrypted,
@@ -205,6 +217,8 @@ fn run(cmd: Command) -> Result<()> {
     if let Command::VerifyWeb {
         server,
         manifest,
+        sigstore,
+        repo,
         signature,
         key,
         unsigned,
@@ -213,9 +227,13 @@ fn run(cmd: Command) -> Result<()> {
         return verify_web(
             server,
             manifest,
-            signature.as_deref(),
-            key.as_deref(),
-            *unsigned,
+            Signatures {
+                sigstore: sigstore.as_deref(),
+                repo,
+                minisign: signature.as_deref(),
+                key: key.as_deref(),
+                unsigned: *unsigned,
+            },
         );
     }
     if let Command::Logout = cmd {
@@ -462,37 +480,106 @@ fn run(cmd: Command) -> Result<()> {
     result
 }
 
-fn verify_web(
-    server: &str,
-    manifest: &Path,
-    signature: Option<&Path>,
-    key: Option<&str>,
+/// Which signatures `verify-web` checks the manifest with.
+struct Signatures<'a> {
+    sigstore: Option<&'a Path>,
+    repo: &'a str,
+    minisign: Option<&'a Path>,
+    key: Option<&'a str>,
     unsigned: bool,
-) -> Result<()> {
-    let bytes = fs::read(manifest)?;
-    if !unsigned {
-        let sig_path = signature
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| PathBuf::from(format!("{}.minisig", manifest.display())));
-        let sig = fs::read_to_string(&sig_path)
-            .map_err(|e| Error::Usage(format!("{}: {e}", sig_path.display())))?;
-        let keys: Vec<&str> = match key {
+}
+
+/// `explicit`, or `default` if that file exists.
+fn given_or_beside(explicit: Option<&Path>, default: PathBuf) -> Option<PathBuf> {
+    match explicit {
+        Some(p) => Some(p.to_path_buf()),
+        None => default.exists().then_some(default),
+    }
+}
+
+/// Check the manifest's signatures: the release workflow's Sigstore bundle
+/// and a maintainer's minisign signature, whichever are there. Every one
+/// that's there must check out, and at least one must be.
+fn check_signatures(bytes: &[u8], manifest: &Path, version: &str, s: &Signatures) -> Result<()> {
+    let mut checked = 0;
+    let beside = |ext: &str| PathBuf::from(format!("{}{ext}", manifest.display()));
+    if let Some(path) = given_or_beside(s.sigstore, beside(".sigstore.json")) {
+        let bundle =
+            fs::read(&path).map_err(|e| Error::Usage(format!("{}: {e}", path.display())))?;
+        let name = format!(
+            "https://github.com/{}/.github/workflows/release.yml@refs/tags/{version}",
+            s.repo
+        );
+        let who = sigstore::Identity {
+            name: &name,
+            issuer: sigstore::GITHUB_ACTIONS,
+        };
+        let v = sigstore::verify(&bundle, bytes, &who)?;
+        println!(
+            "Sigstore: signed by {name}, logged in Rekor (entry {}, at {} UTC)",
+            v.log_index,
+            utc(v.integrated_time)
+        );
+        checked += 1;
+    }
+    if let Some(path) = given_or_beside(s.minisign, beside(".minisig")) {
+        let sig = fs::read_to_string(&path)
+            .map_err(|e| Error::Usage(format!("{}: {e}", path.display())))?;
+        let keys: Vec<&str> = match s.key {
             Some(k) => vec![k],
             None => verify::RELEASE_KEYS.to_vec(),
         };
         if keys.is_empty() {
             return Err(Error::Usage(
-                "no release key is built in yet; pass --key with the signer's minisign public key"
-                    .into(),
+                "there's a minisign signature but no key to check it with; pass --key with the signer's minisign public key".into(),
             ));
         }
         let comment = keys
             .iter()
-            .find_map(|k| verify::verify_minisign(&bytes, &sig, k).ok())
-            .ok_or_else(|| Error::Usage("the manifest's signature doesn't check out".into()))?;
-        println!("Signature good: {comment}");
+            .find_map(|k| verify::verify_minisign(bytes, &sig, k).ok())
+            .ok_or_else(|| {
+                Error::Usage("the manifest's minisign signature doesn't check out".into())
+            })?;
+        println!("minisign: signature good ({comment})");
+        checked += 1;
     }
+    if checked == 0 {
+        return Err(Error::Usage(format!(
+            "no signature for {}: put the release's .sigstore.json (or .minisig) next to it, or pass --sigstore",
+            manifest.display()
+        )));
+    }
+    Ok(())
+}
+
+/// Seconds since the epoch as "2026-09-30 12:00:00".
+fn utc(t: i64) -> String {
+    let days = t.div_euclid(86_400);
+    let secs = t.rem_euclid(86_400);
+    // Civil date from days (Howard Hinnant's algorithm).
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!(
+        "{y:04}-{m:02}-{d:02} {:02}:{:02}:{:02}",
+        secs / 3600,
+        secs / 60 % 60,
+        secs % 60
+    )
+}
+
+fn verify_web(server: &str, manifest: &Path, sigs: Signatures) -> Result<()> {
+    let bytes = fs::read(manifest)?;
     let m = verify::Manifest::parse(&bytes)?;
+    if !sigs.unsigned {
+        check_signatures(&bytes, manifest, &m.version, &sigs)?;
+    }
     println!(
         "Checking {} files of thencloud web {} on {server}...",
         m.files.len(),
@@ -523,5 +610,17 @@ fn main() -> ExitCode {
             eprintln!("thencloud: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::utc;
+
+    #[test]
+    fn utc_dates() {
+        assert_eq!(utc(0), "1970-01-01 00:00:00");
+        assert_eq!(utc(951_782_400), "2000-02-29 00:00:00");
+        assert_eq!(utc(1_789_615_987), "2026-09-17 03:33:07");
     }
 }

@@ -17,6 +17,9 @@ serde_json.workspace = true
 ureq = { version = "3", features = ["json", "brotli"] }
 sha2.workspace = true
 minisign-verify = "0.3"
+# Sigstore bundles (sigstore.rs): certificates parsed with RustCrypto, signatures checked with ring.
+x509-cert = { version = "0.3", default-features = false, features = ["std"] }
+ring = "0.17"
 clap = { version = "4", features = ["derive", "env"] }
 tempfile = "3"
 dav-server = { version = "0.11", default-features = false }
@@ -36,7 +39,6 @@ libc = "0.2"
 
 [dev-dependencies]
 flate2 = "1"
-ring = "0.17"
 blake2 = "0.11"
 percent-encoding = "2"
 httpdate = "1"
