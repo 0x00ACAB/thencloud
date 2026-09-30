@@ -1102,3 +1102,75 @@ fn webdav_bridge_keeps_finder_files_local_and_follows_changes() {
     cl.logout().unwrap();
     assert_no_plaintext(&s, &[b"xattrs", b"view", b"from the browser"]);
 }
+
+/// Editors save by writing a temporary file and moving it over the
+/// original: that must be a new version of the original (same node, so its
+/// shares, links and history stay), not a new file in its place.
+#[test]
+fn webdav_saving_over_a_file_keeps_it() {
+    let s = start();
+    let cl = client(&s);
+    let root = cl.root().unwrap();
+    let b = bridge(&s, &s.app_password);
+    let base = b.url();
+
+    assert_eq!(
+        dav("PUT", &format!("{base}doc.txt"), &[], b"first draft").0,
+        201
+    );
+    let original = child(&cl, &root, "doc.txt").unwrap();
+    assert_eq!(
+        dav("PUT", &format!("{base}doc.txt.tmp"), &[], b"second draft").0,
+        201
+    );
+    let dest = format!("{base}doc.txt");
+    let (st, _) = dav(
+        "MOVE",
+        &format!("{base}doc.txt.tmp"),
+        &[("Destination", &dest)],
+        b"",
+    );
+    assert_eq!(st, 204);
+
+    let now = child(&cl, &root, "doc.txt").unwrap();
+    assert_eq!(
+        now.node.id, original.node.id,
+        "the same file, not a replacement"
+    );
+    assert_eq!(fetch(&cl, &now), b"second draft");
+    let versions: Vec<VersionInfo> = get(&s, &format!("/api/nodes/{}/versions", now.node.id));
+    assert_eq!(versions.len(), 2);
+    assert!(child(&cl, &root, "doc.txt.tmp").is_none());
+    // The bridge's own temporary file is gone for good, not in the trash.
+    let trash: Vec<TrashItem> = get(&s, "/api/trash");
+    assert!(trash.is_empty(), "{} in the trash", trash.len());
+
+    // A file from elsewhere moved over it goes to the trash instead.
+    let local = tempfile::tempdir().unwrap();
+    std::fs::write(local.path().join("other.txt"), b"third draft").unwrap();
+    cl.upload(&local.path().join("other.txt"), &root, "other.txt", None)
+        .unwrap();
+    let (st, _) = dav(
+        "MOVE",
+        &format!("{base}other.txt"),
+        &[("Destination", &dest)],
+        b"",
+    );
+    assert_eq!(st, 204);
+    assert_eq!(
+        fetch(&cl, &child(&cl, &root, "doc.txt").unwrap()),
+        b"third draft"
+    );
+    let trash: Vec<TrashItem> = get(&s, "/api/trash");
+    assert_eq!(trash.len(), 1);
+
+    // Overwrite: F still refuses.
+    assert_eq!(dav("PUT", &format!("{base}x.txt"), &[], b"x").0, 201);
+    let (st, _) = dav(
+        "MOVE",
+        &format!("{base}x.txt"),
+        &[("Destination", &dest), ("Overwrite", "F")],
+        b"",
+    );
+    assert_eq!(st, 412);
+}
