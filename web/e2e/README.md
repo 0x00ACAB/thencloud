@@ -27,3 +27,5 @@ docker run --rm --network host --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD/
   mcr.microsoft.com/playwright:v1.63.0-noble \
   npx playwright test
 ```
+
+The first account on a new server needs its setup code: `signUp` reads it from `../target/e2e-data/setup-code`. Against a server that's already running (`THENCLOUD_E2E_URL`), pass it in `THENCLOUD_E2E_SETUP_CODE` if that server has no accounts yet.

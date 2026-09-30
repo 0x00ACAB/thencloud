@@ -127,8 +127,10 @@ pub async fn register(
     let user_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
         .fetch_one(&state.db)
         .await?;
-    // The first account can always be created (it becomes the admin).
+    // The first account can always be created (it becomes the admin), with
+    // the setup code (see setup.rs).
     let invite = if user_count == 0 {
+        crate::setup::check_first(&state, &username, req.setup_code.as_deref()).await?;
         None
     } else {
         match (settings::registration(&state).await?, req.invite.as_deref()) {
@@ -221,6 +223,9 @@ pub async fn register(
     }
     tx.commit().await?;
     tracing::info!(%username, admin = user_count == 0, "user registered");
+    if user_count == 0 {
+        crate::setup::done(&state).await;
+    }
 
     let token = create_session(&state, &user_id, req.device_name.as_deref(), None).await?;
     let me = user_by_id(&state, &user_id).await?.into_me(&state.config)?;
@@ -396,6 +401,10 @@ pub async fn options(State(state): State<AppState>) -> Result<Json<AuthOptions>>
     });
     Ok(Json(AuthOptions {
         registration,
+        setup: users == 0 && crate::setup::required(&state),
+        admin_username: (users == 0)
+            .then(|| state.config.admin_username.clone())
+            .flatten(),
         turnstile,
     }))
 }
