@@ -12,7 +12,10 @@ pub fn spawn(state: AppState) {
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(Duration::from_secs(300));
         loop {
-            tick.tick().await;
+            tokio::select! {
+                _ = tick.tick() => {}
+                () = state.shutdown.cancelled() => return,
+            }
             if let Err(e) = run_once(&state).await {
                 tracing::warn!(error = %e, "janitor run failed");
             }
