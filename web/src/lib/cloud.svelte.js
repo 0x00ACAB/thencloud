@@ -1457,13 +1457,30 @@ export async function incomingShares() {
   for (const o of owners) grantAvatar(o).catch(() => {});
   return shares.map((s, i) => {
     try {
-      const key = tc.open_share_key(sk, unb64(s.wrapped_key), s.node.id);
+      const wrapped = unb64(s.wrapped_key);
+      const key = tc.open_share_key(sk, wrapped, s.node.id);
       keyCache.set(s.node.id, key);
+      resealIfClassic(s, wrapped, key);
       return { ...s, entry: { node: s.node, key, meta: decryptMeta(key, s.node) }, ownerFingerprint: owners[i].fingerprint };
     } catch (e) {
       return { ...s, error: String(e?.message || e) };
     }
   });
+}
+
+/**
+ * A share sealed to our X25519 key alone (made before we had an ML-KEM
+ * key) is sealed again to both, so a recording of it can't be opened by a
+ * quantum computer later. Only we can: we hold the key it wraps. In the
+ * background; if it fails, it's tried the next time shares are listed.
+ */
+function resealIfClassic(s, wrapped, key) {
+  const k = session.me?.keys;
+  // 1 is a sealed box to X25519 alone; 2 is hybrid (see the format spec).
+  if (wrapped[0] !== 1 || !k?.pq_public_key) return;
+  const own = userKeys(session.me.username, k.public_key, k.pq_public_key);
+  const sealed = tc.seal_share_key(own.publicKey, key, s.node.id);
+  api('PUT', `/api/shares/${s.id}/key`, { body: { wrapped_key: b64(sealed) } }).catch(() => {});
 }
 
 /** Resolve a node id to a decrypted entry, or null if it's gone. */

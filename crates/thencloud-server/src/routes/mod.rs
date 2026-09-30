@@ -212,6 +212,7 @@ pub fn router(state: AppState) -> Router {
         .route("/shares/incoming", get(shares::incoming))
         .route("/shares/outgoing", get(shares::outgoing))
         .route("/shares/{id}", patch(shares::update).delete(shares::delete))
+        .route("/shares/{id}/key", put(shares::reseal))
         .route("/drops", get(drops::list))
         .route("/drops/{id}", delete(drops::discard))
         .route("/drops/{id}/adopt", post(drops::adopt))
