@@ -20,7 +20,10 @@ use crate::db::{NodeRow, get_node};
 use crate::error::{AppError, Result};
 use crate::util::{check_id, coarse_now};
 
-/// Open reports on one node before more are refused (link visitors).
+/// Open reports made through a public link on one node before more from
+/// links are refused. Signed-in reporters aren't capped this way: the
+/// `reports_one_per_reporter` unique index already limits each of them to
+/// one open report per file.
 const MAX_OPEN_PER_NODE: i64 = 20;
 
 pub enum Reporter<'a> {
@@ -63,7 +66,10 @@ pub async fn keys(State(state): State<AppState>, _user: AuthUser) -> Result<Json
     Ok(Json(admin_keys(&state.db).await?))
 }
 
-/// Boxes must be report-sized and cover exactly the admins in `admins`.
+/// Boxes must be report-sized and cover exactly the admins in `admins`. Each
+/// box's size must match its admin's key: hybrid when they have an ML-KEM
+/// key, classic otherwise (CLAUDE.md: never let a hybrid recipient be sealed
+/// to in the weaker, X25519-only form).
 fn check_boxes(boxes: &[ReportBox], admins: &[ReportKey]) -> Result<()> {
     let want: HashSet<&str> = admins.iter().map(|a| a.admin_id.as_str()).collect();
     let got: HashSet<&str> = boxes.iter().map(|b| b.admin_id.as_str()).collect();
@@ -71,7 +77,16 @@ fn check_boxes(boxes: &[ReportBox], admins: &[ReportKey]) -> Result<()> {
         return Err(AppError::bad("a report needs one box for each admin"));
     }
     for b in boxes {
-        if b.sealed.len() != REPORT_SEALED_LEN && b.sealed.len() != REPORT_SEALED_HYBRID_LEN {
+        let admin = admins
+            .iter()
+            .find(|a| a.admin_id == b.admin_id)
+            .expect("checked above: got == want");
+        let want_len = if admin.pq_public_key.is_some() {
+            REPORT_SEALED_HYBRID_LEN
+        } else {
+            REPORT_SEALED_LEN
+        };
+        if b.sealed.len() != want_len {
             return Err(AppError::bad("sealed has an invalid size"));
         }
     }
@@ -132,16 +147,22 @@ pub async fn create(
             (None, true)
         }
     };
-    let open: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM reports WHERE node_id = ? AND status = 'open'")
-            .bind(&node.id)
-            .fetch_one(&state.db)
-            .await?;
-    if open >= MAX_OPEN_PER_NODE {
-        return Err(AppError::TooManyReports);
-    }
 
     let mut tx = state.db.begin().await?;
+    // Signed-in reporters are bounded by one open report per person per file
+    // (the unique index below); this cap only guards against a flood of
+    // anonymous link reports on one node.
+    if via_link {
+        let open: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM reports WHERE node_id = ? AND status = 'open' AND via_link = 1",
+        )
+        .bind(&node.id)
+        .fetch_one(&mut *tx)
+        .await?;
+        if open >= MAX_OPEN_PER_NODE {
+            return Err(AppError::TooManyReports);
+        }
+    }
     let r = sqlx::query(
         "INSERT INTO reports (id, node_id, version_id, chunk_count, owner_id, reason, reporter_id, via_link, created_at) \
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",

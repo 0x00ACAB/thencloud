@@ -681,6 +681,29 @@ async fn reports_by_share_recipients() {
         post(&bob.token, &short).await.status,
         StatusCode::BAD_REQUEST
     );
+    // A classic-sized box for an admin who has an ML-KEM key is a
+    // post-quantum downgrade: refused, even though its length matched an
+    // older account's key.
+    let admin_keys: Vec<ReportKey> = h.get("/api/report-keys", &bob.token).await.json();
+    let v = file.version.as_ref().unwrap();
+    let ck = c::unwrap_content_key(&file_key, &v.enc_content_key, &file.id, &v.id).unwrap();
+    let m = c::decrypt_metadata(&file_key, &file.id, &file.enc_metadata).unwrap();
+    let rec = c::ReportRecord {
+        content_key: c::b64_encode(ck.as_bytes()),
+        name: m.name,
+        mime: m.mime,
+        size: m.size,
+        note: "downgrade attempt".into(),
+    };
+    let classic = ReportBox {
+        admin_id: admin_keys[0].admin_id.clone(),
+        sealed: B64(c::seal_report(&admin_keys[0].public_key.0, &rec, &file.id, &v.id).unwrap()),
+    };
+    let downgrade = report_req(&file, ReportReason::Malware, vec![classic]);
+    assert_eq!(
+        post(&bob.token, &downgrade).await.status,
+        StatusCode::BAD_REQUEST
+    );
     // A version that isn't the node's is refused.
     let mut wrong = req.clone();
     wrong.version_id = c::new_id();
@@ -693,6 +716,45 @@ async fn reports_by_share_recipients() {
     // One open report per person per file.
     let again = report_req(&file, ReportReason::Other, boxes.clone());
     assert_eq!(post(&bob.token, &again).await.status, StatusCode::CONFLICT);
+
+    // The per-node cap on open reports only guards against a flood of
+    // anonymous link reports; it doesn't block a signed-in reporter, however
+    // many link reports are already open on the file (the link-side cap
+    // itself is Task 3's to test).
+    let file2 = alice
+        .upload(&h, &folder, None, "second.pdf.exe", &secret_payload(1000))
+        .await
+        .unwrap();
+    let alice_id = alice.me(&h).await.user_id;
+    let v2 = file2.version.as_ref().unwrap();
+    for _ in 0..20 {
+        sqlx::query(
+            "INSERT INTO reports (id, node_id, version_id, chunk_count, owner_id, reason, \
+             reporter_id, via_link, created_at) VALUES (?, ?, ?, ?, ?, 'other', NULL, 1, ?)",
+        )
+        .bind(c::new_id())
+        .bind(&file2.id)
+        .bind(&v2.id)
+        .bind(v2.chunk_count as i64)
+        .bind(&alice_id)
+        .bind(thencloud_server::util::coarse_now())
+        .execute(&h.state.db)
+        .await
+        .unwrap();
+    }
+    let file2_key = c::unwrap_node_key(&folder_key, &file2.enc_key, &file2.id).unwrap();
+    let boxes2 = report_boxes(
+        &h,
+        "/api/report-keys",
+        Some(&bob.token),
+        &[],
+        &file2,
+        &file2_key,
+        "second file",
+    )
+    .await;
+    let req2 = report_req(&file2, ReportReason::Malware, boxes2);
+    assert_eq!(post(&bob.token, &req2).await.status, StatusCode::NO_CONTENT);
 
     // The admin can open what bob sealed.
     let sealed: Vec<u8> = sqlx::query_scalar("SELECT sealed FROM report_boxes")
@@ -714,7 +776,14 @@ async fn reports_by_share_recipients() {
     all_files(h.dir.path(), &mut files);
     for f in files {
         let data = std::fs::read(&f).unwrap();
-        for needle in [&b"invoice.pdf.exe"[..], b"PHISHING-NOTE-MARKER", MARKER] {
+        for needle in [
+            &b"invoice.pdf.exe"[..],
+            b"PHISHING-NOTE-MARKER",
+            b"second.pdf.exe",
+            b"downgrade attempt",
+            b"second file",
+            MARKER,
+        ] {
             assert!(
                 !contains(&data, needle),
                 "{} holds {:?}",
