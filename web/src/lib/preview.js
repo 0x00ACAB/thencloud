@@ -15,6 +15,8 @@ const AUDIO = {
   wav: 'audio/wav', flac: 'audio/flac', weba: 'audio/webm',
 };
 const MARKDOWN = new Set(['md', 'markdown', 'mdown', 'mkd']);
+// Read by lib/office.js into plain text, tables and pictures.
+const OFFICE = new Set(['docx', 'odt', 'xlsx', 'pptx']);
 
 // Text files that don't have a text/* MIME type, or often have none at all.
 const TEXT = new Set([
@@ -39,8 +41,9 @@ export function extension(name) {
 
 /**
  * How to preview a file: { kind, type } where kind is image, video, audio,
- * pdf, book, markdown or text and type is the Blob type to use, or null if
- * there is no preview for it. A book has `format` (epub or cbz). CSV and TSV are text with `table` set, so they can
+ * pdf, book, office, markdown or text and type is the Blob type to use, or
+ * null if there is no preview for it. A book has `format` (epub or cbz), an
+ * office document too (docx, odt, xlsx or pptx). CSV and TSV are text with `table` set, so they can
  * be shown as a table and still edited as text.
  */
 export function previewKind(meta) {
@@ -51,6 +54,7 @@ export function previewKind(meta) {
   if (AUDIO[ext]) return { kind: 'audio', type: AUDIO[ext] };
   if (ext === 'pdf' || mime === 'application/pdf') return { kind: 'pdf', type: 'application/pdf' };
   if (ext === 'epub' || ext === 'cbz') return { kind: 'book', type: 'application/octet-stream', format: ext };
+  if (OFFICE.has(ext)) return { kind: 'office', type: 'application/octet-stream', format: ext };
   if (MARKDOWN.has(ext) || mime === 'text/markdown') return { kind: 'markdown', type: 'text/plain' };
   if (ext === 'csv' || ext === 'tsv') return { kind: 'text', type: 'text/plain', table: true };
   if (
