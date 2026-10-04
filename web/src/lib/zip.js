@@ -209,12 +209,13 @@ const MEMORY_LIMIT = 2 * 1024 ** 3;
 
 /**
  * Zip `entries` and save it as `name`: streamed to disk through the service
- * worker when there is one, else built in memory. Resolves when done.
+ * worker (or the Android app's plugin) when there is one, else built in
+ * memory. Resolves when done.
  */
 export async function saveZip(entries, name, opts) {
-  const { streamsAvailable, streamParts } = await import('./stream.js');
+  const { canSaveStreams, streamParts } = await import('./stream.js');
   const parts = zipParts(entries, opts);
-  if (await streamsAvailable()) return streamParts(parts, name, 'application/zip');
+  if (await canSaveStreams()) return streamParts(parts, name, 'application/zip');
   const chunks = [];
   let size = 0;
   for await (const p of parts) {
@@ -223,5 +224,5 @@ export async function saveZip(entries, name, opts) {
     chunks.push(p);
   }
   const { saveBlob } = await import('./crypto.js');
-  saveBlob(new Blob(chunks, { type: 'application/zip' }), name);
+  await saveBlob(new Blob(chunks, { type: 'application/zip' }), name);
 }

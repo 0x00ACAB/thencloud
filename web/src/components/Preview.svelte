@@ -30,6 +30,7 @@
   import { separatorFor } from '../lib/csv.js';
   import { errorMessage, toastError } from '../lib/ui.svelte.js';
   import { fade } from '../lib/motion.js';
+  import { inAndroidApp } from '../lib/native.js';
 
   /** @type {{ entries: any[], start: number, fetch: (entry: any, onProgress: (p: number) => void) => Promise<{ blob: Blob }>, ondownload: (entry: any) => void, onclose: () => void, save?: ((entry: any, text: string) => Promise<any>) | null, onsaved?: (entry: any) => void, edit?: boolean, trail?: any[] | null, list?: ((folder: any) => Promise<any[]>) | null, drafts?: any, open?: ((entry: any) => any) | null }} */
   let { entries, start, fetch, ondownload, onclose, save = null, onsaved, edit = false, trail = null, list = null, drafts = null, open = null, bookProgress = null } = $props();
@@ -296,7 +297,7 @@
   }
 
   function download() {
-    if (view.blob) saveBlob(view.blob, entry.meta.name);
+    if (view.blob) saveBlob(view.blob, entry.meta.name)?.catch(toastError);
     else ondownload(entry);
   }
 
@@ -417,7 +418,7 @@
           {:else if kind.kind === 'video'}
             <div class="grid h-full place-items-center p-6">
               <!-- svelte-ignore a11y_media_has_caption -->
-              <video bind:this={videoEl} src={view.url} controls class="max-h-full max-w-full rounded-md bg-black">
+              <video bind:this={videoEl} src={view.url} controls controlslist={inAndroidApp ? 'nofullscreen' : undefined} class="max-h-full max-w-full rounded-md bg-black">
                 {#each subtitles as sub (sub.url)}<track kind="subtitles" src={sub.url} srclang={sub.lang || undefined} label={sub.label} />{/each}
               </video>
             </div>

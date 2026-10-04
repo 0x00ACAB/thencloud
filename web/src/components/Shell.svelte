@@ -142,7 +142,7 @@
 </script>
 
 <div class="flex min-h-dvh flex-col">
-  <header class="sticky top-0 z-30 border-b border-line bg-bg/80 backdrop-blur-md">
+  <header class="sticky top-0 z-30 border-b border-line bg-bg/80 pt-[var(--safe-top)] backdrop-blur-md">
     <div class="flex h-14 items-center gap-3 px-4 md:px-6">
       <button type="button" class="cursor-pointer" onclick={() => go(nav[0].to())} aria-label={t('thencloud home')}>
         <Wordmark />
@@ -275,7 +275,7 @@
 
 <!-- Phones: the main sections as a bottom tab bar; the rest under More. -->
 <nav
-  class="fixed inset-x-0 bottom-0 z-30 flex border-t border-line bg-bg/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden"
+  class="tab-bar fixed inset-x-0 bottom-0 z-30 flex border-t border-line bg-bg/90 pb-[var(--safe-bottom)] backdrop-blur-md md:hidden"
   aria-label={t('Sections')}>
   {#each nav.filter((n) => MOBILE_TABS.includes(n.name)) as item (item.name)}
     <button

@@ -2,8 +2,9 @@
 //! bundled into the binary, in a Tauri webview. Nothing is loaded from the
 //! server but data, so a compromised server can't hand the app new code.
 //!
-//! The page gets no Tauri permissions (there are no capabilities): it can't
-//! call anything native. Links that leave the app open in the system browser.
+//! The page gets no Tauri permissions but one, on Android only: saving a file
+//! it downloads (capabilities/android.json; Android's WebView can't save a
+//! blob: URL itself). Links that leave the app open in the system browser.
 
 use tauri::webview::WebviewWindowBuilder;
 use tauri::{Url, WebviewUrl};
@@ -21,6 +22,7 @@ fn is_app(url: &Url, dev: Option<&Url>) -> bool {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_thencloud::init())
         .setup(|app| {
             let handle = app.handle().clone();
             let dev = cfg!(debug_assertions)
@@ -36,7 +38,8 @@ pub fn run() {
                     }
                     false
                 })
-                // Saved to Downloads under the name the page gave.
+                // Saved to Downloads under the name the page gave. Not on
+                // Android, where the page saves through the plugin instead.
                 .on_download(|_, _| true);
             #[cfg(desktop)]
             let window = window

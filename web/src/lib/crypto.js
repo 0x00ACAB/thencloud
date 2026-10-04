@@ -2,6 +2,7 @@
 // WASM. This module only adapts it for the UI.
 
 import init, * as tc from '../wasm/thencloud_wasm.js';
+import { nativeSaves, saveBlobNative } from './native.js';
 
 export { tc };
 export const ready = init();
@@ -130,7 +131,9 @@ export function openFile(node, nodeKey, getChunk) {
   };
 }
 
+/** Save `blob` as a download. In the Android app this resolves once it's written. */
 export function saveBlob(blob, name) {
+  if (nativeSaves) return saveBlobNative(blob, name);
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

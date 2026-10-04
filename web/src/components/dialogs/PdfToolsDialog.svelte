@@ -127,7 +127,7 @@
       if (save) {
         await save(file, () => {});
         toast(t('Saved {name}', { name: out }), { kind: 'success' });
-      } else saveBlob(file, out);
+      } else await saveBlob(file, out);
       onclose();
     } catch (e) {
       error = pdfError(e);

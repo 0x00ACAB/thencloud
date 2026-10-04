@@ -8,6 +8,7 @@ export default {
   'Change server': 'Server wechseln',
   'Use an https:// address.': 'Verwende eine https://-Adresse.',
   "Couldn't find a thencloud server there.": 'Unter dieser Adresse gibt es keinen thencloud-Server.',
+  "Couldn't save {name} on this device.": '{name} konnte auf diesem Gerät nicht gespeichert werden.',
   "The app can't use passkeys yet. Sign in from a browser, or use your recovery key.": 'Die App kann noch keine Passkeys verwenden. Melde dich im Browser an oder nutze deinen Wiederherstellungsschlüssel.',
   'Unlocking your files': 'Deine Dateien werden entsperrt',
   "That recovery key doesn't match this account.": 'Dieser Wiederherstellungsschlüssel passt nicht zu diesem Konto.',

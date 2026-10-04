@@ -1284,7 +1284,7 @@
 
 {#if selected.size && chosen.length}
   <div class="fixed inset-x-0 bottom-[calc(var(--bottom-bar)+1rem)] z-40 flex justify-center px-4 md:bottom-[calc(var(--bottom-bar)+1.5rem)]" transition:fly={{ y: 12 }}>
-    <div class="flex items-center gap-1 rounded-lg border border-line bg-bg p-1.5 pl-3 shadow-lg shadow-black/5 dark:shadow-black/40" role="toolbar" aria-label={t('Selection')}>
+    <div class="flex items-center gap-1 rounded-lg border border-line bg-bg p-1.5 pl-3 shadow-lg shadow-black/5 dark:shadow-black/40" role="toolbar" data-escape aria-label={t('Selection')}>
       <span class="mr-2 text-sm font-medium tabular-nums">{t('{count} selected', { count: chosen.length })}</span>
       <button type="button" class="btn btn-ghost" onclick={downloadChosen} disabled={!chosen.some((r) => r.node.kind === 'file')}>
         <Icon name="download" /><span class="hidden sm:inline">{t('Download')}</span>

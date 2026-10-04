@@ -20,6 +20,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
+tauri-plugin-thencloud = { path = "android-plugin" }
 
 [profile.dev.package."*"]
 opt-level = 2

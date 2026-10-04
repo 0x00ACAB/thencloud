@@ -1,0 +1,5 @@
+# Made by tauri-plugin's build script and by Gradle.
+/android/.tauri
+/android/build
+/target
+/Cargo.lock
