@@ -11,7 +11,7 @@ import {
   tc, b64, unb64, decryptMeta, encryptMeta, unwrapChild, decryptChildren,
   deriveAccountKeys, deriveLinkKeys, fetchFile, openFile, encryptPiece, saveBlob,
 } from './crypto.js';
-import { sortEntries } from './format.js';
+import { sortEntries, fileTime } from './format.js';
 import { canThumbnail, makeThumbnail, isJpeg } from './thumbnail.js';
 import { photoTaken } from './exif.js';
 import { wordsOf, queryWords, matchesWords } from './fulltext.js';
@@ -1122,7 +1122,7 @@ export async function upload(file, { parentId, parentKey, existing }, onProgress
     name: existing ? existing.meta.name : file.name,
     mime: file.type || null,
     size: file.size,
-    mtime: file.lastModified || Date.now(),
+    mtime: fileTime(file),
   };
   // When a photo was taken, for the Photos timeline. Read from the file as
   // uploaded: a photo whose details were removed keeps no date either.
