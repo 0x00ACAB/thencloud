@@ -18,7 +18,7 @@ import { wordsOf, queryWords, matchesWords } from './fulltext.js';
 import { previewKind } from './preview.js';
 import { rememberSession, rememberedSession, forgetSession } from './remember.js';
 import { arrivedFromCheck } from './turnstile.js';
-import { streamsAvailable, streamDownload } from './stream.js';
+import { canSaveStreams, streamDownload } from './stream.js';
 import { createPasskey, usePasskey, passkeysSupported } from './passkeys.js';
 import { apiUrl, serverOrigin, setServer } from './server.svelte.js';
 
@@ -1035,7 +1035,7 @@ export const fetchVersion = (entry, v, onProgress) =>
 
 export async function downloadVersion(entry, v, onProgress) {
   const { blob, meta } = await fetchVersion(entry, v, onProgress);
-  saveBlob(blob, meta.name);
+  await saveBlob(blob, meta.name);
 }
 
 /** Make `v` current. The name stays as it is now; size and mtime come from the version. */
@@ -1102,9 +1102,9 @@ export async function exportAccount(onProgress) {
 const STREAM_FROM = 16 * 1024 * 1024;
 
 export async function download(entry, onProgress) {
-  if (entry.meta.size > STREAM_FROM && (await streamsAvailable())) return streamDownload(openEntry(entry), onProgress);
+  if (entry.meta.size > STREAM_FROM && (await canSaveStreams())) return streamDownload(openEntry(entry), onProgress);
   const { blob, meta } = await fetchEntry(entry, onProgress);
-  saveBlob(blob, meta.name);
+  await saveBlob(blob, meta.name);
 }
 
 /**

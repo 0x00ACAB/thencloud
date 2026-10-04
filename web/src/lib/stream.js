@@ -5,6 +5,8 @@
 // and never sees a key. Where there's no worker (a private window in some
 // browsers, a hard reload), callers fall back to building a Blob.
 
+import { nativeSaves, savePieces, filePieces } from './native.js';
+
 let ready = null;
 
 /** Resolves to true once this page is controlled by the stream worker. */
@@ -87,6 +89,12 @@ export function serveFile({ size, chunkSize, type, name = 'file', download = fal
   });
 }
 
+/**
+ * Whether streamDownload and streamParts can save without holding the whole
+ * file in memory: through the stream worker, or the Android app's plugin.
+ */
+export const canSaveStreams = async () => nativeSaves || (await streamsAvailable());
+
 /** A stream of unknown length from `next()` -> Uint8Array, or null at the end. */
 export function serveSequence({ type, name, next, oncancel }) {
   return register({ size: null, type, name, download: true }, async (m) => {
@@ -114,6 +122,7 @@ export function startDownload(url) {
  * browser has taken the last piece; rejects if it fails or is cancelled.
  */
 export function streamDownload(file, onProgress) {
+  if (nativeSaves) return savePieces(filePieces(file, onProgress), file.meta.name);
   return new Promise((resolve, reject) => {
     let done = false;
     const finish = (err) => {
@@ -148,6 +157,7 @@ export function streamDownload(file, onProgress) {
 
 /** Save the pieces an async iterator yields as one download. Resolves when it's all been taken. */
 export function streamParts(parts, name, type = 'application/octet-stream') {
+  if (nativeSaves) return savePieces(parts, name, type);
   return new Promise((resolve, reject) => {
     let finished = false;
     const finish = (err) => {

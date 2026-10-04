@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "android-save",
+  "description": "Android's WebView can't save a blob: download, so the page saves through the thencloud plugin. Nothing else.",
+  "windows": ["main"],
+  "platforms": ["android"],
+  "permissions": ["thencloud:allow-save-begin", "thencloud:allow-save-write", "thencloud:allow-save-end"]
+}

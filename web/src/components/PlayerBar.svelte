@@ -257,7 +257,7 @@
   {/if}
 
   {#if sheet}
-    <div class="fixed inset-0 z-50 flex flex-col bg-bg px-5 pt-[max(env(safe-area-inset-top),1rem)] pb-[max(env(safe-area-inset-bottom),1.5rem)] md:hidden" role="dialog" aria-label={t('Now playing')} use:portal transition:fly={{ y: 48 }}>
+    <div class="fixed inset-0 z-50 flex flex-col bg-bg px-5 pt-[max(var(--safe-top),1rem)] pb-[max(var(--safe-bottom),1.5rem)] md:hidden" role="dialog" data-escape aria-label={t('Now playing')} use:portal transition:fly={{ y: 48 }}>
       <div class="flex items-center">
         <button type="button" class="btn btn-ghost btn-icon size-10 [&_svg]:size-5" aria-label={t('Close player')} onclick={() => (sheet = false)}><Icon name="chevron-down" /></button>
         <p class="flex-1 text-center text-xs font-medium text-fg-muted">{queueOpen ? t('Queue') : t('Now playing')}</p>
