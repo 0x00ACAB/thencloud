@@ -9,6 +9,13 @@ import { t } from './i18n.svelte.js';
  */
 export const changedAt = (entry) => entry.meta?.changed ?? entry.node.updated_at * 1000;
 
+/**
+ * A File's modification time for its metadata, in ms, or now when the
+ * browser doesn't know it: that's 0, or on Android (files picked through the
+ * system chooser) -11644473600000, which is 1601.
+ */
+export const fileTime = (file) => (file.lastModified > 0 ? file.lastModified : Date.now());
+
 export function formatSize(n) {
   if (n == null) return '';
   if (n < 1024) return `${n} B`;

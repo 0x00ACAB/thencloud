@@ -12,7 +12,7 @@
   import { request, allChildren } from './lib/api.js';
   import { tc, b64, unb64, encryptMeta, decryptMeta, decryptChildren, fetchFile, openFile, encryptPiece, saveBlob, deriveLinkKeys } from './lib/crypto.js';
   import { streamsAvailable, streamDownload } from './lib/stream.js';
-  import { formatSize, sortEntries } from './lib/format.js';
+  import { formatSize, sortEntries, fileTime } from './lib/format.js';
   import { errorMessage, trackTransfer } from './lib/ui.svelte.js';
   import { t } from './lib/i18n.svelte.js';
   import Icon from './components/Icon.svelte';
@@ -215,7 +215,7 @@
     const contentKey = tc.random_key();
     const padded = tc.padded_size(file.size);
     const chunkCount = tc.chunk_count(padded);
-    const meta = { name: file.name, mime: file.type || null, size: file.size, mtime: file.lastModified || Date.now() };
+    const meta = { name: file.name, mime: file.type || null, size: file.size, mtime: fileTime(file) };
     let upId = null;
     try {
       const up = await request('POST', `${base}/uploads`, {
