@@ -50,18 +50,19 @@
   let setup = $state(false);
   let setupCode = $state('');
   let adminName = $state(null);
+  function applyOptions(o) {
+    registration = o.registration;
+    turnstile = o.turnstile ?? null;
+    setup = !!o.setup;
+    adminName = o.admin_username ?? null;
+    if (setup) {
+      switchMode('signup');
+      if (adminName && !username) username = adminName;
+    }
+  }
   const loadOptions = () =>
     authOptions()
-      .then((o) => {
-        registration = o.registration;
-        turnstile = o.turnstile ?? null;
-        setup = !!o.setup;
-        adminName = o.admin_username ?? null;
-        if (setup) {
-          switchMode('signup');
-          if (adminName && !username) username = adminName;
-        }
-      })
+      .then(applyOptions)
       .catch(() => {});
   onMount(() => {
     // Back from /auth: the same tab, and the invite if there was one.
@@ -96,7 +97,7 @@
       }
       if (!o?.registration) throw new Error(t("Couldn't find a thencloud server there."));
       await changeServer(origin);
-      registration = o.registration;
+      applyOptions(o);
       editingServer = false;
     });
   }
@@ -178,7 +179,7 @@
   }
 </script>
 
-<main class="flex min-h-dvh flex-col items-center px-4 pt-[12vh] pb-8">
+<main class="flex min-h-dvh flex-col items-center px-4 pt-[max(12vh,var(--safe-top))] pb-[calc(2rem+var(--safe-bottom))]">
   <img src="/img/logo.webp" alt="thencloud" width="715" height="349" class="h-auto w-56 select-none" draggable="false" />
 
   <div class="mt-8 w-full max-w-sm">
