@@ -11,7 +11,7 @@ import { SvelteMap } from 'svelte/reactivity';
 import { session, resolvePath, walkTree, openEntry, fetchEntry, loadAppData, saveAppData, rename, folderLabel } from './cloud.svelte.js';
 import { isSubtitle, matchSubtitles } from './subtitles.js';
 import { previewKind, extension, MAX_PREVIEW } from './preview.js';
-import { parseEpisode, fromTitle, episodeLabel, safeName } from './episodes.js';
+import { parseEpisode, episodeLabel, safeName } from './episodes.js';
 import { readVideoTags } from './videotags.js';
 import { putFolderImage } from './cover.js';
 import { errorMessage } from './ui.svelte.js';
