@@ -938,9 +938,13 @@
         {t('thencloud is free software under the AGPL-3.0. Your files are encrypted in this browser with keys derived from your password; the server stores ciphertext and can see only sizes, dates and who shares with whom.')}
       </p>
       <p>
-        <Sentence text={t("This page is code the server sends you. Each release is built reproducibly with a signed list of every file's hash, and {command} checks that a server sends exactly that.")}>
-          {#snippet command()}<code class="font-mono text-fg">thencloud verify-web</code>{/snippet}
-        </Sentence>
+        {#if inApp}
+          {t('This app carries its own copy of the web app, so the server sends it only data, never code.')}
+        {:else}
+          <Sentence text={t("This page is code the server sends you. Each release is built reproducibly with a signed list of every file's hash, and {command} checks that a server sends exactly that.")}>
+            {#snippet command()}<code class="font-mono text-fg">thencloud verify-web</code>{/snippet}
+          </Sentence>
+        {/if}
       </p>
       <p>
         <Sentence text={t('This is version {version} of the web app.')}>
@@ -952,7 +956,7 @@
             : t("This browser isn't watching the app for changes right now (it needs a service worker, which some private windows don't allow).")}
         {/if}
       </p>
-      {#if appVersion !== 'dev'}
+      {#if appVersion !== 'dev' && !inApp}
         <div class="flex items-center gap-2">
           <code class="min-w-0 flex-1 truncate rounded-md border border-line bg-subtle px-2.5 py-1.5 font-mono text-xs text-fg">{verifyCommand}</code>
           <button type="button" class="btn btn-secondary btn-sm" onclick={() => copyText(verifyCommand)}><Icon name="copy" />{t('Copy')}</button>

@@ -8,6 +8,7 @@ export default {
   'Change server': 'Server wechseln',
   'Use an https:// address.': 'Verwende eine https://-Adresse.',
   "Couldn't find a thencloud server there.": 'Unter dieser Adresse gibt es keinen thencloud-Server.',
+  "Couldn't save {name} on this device.": '{name} konnte auf diesem Gerät nicht gespeichert werden.',
   "The app can't use passkeys yet. Sign in from a browser, or use your recovery key.": 'Die App kann noch keine Passkeys verwenden. Melde dich im Browser an oder nutze deinen Wiederherstellungsschlüssel.',
   'Unlocking your files': 'Deine Dateien werden entsperrt',
   "That recovery key doesn't match this account.": 'Dieser Wiederherstellungsschlüssel passt nicht zu diesem Konto.',
@@ -1068,6 +1069,7 @@ export default {
     'Deine Dateien, Ordner, Versionen, Links und Freigaben werden sofort vom Server gelöscht. Das lässt sich nicht rückgängig machen, und auch ein Admin kann sie nicht zurückholen. Dateien, die du in Ordner anderer gelegt hast, gehören ihnen und bleiben.',
   'thencloud is free software under the AGPL-3.0. Your files are encrypted in this browser with keys derived from your password; the server stores ciphertext and can see only sizes, dates and who shares with whom.':
     'thencloud ist freie Software unter der AGPL-3.0. Deine Dateien werden in diesem Browser mit Schlüsseln aus deinem Passwort verschlüsselt; der Server speichert Chiffretext und sieht nur Größen, Daten und wer mit wem teilt.',
+  'This app carries its own copy of the web app, so the server sends it only data, never code.': 'Diese App bringt ihre eigene Kopie der Web-App mit, der Server schickt ihr also nur Daten, nie Code.',
   "This page is code the server sends you. Each release is built reproducibly with a signed list of every file's hash, and {command} checks that a server sends exactly that.":
     'Diese Seite ist Code, den der Server dir schickt. Jedes Release wird reproduzierbar mit einer signierten Liste der Hashes aller Dateien gebaut, und {command} prüft, dass ein Server genau das schickt.',
   'Delete your account?': 'Dein Konto löschen?',

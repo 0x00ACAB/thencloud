@@ -40,7 +40,11 @@ case "$target" in
   android)
     if [ ! -d gen/android ]; then
       tauri android init
-      tauri icon ../../web/public/icons/icon-512.png
+      # The Android icons go into gen/android; the desktop and iOS ones it
+      # also makes are thrown away (icons/ holds the ones in use).
+      icons="$(mktemp -d)"
+      tauri icon ../../web/public/icons/icon-512.png -o "$icons"
+      rm -rf "$icons"
     fi
     tauri android build "$@"
     ;;

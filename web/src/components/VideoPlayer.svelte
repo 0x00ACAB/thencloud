@@ -11,6 +11,7 @@
   import SubtitlePicker from './SubtitlePicker.svelte';
   import { player as music, toggle as toggleMusic } from '../lib/music.svelte.js';
   import { errorMessage } from '../lib/ui.svelte.js';
+  import { inAndroidApp } from '../lib/native.js';
 
   let { video, onclose } = $props();
 
@@ -118,8 +119,8 @@
   });
 </script>
 
-<div class="fixed inset-0 z-50 flex flex-col bg-bg" role="dialog" aria-label={d.label} use:portal transition:fade>
-  <div class="flex items-center gap-3 border-b border-line px-3 pt-[max(env(safe-area-inset-top),0.75rem)] pb-3 md:px-4">
+<div class="fixed inset-0 z-50 flex flex-col bg-bg" role="dialog" data-escape aria-label={d.label} use:portal transition:fade>
+  <div class="flex items-center gap-3 border-b border-line px-3 pt-[max(var(--safe-top),0.75rem)] pb-3 md:px-4">
     <button type="button" class="btn btn-ghost btn-icon" aria-label={t('Close')} onclick={onclose}><Icon name="arrow-left" /></button>
     <div class="grid min-w-0">
       <span class="truncate text-sm font-medium">{d.label}</span>
@@ -132,7 +133,7 @@
       </button>
     {/if}
   </div>
-  <div class="relative grid min-h-0 flex-1 place-items-center bg-black pb-[env(safe-area-inset-bottom)]">
+  <div class="relative grid min-h-0 flex-1 place-items-center bg-black pb-[var(--safe-bottom)]">
     {#if error}
       <div class="card grid max-w-sm place-items-center gap-1 px-6 py-8 text-center">
         <Icon name="circle-alert" class="mb-1 size-6 text-fg-muted" />
@@ -141,7 +142,7 @@
       </div>
     {:else if src}
       <!-- svelte-ignore a11y_media_has_caption -->
-      <video bind:this={el} {src} controls autoplay playsinline class="size-full object-contain" {ontimeupdate} {onloadedmetadata} {onended} onpause={save}>
+      <video bind:this={el} {src} controls controlslist={inAndroidApp ? 'nofullscreen' : undefined} autoplay playsinline class="size-full object-contain" {ontimeupdate} {onloadedmetadata} {onended} onpause={save}>
         {#each subtitles as sub (sub.url)}<track kind="subtitles" src={sub.url} srclang={sub.lang || undefined} label={sub.label} />{/each}
       </video>
     {:else}

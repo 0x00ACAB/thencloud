@@ -379,6 +379,7 @@
 @layer components {
   .preview {
     @apply m-0 flex h-dvh max-h-none w-full max-w-none flex-col border-0 bg-bg p-0 text-fg backdrop:bg-bg;
+    padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
     transition: opacity 160ms ease-out;
   }
   :root:has(.preview[open]) {
@@ -733,6 +734,16 @@
 
 /* ------------------------------------------------------------------ phones */
 
+/* What the screen's edges cover: the system bars and notches. Browsers say
+ * so with env(); the Android app sets --android-inset-* itself
+ * (crates/thencloud-app/android-plugin), since its WebView may not. */
+:root {
+  --safe-top: var(--android-inset-top, env(safe-area-inset-top, 0px));
+  --safe-bottom: var(--android-inset-bottom, env(safe-area-inset-bottom, 0px));
+  --safe-left: var(--android-inset-left, env(safe-area-inset-left, 0px));
+  --safe-right: var(--android-inset-right, env(safe-area-inset-right, 0px));
+}
+
 /* What is fixed along the bottom (Shell.svelte): the phone tab bar and the
  * music player above it, 0 where there is none. Other fixed things (toasts,
  * the transfer tray, the selection bar) sit above --bottom-bar. */
@@ -746,10 +757,17 @@
 }
 @media (width < 48rem) {
   :root.has-bottom-bar {
-    --tab-bar: calc(3.5rem + env(safe-area-inset-bottom));
+    --tab-bar: calc(3.5rem + var(--safe-bottom));
   }
   :root.has-player {
     --player-bar: 4rem;
+  }
+  /* The Android app, while the keyboard is up: the tab bar would sit on it. */
+  :root.keyboard-open {
+    --tab-bar: 0px;
+  }
+  :root.keyboard-open .tab-bar {
+    display: none;
   }
 }
 .player-bar {

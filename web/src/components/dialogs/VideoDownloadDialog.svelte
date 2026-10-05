@@ -92,7 +92,7 @@
       progress = 0;
       await save(new File([blob], name, { type, lastModified: Date.now() }), (p) => (progress = p));
     } else {
-      saveBlob(new Blob([blob], { type: 'application/octet-stream' }), name);
+      await saveBlob(new Blob([blob], { type: 'application/octet-stream' }), name);
     }
     return { name, size: blob.size };
   }

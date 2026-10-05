@@ -11,8 +11,8 @@
   // (only an auth key derived from it).
   import { request, allChildren } from './lib/api.js';
   import { tc, b64, unb64, encryptMeta, decryptMeta, decryptChildren, fetchFile, openFile, encryptPiece, saveBlob, deriveLinkKeys } from './lib/crypto.js';
-  import { streamsAvailable, streamDownload } from './lib/stream.js';
-  import { formatSize, sortEntries } from './lib/format.js';
+  import { canSaveStreams, streamDownload } from './lib/stream.js';
+  import { formatSize, sortEntries, fileTime } from './lib/format.js';
   import { errorMessage, trackTransfer } from './lib/ui.svelte.js';
   import { t } from './lib/i18n.svelte.js';
   import Icon from './components/Icon.svelte';
@@ -181,11 +181,11 @@
   async function downloadEntry(entry) {
     const job = trackTransfer('download', entry.meta.name, entry.meta.size);
     try {
-      if (entry.meta.size > 16 * 1024 * 1024 && (await streamsAvailable())) {
+      if (entry.meta.size > 16 * 1024 * 1024 && (await canSaveStreams())) {
         await streamDownload(openEntry(entry), (p) => (job.progress = p));
       } else {
         const { blob, meta } = await fetchEntry(entry, (p) => (job.progress = p));
-        saveBlob(blob, meta.name);
+        await saveBlob(blob, meta.name);
       }
       t.status = 'done';
     } catch (e) {
@@ -215,7 +215,7 @@
     const contentKey = tc.random_key();
     const padded = tc.padded_size(file.size);
     const chunkCount = tc.chunk_count(padded);
-    const meta = { name: file.name, mime: file.type || null, size: file.size, mtime: file.lastModified || Date.now() };
+    const meta = { name: file.name, mime: file.type || null, size: file.size, mtime: fileTime(file) };
     let upId = null;
     try {
       const up = await request('POST', `${base}/uploads`, {

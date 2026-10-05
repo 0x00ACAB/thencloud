@@ -8,7 +8,7 @@
   import Icon from '../Icon.svelte';
   import { session, createRecoveryKey, avatar } from '../../lib/cloud.svelte.js';
   import { saveBlob } from '../../lib/crypto.js';
-  import { copyText, errorMessage } from '../../lib/ui.svelte.js';
+  import { copyText, errorMessage, toastError } from '../../lib/ui.svelte.js';
 
   let { onclose } = $props();
 
@@ -47,7 +47,7 @@
       t('Anyone who has it and your username can do the same, so keep it private.'),
       '',
     ].join('\n');
-    saveBlob(new Blob([text], { type: 'text/plain' }), 'thencloud-recovery-key.txt');
+    saveBlob(new Blob([text], { type: 'text/plain' }), 'thencloud-recovery-key.txt')?.catch(toastError);
   }
 </script>
 
