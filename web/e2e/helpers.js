@@ -17,7 +17,12 @@ export function watchRequests(context) {
       what: `${r.method()} ${r.url()}`,
       raw: r.url(),
       url: decodeURIComponent(r.url()),
-      headers: r.allHeaders().then(JSON.stringify, () => JSON.stringify(r.headers())),
+      // allHeaders() can stay pending for good (a stream that never ends, a
+      // closed context); then the headers known when it was sent will do.
+      headers: Promise.race([r.allHeaders(), new Promise((resolve) => setTimeout(resolve, 5000).unref())]).then(
+        (h) => JSON.stringify(h ?? r.headers()),
+        () => JSON.stringify(r.headers()),
+      ),
       body: r.postDataBuffer() ?? Buffer.alloc(0),
     }),
   );
