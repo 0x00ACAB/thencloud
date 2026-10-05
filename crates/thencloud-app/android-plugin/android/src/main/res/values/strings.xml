@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="thencloud_playing_channel">Music playing</string>
+    <string name="thencloud_previous">Previous</string>
+    <string name="thencloud_play">Play</string>
+    <string name="thencloud_pause">Pause</string>
+    <string name="thencloud_next">Next</string>
+</resources>

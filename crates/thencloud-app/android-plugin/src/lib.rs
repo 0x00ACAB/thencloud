@@ -1,7 +1,8 @@
 //! Native pieces the Android app needs that a WebView doesn't do by itself:
-//! saving downloads (Android's WebView drops `blob:` downloads) and telling
-//! the page where the system bars and the keyboard are. All of it is Kotlin,
-//! in `android/`; on other platforms this plugin does nothing.
+//! saving downloads (Android's WebView drops `blob:` downloads), showing what
+//! music is playing and keeping it playing in the background, and telling the
+//! page where the system bars and the keyboard are. All of it is Kotlin, in
+//! `android/`; on other platforms this plugin does nothing.
 
 use tauri::Runtime;
 use tauri::plugin::{Builder, TauriPlugin};

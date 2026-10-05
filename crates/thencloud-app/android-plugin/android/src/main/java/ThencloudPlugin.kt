@@ -3,6 +3,7 @@ package org.thencloud.plugin
 import android.app.Activity
 import android.content.ContentValues
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -51,6 +52,23 @@ class EndArgs {
   var ok: Boolean = false
 }
 
+@InvokeArg
+class MediaArgs {
+  var title: String = ""
+  var artist: String = ""
+  var album: String = ""
+  var duration: Double = 0.0
+  var position: Double = 0.0
+  var rate: Double = 1.0
+  var playing: Boolean = false
+  var buffering: Boolean = false
+}
+
+@InvokeArg
+class ArtworkArgs {
+  var data: String? = null
+}
+
 /**
  * What the WebView doesn't do on Android by itself.
  *
@@ -62,6 +80,9 @@ class EndArgs {
  *
  * Back: the page is asked first (thencloudBack in web/src/lib/native.js) to
  * close what's on top of it.
+ *
+ * Music: what's playing is shown in a notification and on the lock screen,
+ * and keeps playing in the background (NowPlaying, PlaybackService).
  *
  * Insets: the app draws edge to edge (Android 15 insists), so the page needs
  * to know where the status bar, the navigation bar and the keyboard are.
@@ -163,9 +184,65 @@ class ThencloudPlugin(private val activity: Activity) : Plugin(activity) {
     }
   }
 
+  /** What the Music view is playing (web/src/lib/nowplaying.svelte.js). */
+  @Command
+  fun mediaUpdate(invoke: Invoke) {
+    val args = invoke.parseArgs(MediaArgs::class.java)
+    NowPlaying.onMain {
+      // Shown as text by the system; tags can be anything, so keep them short.
+      NowPlaying.title = args.title.take(300)
+      NowPlaying.artist = args.artist.take(300)
+      NowPlaying.album = args.album.take(300)
+      NowPlaying.playing = args.playing
+      NowPlaying.update(activity, args.duration, args.position, args.rate.toFloat(), args.buffering)
+      invoke.resolve()
+    }
+  }
+
+  /** The cover, a JPEG of at most 512 pixels a side that the page made itself (base64), or none. */
+  @Command
+  fun mediaArtwork(invoke: Invoke) {
+    val data = invoke.parseArgs(ArtworkArgs::class.java).data
+    val bitmap = data?.let {
+      val bytes = Base64.decode(it, Base64.DEFAULT)
+      BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+    }
+    NowPlaying.onMain {
+      NowPlaying.artwork = bitmap
+      invoke.resolve()
+    }
+  }
+
+  @Command
+  fun mediaStop(invoke: Invoke) {
+    NowPlaying.onMain {
+      NowPlaying.stop(activity)
+      invoke.resolve()
+    }
+  }
+
+  // The one with the activity takes AppCompatActivity, which the plugin
+  // doesn't otherwise need.
+  @Suppress("OVERRIDE_DEPRECATION")
+  override fun onDestroy() {
+    // The page goes with the activity, and its music with it.
+    NowPlaying.send = null
+    NowPlaying.stop(activity)
+  }
+
   private var insetsScript: ScriptHandler? = null
 
   override fun load(webView: WebView) {
+    // Buttons in the notification, on the lock screen or on headphones. If
+    // the page has no player to take them (it was reloaded, or signed out),
+    // the notification goes.
+    NowPlaying.send = { action, seekTime ->
+      val details = JSONObject().put("action", action).apply { seekTime?.let { put("seekTime", it) } }
+      webView.evaluateJavascript("(function(){try{return !!(window.thencloudMedia&&window.thencloudMedia($details))}catch(e){return false}})()") { taken ->
+        if (taken != "true") NowPlaying.stop(activity)
+      }
+    }
+
     ViewCompat.setOnApplyWindowInsetsListener(webView) { view, insets ->
       val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
       val keyboard = insets.getInsets(WindowInsetsCompat.Type.ime()).bottom
