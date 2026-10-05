@@ -47,6 +47,16 @@ const CSP: &str = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; con
 /// The CSP of `/auth`, the page that runs the Turnstile check, when it's on:
 /// Cloudflare's script and frame, and nothing else from outside. That page
 /// has no password field and holds no key; it only hands the token back.
+/// Nothing on a thencloud server is for search engines or AI crawlers: the
+/// pages are an app, and shared files are behind links meant for one person.
+/// `Disallow` keeps well-behaved crawlers out; the `X-Robots-Tag` header on
+/// every response (see `router`) also covers the ones that fetch anyway.
+const ROBOTS_TXT: &str = "# A private, end-to-end encrypted file store. Please don't crawl, index or\n\
+# train on anything here.\n\
+User-agent: *\n\
+Disallow: /\n";
+const X_ROBOTS_TAG: &str = "noindex, nofollow, noarchive, noai, noimageai";
+
 const AUTH_CSP: &str = "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; \
      frame-src https://challenges.cloudflare.com; connect-src 'self'; img-src 'self'; style-src 'self'; \
      object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
@@ -271,7 +281,20 @@ pub fn router(state: AppState) -> Router {
                 .precompressed_br()
                 .precompressed_gzip(),
         )
+        .route(
+            "/robots.txt",
+            get(|| async {
+                (
+                    [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+                    ROBOTS_TXT,
+                )
+            }),
+        )
         .fallback_service(ServeDir::new(web).precompressed_br().precompressed_gzip())
+        .layer(SetResponseHeaderLayer::overriding(
+            HeaderName::from_static("x-robots-tag"),
+            HeaderValue::from_static(X_ROBOTS_TAG),
+        ))
         .layer(SetResponseHeaderLayer::if_not_present(
             header::CONTENT_SECURITY_POLICY,
             HeaderValue::from_static(CSP),
