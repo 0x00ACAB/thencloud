@@ -90,7 +90,7 @@
           progress = 0;
           await save(new File([out], name, { type: target.type, lastModified: Date.now() }), (p) => (progress = p));
         } else {
-          saveBlob(out, name);
+          await saveBlob(out, name);
         }
         results.push({ name, ok: true });
       } catch (e) {

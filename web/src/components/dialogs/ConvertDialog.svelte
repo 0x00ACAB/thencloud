@@ -167,7 +167,7 @@
         progress = 0;
         await save(new File([out], name, { type: target.type, lastModified: Date.now() }), (p) => (progress = p));
       } else {
-        saveBlob(out, name);
+        await saveBlob(out, name);
       }
       result = { name, size: out.size, saved: destination === 'save' };
       phase = 'done';

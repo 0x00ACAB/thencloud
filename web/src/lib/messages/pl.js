@@ -8,6 +8,7 @@ export default {
   'Change server': 'Zmień serwer',
   'Use an https:// address.': 'Użyj adresu https://.',
   "Couldn't find a thencloud server there.": 'Pod tym adresem nie ma serwera thencloud.',
+  "Couldn't save {name} on this device.": 'Nie udało się zapisać {name} na tym urządzeniu.',
   "The app can't use passkeys yet. Sign in from a browser, or use your recovery key.": 'Aplikacja nie obsługuje jeszcze kluczy dostępu. Zaloguj się w przeglądarce albo użyj klucza odzyskiwania.',
   'Unlocking your files': 'Odblokowywanie plików',
   "That recovery key doesn't match this account.": 'Ten klucz odzyskiwania nie pasuje do tego konta.',
@@ -1125,6 +1126,7 @@ export default {
     'Twoje pliki, foldery, wersje, linki i udostępnienia zostaną od razu usunięte z serwera. Nie da się tego cofnąć, a administrator ich nie przywróci. Pliki dodane do folderów udostępnionych ci przez innych należą do nich i zostają.',
   'thencloud is free software under the AGPL-3.0. Your files are encrypted in this browser with keys derived from your password; the server stores ciphertext and can see only sizes, dates and who shares with whom.':
     'thencloud to wolne oprogramowanie na licencji AGPL-3.0. Twoje pliki są szyfrowane w tej przeglądarce kluczami pochodzącymi z hasła; serwer przechowuje szyfrogramy i widzi tylko rozmiary, daty i to, kto komu udostępnia.',
+  'This app carries its own copy of the web app, so the server sends it only data, never code.': 'Ta aplikacja ma własną kopię aplikacji webowej, więc serwer wysyła jej tylko dane, nigdy kod.',
   "This page is code the server sends you. Each release is built reproducibly with a signed list of every file's hash, and {command} checks that a server sends exactly that.":
     'Ta strona to kod wysyłany ci przez serwer. Każde wydanie jest budowane powtarzalnie z podpisaną listą skrótów wszystkich plików, a {command} sprawdza, czy serwer wysyła dokładnie to.',
   'Delete your account?': 'Usunąć twoje konto?',

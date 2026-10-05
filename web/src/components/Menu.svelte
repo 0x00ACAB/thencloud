@@ -73,7 +73,7 @@
 </button>
 
 {#if open}
-  <div bind:this={menu} use:portal in:pop out:fade={{ duration: 90 }} class="menu origin-top" role="menu" tabindex="-1" style:top="{top}px" style:left="{left}px" onkeydown={onKey}>
+  <div bind:this={menu} use:portal in:pop out:fade={{ duration: 90 }} class="menu origin-top" role="menu" tabindex="-1" data-escape style:top="{top}px" style:left="{left}px" onkeydown={onKey}>
     {#each items as item, i (i)}
       {#if item === 'sep'}
         <div class="menu-sep" role="separator"></div>
