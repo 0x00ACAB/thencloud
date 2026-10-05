@@ -281,6 +281,7 @@ jobs:
           Every file here is signed with Sigstore by this repository's release workflow at this tag (the \`.sigstore.json\` next to it), and the web client's manifest is also signed with minisign by a maintainer (\`.minisig\`).
 
           - **A server:** download \`thencloud-web-$v.json\` with its \`.sigstore.json\` and \`.minisig\`, then run \`thencloud verify-web https://your.server --manifest thencloud-web-$v.json\`.
+          - **The manifest alone, with minisign:** \`minisign -Vm thencloud-web-$v.json -P RWQ1oV8khQ/NC3Vr+guqukqswrgh3NOwJ8mAlRzjlvivenzDuRex3+U2\` (the maintainers' keys are also in the README).
           - **Any other file:** \`cosign verify-blob --bundle FILE.sigstore.json --certificate-identity https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@refs/tags/$v --certificate-oidc-issuer https://token.actions.githubusercontent.com FILE\`
           - **The Docker image:** \`cosign verify ghcr.io/${GITHUB_REPOSITORY,,}:$v --certificate-identity https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@refs/tags/$v --certificate-oidc-issuer https://token.actions.githubusercontent.com\`
 
