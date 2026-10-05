@@ -10,6 +10,8 @@ import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.util.Base64
 import android.view.View
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
@@ -17,6 +19,8 @@ import androidx.activity.result.ActivityResult
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.webkit.ScriptHandler
+import androidx.webkit.ServiceWorkerClientCompat
+import androidx.webkit.ServiceWorkerControllerCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import app.tauri.annotation.ActivityCallback
@@ -175,16 +179,32 @@ class ThencloudPlugin(private val activity: Activity) : Plugin(activity) {
       val bottom = if (keyboard > 0) 0 else bars.bottom
       setInsets(
         webView,
-        "var s=document.documentElement.style;" +
+        "var s=html.style;" +
           "s.setProperty('--android-inset-top','${css(bars.top)}');" +
           "s.setProperty('--android-inset-bottom','${css(bottom)}');" +
           "s.setProperty('--android-inset-left','${css(bars.left)}');" +
           "s.setProperty('--android-inset-right','${css(bars.right)}');" +
-          "document.documentElement.classList.toggle('keyboard-open',${keyboard > 0});",
+          "html.classList.toggle('keyboard-open',${keyboard > 0});",
       )
       ViewCompat.onApplyWindowInsets(view, insets)
     }
     ViewCompat.requestApplyInsets(webView)
+
+    // The app's pages come from wry's request handler on the WebView's client,
+    // which a service worker's requests skip, so it couldn't even load
+    // /sw.js. Send them the same way: then video, music and big previews
+    // stream through it (web/src/lib/stream.js) instead of being decrypted
+    // into memory whole.
+    if (WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_BASIC_USAGE) &&
+      WebViewFeature.isFeatureSupported(WebViewFeature.SERVICE_WORKER_SHOULD_INTERCEPT_REQUEST) &&
+      WebViewFeature.isFeatureSupported(WebViewFeature.GET_WEB_VIEW_CLIENT)
+    ) {
+      val client = WebViewCompat.getWebViewClient(webView)
+      ServiceWorkerControllerCompat.getInstance().setServiceWorkerClient(object : ServiceWorkerClientCompat() {
+        override fun shouldInterceptRequest(request: WebResourceRequest): WebResourceResponse? =
+          client.shouldInterceptRequest(webView, request)
+      })
+    }
 
     // Back closes what's on top in the page (a menu, a dialog, a preview)
     // before it goes back in history or leaves the app, which is what the
@@ -204,8 +224,13 @@ class ThencloudPlugin(private val activity: Activity) : Plugin(activity) {
     }
   }
 
+  /** Run `js` with `html` as the page's <html>, now and on every page from here on. */
   private fun setInsets(webView: WebView, js: String) {
-    val wrapped = "(function(){$js})();"
+    // At document start there may be no <html> yet; then it runs once there is.
+    val wrapped = "(function(){function apply(html){$js}" +
+      "if(document.documentElement)return apply(document.documentElement);" +
+      "var o=new MutationObserver(function(){if(document.documentElement){o.disconnect();apply(document.documentElement)}});" +
+      "o.observe(document,{childList:true})})();"
     webView.evaluateJavascript(wrapped, null)
     // Pages loaded later (signing in loads another one) get them from the start.
     if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {

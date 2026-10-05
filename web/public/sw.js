@@ -141,11 +141,18 @@ async function respond(id, request) {
   return s.info.size == null ? sequentialResponse(s) : fileResponse(s, request);
 }
 
+// In the desktop and Android apps (crates/thencloud-app) the pages come
+// from the app itself, not a server, and change only when it's updated:
+// nothing to watch, and a notice on every update would only be noise.
+const BUNDLED = self.location.protocol === 'tauri:' || self.location.hostname === 'tauri.localhost';
+
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   if (url.origin !== self.location.origin || e.request.method !== 'GET') return;
   if (url.pathname.startsWith('/_stream/')) {
     e.respondWith(respond(url.pathname.slice('/_stream/'.length), e.request));
+  } else if (BUNDLED) {
+    return;
   } else if (e.request.mode === 'navigate' && pageKind(url.pathname)) {
     e.respondWith(checkPage(e.request, url).catch(() => fetch(e.request)));
   } else if (/^\/assets\/[^/]+\.(js|mjs|css|wasm)$/.test(url.pathname)) {
