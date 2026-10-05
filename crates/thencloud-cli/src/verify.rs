@@ -18,9 +18,13 @@ use sha2::{Digest as _, Sha256};
 
 use crate::{Error, Result};
 
-/// minisign public keys of the people who sign releases. Empty until the
-/// first signed release; until then pass `--key`.
-pub const RELEASE_KEYS: &[&str] = &[];
+/// minisign public keys of the people who sign releases (`--key` checks
+/// against another one instead). Also listed in README.md, "Checking a
+/// release".
+pub const RELEASE_KEYS: &[&str] = &[
+    // かい, key id 0BCD0F85245FA135, since v1.0.0.
+    "RWQ1oV8khQ/NC3Vr+guqukqswrgh3NOwJ8mAlRzjlvivenzDuRex3+U2",
+];
 
 #[derive(Debug, Deserialize)]
 pub struct Manifest {
@@ -223,6 +227,14 @@ mod tests {
             )
             .is_some()
         );
+    }
+
+    #[test]
+    fn release_keys_parse() {
+        assert!(!RELEASE_KEYS.is_empty());
+        for key in RELEASE_KEYS {
+            minisign_verify::PublicKey::from_base64(key).unwrap();
+        }
     }
 
     #[test]

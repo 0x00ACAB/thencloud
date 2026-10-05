@@ -63,10 +63,13 @@ The first account to register becomes the admin. So that nobody else can claim a
 
 ### With Docker
 
+Each release is on GitHub's registry, for amd64 and arm64:
+
 ```sh
-docker build -t thencloud .
-docker run -p 127.0.0.1:8080:8080 -v thencloud-data:/data thencloud
+docker run -p 127.0.0.1:8080:8080 -v thencloud-data:/data ghcr.io/0x00acab/thencloud:v1.0.0
 ```
+
+Or build it yourself: `docker build -t thencloud .`
 
 For a server on the internet, `deploy/compose.yaml` runs thencloud behind [Caddy](https://caddyserver.com), which gets a certificate for your domain:
 
@@ -74,7 +77,7 @@ For a server on the internet, `deploy/compose.yaml` runs thencloud behind [Caddy
 THENCLOUD_DOMAIN=cloud.example.com docker compose -f deploy/compose.yaml up -d
 ```
 
-The image builds the web client the same way releases do, so `thencloud verify-web` can check it against a signed release: build it from the release's tag with `--build-arg THENCLOUD_VERSION=<tag>` (the version is part of every page). Each release also has server and CLI binaries for Linux (x86_64, arm64) and macOS (arm64); the server needs the release's web client unpacked next to it (`--web-dir`).
+The image builds the web client the same way releases do, so `thencloud verify-web` can check it against a signed release; to build one yourself that passes, build from the release's tag with `--build-arg THENCLOUD_VERSION=<tag>` (the version is part of every page). Each release also has server and CLI binaries for Linux (x86_64, arm64) and macOS (arm64), whose server needs the release's web client unpacked next to it (`--web-dir`), and the desktop (Linux, Windows) and Android apps.
 
 ### As a Tor onion service
 
@@ -138,6 +141,16 @@ With S3 configured, the bucket is a backup in its own right: the database goes t
 To restore, stop the server, copy the backup to where the data should live, and start the server with `--data-dir` pointing at it. Then run `thencloud-server --data-dir <dir> check`: it checks that every blob the database expects is there with the right size, and lists any that nothing refers to. To restore an S3 backup, put its `thencloud.db` in a data directory and run with `--s3-prefix` pointing at the backup's `blobs/` prefix. To check that files also decrypt, use Settings > Check your files in the web client.
 
  (for example, behind a reverse proxy). The crypto protects data at rest on the server, but the page and its WASM must reach the browser intact.
+
+### Checking a release
+
+Every file in a release, and the Docker image, is signed with [Sigstore](https://www.sigstore.dev) by this repository's release workflow at that tag, and logged in its public transparency log. The web client's manifest is also signed with minisign by a maintainer, with this key:
+
+```
+RWQ1oV8khQ/NC3Vr+guqukqswrgh3NOwJ8mAlRzjlvivenzDuRex3+U2
+```
+
+`thencloud verify-web https://your.server --manifest thencloud-web-<version>.json` checks both signatures (put the `.sigstore.json` and `.minisig` next to the manifest) and then what the server sends. Each release's notes have the `cosign` commands for the other files and the image.
 
 ## Layout
 
