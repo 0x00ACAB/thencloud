@@ -4,7 +4,11 @@ import init, { derive_account_keys } from '../wasm/thencloud_wasm.js';
 
 const ready = init();
 
-self.onmessage = async ({ data }) => {
+self.onmessage = async ({ data, origin }) => {
+  // A dedicated worker only hears from the page that started it (crypto.js),
+  // whose messages carry an empty origin; refuse anything else, should this
+  // ever become a worker other pages can reach.
+  if (origin && origin !== self.location.origin) return;
   const { id, password, salt, params } = data;
   try {
     await ready;
