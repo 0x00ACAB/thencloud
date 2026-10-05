@@ -1,8 +1,15 @@
 {
   "$schema": "../gen/schemas/mobile-schema.json",
-  "identifier": "android-save",
-  "description": "Android's WebView can't save a blob: download, so the page saves through the thencloud plugin. Nothing else.",
+  "identifier": "android-native",
+  "description": "What Android's WebView can't do by itself, through the thencloud plugin: saving a download, and showing what music is playing (and keeping it playing in the background). Nothing else.",
   "windows": ["main"],
   "platforms": ["android"],
-  "permissions": ["thencloud:allow-save-begin", "thencloud:allow-save-write", "thencloud:allow-save-end"]
+  "permissions": [
+    "thencloud:allow-save-begin",
+    "thencloud:allow-save-write",
+    "thencloud:allow-save-end",
+    "thencloud:allow-media-update",
+    "thencloud:allow-media-artwork",
+    "thencloud:allow-media-stop"
+  ]
 }

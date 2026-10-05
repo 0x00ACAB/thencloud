@@ -295,6 +295,42 @@
       "type": "string",
       "oneOf": [
         {
+          "description": "Enables the media_artwork command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-media-artwork",
+          "markdownDescription": "Enables the media_artwork command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the media_artwork command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-media-artwork",
+          "markdownDescription": "Denies the media_artwork command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the media_stop command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-media-stop",
+          "markdownDescription": "Enables the media_stop command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the media_stop command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-media-stop",
+          "markdownDescription": "Denies the media_stop command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the media_update command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-media-update",
+          "markdownDescription": "Enables the media_update command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the media_update command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-media-update",
+          "markdownDescription": "Denies the media_update command without any pre-configured scope."
+        },
+        {
           "description": "Enables the save_begin command without any pre-configured scope.",
           "type": "string",
           "const": "allow-save-begin",
