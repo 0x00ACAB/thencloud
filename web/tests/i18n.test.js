@@ -3,16 +3,17 @@
 // and no translation is left over for a string that's gone.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import en from '../src/lib/messages/en.js';
 import pl from '../src/lib/messages/pl.js';
 import de from '../src/lib/messages/de.js';
 
 function files(dir) {
-  return readdirSync(dir).flatMap((f) => {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const f = entry.name;
     const p = join(dir, f);
-    if (statSync(p).isDirectory()) return f === 'wasm' || f === 'messages' ? [] : files(p);
+    if (entry.isDirectory()) return f === 'wasm' || f === 'messages' ? [] : files(p);
     return /\.(svelte|js)$/.test(f) ? [p] : [];
   });
 }
@@ -81,9 +82,10 @@ test('i18n: nothing names a local variable t', () => {
   const local = /\b(?:const|let|var)\s+t\b|\bas\s+t\b|\(\s*t\s*(?:,[^)]*)?\)\s*=>|\bfor\s*\(\s*(?:const|let)\s+t\s+of\b/;
   const found = [];
   const walk = (dir) => {
-    for (const f of readdirSync(dir)) {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const f = entry.name;
       const p = join(dir, f);
-      if (statSync(p).isDirectory()) {
+      if (entry.isDirectory()) {
         if (f !== 'wasm' && f !== 'messages') walk(p);
       } else if (/\.(svelte|js)$/.test(f)) {
         const src = readFileSync(p, 'utf8');

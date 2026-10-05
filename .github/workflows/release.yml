@@ -27,7 +27,7 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-      - uses: taiki-e/install-action@v2
+      - uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
         with:
           tool: wasm-pack
       - run: scripts/release-web.sh "$VERSION"
@@ -50,7 +50,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
       - run: cargo build --release --locked -p thencloud-server -p thencloud-cli
       - name: Package
         env:
@@ -82,7 +82,7 @@ jobs:
           cmp web-ubuntu-24.04/thencloud-web-*.json web-ubuntu-22.04/thencloud-web-*.json
           cmp web-ubuntu-24.04/thencloud-web-*.tar.gz web-ubuntu-22.04/thencloud-web-*.tar.gz
           sha256sum web-ubuntu-24.04/thencloud-web-*
-      - uses: sigstore/cosign-installer@v4
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         if: github.ref_type == 'tag'
       # Keyless: a short-lived certificate from Sigstore's Fulcio naming this
       # workflow and tag, the signature logged in Rekor, all in a
