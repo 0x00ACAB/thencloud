@@ -10,11 +10,14 @@
 //! Everything deterministic (key derivation, tags, fingerprints, padding) is
 //! compared exactly.
 //!
-//! To write the file again (when a format is added; until the first
-//! release a format may also change in place, and then every client must
-//! follow the new file):
+//! thencloud holds people's data, so the file only grows: what's in it was
+//! written by an earlier build and must keep opening. To add vectors for a
+//! new format (see `merge`):
 //!
 //!     THENCLOUD_WRITE_VECTORS=1 cargo test -p thencloud-crypto --test vectors -- --ignored
+//!
+//! A format never changes in place. A new layout gets a new version or kind
+//! byte (docs/format/README.md, "Versions"), and the old vectors stay.
 
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -845,10 +848,50 @@ fn write_vectors() {
         "symmetric": symmetric,
         "sealed_boxes": sealed_boxes,
     });
-    let mut out = serde_json::to_string_pretty(&file).unwrap();
+    let mut out = serde_json::to_string_pretty(&merge(file)).unwrap();
     out.push('\n');
     std::fs::create_dir_all(std::path::Path::new(PATH).parent().unwrap()).unwrap();
     std::fs::write(PATH, out).unwrap();
+}
+
+/// Add what's new in `file` to the vectors already written, keeping every
+/// existing entry as it is. An entry counts as already there when one has the
+/// same fields apart from `sealed` (ciphertexts have random nonces, so a new
+/// run never repeats one). So if a change makes a key or tag come out
+/// differently, the new value is added next to the old one, and
+/// `vectors_match` fails on the old one instead of the change going unseen.
+fn merge(mut file: Value) -> Value {
+    let Ok(text) = std::fs::read_to_string(PATH) else {
+        return file;
+    };
+    let old: Value = serde_json::from_str(&text).expect("docs/format/vectors.json isn't JSON");
+    let same = |a: &Value, b: &Value| {
+        let strip = |v: &Value| {
+            let mut v = v.clone();
+            if let Some(o) = v.as_object_mut() {
+                o.remove("sealed");
+            }
+            v
+        };
+        strip(a) == strip(b)
+    };
+    let Some(sections) = old.as_object() else {
+        return file;
+    };
+    for (name, kept) in sections {
+        let Some(kept) = kept.as_array() else {
+            continue;
+        };
+        let fresh = file[name].as_array().cloned().unwrap_or_default();
+        let mut all = kept.clone();
+        for entry in fresh {
+            if !all.iter().any(|k| same(k, &entry)) {
+                all.push(entry);
+            }
+        }
+        file[name] = Value::Array(all);
+    }
+    file
 }
 
 fn open_raw(k: &Key, sealed: &[u8], aad: &[u8]) -> Vec<u8> {
