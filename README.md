@@ -32,7 +32,7 @@ Files, folder names and keys are encrypted and decrypted **in your browser**. Th
   <img src=".github/assets/screenshot-light.png" alt="The thencloud file browser: folders and files in My files, with storage use and an end-to-end encrypted note in the sidebar">
 </picture>
 
-> **Status:** early, no stable release yet. The backend is a complete file cloud: accounts, folders, chunked uploads, quotas, sharing and public links, with a web client for all of it. See [MILESTONES.md](MILESTONES.md).
+> **Status:** 1.0, in use. A complete file cloud: accounts, folders, versions, sharing and public links, with a web app, desktop and Android apps and a command line. It hasn't had an independent security audit yet. See [CHANGELOG.md](CHANGELOG.md) and [MILESTONES.md](MILESTONES.md).
 
 ## Features
 
