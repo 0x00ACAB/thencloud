@@ -1239,6 +1239,43 @@ async fn only_the_apps_get_cors() {
 }
 
 #[tokio::test]
+async fn crawlers_are_kept_out() {
+    let h = Harness::new().await;
+    let r = h
+        .raw(Method::GET, "/robots.txt", None, &[], Body::empty(), None)
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+    assert!(
+        r.headers
+            .get("content-type")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .starts_with("text/plain")
+    );
+    let text = String::from_utf8(r.body).unwrap();
+    assert!(text.contains("User-agent: *\nDisallow: /\n"), "{text}");
+    // Every response says not to index it, pages and the API alike, for
+    // crawlers that fetch without reading robots.txt.
+    for path in [
+        "/robots.txt",
+        "/",
+        "/s/sometoken",
+        "/api/auth/options",
+        "/api/nope",
+    ] {
+        let r = h
+            .raw(Method::GET, path, None, &[], Body::empty(), None)
+            .await;
+        assert_eq!(
+            r.headers.get("x-robots-tag").map(|v| v.to_str().unwrap()),
+            Some("noindex, nofollow, noarchive, noai, noimageai"),
+            "{path}"
+        );
+    }
+}
+
+#[tokio::test]
 async fn security_headers_are_set() {
     let h = Harness::new().await;
     let r = h
