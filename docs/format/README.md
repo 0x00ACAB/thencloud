@@ -376,6 +376,7 @@ rewritten: wrapped keys and metadata when a node is next changed, file
 contents with the next version. The vectors keep the old layout's
 ciphertexts, so every client is checked against both.
 
-Until the first release a layout may still change in place, as the version
-byte itself did; `vectors.json` is then written again and every client
-follows it.
+Layouts no longer change in place: thencloud is in use, and everything an
+earlier build wrote must keep opening. `vectors.json` only grows (writing it
+again keeps every existing entry), so every client is checked against each
+layout it may meet.
