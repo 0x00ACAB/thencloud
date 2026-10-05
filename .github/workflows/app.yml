@@ -1,12 +1,11 @@
 name: App
 
 # Builds the Tauri app (crates/thencloud-app) for Linux, Windows and
-# Android: on pull requests that touch it, on tags and by hand. The
-# installers and APKs are uploaded as artifacts, unsigned.
+# Android: on pull requests that touch it and by hand. The installers and
+# APKs are uploaded as artifacts, unsigned; release.yml builds the signed
+# ones for a release.
 
 on:
-  push:
-    tags: ["v*"]
   pull_request:
     paths:
       - crates/thencloud-app/**
