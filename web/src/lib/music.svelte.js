@@ -15,6 +15,7 @@ import { parseTags } from './tags.js';
 import { readChapters } from './chapters.js';
 import { toast, errorMessage } from './ui.svelte.js';
 import { t } from './i18n.svelte.js';
+import { showNowPlaying, syncNowPlaying } from './nowplaying.svelte.js';
 
 // ---------------------------------------------------------------- library
 
@@ -403,25 +404,42 @@ function element() {
   });
   audio.addEventListener('ended', ended);
   audio.addEventListener('error', () => audio.getAttribute('src') && failed());
+  audio.addEventListener('seeked', updatePosition);
   if ('mediaSession' in navigator) {
-    const ms = navigator.mediaSession;
-    const on = (action, fn) => {
+    for (const [action, fn] of Object.entries(sessionActions)) {
       try {
-        ms.setActionHandler(action, fn);
+        navigator.mediaSession.setActionHandler(action, fn);
       } catch {
         /* not supported here */
       }
-    };
-    on('play', () => audio.play());
-    on('pause', () => audio.pause());
-    on('previoustrack', previous);
-    on('nexttrack', () => next());
-    on('seekto', (d) => seek(d.seekTime));
-    on('seekbackward', (d) => seek(audio.currentTime - (d.seekOffset || 10)));
-    on('seekforward', (d) => seek(audio.currentTime + (d.seekOffset || 10)));
+    }
   }
   return audio;
 }
+
+// The media keys, the browser's media controls and, in the Android app, the
+// notification and lock screen (nowplaying.svelte.js).
+const sessionActions = {
+  play: () => (!audio || audio.paused) && toggle(),
+  pause: () => audio?.pause(),
+  previoustrack: () => previous(),
+  nexttrack: () => next(),
+  seekto: (d) => seek(d.seekTime),
+  seekbackward: (d) => seek((audio?.currentTime ?? 0) - (d.seekOffset || 10)),
+  seekforward: (d) => seek((audio?.currentTime ?? 0) + (d.seekOffset || 10)),
+};
+
+showNowPlaying(
+  () => {
+    const track = current();
+    if (!track) return null;
+    const { title, artist, album, cover } = info(track);
+    const { duration, rate, playing, buffering } = player;
+    return { title, artist, album, cover, duration, rate, playing, buffering };
+  },
+  () => audio?.currentTime ?? 0,
+  sessionActions,
+);
 
 function release() {
   served?.close();
@@ -725,6 +743,7 @@ export function setRate(r) {
 }
 
 function updatePosition() {
+  syncNowPlaying();
   if (!('mediaSession' in navigator) || !player.duration) return;
   try {
     navigator.mediaSession.setPositionState({ duration: player.duration, position: Math.min(player.time, player.duration), playbackRate: player.rate });

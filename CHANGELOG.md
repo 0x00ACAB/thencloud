@@ -4,6 +4,11 @@ Each release's section here is also its release notes on GitHub. From 1.0 on,
 everything an earlier release wrote keeps working: databases, files, links and
 the apps (see "Keeping existing data working" in CLAUDE.md).
 
+## Unreleased
+
+- **Android:** music keeps playing with the screen off or another app open,
+  with a notification, lock screen controls and headphone buttons.
+
 ## v1.0.0 (2026-10-05)
 
 The first release. thencloud is a file cloud that encrypts everything on your

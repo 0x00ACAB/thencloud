@@ -3,8 +3,9 @@
 //
 // Saving files: Android's WebView drops a download of a blob: URL, and has
 // no service worker for the app's pages, so there the page hands each
-// decrypted piece to the plugin, which writes it to Downloads. This is the
-// only native call the app's pages may make (capabilities/android.json).
+// decrypted piece to the plugin, which writes it to Downloads. The only other
+// native calls the app's pages may make are for what music is playing
+// (nowplaying.svelte.js; capabilities/android.json).
 
 import { inApp } from './server.svelte.js';
 import { t } from './i18n.svelte.js';
@@ -14,13 +15,13 @@ export const inAndroidApp = inApp && /\bAndroid\b/.test(navigator.userAgent);
 /** True in the Android app, where files are saved through the plugin. */
 export const nativeSaves = inAndroidApp && !!globalThis.__TAURI_INTERNALS__;
 
-const call = (cmd, args) => globalThis.__TAURI_INTERNALS__.invoke(`plugin:thencloud|${cmd}`, args);
+export const call = (cmd, args) => globalThis.__TAURI_INTERNALS__.invoke(`plugin:thencloud|${cmd}`, args);
 
 // The bridge carries JSON, so pieces go over as base64, in slices that keep
 // each message small.
 const SLICE = 512 * 1024;
 
-function base64(bytes) {
+export function base64(bytes) {
   let s = '';
   for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(s);
