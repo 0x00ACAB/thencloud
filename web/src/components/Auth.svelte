@@ -5,6 +5,7 @@
   import { passkeysSupported, cancelled } from '../lib/passkeys.js';
   import { errorMessage } from '../lib/ui.svelte.js';
   import Icon from './Icon.svelte';
+  import PasswordStrength from './PasswordStrength.svelte';
   import { t, language, LANGUAGES } from '../lib/i18n.svelte.js';
   import { format, setFormat } from '../lib/locale.svelte.js';
   import { hasToken, takeToken, goToCheck, returned } from '../lib/turnstile.js';
@@ -372,7 +373,10 @@
             <Icon name={showPassword ? 'eye-off' : 'eye'} />
           </button>
         </div>
-        {#if choosing}<p class="hint">{t('At least 10 characters. A few random words works well.')}</p>{/if}
+        {#if choosing}
+          <PasswordStrength {password} inputs={[username, 'thencloud']} />
+          <p class="hint">{t('At least 10 characters. A few random words works well.')}</p>
+        {/if}
       </div>
       {#if choosing}
         <div class="field">

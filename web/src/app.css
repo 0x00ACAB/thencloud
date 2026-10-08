@@ -84,6 +84,8 @@
   --danger-strong: #d93036;
   --danger-soft: #fff0f0;
   --success: #1a7f37;
+  /* Between danger and success (the password meter). Fills only. */
+  --warning: #b07c00;
   /* Behind added and removed lines when comparing versions; text on them is fg. */
   --diff-add: #e6ffec;
   --diff-del: #ffebe9;
@@ -114,6 +116,7 @@
   --danger-strong: #c62a30;
   --danger-soft: #2a1113;
   --success: #3fb950;
+  --warning: #e0a800;
   --diff-add: #0f2a17;
   --diff-del: #2e1214;
   --mood-red: #ff6369;
@@ -173,6 +176,7 @@
   --color-diff-add: var(--diff-add);
   --color-diff-del: var(--diff-del);
   --color-success: var(--success);
+  --color-warning: var(--warning);
   --color-mood-red: var(--mood-red);
   --color-mood-yellow: var(--mood-yellow);
   --color-mood-blue: var(--mood-blue);
