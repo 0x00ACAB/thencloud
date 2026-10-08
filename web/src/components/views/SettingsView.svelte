@@ -17,6 +17,7 @@
   import Avatar from '../Avatar.svelte';
   import PersonName from '../PersonName.svelte';
   import Time from '../Time.svelte';
+  import PasswordStrength from '../PasswordStrength.svelte';
   import Sentence from '../Sentence.svelte';
   import { serverOrigin, inApp } from '../../lib/server.svelte.js';
   import FileIcon from '../FileIcon.svelte';
@@ -485,6 +486,7 @@
       <div class="field">
         <label class="label" for="pw-new">{t('New password')}</label>
         <input id="pw-new" class="input" type="password" bind:value={next} autocomplete="new-password" minlength="10" required />
+        <PasswordStrength password={next} inputs={[session.me.username, 'thencloud']} />
       </div>
       <div class="field">
         <label class="label" for="pw-confirm">{t('Confirm new password')}</label>
