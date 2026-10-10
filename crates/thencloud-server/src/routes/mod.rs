@@ -246,6 +246,7 @@ pub fn router(state: AppState) -> Router {
             "/storage/accounts/{id}",
             patch(storage::update_account).delete(storage::unlink),
         )
+        .route("/storage/accounts/{id}/move", post(storage::move_files))
         .route("/drops", get(drops::list))
         .route("/drops/{id}", delete(drops::discard))
         .route("/drops/{id}/adopt", post(drops::adopt))

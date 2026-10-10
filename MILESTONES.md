@@ -193,6 +193,8 @@ Smaller things:
 - [ ] **Mirror or extra space**, per linked account: a mirror keeps a second copy of everything and is read from when the server's copy is missing; extra space adds that account's free space to your quota. Then pick which comes first: "Prefer Google Drive" or "Prefer this server"
 - [ ] **Storage meter by place**: the usage bar at the bottom left split by where the bytes are, a colour per provider (yellow for Google Drive, blue for OneDrive) and the accent colour for the server, each meeting AA in every theme
 - [ ] **Moving and checking**: see what lives where, move files between places, and have `check` cover linked accounts; unlinking one brings its files home first, or says what can't be
+  - [x] Move everything to or from a linked account (Settings, a batch at a time, stops when the destination is full); unlinking brings files home first; `check` covers linked accounts
+  - [ ] Per file: see where it lives and move just that
 
 ## Later
 
