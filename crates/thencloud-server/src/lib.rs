@@ -47,6 +47,8 @@ pub struct AppState {
     pub downloader: Arc<downloader::Downloader>,
     /// Changes to nodes, as they happen, for live updates (see routes/activity.rs).
     pub changes: tokio::sync::broadcast::Sender<routes::activity::Change>,
+    /// Serialises writes to the same upload chunk (see `routes/uploads.rs`).
+    pub chunk_locks: Arc<routes::uploads::ChunkLocks>,
     /// Turnstile tokens already used (see turnstile.rs).
     pub turnstile_used: Arc<turnstile::Used>,
     /// Cancelled when the server starts shutting down: streams that would
@@ -81,6 +83,7 @@ impl AppState {
             secret: Arc::new(secret),
             limiter: Arc::new(limiter::Limiter::new(10, 15 * 60)),
             turnstile_used: Arc::default(),
+            chunk_locks: Arc::default(),
             shutdown: tokio_util::sync::CancellationToken::new(),
             dummy_hash: Arc::new(dummy_hash),
             downloader: Arc::new(downloader),
