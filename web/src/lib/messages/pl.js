@@ -375,6 +375,7 @@ export default {
     'Dzisiejszy limit pobierania na tym serwerze został wykorzystany. Odnawia się o północy UTC.',
   'Something went wrong on the server. Try again in a moment.': 'Coś poszło nie tak na serwerze. Spróbuj ponownie za chwilę.',
   'Could not reach the server. Check your connection.': 'Nie udało się połączyć z serwerem. Sprawdź połączenie.',
+  "This server asked for weaker password protection than thencloud allows, so your password wasn't sent. Don't sign in here, and tell the person who runs it.": "Ten serwer poprosił o słabszą ochronę hasła, niż pozwala thencloud, więc hasło nie zostało wysłane. Nie loguj się tutaj i powiedz o tym osobie, która go prowadzi.",
   'Something went wrong': 'Coś poszło nie tak',
 
   // Moving
