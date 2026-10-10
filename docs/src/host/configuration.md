@@ -10,6 +10,7 @@ Every option is a command-line flag and an environment variable. `thencloud-serv
 | `--data-dir` | `THENCLOUD_DATA_DIR` | `./data`. The SQLite database, and the encrypted blobs unless S3 is configured |
 | `--web-dir` | `THENCLOUD_WEB_DIR` | `./web/dist`, the built web client |
 | `--trust-proxy` | `THENCLOUD_TRUST_PROXY` | `false`. Behind a reverse proxy, take the client's address from the last `X-Forwarded-For` entry. Only turn it on when clients can't reach the server directly. The address is used to rate-limit sign-in attempts and never stored |
+| `--public-origin` | `THENCLOUD_PUBLIC_ORIGIN` | unset. The address people open the server at, e.g. `https://cloud.example.com` (comma-separated for several). When set, passkeys only work from pages at one of these, so a passkey made on any other site is refused |
 | `--limit-by-address` | `THENCLOUD_LIMIT_BY_ADDRESS` | `true`. Rate-limit sign-in attempts by address as well as by account. Turn it off for a [Tor onion service](tor.md) |
 
 ## Accounts
