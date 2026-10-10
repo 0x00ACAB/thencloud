@@ -1,0 +1,171 @@
+/* thencloud's look on top of mdBook's theme: the web client's neutral
+   palette and fonts, with the accent kept to links and the active page. */
+
+@font-face {
+  font-family: "Console Sans";
+  src: url("fonts/ConsoleSans-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Console Sans";
+  src: url("fonts/ConsoleSans-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Console Sans";
+  src: url("fonts/ConsoleSans-Semibold.woff2") format("woff2");
+  font-weight: 600 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Geist Mono";
+  src: url("fonts/GeistMono.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+:root {
+  --mono-font: "Geist Mono", ui-monospace, monospace;
+  --code-font-size: 0.875em;
+  --content-max-width: 760px;
+}
+
+.light, html:not(.js) {
+  --bg: #ffffff;
+  --fg: #171717;
+  --sidebar-bg: #fafafa;
+  --sidebar-fg: #4d4d4d;
+  --sidebar-non-existant: #8f8f8f;
+  --sidebar-active: #2b35d6;
+  --sidebar-spacer: #ebebeb;
+  --sidebar-header-border-color: #ebebeb;
+  --icons: #666666;
+  --icons-hover: #171717;
+  --links: #2b35d6;
+  --inline-code-color: #171717;
+  --theme-popup-bg: #ffffff;
+  --theme-popup-border: #d9d9d9;
+  --theme-hover: #f2f2f2;
+  --quote-bg: #fafafa;
+  --quote-border: #ebebeb;
+  --table-border-color: #ebebeb;
+  --table-header-bg: #f5f5f5;
+  --table-alternate-bg: #ffffff;
+  --searchbar-border-color: #d9d9d9;
+  --searchbar-bg: #ffffff;
+  --searchbar-fg: #171717;
+  --searchbar-shadow-color: transparent;
+  --searchresults-header-fg: #666666;
+  --searchresults-border-color: #ebebeb;
+  --searchresults-li-bg: #eef0ff;
+  --search-mark-bg: #d4d8fe;
+  --tc-code-bg: #f5f5f5;
+}
+
+.navy {
+  --bg: #0a0a0a;
+  --fg: #ededed;
+  --sidebar-bg: #111111;
+  --sidebar-fg: #a1a1a1;
+  --sidebar-non-existant: #6e6e6e;
+  --sidebar-active: #9ba2ff;
+  --sidebar-spacer: #242424;
+  --sidebar-header-border-color: #242424;
+  --scrollbar: #333333;
+  --icons: #a1a1a1;
+  --icons-hover: #ededed;
+  --links: #9ba2ff;
+  --inline-code-color: #ededed;
+  --theme-popup-bg: #111111;
+  --theme-popup-border: #333333;
+  --theme-hover: #1a1a1a;
+  --quote-bg: #111111;
+  --quote-border: #242424;
+  --table-border-color: #242424;
+  --table-header-bg: #161616;
+  --table-alternate-bg: #0a0a0a;
+  --searchbar-border-color: #333333;
+  --searchbar-bg: #111111;
+  --searchbar-fg: #ededed;
+  --searchbar-shadow-color: transparent;
+  --searchresults-header-fg: #a1a1a1;
+  --searchresults-border-color: #242424;
+  --searchresults-li-bg: #1a1c3a;
+  --search-mark-bg: #2f3680;
+  --overlay-bg: rgba(0, 0, 0, 0.5);
+  --tc-code-bg: #161616;
+}
+
+html {
+  font-family: "Console Sans", system-ui, sans-serif;
+}
+
+body {
+  font-size: 1.6rem;
+  line-height: 1.65;
+}
+
+.content h1, .content h2, .content h3 {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.content h1 { margin-top: 1.5em; }
+.content h2 {
+  margin-top: 2em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--table-border-color);
+}
+
+.content a, .content a:visited { color: var(--links); }
+.content a:hover { text-decoration: underline; text-underline-offset: 2px; }
+
+code, pre { font-family: var(--mono-font); }
+:not(pre) > code {
+  background: var(--tc-code-bg);
+  border: 1px solid var(--table-border-color);
+  border-radius: 5px;
+  padding: 0.1em 0.35em;
+}
+pre > code.hljs, pre > code {
+  background: var(--tc-code-bg);
+  border: 1px solid var(--table-border-color);
+  border-radius: 8px;
+}
+
+table {
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+table thead th { font-weight: 600; text-align: left; }
+table td, table th { border: 1px solid var(--table-border-color); vertical-align: top; }
+
+blockquote {
+  border-left: 3px solid var(--links);
+  border-top: none;
+  border-bottom: none;
+  border-radius: 0 6px 6px 0;
+  padding: 0.6em 1.2em;
+}
+
+.sidebar .sidebar-scrollbox { padding: 16px 12px; }
+.chapter li a { padding: 3px 0; }
+.chapter li.part-title {
+  color: var(--fg);
+  font-weight: 600;
+  font-size: 0.8em;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 1.4em;
+}
+
+.menu-title { font-weight: 600; }
+
+img.tc-logo {
+  display: block;
+  margin: 2em 0 -0.5em;
+}
+
+/* Keep flags and variable names in one piece. */
+table td:first-child code, table td:nth-child(2) code { white-space: nowrap; }
