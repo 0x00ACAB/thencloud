@@ -36,6 +36,11 @@ the apps (see "Keeping existing data working" in CLAUDE.md).
   so a database backup or S3 snapshot alone holds no working link. Existing
   links are converted at start and keep working. Back that file up: directory
   backups (`backup DEST`) include it, S3 backups and snapshots don't.
+- **Security:** the video downloader's connections go through a proxy inside
+  the server that only connects to public addresses, so a redirect or a
+  changing DNS answer can't reach the server's own network.
+- Docker: `--target with-downloader` (or `THENCLOUD_TARGET=with-downloader`
+  with the compose example) builds an image with yt-dlp, ffmpeg and deno.
 
 ## v1.0.0 (2026-10-05)
 
