@@ -159,24 +159,30 @@ pub struct BackupReport {
     pub missing: Vec<(String, i64)>,
 }
 
-/// Copy `<data dir>/link-token-key` into a directory backup, so the restored
-/// server can still show owners their public links (see link_tokens.rs).
-/// An S3 backup doesn't get it: keeping it apart from the database is the
-/// point. Returns whether there was one to copy.
-pub async fn copy_link_token_key(data_dir: &Path, dest: &BackupDest) -> Result<bool> {
+/// The key files kept outside the database: public-link tokens
+/// (link_tokens.rs) and linked storage accounts' tokens (storage/mod.rs).
+pub const KEY_FILES: [&str; 2] = ["link-token-key", crate::storage::KEY_FILE];
+
+/// Copy the key files in `KEY_FILES` into a directory backup, so the restored
+/// server can still show owners their links and reach linked Drives. An S3
+/// backup doesn't get them: keeping them apart from the database is the
+/// point. Returns whether every one that exists was copied.
+pub async fn copy_key_files(data_dir: &Path, dest: &BackupDest) -> Result<bool> {
     let BackupDest::Dir(dir) = dest else {
         return Ok(false);
     };
-    let from = data_dir.join("link-token-key");
-    if !from.exists() {
-        return Ok(false);
-    }
-    let to = dir.join("link-token-key");
-    tokio::fs::copy(&from, &to).await?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        tokio::fs::set_permissions(&to, std::fs::Permissions::from_mode(0o600)).await?;
+    for name in KEY_FILES {
+        let from = data_dir.join(name);
+        if !from.exists() {
+            continue;
+        }
+        let to = dir.join(name);
+        tokio::fs::copy(&from, &to).await?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            tokio::fs::set_permissions(&to, std::fs::Permissions::from_mode(0o600)).await?;
+        }
     }
     Ok(true)
 }

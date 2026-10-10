@@ -5167,20 +5167,20 @@ async fn backup_restore_and_check() {
         .unwrap();
     assert_eq!(b.chunks, 2);
     assert!(b.missing.is_empty());
-    // The link-token key goes along, so links can still be shown.
+    // The key files go along, so links can still be shown and linked
+    // Drives still reached.
     let data_dir = h.dir.path().join("data");
-    assert!(
-        maintenance::copy_link_token_key(&data_dir, &dest)
-            .await
-            .unwrap()
-    );
+    assert!(maintenance::copy_key_files(&data_dir, &dest).await.unwrap());
     let maintenance::BackupDest::Dir(d) = &dest else {
         unreachable!()
     };
-    assert_eq!(
-        std::fs::read(d.join("link-token-key")).unwrap(),
-        std::fs::read(data_dir.join("link-token-key")).unwrap()
-    );
+    for name in maintenance::KEY_FILES {
+        assert_eq!(
+            std::fs::read(d.join(name)).unwrap(),
+            std::fs::read(data_dir.join(name)).unwrap(),
+            "{name}"
+        );
+    }
     // A second backup into the same place is refused.
     assert!(
         maintenance::backup(&h.state.db, &h.state.blobs, &dest)

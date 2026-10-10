@@ -139,11 +139,12 @@ async fn backup(
         "Backed up the database and {} chunks ({} bytes) to {}",
         r.chunks, r.bytes, dest
     );
-    if !maintenance::copy_link_token_key(&data_dir, &parsed).await? {
+    if !maintenance::copy_key_files(&data_dir, &parsed).await? {
         println!(
-            "Keep {} somewhere safe too: without it, a restored server still opens \
-             public links but can't show their owners the links made before.",
-            data_dir.join("link-token-key").display()
+            "Keep {} and {} somewhere safe too: without them, a restored server can't \
+             show owners the public links they made, or reach their linked Google Drives.",
+            data_dir.join("link-token-key").display(),
+            data_dir.join(thencloud_server::storage::KEY_FILE).display()
         );
     }
     if r.missing.is_empty() {
