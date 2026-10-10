@@ -20,6 +20,11 @@ the apps (see "Keeping existing data working" in CLAUDE.md).
 - **Security:** `--hsts` (`THENCLOUD_HSTS`) sends `Strict-Transport-Security`,
   so browsers only reach the server over HTTPS. Off by default; the example
   Caddy setup now sends it.
+- **Security:** wrong passwords from one address lock the account for that
+  address only (with a higher limit across all addresses), so nobody can keep
+  you out by guessing. A sign-in waiting for a second factor ends after three
+  wrong codes. Public links of a disabled account stop working until it's
+  enabled again. Server errors no longer include internal details.
 
 ## v1.0.0 (2026-10-05)
 
