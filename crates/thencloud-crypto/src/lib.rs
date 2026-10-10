@@ -263,7 +263,14 @@ pub struct AccountKeys {
 
 /// The password is taken in Unicode NFC, so "é" typed as one character or
 /// as "e" and a combining accent is the same password on every device.
+///
+/// The salt and parameters come from the server (prelogin), so they're
+/// checked here: a server that asked for a cheap Argon2 would get an auth key
+/// it could brute-force for the password, and with it the master key.
 pub fn derive_account_keys(password: &str, salt: &[u8], params: KdfParams) -> Result<AccountKeys> {
+    if !params.is_acceptable() || !(SALT_LEN..=64).contains(&salt.len()) {
+        return Err(Error::KdfParams);
+    }
     let p = argon2::Params::new(params.m_cost, params.t_cost, params.p_cost, Some(KEY_LEN))
         .map_err(|_| Error::KdfParams)?;
     let a2 = argon2::Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, p);
@@ -523,6 +530,19 @@ pub fn encrypt_link_secret(node_key: &Key, secret: &Key, node_id: &str) -> Vec<u
 
 pub fn decrypt_link_secret(node_key: &Key, sealed: &[u8], node_id: &str) -> Result<Key> {
     open_key(node_key, sealed, &aad("link-secret", &[node_id]))
+}
+
+/// A public link's token as the server keeps it: sealed under a key it holds
+/// outside its database, so a copy of the database (a backup, a snapshot)
+/// doesn't hold tokens that open links. The server looks links up by the
+/// token's SHA-256 and opens this only to show the owner their link again.
+pub fn seal_link_token(key: &Key, token: &str, link_id: &str) -> Vec<u8> {
+    seal(key, token.as_bytes(), &aad("link-token", &[link_id]))
+}
+
+pub fn open_link_token(key: &Key, sealed: &[u8], link_id: &str) -> Result<String> {
+    String::from_utf8(open(key, sealed, &aad("link-token", &[link_id]))?)
+        .map_err(|_| Error::Decrypt)
 }
 
 // ---------------------------------------------------------------------------
@@ -1369,6 +1389,45 @@ mod tests {
         let w = wrap_master_key(&a.kek, &mk);
         assert!(unwrap_master_key(&b.kek, &w).unwrap() == mk);
         assert_eq!(unwrap_master_key(&c.kek, &w), Err(Error::Decrypt));
+    }
+
+    /// The parameters come from the server's prelogin answer. A server that
+    /// sends weak ones would get an auth key it could brute-force cheaply,
+    /// so they're held to the same floor the server enforces.
+    #[test]
+    fn account_keys_refuse_weak_params() {
+        let salt = random_bytes(SALT_LEN);
+        let password = b64_encode(&random_bytes(12));
+        for weak in [
+            KdfParams {
+                m_cost: 8,
+                t_cost: 1,
+                p_cost: 1,
+            },
+            KdfParams {
+                m_cost: 19 * 1024,
+                t_cost: 1,
+                p_cost: 1,
+            },
+            KdfParams {
+                m_cost: 19 * 1024 - 1,
+                t_cost: 2,
+                p_cost: 1,
+            },
+        ] {
+            assert_eq!(
+                derive_account_keys(&password, &salt, weak).err(),
+                Some(Error::KdfParams),
+                "{weak:?}"
+            );
+        }
+        for salt_len in [0, SALT_LEN - 1, 65] {
+            assert_eq!(
+                derive_account_keys(&password, &random_bytes(salt_len), fast()).err(),
+                Some(Error::KdfParams),
+                "salt of {salt_len} bytes"
+            );
+        }
     }
 
     #[test]

@@ -26,8 +26,9 @@ struct ClientData {
     origin: String,
 }
 
-/// Check the client data and return the host of its origin.
-fn client_data(json: &[u8], kind: &str, challenge: &[u8]) -> Result<String> {
+/// Check the client data and return the host of its origin. With `pinned`
+/// origins (`--public-origin`), the page must have been one of them.
+fn client_data(json: &[u8], kind: &str, challenge: &[u8], pinned: &[String]) -> Result<String> {
     let cd: ClientData =
         serde_json::from_slice(json).map_err(|_| AppError::bad("invalid client data"))?;
     if cd.kind != kind {
@@ -35,6 +36,15 @@ fn client_data(json: &[u8], kind: &str, challenge: &[u8]) -> Result<String> {
     }
     if thencloud_crypto::b64_decode(&cd.challenge).ok().as_deref() != Some(challenge) {
         return Err(AppError::InvalidCredentials);
+    }
+    if !pinned.is_empty()
+        && !pinned
+            .iter()
+            .any(|o| o.trim_end_matches('/').eq_ignore_ascii_case(&cd.origin))
+    {
+        return Err(AppError::bad(
+            "passkeys only work on this server's own address",
+        ));
     }
     origin_host(&cd.origin).ok_or_else(|| AppError::bad("passkeys need https"))
 }
@@ -156,8 +166,9 @@ pub fn register(
     client_data_json: &[u8],
     attestation_object: &[u8],
     challenge: &[u8],
+    pinned: &[String],
 ) -> Result<NewCredential> {
-    let rp_id = client_data(client_data_json, "webauthn.create", challenge)?;
+    let rp_id = client_data(client_data_json, "webauthn.create", challenge, pinned)?;
     let bad = || AppError::bad("invalid attestation");
     let att: Value = ciborium::from_reader(attestation_object).map_err(|_| bad())?;
     let raw = att
@@ -206,8 +217,9 @@ pub fn assert(
     signature: &[u8],
     challenge: &[u8],
     user_verified: bool,
+    pinned: &[String],
 ) -> Result<u32> {
-    let host = client_data(client_data_json, "webauthn.get", challenge)?;
+    let host = client_data(client_data_json, "webauthn.get", challenge, pinned)?;
     if host != cred.rp_id && !host.ends_with(&format!(".{}", cred.rp_id)) {
         return Err(AppError::InvalidCredentials);
     }
@@ -233,6 +245,44 @@ pub fn assert(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pinned_origins() {
+        let cd = |origin: &str| {
+            serde_json::json!({"type": "webauthn.get", "challenge": thencloud_crypto::b64_encode(b"c"), "origin": origin})
+                .to_string()
+        };
+        let pinned = ["https://cloud.example.com".to_string()];
+        assert!(
+            client_data(
+                cd("https://cloud.example.com").as_bytes(),
+                "webauthn.get",
+                b"c",
+                &pinned
+            )
+            .is_ok()
+        );
+        for other in [
+            "https://sub.cloud.example.com",
+            "https://cloud.example.com:8443",
+            "http://localhost:5173",
+        ] {
+            assert!(
+                client_data(cd(other).as_bytes(), "webauthn.get", b"c", &pinned).is_err(),
+                "{other}"
+            );
+        }
+        // Nothing pinned: any https origin, as before.
+        assert!(
+            client_data(
+                cd("https://sub.cloud.example.com").as_bytes(),
+                "webauthn.get",
+                b"c",
+                &[]
+            )
+            .is_ok()
+        );
+    }
 
     #[test]
     fn origins() {

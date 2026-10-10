@@ -881,6 +881,25 @@ pub(crate) fn is_public(ip: &IpAddr) -> bool {
                 return is_public(&IpAddr::V4(v4));
             }
             let s = v6.segments();
+            let o = v6.octets();
+            let v4_at = |i: usize| IpAddr::V4([o[i], o[i + 1], o[i + 2], o[i + 3]].into());
+            // Forms that carry an IPv4 address are judged by that address:
+            // NAT64 (64:ff9b::/96), 6to4 (2002::/16) and IPv4-compatible
+            // (::a.b.c.d, deprecated but still routed by some stacks).
+            if s[..6] == [0x64, 0xff9b, 0, 0, 0, 0] {
+                return is_public(&v4_at(12));
+            }
+            if s[0] == 0x2002 {
+                return is_public(&v4_at(2));
+            }
+            if s[..6] == [0; 6] && !(v6.is_loopback() || v6.is_unspecified()) {
+                return is_public(&v4_at(12));
+            }
+            // Teredo (2001::/32) hides its IPv4 address, and local-use NAT64
+            // (64:ff9b:1::/48) can map to anything: refused outright.
+            if (s[0] == 0x2001 && s[1] == 0) || (s[0] == 0x64 && s[1] == 0xff9b && s[2] == 1) {
+                return false;
+            }
             !(v6.is_loopback()
                 || v6.is_unspecified()
                 || v6.is_multicast()
@@ -909,10 +928,27 @@ mod tests {
             "fd00::1",
             "fe80::1",
             "::ffff:127.0.0.1",
+            // IPv6 forms that carry an IPv4 address: NAT64, 6to4,
+            // IPv4-compatible; Teredo and local-use NAT64 altogether.
+            "64:ff9b::a9fe:a9fe",
+            "64:ff9b::7f00:1",
+            "2002:a9fe:a9fe::1",
+            "2002:0a00:0001::",
+            "::10.0.0.1",
+            "::169.254.169.254",
+            "2001:0:4136:e378:8000:63bf:3fff:fdd2",
+            "64:ff9b:1::1",
         ] {
             assert!(!is_public(&ip.parse().unwrap()), "{ip}");
         }
-        for ip in ["8.8.8.8", "142.250.1.1", "2a00:1450::1"] {
+        for ip in [
+            "8.8.8.8",
+            "142.250.1.1",
+            "2a00:1450::1",
+            // A public IPv4 address through NAT64 or 6to4 is fine.
+            "64:ff9b::808:808",
+            "2002:808:808::1",
+        ] {
             assert!(is_public(&ip.parse().unwrap()), "{ip}");
         }
     }
