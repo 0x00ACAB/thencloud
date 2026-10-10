@@ -8,6 +8,18 @@ the apps (see "Keeping existing data working" in CLAUDE.md).
 
 - **Android:** music keeps playing with the screen off or another app open,
   with a notification, lock screen controls and headphone buttons.
+- **Security:** the web client and the apps refuse to sign in when a server
+  asks for weaker password hashing (Argon2 settings or salt) than thencloud
+  allows. A malicious server could otherwise have asked for cheap settings and
+  guessed the password from what the client sent.
+- **Security:** Markdown previews drop inline SVG and MathML. An SVG image
+  filter in a shared `.md` file could make the browser request a path from
+  the server.
+- **Security:** sending the same piece of an upload many times at once can no
+  longer push an account's used space down past what it stores.
+- **Security:** `--hsts` (`THENCLOUD_HSTS`) sends `Strict-Transport-Security`,
+  so browsers only reach the server over HTTPS. Off by default; the example
+  Caddy setup now sends it.
 - **Security:** wrong passwords from one address lock the account for that
   address only (with a higher limit across all addresses), so nobody can keep
   you out by guessing. A sign-in waiting for a second factor ends after three

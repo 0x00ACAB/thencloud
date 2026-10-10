@@ -1323,6 +1323,17 @@ async fn security_headers_are_set() {
         assert!(directives.contains_key(name), "{name} is missing");
     }
     assert_eq!(r.headers.get("cache-control").unwrap(), "no-store");
+    // HSTS only when asked for: an onion service or plain-HTTP localhost
+    // must not send it.
+    assert!(r.headers.get("strict-transport-security").is_none());
+    let https = Harness::with_config(|c| c.hsts = true).await;
+    let r2 = https
+        .raw(Method::GET, "/api/nope", None, &[], Body::empty(), None)
+        .await;
+    assert_eq!(
+        r2.headers.get("strict-transport-security").unwrap(),
+        "max-age=63072000; includeSubDomains"
+    );
 
     // Pages are always revalidated; hashed assets are cached for good, but
     // only when they exist.
@@ -7204,6 +7215,67 @@ async fn the_first_account_needs_the_setup_code() {
         .await
         .unwrap();
     assert_eq!(admins, ["bob"]);
+}
+
+/// Overwriting a chunk charges the difference from its old size. Many
+/// overwrites of one chunk at once must not each subtract the old size, or
+/// the quota could be pushed down to nothing.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_chunk_overwrites_keep_the_quota_right() {
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "pw").await;
+    let root_key = alice.key_of(&h, &alice.root).await;
+    let used = alice.me(&h).await.used_bytes;
+
+    let (id, k) = (c::new_id(), Key::generate());
+    let (vid, ck) = (c::new_id(), Key::generate());
+    let up: UploadResponse = h
+        .call(
+            Method::POST,
+            "/api/uploads",
+            Some(&alice.token),
+            Some(CreateUploadRequest {
+                node_id: id.clone(),
+                parent_id: Some(alice.root.clone()),
+                enc_key: Some(B64(c::wrap_node_key(&root_key, &k, &id))),
+                enc_metadata: B64(c::encrypt_metadata(&k, &id, &meta("big.bin", 1)).unwrap()),
+                version_id: vid.clone(),
+                enc_content_key: B64(c::wrap_content_key(&k, &ck, &id, &vid)),
+                chunk_count: 1,
+                if_revision: None,
+                name_tag: None,
+            }),
+        )
+        .await
+        .json();
+    let uri = format!("/api/uploads/{}/chunks/0", up.upload_id);
+    let put = |len: usize| {
+        let (app, uri, token) = (h.app.clone(), uri.clone(), alice.token.clone());
+        async move {
+            let req = Request::builder()
+                .method(Method::PUT)
+                .uri(uri)
+                .header("authorization", format!("Bearer {token}"))
+                .header("content-type", "application/octet-stream")
+                .body(Body::from(vec![7u8; len]))
+                .unwrap();
+            app.oneshot(req).await.unwrap().status()
+        }
+    };
+    assert_eq!(put(1 << 20).await, StatusCode::NO_CONTENT);
+    assert_eq!(alice.me(&h).await.used_bytes, used + (1 << 20));
+
+    let tasks: Vec<_> = (0..20).map(|_| tokio::spawn(put(100))).collect();
+    for t in tasks {
+        assert_eq!(t.await.unwrap(), StatusCode::NO_CONTENT);
+    }
+    assert_eq!(alice.me(&h).await.used_bytes, used + 100);
+    let received: i64 = sqlx::query_scalar("SELECT received_bytes FROM uploads WHERE id = ?")
+        .bind(&up.upload_id)
+        .fetch_one(&h.state.db)
+        .await
+        .unwrap();
+    assert_eq!(received, 100);
 }
 
 /// A server error says what kind of thing went wrong, not the details,
