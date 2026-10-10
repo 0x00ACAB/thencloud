@@ -103,9 +103,15 @@ impl IntoResponse for AppError {
                 e => tracing::error!(error = %e, "internal error"),
             }
         }
+        // The detail of an internal error (ids, library messages) is for
+        // the log above, not for whoever made the request.
+        let message = match self {
+            AppError::Internal(_) => "internal error".to_string(),
+            ref e => e.to_string(),
+        };
         let body = ErrorBody {
             error: code.to_string(),
-            message: self.to_string(),
+            message,
         };
         (status, Json(body)).into_response()
     }
