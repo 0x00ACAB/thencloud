@@ -124,6 +124,22 @@ pub struct Config {
     #[arg(long, env = "THENCLOUD_TRUST_PROXY", default_value_t = false, action = ArgAction::Set)]
     pub trust_proxy: bool,
 
+    /// Send `Strict-Transport-Security` (two years, with subdomains), so
+    /// browsers only ever reach this server over HTTPS and nobody on the
+    /// network can swap in their own web client on a plain-HTTP visit. Turn
+    /// it on when the server is only reached over HTTPS (not for an onion
+    /// service or plain-HTTP localhost), unless the reverse proxy sends it.
+    #[arg(long, env = "THENCLOUD_HSTS", default_value_t = false, action = ArgAction::Set)]
+    pub hsts: bool,
+
+    /// The address people open this server at, e.g.
+    /// `https://cloud.example.com` (comma-separated if there are several).
+    /// When set, passkeys are only accepted from pages at one of these, so
+    /// a passkey made anywhere else (a dev build, a look-alike) is refused.
+    /// Unset, any https origin is taken, checked against the passkey's own.
+    #[arg(long, env = "THENCLOUD_PUBLIC_ORIGIN", value_delimiter = ',')]
+    pub public_origin: Vec<String>,
+
     /// Rate-limit sign-in attempts by the client's address as well as by
     /// account. Turn it off for an onion service, where every visitor comes
     /// from the same address and one could lock everyone out; accounts and
@@ -197,6 +213,8 @@ impl Config {
             turnstile_hostnames: Vec::new(),
             turnstile_verify_url: crate::turnstile::SITEVERIFY.into(),
             trust_proxy: false,
+            hsts: false,
+            public_origin: Vec::new(),
             limit_by_address: true,
         }
     }
