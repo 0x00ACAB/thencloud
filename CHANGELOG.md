@@ -17,6 +17,9 @@ the apps (see "Keeping existing data working" in CLAUDE.md).
   the server.
 - **Security:** sending the same piece of an upload many times at once can no
   longer push an account's used space down past what it stores.
+- **Security:** `--hsts` (`THENCLOUD_HSTS`) sends `Strict-Transport-Security`,
+  so browsers only reach the server over HTTPS. Off by default; the example
+  Caddy setup now sends it.
 
 ## v1.0.0 (2026-10-05)
 

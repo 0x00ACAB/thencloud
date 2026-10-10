@@ -1323,6 +1323,17 @@ async fn security_headers_are_set() {
         assert!(directives.contains_key(name), "{name} is missing");
     }
     assert_eq!(r.headers.get("cache-control").unwrap(), "no-store");
+    // HSTS only when asked for: an onion service or plain-HTTP localhost
+    // must not send it.
+    assert!(r.headers.get("strict-transport-security").is_none());
+    let https = Harness::with_config(|c| c.hsts = true).await;
+    let r2 = https
+        .raw(Method::GET, "/api/nope", None, &[], Body::empty(), None)
+        .await;
+    assert_eq!(
+        r2.headers.get("strict-transport-security").unwrap(),
+        "max-age=63072000; includeSubDomains"
+    );
 
     // Pages are always revalidated; hashed assets are cached for good, but
     // only when they exist.
