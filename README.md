@@ -122,6 +122,7 @@ Every flag can also be set as an environment variable.
 | `--ffmpeg` | `THENCLOUD_FFMPEG` | `ffmpeg` (lets the downloader merge separate video and audio, which most YouTube videos need) |
 | `--downloader-max-bytes` | `THENCLOUD_DOWNLOADER_MAX_BYTES` | `2147483648` (2 GiB per video) |
 | `--trust-proxy` | `THENCLOUD_TRUST_PROXY` | `false`. Behind a reverse proxy, take the client's address from `X-Forwarded-For` (used only to rate-limit sign-in attempts, never stored). Only turn it on when clients can't reach the server directly |
+| `--public-origin` | `THENCLOUD_PUBLIC_ORIGIN` | unset. The address people open the server at, e.g. `https://cloud.example.com` (comma-separated for several). When set, passkeys only work from pages at one of these, so a passkey made on any other site is refused |
 | `--metrics-token` | `THENCLOUD_METRICS_TOKEN` | unset. When set, `GET /api/metrics` serves Prometheus metrics (the counts in the admin view) to requests with `Authorization: Bearer <token>` |
 
 `GET /api/health` answers `200 ok` while the database and data directory are available, and `503` otherwise. It needs no sign-in.

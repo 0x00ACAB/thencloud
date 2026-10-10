@@ -7092,3 +7092,53 @@ async fn the_first_account_needs_the_setup_code() {
         .unwrap();
     assert_eq!(admins, ["bob"]);
 }
+
+/// With `--public-origin`, a passkey is only accepted from that origin, so
+/// one made on another (a dev build at http://localhost, a look-alike) is
+/// refused. Without it, any https origin is taken as before.
+#[tokio::test]
+async fn passkeys_follow_the_public_origin() {
+    for (origins, ok) in [
+        (vec!["https://other.test".to_string()], false),
+        (
+            vec!["https://other.test".into(), "https://Cloud.test/".into()],
+            true,
+        ),
+        (vec![], true),
+    ] {
+        let h = Harness::with_config(|c| c.public_origin = origins.clone()).await;
+        let alice = register(&h, "alice", "pw").await;
+        let key = SoftPasskey::new(false);
+        let opts: PasskeyCreationOptions = h
+            .call(
+                Method::POST,
+                "/api/passkeys/options",
+                Some(&alice.token),
+                None::<()>,
+            )
+            .await
+            .json();
+        let (cd, att) = key.create(&opts);
+        let r = h
+            .call(
+                Method::POST,
+                "/api/passkeys",
+                Some(&alice.token),
+                Some(RegisterPasskeyRequest {
+                    registration_id: opts.registration_id,
+                    name: "Phone".into(),
+                    current_auth_key: B64(auth_of(&h, "alice", "pw").await.as_bytes().to_vec()),
+                    client_data_json: B64(cd),
+                    attestation_object: B64(att),
+                    enc_master_key: None,
+                }),
+            )
+            .await;
+        let want = if ok {
+            StatusCode::CREATED
+        } else {
+            StatusCode::BAD_REQUEST
+        };
+        assert_eq!(r.status, want, "{origins:?}: {r:?}");
+    }
+}

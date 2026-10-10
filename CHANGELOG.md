@@ -8,6 +8,8 @@ the apps (see "Keeping existing data working" in CLAUDE.md).
 
 - **Android:** music keeps playing with the screen off or another app open,
   with a notification, lock screen controls and headphone buttons.
+- `--public-origin` (`THENCLOUD_PUBLIC_ORIGIN`): the address people open the
+  server at. When set, passkeys only work from there.
 
 ## v1.0.0 (2026-10-05)
 
