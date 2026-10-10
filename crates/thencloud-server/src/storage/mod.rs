@@ -405,12 +405,307 @@ async fn delete_remote(state: &AppState, version_id: &str, rows: Vec<(String, u3
 }
 
 // ---------------------------------------------------------------------------
+// Moving between places
+// ---------------------------------------------------------------------------
+
+/// How much one call to `move_batch` moves at most, so a request ends in
+/// reasonable time.
+const MOVE_BATCH_BYTES: i64 = 64 << 20;
+const MOVE_BATCH_VERSIONS: usize = 32;
+
+/// People whose files are being moved right now.
+static MOVING: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+struct MovingGuard(String);
+
+impl MovingGuard {
+    fn take(user_id: &str) -> Option<MovingGuard> {
+        let mut m = MOVING.lock().unwrap_or_else(|e| e.into_inner());
+        if m.iter().any(|u| u == user_id) {
+            return None;
+        }
+        m.push(user_id.to_string());
+        Some(MovingGuard(user_id.to_string()))
+    }
+}
+
+impl Drop for MovingGuard {
+    fn drop(&mut self) {
+        MOVING
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .retain(|u| *u != self.0);
+    }
+}
+
+/// What `move_batch` did.
+#[derive(Debug, Default)]
+pub struct Moved {
+    pub versions: u32,
+    pub bytes: i64,
+    pub left: i64,
+    pub left_bytes: i64,
+    /// Some versions didn't fit at the destination.
+    pub full: bool,
+}
+
+/// Move a batch of the account owner's versions (all of them, or those
+/// under the node `scope`): to this server (`home`), or from it into the
+/// account (extra space only).
+pub async fn move_batch(
+    state: &AppState,
+    a: &Account,
+    home: bool,
+    scope: Option<&str>,
+) -> Result<Moved> {
+    if !home && a.mode != "extra" {
+        return Err(AppError::bad("files only move into extra space"));
+    }
+    if a.broken_at.is_some() {
+        return Err(app_error(DriveError::Unauthorized));
+    }
+    // One move at a time per person: two moving the same version would each
+    // clean up after the one that lost, and that can be the winner's copy.
+    let _moving = MovingGuard::take(&a.user_id).ok_or_else(|| {
+        AppError::Conflict("files are already being moved; try again when that's done".into())
+    })?;
+    let mut done = Moved::default();
+    for (version_id, count, size) in movable(&state.db, a, home, scope).await? {
+        if done.versions as usize >= MOVE_BATCH_VERSIONS
+            || (done.versions > 0 && done.bytes + size > MOVE_BATCH_BYTES)
+        {
+            break;
+        }
+        let r = if home {
+            bring_home(state, a, &version_id, count as u32, size).await
+        } else {
+            send_away(state, a, &version_id, count as u32, size).await
+        };
+        match r {
+            Ok(true) => {
+                done.versions += 1;
+                done.bytes += size;
+            }
+            Ok(false) => {}
+            // Doesn't fit; a smaller one after it might.
+            Err(AppError::QuotaExceeded) => done.full = true,
+            Err(e) if done.versions > 0 => {
+                tracing::warn!(error = %e, "moving a version stopped");
+                break;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    let (left, left_bytes) = left_to_move(&state.db, a, home, scope).await?;
+    done.left = left;
+    done.left_bytes = left_bytes;
+    Ok(done)
+}
+
+/// The versions a move covers: all of the account owner's, or with
+/// `scope` only those of files in that folder (or that file). The query
+/// binds `?1` to the account id, `?2` to the owner and `?3` to the scope.
+fn move_set(home: bool) -> &'static str {
+    if home {
+        "WITH RECURSIVE sub(id) AS (SELECT ?3 UNION ALL \
+           SELECT n.id FROM nodes n JOIN sub ON n.parent_id = sub.id) \
+         SELECT v.id, v.chunk_count, v.size FROM file_versions v \
+         WHERE v.account_id = ?1 AND ?2 IS NOT NULL \
+         AND (?3 IS NULL OR v.node_id IN (SELECT id FROM sub))"
+    } else {
+        "WITH RECURSIVE sub(id) AS (SELECT ?3 UNION ALL \
+           SELECT n.id FROM nodes n JOIN sub ON n.parent_id = sub.id) \
+         SELECT v.id, v.chunk_count, v.size FROM file_versions v JOIN nodes n ON n.id = v.node_id \
+         WHERE n.owner_id = ?2 AND v.account_id IS NULL AND ?1 IS NOT NULL \
+         AND (?3 IS NULL OR v.node_id IN (SELECT id FROM sub))"
+    }
+}
+
+/// What's still to move, smallest first (so once one doesn't fit, the
+/// rest don't either): `(version id, chunk count, size)`.
+async fn movable(
+    db: &SqlitePool,
+    a: &Account,
+    home: bool,
+    scope: Option<&str>,
+) -> Result<Vec<(String, i64, i64)>> {
+    let sql = format!(
+        "{} ORDER BY v.size, v.id LIMIT {MOVE_BATCH_VERSIONS}",
+        move_set(home)
+    );
+    Ok(sqlx::query_as(sqlx::AssertSqlSafe(sql))
+        .bind(&a.id)
+        .bind(&a.user_id)
+        .bind(scope)
+        .fetch_all(db)
+        .await?)
+}
+
+async fn left_to_move(
+    db: &SqlitePool,
+    a: &Account,
+    home: bool,
+    scope: Option<&str>,
+) -> Result<(i64, i64)> {
+    let sql = format!(
+        "SELECT COUNT(*), COALESCE(SUM(size), 0) FROM ({})",
+        move_set(home)
+    );
+    Ok(sqlx::query_as(sqlx::AssertSqlSafe(sql))
+        .bind(&a.id)
+        .bind(&a.user_id)
+        .bind(scope)
+        .fetch_one(db)
+        .await?)
+}
+
+/// Bytes of versions kept only in the account.
+pub async fn only_there(db: &SqlitePool, account_id: &str) -> Result<i64> {
+    Ok(
+        sqlx::query_scalar("SELECT COALESCE(SUM(size), 0) FROM file_versions WHERE account_id = ?")
+            .bind(account_id)
+            .fetch_one(db)
+            .await?,
+    )
+}
+
+/// Copy one version from the account to this server, then make this
+/// server its home. False if it was deleted or moved meanwhile. A mirror
+/// keeps its chunks as its copy; extra space has them deleted.
+async fn bring_home(
+    state: &AppState,
+    a: &Account,
+    version_id: &str,
+    count: u32,
+    size: i64,
+) -> Result<bool> {
+    // Charged first, so two moves can't both fit in the same room.
+    let charged = sqlx::query(
+        "UPDATE users SET used_bytes = used_bytes + ?1 WHERE id = ?2 AND used_bytes + ?1 <= quota_bytes",
+    )
+    .bind(size)
+    .bind(&a.user_id)
+    .execute(&state.db)
+    .await?;
+    if charged.rows_affected() == 0 {
+        return Err(AppError::QuotaExceeded);
+    }
+    let refund = || async {
+        let _ = sqlx::query("UPDATE users SET used_bytes = MAX(0, used_bytes - ?) WHERE id = ?")
+            .bind(size)
+            .bind(&a.user_id)
+            .execute(&state.db)
+            .await;
+        state.blobs.delete_version(version_id).await;
+    };
+    for idx in 0..count {
+        let copied = async {
+            let data = get_remote(state, &a.id, version_id, idx).await?;
+            state.blobs.put_chunk(version_id, idx, &data).await?;
+            Ok::<_, AppError>(())
+        };
+        if let Err(e) = copied.await {
+            refund().await;
+            return Err(e);
+        }
+    }
+    let moved =
+        sqlx::query("UPDATE file_versions SET account_id = NULL WHERE id = ? AND account_id = ?")
+            .bind(version_id)
+            .bind(&a.id)
+            .execute(&state.db)
+            .await?;
+    if moved.rows_affected() == 0 {
+        refund().await;
+        return Ok(false);
+    }
+    if a.mode != "mirror" {
+        let rows: Vec<(String, u32, String, i64)> = sqlx::query_as(
+            "SELECT account_id, idx, remote_id, size FROM remote_chunks \
+             WHERE account_id = ? AND version_id = ?",
+        )
+        .bind(&a.id)
+        .bind(version_id)
+        .fetch_all(&state.db)
+        .await?;
+        delete_remote(state, version_id, rows).await;
+    }
+    Ok(true)
+}
+
+/// Copy one version from this server to the account, then make the
+/// account its home and free its room here. False if it was deleted or
+/// moved meanwhile.
+async fn send_away(
+    state: &AppState,
+    a: &Account,
+    version_id: &str,
+    count: u32,
+    size: i64,
+) -> Result<bool> {
+    let free: Option<i64> =
+        sqlx::query_scalar("SELECT free_bytes FROM storage_accounts WHERE id = ?")
+            .bind(&a.id)
+            .fetch_one(&state.db)
+            .await?;
+    if free.is_some_and(|f| f < size) {
+        return Err(AppError::QuotaExceeded);
+    }
+    let have: Vec<u32> =
+        sqlx::query_scalar("SELECT idx FROM remote_chunks WHERE account_id = ? AND version_id = ?")
+            .bind(&a.id)
+            .bind(version_id)
+            .fetch_all(&state.db)
+            .await?;
+    for idx in (0..count).filter(|i| !have.contains(i)) {
+        let data = get_chunk(state, version_id, idx).await?;
+        put_remote(state, &a.id, version_id, idx, &data).await?;
+    }
+    let mut tx = state.db.begin().await?;
+    let moved =
+        sqlx::query("UPDATE file_versions SET account_id = ? WHERE id = ? AND account_id IS NULL")
+            .bind(&a.id)
+            .bind(version_id)
+            .execute(&mut *tx)
+            .await?;
+    if moved.rows_affected() == 0 {
+        drop(tx);
+        // Deleted meanwhile: `run` clears the copies of versions that are
+        // gone; moved elsewhere, they'd only be a spare copy, so clear them.
+        let rows: Vec<(String, u32, String, i64)> = sqlx::query_as(
+            "SELECT account_id, idx, remote_id, size FROM remote_chunks \
+             WHERE account_id = ? AND version_id = ?",
+        )
+        .bind(&a.id)
+        .bind(version_id)
+        .fetch_all(&state.db)
+        .await?;
+        delete_remote(state, version_id, rows).await;
+        return Ok(false);
+    }
+    sqlx::query("UPDATE users SET used_bytes = MAX(0, used_bytes - ?) WHERE id = ?")
+        .bind(size)
+        .bind(&a.user_id)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    // A read that looked up the old home finds the chunk missing here and
+    // falls back to the account's copy (`get_chunk`).
+    state.blobs.delete_version(version_id).await;
+    Ok(true)
+}
+
+// ---------------------------------------------------------------------------
 // Accounts
 // ---------------------------------------------------------------------------
 
 /// Unlink an account: refused while versions are kept only there. Its
 /// mirror copies are deleted (best effort) and its token given back.
 pub async fn unlink(state: &AppState, a: &Account) -> Result<()> {
+    // Not while files are moving: one could land there after the count.
+    let _moving = MovingGuard::take(&a.user_id).ok_or_else(|| {
+        AppError::Conflict("files are being moved; try again when that's done".into())
+    })?;
     let only_there: i64 = sqlx::query_scalar(
         "SELECT (SELECT COUNT(*) FROM file_versions WHERE account_id = ?1) \
          + (SELECT COUNT(*) FROM uploads WHERE account_id = ?1)",
@@ -481,6 +776,103 @@ pub async fn refresh_free(state: &AppState, a: &Account, force: bool) {
                 .execute(&state.db)
                 .await;
     }
+}
+
+// ---------------------------------------------------------------------------
+// Checking
+// ---------------------------------------------------------------------------
+
+/// What `check` found in one linked account.
+#[derive(Debug, Default)]
+pub struct AccountCheck {
+    pub account_id: String,
+    pub user_id: String,
+    pub mode: String,
+    /// Why the account couldn't be listed, if it couldn't.
+    pub unreachable: Option<String>,
+    /// Chunks the database has there.
+    pub chunks: u64,
+    /// `(version id, index)` of chunks recorded there but not found.
+    pub missing: Vec<(String, u32)>,
+    /// `(version id/index, expected, found)`.
+    pub wrong_size: Vec<(String, u64, u64)>,
+    /// Versions kept only there that lack a record of some chunk.
+    pub incomplete: Vec<String>,
+    /// Files in thencloud's folder there that nothing refers to.
+    pub unknown: u64,
+}
+
+impl AccountCheck {
+    pub fn is_ok(&self) -> bool {
+        self.unreachable.is_none()
+            && self.missing.is_empty()
+            && self.wrong_size.is_empty()
+            && self.incomplete.is_empty()
+    }
+}
+
+/// Check every linked account's chunks against what the provider lists.
+pub async fn check(state: &AppState) -> Result<Vec<AccountCheck>> {
+    let accounts: Vec<Account> = sqlx::query_as(sqlx::AssertSqlSafe(format!(
+        "{ACCOUNT_SELECT} ORDER BY user_id, created_at"
+    )))
+    .fetch_all(&state.db)
+    .await?;
+    let mut out = Vec::new();
+    for a in accounts {
+        let mut c = AccountCheck {
+            account_id: a.id.clone(),
+            user_id: a.user_id.clone(),
+            mode: a.mode.clone(),
+            ..Default::default()
+        };
+        c.incomplete = sqlx::query_scalar(
+            "SELECT v.id FROM file_versions v WHERE v.account_id = ?1 \
+             AND (SELECT COUNT(*) FROM remote_chunks r WHERE r.account_id = ?1 AND r.version_id = v.id) \
+             < v.chunk_count ORDER BY v.id",
+        )
+        .bind(&a.id)
+        .fetch_all(&state.db)
+        .await?;
+        let rows: Vec<(String, u32, String, i64)> = sqlx::query_as(
+            "SELECT version_id, idx, remote_id, size FROM remote_chunks WHERE account_id = ? \
+             ORDER BY version_id, idx",
+        )
+        .bind(&a.id)
+        .fetch_all(&state.db)
+        .await?;
+        c.chunks = rows.len() as u64;
+        let listed = async {
+            let token = access(state, &a).await?;
+            let g = state.storage.google.as_ref().ok_or_else(|| {
+                DriveError::Other("Google Drive isn't set up on this server".into())
+            })?;
+            g.list(&token, &a.folder_id).await
+        };
+        let listed: std::collections::HashMap<String, u64> = match listed.await {
+            Ok(l) => l.into_iter().collect(),
+            Err(e) => {
+                c.unreachable = Some(e.to_string());
+                out.push(c);
+                continue;
+            }
+        };
+        let mut known = std::collections::HashSet::new();
+        for (version, idx, remote_id, size) in rows {
+            match listed.get(&remote_id) {
+                None => c.missing.push((version, idx)),
+                Some(&found) if found != size as u64 => {
+                    c.wrong_size
+                        .push((format!("{version}/{idx}"), size as u64, found))
+                }
+                Some(_) => {}
+            }
+            known.insert(remote_id);
+        }
+        c.unknown = listed.keys().filter(|id| !known.contains(*id)).count() as u64;
+        out.push(c);
+    }
+    Ok(out)
 }
 
 // ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 //! Linked storage accounts (see storage/mod.rs): list them, link Google
-//! Drive through its consent page, change what one is for, unlink it, and
-//! say where new files go first.
+//! Drive through its consent page, change what one is for, move files to
+//! or from it, unlink it, and say where new files go first.
 //!
 //! Linking happens in a popup the web client opens on Google's page, so
 //! the app (and the keys it holds in memory) stays where it is. Google sends
@@ -55,6 +55,7 @@ pub async fn info(State(state): State<AppState>, user: AuthUser) -> Result<Json<
         } else {
             (None, None)
         };
+        let only_there = storage::only_there(&state.db, &a.id).await?;
         accounts.push(StorageAccount {
             label: a
                 .enc_label
@@ -69,10 +70,11 @@ pub async fn info(State(state): State<AppState>, user: AuthUser) -> Result<Json<
             created_at: a.created_at,
             mirror_total,
             mirror_done,
+            only_there,
         });
     }
     Ok(Json(StorageInfo {
-        google: state.storage.google.is_some(),
+        google: crate::settings::google_drive(&state).await?,
         prefer: if prefer == "linked" {
             StoragePrefer::Linked
         } else {
@@ -132,6 +134,11 @@ pub async fn google_start(
         .google
         .as_ref()
         .ok_or_else(|| AppError::Unavailable("this server can't link Google Drive".into()))?;
+    if !crate::settings::google_drive(&state).await? {
+        return Err(AppError::Unavailable(
+            "linking Google Drive is turned off on this server".into(),
+        ));
+    }
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM storage_accounts WHERE user_id = ?")
         .bind(&user.id)
         .fetch_one(&state.db)
@@ -261,6 +268,104 @@ pub async fn unlink(
     let a = own_account(&state, &user, &id).await?;
     storage::unlink(&state, &a).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Move a batch of files between this server and the account.
+pub async fn move_files(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<String>,
+    Json(req): Json<MoveStorageRequest>,
+) -> Result<Json<MoveStorageResponse>> {
+    let a = own_account(&state, &user, &id).await?;
+    let m = storage::move_batch(&state, &a, req.to == StoragePrefer::Server, None).await?;
+    Ok(Json(MoveStorageResponse {
+        moved: m.versions,
+        moved_bytes: m.bytes,
+        left: m.left,
+        left_bytes: m.left_bytes,
+        full: m.full,
+    }))
+}
+
+/// The node, if `user` owns it (trashed or not: its versions still take
+/// room somewhere).
+async fn own_node(state: &AppState, user: &AuthUser, id: &str) -> Result<()> {
+    let owner: Option<String> = sqlx::query_scalar("SELECT owner_id FROM nodes WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&state.db)
+        .await?;
+    match owner {
+        Some(o) if o == user.id => Ok(()),
+        _ => Err(AppError::NotFound),
+    }
+}
+
+/// Where a file's (or a folder's files') versions are kept.
+pub async fn node_places(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<String>,
+) -> Result<Json<NodeStorage>> {
+    own_node(&state, &user, &id).await?;
+    let rows: Vec<(Option<String>, i64, i64)> = sqlx::query_as(
+        "WITH RECURSIVE sub(id) AS (SELECT ? UNION ALL \
+           SELECT n.id FROM nodes n JOIN sub ON n.parent_id = sub.id) \
+         SELECT v.account_id, COUNT(*), COALESCE(SUM(v.size), 0) FROM file_versions v \
+         WHERE v.node_id IN (SELECT id FROM sub) GROUP BY v.account_id ORDER BY v.account_id",
+    )
+    .bind(&id)
+    .fetch_all(&state.db)
+    .await?;
+    Ok(Json(NodeStorage {
+        places: rows
+            .into_iter()
+            .map(|(account_id, versions, bytes)| NodePlace {
+                account_id,
+                versions,
+                bytes,
+            })
+            .collect(),
+    }))
+}
+
+/// Move a batch of a file's (or a folder's files') versions.
+pub async fn move_node(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<String>,
+    Json(req): Json<MoveNodeStorageRequest>,
+) -> Result<Json<MoveStorageResponse>> {
+    own_node(&state, &user, &id).await?;
+    let m = match req.to {
+        Some(account) => {
+            let a = own_account(&state, &user, &account).await?;
+            storage::move_batch(&state, &a, false, Some(&id)).await?
+        }
+        // Home from every account that has some of them.
+        None => {
+            let mut total = storage::Moved::default();
+            for a in storage::accounts_of(&state.db, &user.id).await? {
+                if a.broken_at.is_some() {
+                    continue;
+                }
+                let m = storage::move_batch(&state, &a, true, Some(&id)).await?;
+                total.versions += m.versions;
+                total.bytes += m.bytes;
+                total.left += m.left;
+                total.left_bytes += m.left_bytes;
+                total.full |= m.full;
+            }
+            total
+        }
+    };
+    Ok(Json(MoveStorageResponse {
+        moved: m.versions,
+        moved_bytes: m.bytes,
+        left: m.left,
+        left_bytes: m.left_bytes,
+        full: m.full,
+    }))
 }
 
 pub async fn set_prefer(

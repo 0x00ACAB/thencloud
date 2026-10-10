@@ -8,9 +8,10 @@
 // directly (the opener link is cut when it goes to Google), so the account
 // list is also polled until the new account shows up.
 
-import { storageInfo, linkGoogleDrive } from './cloud.svelte.js';
+import { storageInfo, linkGoogleDrive, moveStorage } from './cloud.svelte.js';
 
-export const storage = $state({ info: null });
+// `moving`: { id, to, done, total } while files move to or from an account.
+export const storage = $state({ info: null, moving: null });
 
 export async function loadStorage() {
   try {
@@ -23,6 +24,41 @@ export async function loadStorage() {
 
 export function dropStorage() {
   storage.info = null;
+  storage.moving = null;
+}
+
+/**
+ * Move files between this server and account `id`, a batch per request,
+ * until none are left. `to` is 'server' or 'linked'. Resolves with
+ * 'done', 'full' (what's left doesn't fit at the destination) or 'stopped'.
+ */
+export async function moveFiles(id, to) {
+  if (storage.moving) return 'stopped';
+  const moving = { id, to, done: 0, total: 0 };
+  storage.moving = moving;
+  stopRequested = false;
+  try {
+    for (;;) {
+      const r = await moveStorage(id, to);
+      moving.done += r.moved_bytes;
+      moving.total = moving.done + r.left_bytes;
+      storage.moving = { ...moving };
+      if (r.left === 0) return 'done';
+      // Nothing more fits, or nothing moved for no given reason: don't spin.
+      if (r.moved === 0) return r.full ? 'full' : 'stopped';
+      if (stopRequested) return 'stopped';
+    }
+  } finally {
+    storage.moving = null;
+    await loadStorage();
+  }
+}
+
+let stopRequested = false;
+
+/** Stop after the batch that's moving now. */
+export function stopMoving() {
+  stopRequested = true;
 }
 
 const CHANNEL = 'thencloud-storage-link';

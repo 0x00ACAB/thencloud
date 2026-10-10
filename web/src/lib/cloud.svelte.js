@@ -338,6 +338,14 @@ export const setStoragePrefer = (prefer) => api('PUT', '/api/storage/prefer', { 
 export const setStorageMode = (id, mode) =>
   api('PATCH', `/api/storage/accounts/${encodeURIComponent(id)}`, { body: { mode } });
 export const unlinkStorage = (id) => api('DELETE', `/api/storage/accounts/${encodeURIComponent(id)}`);
+// Moves a batch of file versions to 'server' or 'linked'; call again while `left` > 0.
+export const moveStorage = (id, to) =>
+  api('POST', `/api/storage/accounts/${encodeURIComponent(id)}/move`, { body: { to } });
+// Where a file's (or a folder's files') versions are kept, and moving a
+// batch of them to this server (`to` null) or an extra-space account.
+export const nodeStorage = (id) => api('GET', `/api/nodes/${encodeURIComponent(id)}/storage`);
+export const moveNodeStorage = (id, to) =>
+  api('POST', `/api/nodes/${encodeURIComponent(id)}/storage`, { body: { to } });
 /** Google's consent page for linking a Drive as `mode` ('mirror' or 'extra'). */
 export const linkGoogleDrive = (mode) => api('POST', '/api/storage/google', { body: { mode } }).then((r) => r.url);
 export const revokeSession = (id) => api('DELETE', `/api/sessions/${encodeURIComponent(id)}`);

@@ -24,6 +24,7 @@ pub mod action {
     pub const DELETED: &str = "deleted";
     pub const REGISTRATION: &str = "registration";
     pub const DOWNLOADER: &str = "downloader";
+    pub const GOOGLE_DRIVE: &str = "google_drive";
     pub const INVITE_CREATED: &str = "invite_created";
     pub const INVITE_DELETED: &str = "invite_deleted";
 }

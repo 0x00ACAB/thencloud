@@ -189,10 +189,22 @@ Smaller things:
 
 ## Milestone 13: Bring your own storage
 
-- [ ] **Link your own storage accounts**: add one or more storage providers to your account, Google Drive first (15 GiB free with any Google account), then OneDrive, Dropbox and any S3 bucket. Only ciphertext goes there, encrypted exactly like the server's own blobs, so the provider sees sizes and timing, never names or contents. The server does the transfers (the CSP keeps the browser talking to it alone) and keeps each account's token, scoped to the files thencloud made (`drive.file` for Google Drive), never your other files. Admins choose which providers are allowed
+- [ ] **Link your own storage accounts**: add one or more storage providers to your account, Google Drive first (15 GiB free with any Google account), then OneDrive, Dropbox and any S3 bucket. Only ciphertext goes there, encrypted exactly like the server's own blobs, so the provider sees sizes and timing, never names or contents. The server does the transfers (the CSP keeps the browser talking to it alone) and keeps each account's token, scoped to the files thencloud made (`drive.file` for Google Drive), never your other files. Admins choose which providers are allowed (Google Drive: on or off in the Admin view; turning it off stops new links, and linked Drives keep working)
 - [ ] **Mirror or extra space**, per linked account: a mirror keeps a second copy of everything and is read from when the server's copy is missing; extra space adds that account's free space to your quota. Then pick which comes first: "Prefer Google Drive" or "Prefer this server"
 - [ ] **Storage meter by place**: the usage bar at the bottom left split by where the bytes are, a colour per provider (yellow for Google Drive, blue for OneDrive) and the accent colour for the server, each meeting AA in every theme
-- [ ] **Moving and checking**: see what lives where, move files between places, and have `check` cover linked accounts; unlinking one brings its files home first, or says what can't be
+- [x] **Moving and checking**: see what lives where, move files between places, and have `check` cover linked accounts; unlinking one brings its files home first, or says what can't be
+  - [x] Move everything to or from a linked account (Settings, a batch at a time, stops when the destination is full); unlinking brings files home first; `check` covers linked accounts
+  - [x] Per file or folder: see where it lives ("Where it is kept") and move just that
+- [ ] **More providers**, ones anyone can sign up to for free, each linked through an OAuth consent page like Google Drive (the server's own app, no keys for people to copy), and with a scope that reaches only thencloud's own folder where the provider has one. Free tiers as of 2026-10; check them again before building each one:
+  - [x] Google Drive: 15 GB, `drive.file` (only files thencloud made)
+  - [ ] Microsoft OneDrive: 5 GB, Microsoft Graph, `Files.ReadWrite.AppFolder` (only its app folder)
+  - [ ] Dropbox: 2 GB, OAuth with PKCE, an "App folder" app (only `/Apps/thencloud`)
+  - [ ] pCloud: 10 GB, OAuth; no folder-only scope, so the token can reach the whole account. Say so before linking
+  - [ ] Box: 10 GB, OAuth; also no folder-only scope, and 250 MB per file, which is fine for chunks
+  - [ ] Yandex Disk: 5 GB, OAuth, `cloud_api:disk.app_folder` (only its app folder); sign-up may not be open in every country
+  - [ ] S3-compatible buckets, linked with an access key pasted in Settings (one integration, reusing `s3.rs`): Backblaze B2 (10 GB free), Cloudflare R2 (10 GB free, free downloads), Storj (free tier has changed over time; check it), or any other bucket
+  - [ ] MEGA: 20 GB free, its own API and SDK (signs in with the account's password, no OAuth), with a download transfer quota, so better as extra space than as a mirror that gets read often
+  - [ ] WebDAV, with an app password (Koofr: 10 GB free)
 
 ## Later
 
