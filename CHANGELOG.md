@@ -8,6 +8,10 @@ the apps (see "Keeping existing data working" in CLAUDE.md).
 
 - **Android:** music keeps playing with the screen off or another app open,
   with a notification, lock screen controls and headphone buttons.
+- **Security:** the web client and the apps refuse to sign in when a server
+  asks for weaker password hashing (Argon2 settings or salt) than thencloud
+  allows. A malicious server could otherwise have asked for cheap settings and
+  guessed the password from what the client sent.
 - **Security:** Markdown previews drop inline SVG and MathML. An SVG image
   filter in a shared `.md` file could make the browser request a path from
   the server.
