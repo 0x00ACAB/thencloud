@@ -25,6 +25,10 @@ the apps (see "Keeping existing data working" in CLAUDE.md).
   you out by guessing. A sign-in waiting for a second factor ends after three
   wrong codes. Public links of a disabled account stop working until it's
   enabled again. Server errors no longer include internal details.
+- The server warns at start while registration is open to anyone. The
+  example `deploy/compose.yaml` now sets `THENCLOUD_ALLOW_REGISTRATION=false`:
+  if you run it and rely on open sign-up, choose it in the Admin view (that
+  setting wins) or remove the line.
 
 ## v1.0.0 (2026-10-05)
 
