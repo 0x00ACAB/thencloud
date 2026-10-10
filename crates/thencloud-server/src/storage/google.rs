@@ -37,6 +37,20 @@ impl Default for Endpoints {
     }
 }
 
+impl Endpoints {
+    /// All of them under one stand-in (`--google-test-base`).
+    pub fn under(base: &str) -> Endpoints {
+        let base = base.trim_end_matches('/');
+        Endpoints {
+            auth: format!("{base}/auth"),
+            token: format!("{base}/token"),
+            revoke: format!("{base}/revoke"),
+            api: base.to_string(),
+            upload: format!("{base}/upload"),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum DriveError {
     /// The token was refused: the person revoked access, or it expired.
@@ -90,7 +104,10 @@ impl Google {
         Some(Google {
             client_id: id,
             client_secret: secret,
-            ep: cfg.google_endpoints.clone(),
+            ep: match &cfg.google_test_base {
+                Some(base) => Endpoints::under(base),
+                None => cfg.google_endpoints.clone(),
+            },
             agent: ureq::Agent::config_builder()
                 .http_status_as_error(false)
                 .timeout_global(Some(Duration::from_secs(120)))

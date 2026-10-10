@@ -27,13 +27,16 @@ export function watchRequests(context) {
     }),
   );
   return {
-    async expectNone(secrets) {
+    // `elsewhere`: other origins a test deliberately goes to (the stand-in
+    // for Google's consent page), still checked for secrets.
+    async expectNone(secrets, { elsewhere = [] } = {}) {
       const needles = secrets.filter(Boolean).map((s) => Buffer.from(s));
       expect(seen.length).toBeGreaterThan(0);
       const own = new URL(test.info().project.use.baseURL).origin;
       for (const r of seen) {
         const { protocol, origin } = new URL(r.raw);
-        expect(['blob:', 'data:'].includes(protocol) || origin === own, `${r.what} goes somewhere other than ${own}`).toBe(true);
+        const allowed = ['blob:', 'data:'].includes(protocol) || origin === own || elsewhere.includes(origin);
+        expect(allowed, `${r.what} goes somewhere other than ${own}`).toBe(true);
         const headers = await r.headers;
         for (const n of needles) {
           const what = `${r.what} carries ${JSON.stringify(n.toString())}`;
