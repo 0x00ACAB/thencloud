@@ -22,6 +22,8 @@ use crate::util::*;
 
 /// How long a half-finished sign-in or a setup waits.
 const TICKET_SECS: i64 = 5 * 60;
+/// Wrong codes or passkey answers a sign-in ticket takes before it's gone.
+const TICKET_TRIES: u32 = 3;
 
 #[derive(sqlx::FromRow)]
 pub(crate) struct Challenge {
@@ -137,6 +139,14 @@ pub async fn verify(
         state.limiter.fail(&ukey);
         if let Some(k) = &ikey {
             state.limiter.fail(k);
+        }
+        // A few wrong answers use the ticket up, so each round of guessing
+        // costs a password sign-in.
+        let tkey = format!("2fa-ticket:{}", challenge_id(&req.ticket));
+        state.limiter.fail(&tkey);
+        if state.limiter.blocked_at(&tkey, TICKET_TRIES) {
+            drop_challenge(&state, &req.ticket).await?;
+            state.limiter.clear(&tkey);
         }
         return Err(AppError::InvalidSecondFactor);
     }
