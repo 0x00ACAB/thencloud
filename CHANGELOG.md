@@ -8,6 +8,9 @@ the apps (see "Keeping existing data working" in CLAUDE.md).
 
 - **Android:** music keeps playing with the screen off or another app open,
   with a notification, lock screen controls and headphone buttons.
+- **Security:** Markdown previews drop inline SVG and MathML. An SVG image
+  filter in a shared `.md` file could make the browser request a path from
+  the server.
 
 ## v1.0.0 (2026-10-05)
 
