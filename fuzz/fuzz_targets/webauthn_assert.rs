@@ -20,6 +20,12 @@ fuzz_target!(|data: &[u8]| {
         sign_count: data[3] as u32,
     };
     let good = br#"{"type":"webauthn.get","challenge":"Y2hhbGxlbmdl","origin":"https://cloud.example.com"}"#;
+    // With and without --public-origin.
+    let pinned = if data[3] & 2 == 2 {
+        vec!["https://cloud.example.com".to_string()]
+    } else {
+        Vec::new()
+    };
     let _ = webauthn::assert(
         &cred,
         good,
@@ -27,6 +33,7 @@ fuzz_target!(|data: &[u8]| {
         signature,
         b"challenge",
         data[3] & 1 == 1,
+        &pinned,
     );
-    let _ = webauthn::assert(&cred, auth_data, signature, public_key, b"challenge", false);
+    let _ = webauthn::assert(&cred, auth_data, signature, public_key, b"challenge", false, &[]);
 });
