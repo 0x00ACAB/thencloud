@@ -118,6 +118,7 @@ Every flag can also be set as an environment variable.
 | `--version-thinning` | `THENCLOUD_VERSION_THINNING` | `true` (thin out old versions by age: all from the last hour, then one per hour for a day, one per day for 30 days, one per week after that) |
 | `--trash-days` | `THENCLOUD_TRASH_DAYS` | `30` (days before trashed items are purged) |
 | `--upload-ttl-hours` | `THENCLOUD_UPLOAD_TTL_HOURS` | `24` |
+| `--google-client-id`, `--google-client-secret` | `THENCLOUD_GOOGLE_CLIENT_ID`, `THENCLOUD_GOOGLE_CLIENT_SECRET` | unset. A Google OAuth app (redirect URI `<public origin>/api/storage/google/callback`, scope `drive.file`), so people can link their Google Drive as a mirror or as extra space; only ciphertext goes there |
 | `--yt-dlp` | `THENCLOUD_YT_DLP` | `yt-dlp` (for the optional video downloader; it stays off until an admin enables it) |
 | `--ffmpeg` | `THENCLOUD_FFMPEG` | `ffmpeg` (lets the downloader merge separate video and audio, which most YouTube videos need) |
 | `--downloader-max-bytes` | `THENCLOUD_DOWNLOADER_MAX_BYTES` | `2147483648` (2 GiB per video) |
@@ -134,7 +135,7 @@ Every flag can also be set as an environment variable.
 thencloud-server --data-dir ./data backup /backups/thencloud-2026-09-28
 ```
 
-This writes a consistent snapshot of the database and every blob it refers to into a new directory. It's safe while the server is running. On the same filesystem the blobs are hard links, which is instant and takes no extra space; elsewhere they're copied. If a file is deleted while the backup runs, its missing pieces are listed and the command exits with status 2. A directory backup also gets `link-token-key` (public-link tokens are sealed under it, outside the database); an S3 backup doesn't, so keep that file yourself. Like the server, a backup holds only ciphertext and wrapped keys.
+This writes a consistent snapshot of the database and every blob it refers to into a new directory. It's safe while the server is running. On the same filesystem the blobs are hard links, which is instant and takes no extra space; elsewhere they're copied. If a file is deleted while the backup runs, its missing pieces are listed and the command exits with status 2. A directory backup also gets `link-token-key` and `storage-token-key` (public-link tokens are sealed under it, outside the database); an S3 backup doesn't, so keep that file yourself. Like the server, a backup holds only ciphertext and wrapped keys.
 
 The destination can also be a bucket: `backup s3://my-backups/thencloud/` (using the configured `--s3-endpoint` and credentials), from either a local or an S3 blob store.
 
@@ -230,7 +231,7 @@ As a result, a malicious server cannot swap files, move ciphertexts between node
 - File and folder names, MIME types, plaintext sizes and modification times.
 - File contents.
 
-**No analytics, ever.** thencloud has no telemetry, tracking or crash reporting, and it never will. The web client talks only to your server: its Content Security Policy allows nothing else (no CDNs, fonts or third-party scripts), a server test fails if that policy ever lets another host in, and the browser tests fail if any request goes elsewhere. The server makes no connections of its own, except to an S3 bucket you configure and, if an admin turns the video downloader on, to the sites people download from.
+**No analytics, ever.** thencloud has no telemetry, tracking or crash reporting, and it never will. The web client talks only to your server: its Content Security Policy allows nothing else (no CDNs, fonts or third-party scripts), a server test fails if that policy ever lets another host in, and the browser tests fail if any request goes elsewhere. The server makes no connections of its own, except to an S3 bucket you configure, to Google Drive for people who link theirs (only ciphertext goes there), and, if an admin turns the video downloader on, to the sites people download from.
 
 **Optional bot check.** A server can ask for a Cloudflare Turnstile check before sign-in, and before registration while it's open to everyone (`--turnstile-site-key` and `--turnstile-secret`, off by default). It's the one exception above, so it's kept to a page of its own, `/auth`: only that page's CSP lets in Cloudflare's script, and it has no password field and loads no keys. It hands the app page a one-time token and sends you back. The server checks the token with Cloudflare, sending the secret and the token and nothing else (not your username or address), and takes each token once. The app page's CSP doesn't change, and a sign-in kept on the browser is dropped after a visit to `/auth`, since Cloudflare's script shared the site's storage there. The first account, invited people, recovery keys, passkeys and app passwords skip the check; the desktop and Android app can't show it yet.
 

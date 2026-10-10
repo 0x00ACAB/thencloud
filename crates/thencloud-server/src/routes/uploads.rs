@@ -59,6 +59,8 @@ struct UploadRow {
     chunk_count: i64,
     if_revision: Option<i64>,
     name_tag: Option<Vec<u8>>,
+    /// A linked storage account the chunks go to instead of this server.
+    account_id: Option<String>,
 }
 
 /// Who is uploading: a signed-in user, or a visitor to an upload-only link.
@@ -81,7 +83,7 @@ async fn load_upload(state: &AppState, id: &str, who: &Uploader<'_>) -> Result<U
     };
     sqlx::query_as(AssertSqlSafe(format!(
         "SELECT id, owner_id, node_id, parent_id, enc_key, enc_metadata, version_id, enc_content_key, \
-         chunk_count, if_revision, name_tag FROM uploads WHERE id = ? AND {filter} AND expires_at > ?"
+         chunk_count, if_revision, name_tag, account_id FROM uploads WHERE id = ? AND {filter} AND expires_at > ?"
     )))
     .bind(id)
     .bind(by)
@@ -211,13 +213,20 @@ pub async fn start(
         return Err(AppError::Conflict("version id already exists".into()));
     }
 
+    // Here, or in the owner's linked extra space (see storage/mod.rs).
+    let place = crate::storage::place_new(
+        state,
+        &owner_id,
+        crate::storage::size_bound(req.chunk_count),
+    )
+    .await?;
     let id = new_uuid();
     let t = now();
     let expires_at = t + state.config.upload_ttl_hours * 3600;
     let res = sqlx::query(
         "INSERT INTO uploads (id, user_id, owner_id, node_id, parent_id, enc_key, enc_metadata, version_id, \
-         enc_content_key, chunk_count, if_revision, created_at, expires_at, link_id, name_tag) \
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+         enc_content_key, chunk_count, if_revision, created_at, expires_at, link_id, name_tag, account_id) \
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
     )
     .bind(&id)
     .bind(&user_id)
@@ -234,6 +243,7 @@ pub async fn start(
     .bind(expires_at)
     .bind(link_id)
     .bind(name_tag)
+    .bind(&place)
     .execute(&state.db)
     .await;
     match res {
@@ -327,15 +337,23 @@ pub async fn store_chunk(
             .fetch_optional(&state.db)
             .await?;
     let delta = body.len() as i64 - old.unwrap_or(0);
-    // Only the owner's own uploads may make room by deleting their old
-    // versions; a visitor to a file drop must not be able to.
-    match who {
-        Uploader::User(_) => charge_or_prune(state, &up.owner_id, delta).await?,
-        Uploader::Link(_) => charge(state, &up.owner_id, delta).await?,
+    // Space in a linked account is the provider's to refuse; space here is
+    // the owner's quota. Only the owner's own uploads may make room by
+    // deleting their old versions; a visitor to a file drop must not be able to.
+    let here = up.account_id.is_none();
+    match (&who, here) {
+        (_, false) => {}
+        (Uploader::User(_), true) => charge_or_prune(state, &up.owner_id, delta).await?,
+        (Uploader::Link(_), true) => charge(state, &up.owner_id, delta).await?,
     }
 
     let recorded = async {
-        state.blobs.put_chunk(&up.version_id, idx, &body).await?;
+        match &up.account_id {
+            None => state.blobs.put_chunk(&up.version_id, idx, &body).await?,
+            Some(account) => {
+                crate::storage::put_remote(state, account, &up.version_id, idx, &body).await?
+            }
+        }
         let mut tx = state.db.begin().await?;
         sqlx::query(
             "INSERT INTO upload_chunks (upload_id, idx, size) VALUES (?, ?, ?) \
@@ -356,7 +374,9 @@ pub async fn store_chunk(
     }
     .await;
     if let Err(e) = recorded {
-        charge(state, &up.owner_id, -delta).await.ok();
+        if here {
+            charge(state, &up.owner_id, -delta).await.ok();
+        }
         return Err(match e {
             AppError::Db(ref d) if is_fk_violation(d) => AppError::NotFound,
             e => e,
@@ -480,7 +500,7 @@ pub async fn publish(
     }
     sqlx::query(
         "INSERT INTO file_versions (id, node_id, enc_content_key, enc_metadata, chunk_count, size, \
-         created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+         created_by, created_at, account_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&up.version_id)
     .bind(&up.node_id)
@@ -490,6 +510,7 @@ pub async fn publish(
     .bind(total)
     .bind(&created_by)
     .bind(t)
+    .bind(&up.account_id)
     .execute(&mut *tx)
     .await?;
     // The previous version stays in the history; drop any beyond the limit.
@@ -501,9 +522,8 @@ pub async fn publish(
         .await?;
     tx.commit().await?;
 
-    for (v, _) in excess {
-        state.blobs.delete_version(&v).await;
-    }
+    let excess: Vec<String> = excess.into_iter().map(|(v, _)| v).collect();
+    crate::storage::delete_versions(state, &excess).await;
     // Files dropped through a link show up when the owner takes them in.
     if !dropped {
         let what = if up.parent_id.is_some() {
@@ -555,14 +575,17 @@ pub async fn discard_link_uploads(state: &AppState, link_ids: &[String]) -> Resu
 /// Remove an unfinished upload, its chunks and its quota charge.
 pub async fn discard(state: &AppState, upload_id: &str) -> Result<()> {
     let mut tx = state.db.begin().await?;
-    let row: Option<(String, String, i64)> =
-        sqlx::query_as("SELECT owner_id, version_id, received_bytes FROM uploads WHERE id = ?")
-            .bind(upload_id)
-            .fetch_optional(&mut *tx)
-            .await?;
-    let Some((owner_id, version_id, bytes)) = row else {
+    let row: Option<(String, String, i64, Option<String>)> = sqlx::query_as(
+        "SELECT owner_id, version_id, received_bytes, account_id FROM uploads WHERE id = ?",
+    )
+    .bind(upload_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    let Some((owner_id, version_id, bytes, account_id)) = row else {
         return Ok(());
     };
+    // Bytes sent to a linked account never counted here.
+    let bytes = if account_id.is_none() { bytes } else { 0 };
     sqlx::query("DELETE FROM uploads WHERE id = ?")
         .bind(upload_id)
         .execute(&mut *tx)
@@ -573,6 +596,6 @@ pub async fn discard(state: &AppState, upload_id: &str) -> Result<()> {
         .execute(&mut *tx)
         .await?;
     tx.commit().await?;
-    state.blobs.delete_version(&version_id).await;
+    crate::storage::delete_versions(state, std::slice::from_ref(&version_id)).await;
     Ok(())
 }

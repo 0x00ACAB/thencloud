@@ -22,6 +22,7 @@
   import { serverOrigin, inApp } from '../../lib/server.svelte.js';
   import FileIcon from '../FileIcon.svelte';
   import FolderIcon from '../FolderIcon.svelte';
+  import StorageSettings from '../StorageSettings.svelte';
   import { ICON_PACKS, hasFolderIcons } from '../../lib/file-icons.svelte.js';
 
   // Preset colour and icon pack names, in the chosen language.
@@ -876,6 +877,8 @@
     <p class="text-xs text-fg-muted">{t('Turning one off only hides it; what you logged stays until you turn it on again.')}</p>
   {/snippet}
   {@render section(t('Modules'), t('Optional parts of thencloud. Which ones are on is saved with your account, so it follows you to other devices.'), modulesBody)}
+
+  <StorageSettings />
 
   {@render section(t('Export your data'), null, exportBody, exportFooter)}
 
