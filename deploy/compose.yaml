@@ -16,7 +16,10 @@ services:
       # Caddy is the only way in, so its X-Forwarded-For can be trusted
       # (it's used for rate-limiting sign-in attempts, never stored).
       THENCLOUD_TRUST_PROXY: "true"
-      # THENCLOUD_ALLOW_REGISTRATION: "false"
+      # Nobody but the first account can sign up until you choose invite
+      # only (or open) in the Admin view. Open lets anyone who finds the
+      # server store files you can't see.
+      THENCLOUD_ALLOW_REGISTRATION: "false"
       # The first account (the admin) needs the setup code printed at first
       # start: docker compose logs thencloud | grep "setup code". Optionally
       # fix its name too:
