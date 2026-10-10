@@ -20,7 +20,7 @@ const bytes = (s) => tc.b64_decode(s);
 const b64 = (b) => tc.b64_encode(b);
 
 // Only the CLI opens these: the browser makes app passwords and never backups.
-const noBinding = new Set(['master-key-app', 'backup']);
+const noBinding = new Set(['master-key-app', 'backup', 'link-token']);
 
 /** Opens a symmetric vector the way the web client does. */
 function openSymmetric(v) {

@@ -38,9 +38,9 @@ async fn find(state: &AppState, token: &str) -> Result<LinkRow> {
     sqlx::query_as(
         "SELECT id, node_id, owner_id, password_hash, expires_at, upload_only, max_opens, enc_link_key \
          FROM public_links \
-         WHERE token = ? AND (expires_at IS NULL OR expires_at > ?)",
+         WHERE token_hash = ? AND (expires_at IS NULL OR expires_at > ?)",
     )
-    .bind(token)
+    .bind(crate::link_tokens::hash(token))
     .bind(now())
     .fetch_optional(&state.db)
     .await?
