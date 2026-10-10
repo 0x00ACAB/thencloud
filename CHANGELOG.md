@@ -8,6 +8,9 @@ the apps (see "Keeping existing data working" in CLAUDE.md).
 
 - **Android:** music keeps playing with the screen off or another app open,
   with a notification, lock screen controls and headphone buttons.
+- **Security:** `--hsts` (`THENCLOUD_HSTS`) sends `Strict-Transport-Security`,
+  so browsers only reach the server over HTTPS. Off by default; the example
+  Caddy setup now sends it.
 
 ## v1.0.0 (2026-10-05)
 
