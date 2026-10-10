@@ -41,7 +41,8 @@ fn chunk_path(root: &Path, version_id: &str, idx: i64) -> PathBuf {
 async fn expected_chunks(db: &SqlitePool) -> Result<Vec<(String, i64, Option<i64>)>> {
     let mut out = Vec::new();
     let versions: Vec<(String, i64)> =
-        sqlx::query_as("SELECT id, chunk_count FROM file_versions ORDER BY id")
+        // Versions kept in a linked account (storage/mod.rs) aren't here.
+        sqlx::query_as("SELECT id, chunk_count FROM file_versions WHERE account_id IS NULL ORDER BY id")
             .fetch_all(db)
             .await?;
     for (id, count) in versions {
@@ -49,7 +50,7 @@ async fn expected_chunks(db: &SqlitePool) -> Result<Vec<(String, i64, Option<i64
     }
     let partial: Vec<(String, i64, i64)> = sqlx::query_as(
         "SELECT u.version_id, c.idx, c.size FROM upload_chunks c JOIN uploads u ON u.id = c.upload_id \
-         ORDER BY u.version_id, c.idx",
+         WHERE u.account_id IS NULL ORDER BY u.version_id, c.idx",
     )
     .fetch_all(db)
     .await?;
@@ -158,24 +159,30 @@ pub struct BackupReport {
     pub missing: Vec<(String, i64)>,
 }
 
-/// Copy `<data dir>/link-token-key` into a directory backup, so the restored
-/// server can still show owners their public links (see link_tokens.rs).
-/// An S3 backup doesn't get it: keeping it apart from the database is the
-/// point. Returns whether there was one to copy.
-pub async fn copy_link_token_key(data_dir: &Path, dest: &BackupDest) -> Result<bool> {
+/// The key files kept outside the database: public-link tokens
+/// (link_tokens.rs) and linked storage accounts' tokens (storage/mod.rs).
+pub const KEY_FILES: [&str; 2] = ["link-token-key", crate::storage::KEY_FILE];
+
+/// Copy the key files in `KEY_FILES` into a directory backup, so the restored
+/// server can still show owners their links and reach linked Drives. An S3
+/// backup doesn't get them: keeping them apart from the database is the
+/// point. Returns whether every one that exists was copied.
+pub async fn copy_key_files(data_dir: &Path, dest: &BackupDest) -> Result<bool> {
     let BackupDest::Dir(dir) = dest else {
         return Ok(false);
     };
-    let from = data_dir.join("link-token-key");
-    if !from.exists() {
-        return Ok(false);
-    }
-    let to = dir.join("link-token-key");
-    tokio::fs::copy(&from, &to).await?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        tokio::fs::set_permissions(&to, std::fs::Permissions::from_mode(0o600)).await?;
+    for name in KEY_FILES {
+        let from = data_dir.join(name);
+        if !from.exists() {
+            continue;
+        }
+        let to = dir.join(name);
+        tokio::fs::copy(&from, &to).await?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            tokio::fs::set_permissions(&to, std::fs::Permissions::from_mode(0o600)).await?;
+        }
     }
     Ok(true)
 }

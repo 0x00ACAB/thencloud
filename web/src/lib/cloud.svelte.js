@@ -330,6 +330,16 @@ export async function logout() {
 export const listSessions = () => api('GET', '/api/sessions');
 /** Daily transfer limits an admin set for us, and today's use. */
 export const myTransfer = () => api('GET', '/api/me/transfer');
+
+// Linked storage (Google Drive): a mirror of your files, or extra space.
+// Only ciphertext goes there; the server does the transfers.
+export const storageInfo = () => api('GET', '/api/storage');
+export const setStoragePrefer = (prefer) => api('PUT', '/api/storage/prefer', { body: { prefer } });
+export const setStorageMode = (id, mode) =>
+  api('PATCH', `/api/storage/accounts/${encodeURIComponent(id)}`, { body: { mode } });
+export const unlinkStorage = (id) => api('DELETE', `/api/storage/accounts/${encodeURIComponent(id)}`);
+/** Google's consent page for linking a Drive as `mode` ('mirror' or 'extra'). */
+export const linkGoogleDrive = (mode) => api('POST', '/api/storage/google', { body: { mode } }).then((r) => r.url);
 export const revokeSession = (id) => api('DELETE', `/api/sessions/${encodeURIComponent(id)}`);
 export const revokeOtherSessions = () => api('DELETE', '/api/sessions');
 

@@ -21,7 +21,7 @@ thencloud assumes the server may be curious or compromised, and tries to make su
 
 ## No analytics
 
-thencloud has no telemetry, tracking or crash reporting, and never will. The web client talks only to your server: its Content Security Policy allows nothing else (no CDNs, fonts or third-party scripts), a server test fails if that policy ever lets another host in, and the browser tests fail if any request goes elsewhere. The server makes no connections of its own, except to an S3 bucket you configure, to Cloudflare if you turn on the [bot check](../host/turnstile.md), and to video sites if an admin turns on the [downloader](../host/downloader.md).
+thencloud has no telemetry, tracking or crash reporting, and never will. The web client talks only to your server: its Content Security Policy allows nothing else (no CDNs, fonts or third-party scripts), a server test fails if that policy ever lets another host in, and the browser tests fail if any request goes elsewhere. The server makes no connections of its own, except to an S3 bucket you configure, to Cloudflare if you turn on the [bot check](../host/turnstile.md), to Google Drive for people who [link theirs](../host/google-drive.md) (only ciphertext goes there), and to video sites if an admin turns on the [downloader](../host/downloader.md).
 
 ## Known limitations
 

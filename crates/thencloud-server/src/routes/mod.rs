@@ -15,6 +15,7 @@ pub mod passkeys;
 pub mod public;
 pub mod sessions;
 pub mod shares;
+pub mod storage;
 pub mod thumbnails;
 pub mod tools;
 pub mod trash;
@@ -237,6 +238,14 @@ pub fn router(state: AppState) -> Router {
         .route("/shares/outgoing", get(shares::outgoing))
         .route("/shares/{id}", patch(shares::update).delete(shares::delete))
         .route("/shares/{id}/key", put(shares::reseal))
+        .route("/storage", get(storage::info))
+        .route("/storage/prefer", put(storage::set_prefer))
+        .route("/storage/google", post(storage::google_start))
+        .route("/storage/google/callback", get(storage::google_callback))
+        .route(
+            "/storage/accounts/{id}",
+            patch(storage::update_account).delete(storage::unlink),
+        )
         .route("/drops", get(drops::list))
         .route("/drops/{id}", delete(drops::discard))
         .route("/drops/{id}/adopt", post(drops::adopt))

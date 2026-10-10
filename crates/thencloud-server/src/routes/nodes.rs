@@ -285,16 +285,19 @@ pub async fn delete(
 /// uploads into it, and release the owner's quota.
 pub async fn delete_subtree(state: &AppState, node_id: &str, owner_id: &str) -> Result<()> {
     let mut tx = state.db.begin().await?;
+    // Sizes count only for versions kept here, not in a linked account.
     let versions: Vec<(String, i64)> = sqlx::query_as(concat!(
         subtree_cte!(),
-        "SELECT v.id, v.size FROM file_versions v JOIN sub ON v.node_id = sub.id"
+        "SELECT v.id, CASE WHEN v.account_id IS NULL THEN v.size ELSE 0 END \
+         FROM file_versions v JOIN sub ON v.node_id = sub.id"
     ))
     .bind(node_id)
     .fetch_all(&mut *tx)
     .await?;
     let uploads: Vec<(String, String, i64)> = sqlx::query_as(concat!(
         subtree_cte!(),
-        "SELECT u.id, u.version_id, u.received_bytes FROM uploads u \
+        "SELECT u.id, u.version_id, CASE WHEN u.account_id IS NULL THEN u.received_bytes ELSE 0 END \
+         FROM uploads u \
          WHERE u.node_id IN (SELECT id FROM sub) OR u.parent_id IN (SELECT id FROM sub)"
     ))
     .bind(node_id)
@@ -325,7 +328,7 @@ pub async fn delete_subtree(state: &AppState, node_id: &str, owner_id: &str) -> 
         .map(|v| v.0)
         .chain(uploads.into_iter().map(|u| u.1))
         .collect();
-    state.blobs.delete_versions(&ids).await;
+    crate::storage::delete_versions(state, &ids).await;
     Ok(())
 }
 
@@ -370,13 +373,7 @@ pub async fn chunk_response(
         return Err(AppError::NotFound);
     }
     transfer::check(state, payer, transfer::Dir::Down).await?;
-    let data = state.blobs.get_chunk(version_id, idx).await.map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            AppError::Internal(format!("blob missing for version {version_id} chunk {idx}"))
-        } else {
-            AppError::Io(e)
-        }
-    })?;
+    let data = crate::storage::get_chunk(state, version_id, idx).await?;
     transfer::add(state, payer, transfer::Dir::Down, data.len() as i64).await?;
     let mut h = HeaderMap::new();
     h.insert(

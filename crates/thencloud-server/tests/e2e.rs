@@ -5167,20 +5167,20 @@ async fn backup_restore_and_check() {
         .unwrap();
     assert_eq!(b.chunks, 2);
     assert!(b.missing.is_empty());
-    // The link-token key goes along, so links can still be shown.
+    // The key files go along, so links can still be shown and linked
+    // Drives still reached.
     let data_dir = h.dir.path().join("data");
-    assert!(
-        maintenance::copy_link_token_key(&data_dir, &dest)
-            .await
-            .unwrap()
-    );
+    assert!(maintenance::copy_key_files(&data_dir, &dest).await.unwrap());
     let maintenance::BackupDest::Dir(d) = &dest else {
         unreachable!()
     };
-    assert_eq!(
-        std::fs::read(d.join("link-token-key")).unwrap(),
-        std::fs::read(data_dir.join("link-token-key")).unwrap()
-    );
+    for name in maintenance::KEY_FILES {
+        assert_eq!(
+            std::fs::read(d.join(name)).unwrap(),
+            std::fs::read(data_dir.join(name)).unwrap(),
+            "{name}"
+        );
+    }
     // A second backup into the same place is refused.
     assert!(
         maintenance::backup(&h.state.db, &h.state.blobs, &dest)
@@ -7486,4 +7486,419 @@ async fn old_link_tokens_are_sealed_at_start() {
         let mode = std::fs::metadata(&key_file).unwrap().permissions().mode();
         assert_eq!(mode & 0o777, 0o600);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Linked storage: a stand-in for Google's OAuth and Drive endpoints
+// ---------------------------------------------------------------------------
+
+mod fake_google {
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    use axum::extract::Request;
+    use axum::http::{Method, StatusCode, header};
+    use axum::response::{IntoResponse, Response};
+    use http_body_util::BodyExt;
+    use tokio::sync::Mutex;
+
+    pub const REFRESH: &str = "1//refresh-SECRET-7f3a91";
+
+    #[derive(Default)]
+    pub struct Drive {
+        /// Files by id: (parents, bytes).
+        pub files: BTreeMap<String, (Vec<String>, Vec<u8>)>,
+        pub access: Option<String>,
+        pub revoked: bool,
+        pub next: u32,
+        /// Total space, for `about`.
+        pub limit: i64,
+    }
+
+    pub type Shared = Arc<Mutex<Drive>>;
+
+    pub async fn spawn() -> (Shared, thencloud_server::storage::google::Endpoints) {
+        let drive: Shared = Arc::new(Mutex::new(Drive {
+            limit: 15 << 30,
+            ..Default::default()
+        }));
+        let app = axum::Router::new().fallback({
+            let drive = drive.clone();
+            move |req: Request| {
+                let drive = drive.clone();
+                async move { handle(drive, req).await }
+            }
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let ep = thencloud_server::storage::google::Endpoints {
+            auth: format!("{url}/auth"),
+            token: format!("{url}/token"),
+            revoke: format!("{url}/revoke"),
+            api: url.clone(),
+            upload: format!("{url}/upload"),
+        };
+        (drive, ep)
+    }
+
+    fn json(v: serde_json::Value) -> Response {
+        ([(header::CONTENT_TYPE, "application/json")], v.to_string()).into_response()
+    }
+
+    async fn handle(drive: Shared, req: Request) -> Response {
+        let (parts, body) = req.into_parts();
+        let body = body.collect().await.unwrap().to_bytes().to_vec();
+        let path = parts.uri.path().to_string();
+        let query = parts.uri.query().unwrap_or("").to_string();
+        let mut d = drive.lock().await;
+        let form = |k: &str| {
+            String::from_utf8_lossy(&body)
+                .split('&')
+                .find_map(|kv| kv.strip_prefix(&format!("{k}=")).map(str::to_string))
+        };
+        match (parts.method.clone(), path.as_str()) {
+            (Method::POST, "/token") => {
+                let ok = match form("grant_type").as_deref() {
+                    Some("authorization_code") => form("code").as_deref() == Some("good-code"),
+                    Some("refresh_token") => {
+                        !d.revoked
+                            && form("refresh_token").is_some_and(|r| r.contains("refresh-SECRET"))
+                    }
+                    _ => false,
+                };
+                if !ok {
+                    return (StatusCode::BAD_REQUEST, r#"{"error":"invalid_grant"}"#)
+                        .into_response();
+                }
+                d.next += 1;
+                let access = format!("access-{}", d.next);
+                d.access = Some(access.clone());
+                json(
+                    serde_json::json!({ "access_token": access, "refresh_token": REFRESH, "expires_in": 3600 }),
+                )
+            }
+            (Method::POST, "/revoke") => {
+                d.revoked = true;
+                StatusCode::OK.into_response()
+            }
+            _ => {
+                let auth = parts
+                    .headers
+                    .get(header::AUTHORIZATION)
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("");
+                if d.access
+                    .as_deref()
+                    .map(|a| format!("Bearer {a}"))
+                    .as_deref()
+                    != Some(auth)
+                {
+                    return StatusCode::UNAUTHORIZED.into_response();
+                }
+                drive_api(&mut d, parts.method, &path, &query, &parts.headers, body)
+            }
+        }
+    }
+
+    fn drive_api(
+        d: &mut Drive,
+        method: Method,
+        path: &str,
+        query: &str,
+        headers: &axum::http::HeaderMap,
+        body: Vec<u8>,
+    ) -> Response {
+        let used: i64 = d.files.values().map(|f| f.1.len() as i64).sum();
+        match (method, path) {
+            (Method::GET, "/drive/v3/about") => json(serde_json::json!({
+                "user": { "emailAddress": "someone@example.com" },
+                "storageQuota": { "limit": d.limit.to_string(), "usage": used.to_string() },
+            })),
+            (Method::POST, "/drive/v3/files") => {
+                d.next += 1;
+                let id = format!("folder-{}", d.next);
+                d.files.insert(id.clone(), (vec![], vec![]));
+                json(serde_json::json!({ "id": id }))
+            }
+            (Method::POST, "/upload/drive/v3/files") => {
+                assert!(query.contains("uploadType=multipart"));
+                let ct = headers.get(header::CONTENT_TYPE).unwrap().to_str().unwrap();
+                let boundary = ct.split("boundary=").nth(1).unwrap();
+                let sep = format!("--{boundary}");
+                // Second part, after its headers, up to the closing boundary.
+                let text = body.clone();
+                let find = |hay: &[u8], n: &[u8], from: usize| {
+                    hay[from..]
+                        .windows(n.len())
+                        .position(|w| w == n)
+                        .map(|p| p + from)
+                };
+                let first = find(&text, sep.as_bytes(), 0).unwrap();
+                let second = find(&text, sep.as_bytes(), first + sep.len()).unwrap();
+                let meta_start = find(&text, b"\r\n\r\n", first).unwrap() + 4;
+                let meta: serde_json::Value =
+                    serde_json::from_slice(&text[meta_start..second - 2]).unwrap();
+                let data_start = find(&text, b"\r\n\r\n", second).unwrap() + 4;
+                let end = find(&text, format!("\r\n{sep}--").as_bytes(), data_start).unwrap();
+                let data = text[data_start..end].to_vec();
+                if used + data.len() as i64 > d.limit {
+                    return (
+                        StatusCode::FORBIDDEN,
+                        r#"{"error":{"errors":[{"reason":"storageQuotaExceeded"}]}}"#,
+                    )
+                        .into_response();
+                }
+                let parents = meta["parents"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|p| p.as_str().unwrap().to_string())
+                    .collect();
+                d.next += 1;
+                let id = format!("file-{}", d.next);
+                d.files.insert(id.clone(), (parents, data));
+                json(serde_json::json!({ "id": id }))
+            }
+            (m, p) if p.starts_with("/drive/v3/files/") => {
+                let id = &p["/drive/v3/files/".len()..];
+                match m {
+                    Method::GET if query.contains("alt=media") => match d.files.get(id) {
+                        Some(f) => f.1.clone().into_response(),
+                        None => StatusCode::NOT_FOUND.into_response(),
+                    },
+                    Method::DELETE => match d.files.remove(id) {
+                        Some(_) => StatusCode::NO_CONTENT.into_response(),
+                        None => StatusCode::NOT_FOUND.into_response(),
+                    },
+                    _ => StatusCode::METHOD_NOT_ALLOWED.into_response(),
+                }
+            }
+            _ => StatusCode::NOT_FOUND.into_response(),
+        }
+    }
+}
+
+/// Link a fake Google Drive the way the web client does: start, then the
+/// browser comes back to the callback with a code and the ticket.
+async fn link_drive(h: &Harness, token: &str, mode: &str) -> StorageAccount {
+    let r = h
+        .raw(
+            Method::POST,
+            "/api/storage/google",
+            Some(token),
+            &[("host", "localhost")],
+            Body::from(json!({ "mode": mode }).to_string()),
+            Some("application/json"),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{r:?}");
+    let url = r.json::<LinkStorageResponse>().url;
+    assert!(url.contains("scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdrive.file"));
+    assert!(
+        url.contains("redirect_uri=http%3A%2F%2Flocalhost%2Fapi%2Fstorage%2Fgoogle%2Fcallback"),
+        "{url}"
+    );
+    let ticket = url.split("state=").nth(1).unwrap();
+    let r = h
+        .raw(
+            Method::GET,
+            &format!("/api/storage/google/callback?code=good-code&state={ticket}"),
+            None,
+            &[],
+            Body::empty(),
+            None,
+        )
+        .await;
+    assert_eq!(
+        r.headers.get("location").unwrap(),
+        "/storage-linked.html#linked"
+    );
+    // The ticket works once.
+    let again = h
+        .raw(
+            Method::GET,
+            &format!("/api/storage/google/callback?code=good-code&state={ticket}"),
+            None,
+            &[],
+            Body::empty(),
+            None,
+        )
+        .await;
+    assert_eq!(
+        again.headers.get("location").unwrap(),
+        "/storage-linked.html#expired"
+    );
+    let info: StorageInfo = h.get("/api/storage", token).await.json();
+    info.accounts.last().unwrap().clone()
+}
+
+async fn storage_harness() -> (Harness, fake_google::Shared) {
+    let (drive, ep) = fake_google::spawn().await;
+    let h = Harness::with_config(|c| {
+        c.google_client_id = Some("client-id".into());
+        c.google_client_secret = Some("client-secret".into());
+        c.google_endpoints = ep;
+    })
+    .await;
+    (h, drive)
+}
+
+/// Extra space: new files go to the linked Drive (when preferred, or once
+/// the server is full), are read back from there, don't count toward the
+/// server quota, and are deleted there with the file. Only ciphertext
+/// reaches Drive, and the database never holds the refresh token.
+#[tokio::test]
+async fn linked_drive_as_extra_space() {
+    let (h, drive) = storage_harness().await;
+    let alice = register(&h, "alice", "pw").await;
+    // Without Google set up, there's nothing to link.
+    let plain = Harness::new().await;
+    let bob = register(&plain, "bob", "pw").await;
+    let info: StorageInfo = plain.get("/api/storage", &bob.token).await.json();
+    assert!(!info.google);
+
+    let a = link_drive(&h, &alice.token, "extra").await;
+    assert_eq!(a.mode, StorageMode::Extra);
+    assert_eq!(a.label.as_deref(), Some("someone@example.com"));
+    assert_eq!(a.free_bytes, Some(15 << 30));
+
+    // The server comes first by default: this stays here.
+    let here = alice
+        .upload(&h, &alice.root, None, "here.txt", MARKER)
+        .await
+        .unwrap();
+    assert!(blob_exists(&h, &here.version.as_ref().unwrap().id));
+    let used_here = alice.me(&h).await.used_bytes;
+
+    // Preferring linked space: the next file goes to Drive.
+    let r = h
+        .call(
+            Method::PUT,
+            "/api/storage/prefer",
+            Some(&alice.token),
+            Some(json!({ "prefer": "linked" })),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    let data: Vec<u8> = [MARKER, &[3u8; 5 << 20][..]].concat();
+    let there = alice
+        .upload(&h, &alice.root, None, "there.bin", &data)
+        .await
+        .unwrap();
+    let vid = there.version.as_ref().unwrap().id.clone();
+    assert!(!blob_exists(&h, &vid));
+    assert_eq!(alice.me(&h).await.used_bytes, used_here);
+    let info: StorageInfo = h.get("/api/storage", &alice.token).await.json();
+    assert!(info.accounts[0].used_bytes > 5 << 20);
+    let root_key = alice.key_of(&h, &alice.root).await;
+    let kids: Vec<Node> = alice.children(&h, &alice.root).await.json();
+    let f = find_by_name(&kids, &root_key, "there.bin");
+    let fk = c::unwrap_node_key(&root_key, &f.enc_key, &f.id).unwrap();
+    assert_eq!(alice.download(&h, f, &fk).await.1, data);
+
+    // Only ciphertext reached Drive, and the refresh token is sealed.
+    {
+        let d = drive.lock().await;
+        assert!(d.files.len() > 2);
+        for (_, bytes) in d.files.values() {
+            assert!(!contains(bytes, MARKER));
+        }
+    }
+    let mut files = Vec::new();
+    all_files(&h.dir.path().join("data"), &mut files);
+    for p in &files {
+        let bytes = std::fs::read(p).unwrap();
+        assert!(
+            !contains(&bytes, fake_google::REFRESH.as_bytes()),
+            "{}",
+            p.display()
+        );
+        assert!(!contains(&bytes, b"someone@example.com"), "{}", p.display());
+    }
+
+    // Unlinking is refused while files live only there.
+    let r = h
+        .call(
+            Method::DELETE,
+            &format!("/api/storage/accounts/{}", a.id),
+            Some(&alice.token),
+            None::<()>,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT);
+
+    // Deleting the file for good deletes its chunks there too.
+    assert_eq!(alice.delete(&h, &there.id).await, StatusCode::NO_CONTENT);
+    let r = h
+        .call(Method::DELETE, "/api/trash", Some(&alice.token), None::<()>)
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    assert_eq!(drive.lock().await.files.len(), 1, "only the folder is left");
+    let info: StorageInfo = h.get("/api/storage", &alice.token).await.json();
+    assert_eq!(info.accounts[0].used_bytes, 0);
+
+    // Now it can go; its token is given back.
+    let r = h
+        .call(
+            Method::DELETE,
+            &format!("/api/storage/accounts/{}", a.id),
+            Some(&alice.token),
+            None::<()>,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    assert!(drive.lock().await.revoked);
+    let info: StorageInfo = h.get("/api/storage", &alice.token).await.json();
+    assert!(info.accounts.is_empty());
+}
+
+/// A mirror gets a copy of everything kept here, filled in the background,
+/// and a chunk missing here is served from it.
+#[tokio::test]
+async fn linked_drive_as_mirror() {
+    let (h, drive) = storage_harness().await;
+    let alice = register(&h, "alice", "pw").await;
+    // A file from before the mirror was linked.
+    let before = alice
+        .upload(&h, &alice.root, None, "before.txt", MARKER)
+        .await
+        .unwrap();
+    let a = link_drive(&h, &alice.token, "mirror").await;
+    assert_eq!(a.mode, StorageMode::Mirror);
+    assert_eq!(a.mirror_done, Some(0));
+    assert!(a.mirror_total.unwrap() > 0);
+    // New files stay on the server.
+    let after = alice
+        .upload(&h, &alice.root, None, "after.txt", b"after")
+        .await
+        .unwrap();
+    assert!(blob_exists(&h, &after.version.as_ref().unwrap().id));
+
+    thencloud_server::storage::run(&h.state).await.unwrap();
+    let info: StorageInfo = h.get("/api/storage", &alice.token).await.json();
+    let m = &info.accounts[0];
+    assert_eq!(m.mirror_done, m.mirror_total);
+    for (_, bytes) in drive.lock().await.files.values() {
+        assert!(!contains(bytes, MARKER));
+    }
+
+    // The server loses a chunk: it's read from the mirror instead.
+    let vid = before.version.as_ref().unwrap().id.clone();
+    std::fs::remove_dir_all(h.dir.path().join("data/blobs").join(&vid[..2]).join(&vid)).unwrap();
+    let root_key = alice.key_of(&h, &alice.root).await;
+    let fk = c::unwrap_node_key(&root_key, &before.enc_key, &before.id).unwrap();
+    assert_eq!(alice.download(&h, &before, &fk).await.1, MARKER);
+
+    // Unlinking a mirror is always allowed, and clears its copies.
+    let r = h
+        .call(
+            Method::DELETE,
+            &format!("/api/storage/accounts/{}", a.id),
+            Some(&alice.token),
+            None::<()>,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    assert!(drive.lock().await.files.is_empty());
 }
