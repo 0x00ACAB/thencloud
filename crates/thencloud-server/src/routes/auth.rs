@@ -69,6 +69,48 @@ const USER_SELECT: &str = "SELECT id, username, auth_hash, kdf_salt, kdf_params,
      enc_private_key, root_node_id, quota_bytes, used_bytes, is_admin, disabled_at, recovery_hash, \
      enc_master_key_recovery, recovery_created_at, totp_secret, totp_created_at, totp_last_step, pq_public_key, enc_pq_private_key FROM users";
 
+/// Failed guesses at an account's secret from all addresses together before
+/// it's locked; from one address, the limiter's own (lower) limit applies.
+const ACCOUNT_ATTEMPTS: u32 = 100;
+
+/// A limiter key for guesses at an account, the failures it allows, and
+/// whether a right guess clears it (the account's keys do, the address's
+/// alone doesn't).
+type Attempt = (String, u32, bool);
+
+/// The limiter keys for guesses at `username`'s `kind` of secret. From one
+/// address the account is locked for that address only, so a stranger can't
+/// keep its owner out; all addresses together get a higher limit. Without
+/// addresses (an onion service) the account's limit is the low one.
+fn attempt_keys(state: &AppState, kind: &str, username: &str, ip: &ClientIp) -> Vec<Attempt> {
+    let low = state.limiter.max();
+    match ip.key() {
+        Some(k) => vec![
+            (format!("{kind}-user:{username}"), ACCOUNT_ATTEMPTS, true),
+            (format!("{kind}-user-ip:{username}:{k}"), low, true),
+            (format!("{kind}-ip:{k}"), low, false),
+        ],
+        None => vec![(format!("{kind}-user:{username}"), low, true)],
+    }
+}
+
+fn attempts_blocked(state: &AppState, keys: &[Attempt]) -> bool {
+    keys.iter()
+        .any(|(k, max, _)| state.limiter.blocked_at(k, *max))
+}
+
+fn attempt_failed(state: &AppState, keys: &[Attempt]) {
+    for (k, _, _) in keys {
+        state.limiter.fail(k);
+    }
+}
+
+fn attempt_succeeded(state: &AppState, keys: &[Attempt]) {
+    for (k, _, _) in keys.iter().filter(|a| a.2) {
+        state.limiter.clear(k);
+    }
+}
+
 async fn user_by_name(state: &AppState, username: &str) -> Result<Option<UserRow>> {
     let sql = format!("{USER_SELECT} WHERE username = ?");
     Ok(sqlx::query_as(AssertSqlSafe(sql))
@@ -241,11 +283,8 @@ pub async fn login(
     // Before the password is looked at, so a bot gets nothing from trying.
     crate::turnstile::check(&state, req.turnstile.as_deref(), &headers).await?;
     let username = req.username.trim().to_lowercase();
-    let (ukey, ikey) = (
-        format!("login-user:{username}"),
-        ip.key().map(|k| format!("login-ip:{k}")),
-    );
-    if state.limiter.blocked(&ukey) || ikey.as_deref().is_some_and(|k| state.limiter.blocked(k)) {
+    let keys = attempt_keys(&state, "login", &username, &ip);
+    if attempts_blocked(&state, &keys) {
         return Err(AppError::RateLimited);
     }
     let user = user_by_name(&state, &username).await?;
@@ -257,14 +296,11 @@ pub async fn login(
     let user = match user {
         Some(u) if ok => u,
         _ => {
-            state.limiter.fail(&ukey);
-            if let Some(k) = &ikey {
-                state.limiter.fail(k);
-            }
+            attempt_failed(&state, &keys);
             return Err(AppError::InvalidCredentials);
         }
     };
-    state.limiter.clear(&ukey);
+    attempt_succeeded(&state, &keys);
     // Only said after a correct password, so it reveals nothing new.
     if user.disabled_at.is_some() {
         return Err(AppError::AccountDisabled);
@@ -515,11 +551,8 @@ async fn verify_recovery(
     auth_key: &B64,
 ) -> Result<UserRow> {
     let username = username.trim().to_lowercase();
-    let (ukey, ikey) = (
-        format!("recovery-user:{username}"),
-        ip.key().map(|k| format!("recovery-ip:{k}")),
-    );
-    if state.limiter.blocked(&ukey) || ikey.as_deref().is_some_and(|k| state.limiter.blocked(k)) {
+    let keys = attempt_keys(state, "recovery", &username, ip);
+    if attempts_blocked(state, &keys) {
         return Err(AppError::RateLimited);
     }
     let user = user_by_name(state, &username).await?;
@@ -530,17 +563,14 @@ async fn verify_recovery(
     let ok = verify_secret(auth_key.0.clone(), hash).await?;
     match user {
         Some(u) if ok && u.enc_master_key_recovery.is_some() => {
-            state.limiter.clear(&ukey);
+            attempt_succeeded(state, &keys);
             if u.disabled_at.is_some() {
                 return Err(AppError::AccountDisabled);
             }
             Ok(u)
         }
         _ => {
-            state.limiter.fail(&ukey);
-            if let Some(k) = &ikey {
-                state.limiter.fail(k);
-            }
+            attempt_failed(state, &keys);
             Err(AppError::InvalidCredentials)
         }
     }

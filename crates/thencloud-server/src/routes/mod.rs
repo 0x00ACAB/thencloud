@@ -58,6 +58,9 @@ User-agent: *\n\
 Disallow: /\n";
 const X_ROBOTS_TAG: &str = "noindex, nofollow, noarchive, noai, noimageai";
 
+/// With `--hsts`: HTTPS only, for two years, subdomains included.
+const HSTS: &str = "max-age=63072000; includeSubDomains";
+
 const AUTH_CSP: &str = "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; \
      frame-src https://challenges.cloudflare.com; connect-src 'self'; img-src 'self'; style-src 'self'; \
      object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
@@ -264,6 +267,7 @@ pub fn router(state: AppState) -> Router {
         .layer(app_cors());
 
     let web = state.config.web_dir.clone();
+    let hsts = state.config.hsts.then(|| HeaderValue::from_static(HSTS));
     let auth_csp = if crate::turnstile::enabled(&state) {
         AUTH_CSP
     } else {
@@ -321,6 +325,10 @@ pub fn router(state: AppState) -> Router {
         .layer(SetResponseHeaderLayer::overriding(
             HeaderName::from_static("cross-origin-opener-policy"),
             HeaderValue::from_static("same-origin"),
+        ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::STRICT_TRANSPORT_SECURITY,
+            move |_: &Response| hsts.clone(),
         ))
         .layer(SetResponseHeaderLayer::overriding(
             HeaderName::from_static("permissions-policy"),

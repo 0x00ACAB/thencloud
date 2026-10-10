@@ -25,4 +25,4 @@ It's one Rust binary with SQLite and a folder of encrypted blobs (or an S3-compa
 
 No key, password or plaintext ever reaches the server. Every feature is built around that, and the test suite checks it: after each end-to-end run it scans the database and blob store for plaintext, and the browser tests fail if any request carries a name, contents, a password or a key.
 
-thencloud is 1.0 and in use with real data. It hasn't had an independent security audit yet.
+thencloud is 1.0 and in use with real data.

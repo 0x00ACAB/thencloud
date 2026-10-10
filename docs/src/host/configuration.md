@@ -10,6 +10,7 @@ Every option is a command-line flag and an environment variable. `thencloud-serv
 | `--data-dir` | `THENCLOUD_DATA_DIR` | `./data`. The SQLite database, and the encrypted blobs unless S3 is configured |
 | `--web-dir` | `THENCLOUD_WEB_DIR` | `./web/dist`, the built web client |
 | `--trust-proxy` | `THENCLOUD_TRUST_PROXY` | `false`. Behind a reverse proxy, take the client's address from the last `X-Forwarded-For` entry. Only turn it on when clients can't reach the server directly. The address is used to rate-limit sign-in attempts and never stored |
+| `--hsts` | `THENCLOUD_HSTS` | `false`. Send `Strict-Transport-Security` (two years, with subdomains), so browsers only reach the server over HTTPS. Turn it on when the server is only served over HTTPS, unless the reverse proxy already sends the header; not for an onion service |
 | `--limit-by-address` | `THENCLOUD_LIMIT_BY_ADDRESS` | `true`. Rate-limit sign-in attempts by address as well as by account. Turn it off for a [Tor onion service](tor.md) |
 
 ## Accounts

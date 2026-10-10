@@ -1323,6 +1323,17 @@ async fn security_headers_are_set() {
         assert!(directives.contains_key(name), "{name} is missing");
     }
     assert_eq!(r.headers.get("cache-control").unwrap(), "no-store");
+    // HSTS only when asked for: an onion service or plain-HTTP localhost
+    // must not send it.
+    assert!(r.headers.get("strict-transport-security").is_none());
+    let https = Harness::with_config(|c| c.hsts = true).await;
+    let r2 = https
+        .raw(Method::GET, "/api/nope", None, &[], Body::empty(), None)
+        .await;
+    assert_eq!(
+        r2.headers.get("strict-transport-security").unwrap(),
+        "max-age=63072000; includeSubDomains"
+    );
     // Browser features the app never uses are off for it and anything in it.
     let pp = r
         .headers
@@ -3216,6 +3227,33 @@ async fn admin_users_registration_and_invites() {
         .unwrap();
     let vid = file.version.as_ref().unwrap().id.clone();
     assert!(blob_exists(&h, &vid));
+    let link: Link = h
+        .call(
+            Method::POST,
+            "/api/links",
+            Some(&bob.token),
+            Some(CreateLinkRequest {
+                node_id: file.id.clone(),
+                password_auth: None,
+                enc_link_key: None,
+                enc_link_secret: None,
+                expires_at: None,
+                upload_only: false,
+                max_opens: None,
+            }),
+        )
+        .await
+        .json();
+    let public = format!("/api/public/{}", link.token);
+    let open_link = || {
+        let (h, public) = (&h, public.clone());
+        async move {
+            h.raw(Method::GET, &public, None, &[], Body::empty(), None)
+                .await
+                .status
+        }
+    };
+    assert_eq!(open_link().await, StatusCode::OK);
     let u: AdminUser = h
         .call(
             Method::PATCH,
@@ -3248,6 +3286,8 @@ async fn admin_users_registration_and_invites() {
         login(&h, "bob", "nope").await.err().unwrap().status,
         StatusCode::UNAUTHORIZED
     );
+    // A disabled account's public links stop working, and come back with it.
+    assert_eq!(open_link().await, StatusCode::NOT_FOUND);
     h.call(
         Method::PATCH,
         &format!("/api/admin/users/{bob_id}"),
@@ -3256,6 +3296,7 @@ async fn admin_users_registration_and_invites() {
     )
     .await;
     let bob = login(&h, "bob", "bob's password").await.ok().unwrap();
+    assert_eq!(open_link().await, StatusCode::OK);
 
     // Admins can't lock themselves out.
     for body in [json!({"disabled": true}), json!({"is_admin": false})] {
@@ -4244,6 +4285,24 @@ async fn two_factor_sign_in_with_totp_and_passkeys() {
         finish(&t2.ticket, Some(next), None).await.error(),
         "invalid_second_factor"
     );
+    // Three wrong codes use the ticket up: guessing more means the password
+    // again.
+    for _ in 0..2 {
+        let wrong = format!(
+            "{:06}",
+            (code(step()).parse::<u32>().unwrap() + 1) % 1_000_000
+        );
+        assert_eq!(
+            finish(&t2.ticket, Some(wrong), None).await.error(),
+            "invalid_second_factor"
+        );
+    }
+    assert_eq!(
+        finish(&t2.ticket, Some(code(step() + 1)), None)
+            .await
+            .error(),
+        "sign_in_expired"
+    );
 
     // --- passkeys ------------------------------------------------------------
     let mut key = SoftPasskey::new(false);
@@ -5167,6 +5226,71 @@ async fn backup_restore_and_check() {
             assert!(!contains(&bytes, n), "plaintext in {}", p.display());
         }
     }
+}
+
+/// Failed sign-ins lock out that account from that address only, so
+/// anyone can't keep the owner out by guessing. Guesses from many addresses
+/// still hit a higher limit for the account; with no addresses to tell
+/// apart (an onion service) the account limit is the low one.
+#[tokio::test]
+async fn failed_sign_ins_lock_out_the_guesser_not_the_owner() {
+    async fn attempt(h: &Harness, key: &Key, from: &str) -> StatusCode {
+        let body = serde_json::to_vec(&LoginRequest {
+            turnstile: None,
+            username: "dave".into(),
+            auth_key: B64(key.as_bytes().to_vec()),
+            device_name: None,
+        })
+        .unwrap();
+        h.raw(
+            Method::POST,
+            "/api/auth/login",
+            None,
+            &[("x-forwarded-for", from)],
+            Body::from(body),
+            Some("application/json"),
+        )
+        .await
+        .status
+    }
+    let h = Harness::with_config(|c| c.trust_proxy = true).await;
+    register(&h, "dave", "pw").await;
+    let good = auth_of(&h, "dave", "pw").await;
+    let bad = Key::generate();
+    for _ in 0..10 {
+        assert_eq!(
+            attempt(&h, &bad, "203.0.113.5").await,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+    assert_eq!(
+        attempt(&h, &good, "203.0.113.5").await,
+        StatusCode::TOO_MANY_REQUESTS
+    );
+    assert_eq!(attempt(&h, &good, "198.51.100.7").await, StatusCode::OK);
+
+    // Spread over many addresses, guesses still run out for the account.
+    for i in 0..100 {
+        attempt(&h, &bad, &format!("192.0.2.{i}")).await;
+    }
+    assert_eq!(
+        attempt(&h, &good, "198.51.100.8").await,
+        StatusCode::TOO_MANY_REQUESTS
+    );
+
+    let onion = Harness::with_config(|c| c.limit_by_address = false).await;
+    register(&onion, "dave", "pw").await;
+    let good = auth_of(&onion, "dave", "pw").await;
+    for _ in 0..10 {
+        assert_eq!(
+            attempt(&onion, &bad, "203.0.113.5").await,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+    assert_eq!(
+        attempt(&onion, &good, "198.51.100.7").await,
+        StatusCode::TOO_MANY_REQUESTS
+    );
 }
 
 #[tokio::test]
@@ -7102,6 +7226,88 @@ async fn the_first_account_needs_the_setup_code() {
         .await
         .unwrap();
     assert_eq!(admins, ["bob"]);
+}
+
+/// Overwriting a chunk charges the difference from its old size. Many
+/// overwrites of one chunk at once must not each subtract the old size, or
+/// the quota could be pushed down to nothing.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_chunk_overwrites_keep_the_quota_right() {
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "pw").await;
+    let root_key = alice.key_of(&h, &alice.root).await;
+    let used = alice.me(&h).await.used_bytes;
+
+    let (id, k) = (c::new_id(), Key::generate());
+    let (vid, ck) = (c::new_id(), Key::generate());
+    let up: UploadResponse = h
+        .call(
+            Method::POST,
+            "/api/uploads",
+            Some(&alice.token),
+            Some(CreateUploadRequest {
+                node_id: id.clone(),
+                parent_id: Some(alice.root.clone()),
+                enc_key: Some(B64(c::wrap_node_key(&root_key, &k, &id))),
+                enc_metadata: B64(c::encrypt_metadata(&k, &id, &meta("big.bin", 1)).unwrap()),
+                version_id: vid.clone(),
+                enc_content_key: B64(c::wrap_content_key(&k, &ck, &id, &vid)),
+                chunk_count: 1,
+                if_revision: None,
+                name_tag: None,
+            }),
+        )
+        .await
+        .json();
+    let uri = format!("/api/uploads/{}/chunks/0", up.upload_id);
+    let put = |len: usize| {
+        let (app, uri, token) = (h.app.clone(), uri.clone(), alice.token.clone());
+        async move {
+            let req = Request::builder()
+                .method(Method::PUT)
+                .uri(uri)
+                .header("authorization", format!("Bearer {token}"))
+                .header("content-type", "application/octet-stream")
+                .body(Body::from(vec![7u8; len]))
+                .unwrap();
+            app.oneshot(req).await.unwrap().status()
+        }
+    };
+    assert_eq!(put(1 << 20).await, StatusCode::NO_CONTENT);
+    assert_eq!(alice.me(&h).await.used_bytes, used + (1 << 20));
+
+    let tasks: Vec<_> = (0..20).map(|_| tokio::spawn(put(100))).collect();
+    for t in tasks {
+        assert_eq!(t.await.unwrap(), StatusCode::NO_CONTENT);
+    }
+    assert_eq!(alice.me(&h).await.used_bytes, used + 100);
+    let received: i64 = sqlx::query_scalar("SELECT received_bytes FROM uploads WHERE id = ?")
+        .bind(&up.upload_id)
+        .fetch_one(&h.state.db)
+        .await
+        .unwrap();
+    assert_eq!(received, 100);
+}
+
+/// A server error says what kind of thing went wrong, not the details,
+/// which go to the log.
+#[tokio::test]
+async fn server_errors_keep_their_details_to_the_log() {
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "pw").await;
+    let file = alice
+        .upload(&h, &alice.root, None, "a.txt", b"hello")
+        .await
+        .unwrap();
+    let vid = file.version.as_ref().unwrap().id.clone();
+    std::fs::remove_dir_all(h.dir.path().join("data/blobs").join(&vid[..2]).join(&vid)).unwrap();
+    let r = h
+        .get(&format!("/api/nodes/{}/chunks/0", file.id), &alice.token)
+        .await;
+    assert_eq!(r.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(r.error(), "internal");
+    let body = String::from_utf8_lossy(&r.body);
+    assert!(!body.contains(&vid), "{body}");
 }
 
 /// A request whose body stops arriving is cut off instead of holding its
