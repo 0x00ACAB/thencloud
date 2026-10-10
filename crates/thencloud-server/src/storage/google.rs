@@ -265,6 +265,38 @@ impl Google {
         .await
     }
 
+    /// The files in `folder`: `(id, size)`.
+    pub async fn list(&self, access: &str, folder: &str) -> DriveResult<Vec<(String, u64)>> {
+        let q = format!(
+            "'{}' in parents and trashed = false",
+            folder.replace(['\\', '\''], "")
+        );
+        let mut out = Vec::new();
+        let mut page: Option<String> = None;
+        loop {
+            let mut url = format!(
+                "{}/drive/v3/files?q={}&fields=nextPageToken,files(id,size)&pageSize=1000",
+                self.ep.api,
+                enc(&q)
+            );
+            if let Some(p) = &page {
+                url.push_str(&format!("&pageToken={}", enc(p)));
+            }
+            let auth = bearer(access);
+            let l: ListAnswer = self
+                .call(move |agent| agent.get(&url).header("Authorization", auth).call())
+                .await?;
+            out.extend(l.files.into_iter().map(|f| {
+                let size = f.size.and_then(|s| s.parse().ok()).unwrap_or(0);
+                (f.id, size)
+            }));
+            match l.next_page_token {
+                Some(p) if !p.is_empty() => page = Some(p),
+                _ => return Ok(out),
+            }
+        }
+    }
+
     /// Delete a file; one that's already gone counts as deleted.
     pub async fn delete(&self, access: &str, id: &str) -> DriveResult<()> {
         let url = format!("{}/drive/v3/files/{}", self.ep.api, enc(id));
@@ -388,6 +420,21 @@ struct TokenAnswer {
 #[derive(Deserialize)]
 struct FileAnswer {
     id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ListAnswer {
+    next_page_token: Option<String>,
+    #[serde(default)]
+    files: Vec<ListedFile>,
+}
+
+#[derive(Deserialize)]
+struct ListedFile {
+    id: String,
+    /// Drive sends sizes as strings.
+    size: Option<String>,
 }
 
 #[derive(Deserialize)]

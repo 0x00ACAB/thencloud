@@ -1285,6 +1285,11 @@ pub struct StorageAccount {
     /// many of those it has.
     pub mirror_total: Option<i64>,
     pub mirror_done: Option<i64>,
+    /// Bytes of file versions kept only there (none in a mirror until it
+    /// was switched from extra space). These come back here before the
+    /// account can be unlinked.
+    #[serde(default)]
+    pub only_there: i64,
 }
 
 /// `POST /api/storage/google`: start linking.
@@ -1303,6 +1308,26 @@ pub struct LinkStorageResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateStorageAccountRequest {
     pub mode: StorageMode,
+}
+
+/// `POST /api/storage/accounts/{id}/move`: move a batch of file versions
+/// between this server and a linked account (`Linked` only for extra space).
+/// Call again while `left` is above zero.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MoveStorageRequest {
+    pub to: StoragePrefer,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MoveStorageResponse {
+    /// Versions moved by this call, and their bytes.
+    pub moved: u32,
+    pub moved_bytes: i64,
+    /// Versions still to move, and their bytes.
+    pub left: i64,
+    pub left_bytes: i64,
+    /// Moving stopped because the destination is full.
+    pub full: bool,
 }
 
 /// `PUT /api/storage/prefer`.

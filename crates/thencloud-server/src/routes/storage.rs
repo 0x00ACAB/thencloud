@@ -1,6 +1,6 @@
 //! Linked storage accounts (see storage/mod.rs): list them, link Google
-//! Drive through its consent page, change what one is for, unlink it, and
-//! say where new files go first.
+//! Drive through its consent page, change what one is for, move files to
+//! or from it, unlink it, and say where new files go first.
 //!
 //! Linking happens in a popup the web client opens on Google's page, so
 //! the app (and the keys it holds in memory) stays where it is. Google sends
@@ -55,6 +55,7 @@ pub async fn info(State(state): State<AppState>, user: AuthUser) -> Result<Json<
         } else {
             (None, None)
         };
+        let only_there = storage::only_there(&state.db, &a.id).await?;
         accounts.push(StorageAccount {
             label: a
                 .enc_label
@@ -69,6 +70,7 @@ pub async fn info(State(state): State<AppState>, user: AuthUser) -> Result<Json<
             created_at: a.created_at,
             mirror_total,
             mirror_done,
+            only_there,
         });
     }
     Ok(Json(StorageInfo {
@@ -261,6 +263,24 @@ pub async fn unlink(
     let a = own_account(&state, &user, &id).await?;
     storage::unlink(&state, &a).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Move a batch of files between this server and the account.
+pub async fn move_files(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<String>,
+    Json(req): Json<MoveStorageRequest>,
+) -> Result<Json<MoveStorageResponse>> {
+    let a = own_account(&state, &user, &id).await?;
+    let m = storage::move_batch(&state, &a, req.to == StoragePrefer::Server).await?;
+    Ok(Json(MoveStorageResponse {
+        moved: m.versions,
+        moved_bytes: m.bytes,
+        left: m.left,
+        left_bytes: m.left_bytes,
+        full: m.full,
+    }))
 }
 
 pub async fn set_prefer(

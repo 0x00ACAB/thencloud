@@ -7542,6 +7542,22 @@ mod fake_google {
         (drive, ep)
     }
 
+    fn percent_decode(s: &str) -> String {
+        let b = s.as_bytes();
+        let mut out = Vec::new();
+        let mut i = 0;
+        while i < b.len() {
+            if b[i] == b'%' {
+                out.push(u8::from_str_radix(&s[i + 1..i + 3], 16).unwrap());
+                i += 3;
+            } else {
+                out.push(b[i]);
+                i += 1;
+            }
+        }
+        String::from_utf8(out).unwrap()
+    }
+
     fn json(v: serde_json::Value) -> Response {
         ([(header::CONTENT_TYPE, "application/json")], v.to_string()).into_response()
     }
@@ -7615,6 +7631,21 @@ mod fake_google {
                 "user": { "emailAddress": "someone@example.com" },
                 "storageQuota": { "limit": d.limit.to_string(), "usage": used.to_string() },
             })),
+            (Method::GET, "/drive/v3/files") => {
+                let q = query
+                    .split('&')
+                    .find_map(|kv| kv.strip_prefix("q="))
+                    .unwrap();
+                let q = percent_decode(q);
+                let parent = q.split('\'').nth(1).unwrap().to_string();
+                let files: Vec<serde_json::Value> = d
+                    .files
+                    .iter()
+                    .filter(|(_, f)| f.0.contains(&parent))
+                    .map(|(id, f)| serde_json::json!({ "id": id, "size": f.1.len().to_string() }))
+                    .collect();
+                json(serde_json::json!({ "files": files }))
+            }
             (Method::POST, "/drive/v3/files") => {
                 d.next += 1;
                 let id = format!("folder-{}", d.next);
@@ -7901,4 +7932,154 @@ async fn linked_drive_as_mirror() {
         .await;
     assert_eq!(r.status, StatusCode::NO_CONTENT);
     assert!(drive.lock().await.files.is_empty());
+}
+
+/// Files move between the server and extra space both ways, a batch at a
+/// time; moving home stops when the server is full; `check` covers the
+/// linked account; and once everything is home the account can go.
+#[tokio::test]
+async fn moving_files_between_server_and_drive() {
+    use thencloud_server::maintenance;
+    let (h, drive) = storage_harness().await;
+    let alice = register(&h, "alice", "pw").await;
+    let a = link_drive(&h, &alice.token, "extra").await;
+    let big: Vec<u8> = [MARKER, &[7u8; 3 << 20][..]].concat();
+    let one = alice
+        .upload(&h, &alice.root, None, "one.txt", MARKER)
+        .await
+        .unwrap();
+    let two = alice
+        .upload(&h, &alice.root, None, "two.bin", &big)
+        .await
+        .unwrap();
+    let used_before = alice.me(&h).await.used_bytes;
+    assert!(used_before > 3 << 20);
+    let move_to = |to: &'static str| {
+        let (h, token, id) = (&h, alice.token.clone(), a.id.clone());
+        async move {
+            let r = h
+                .call(
+                    Method::POST,
+                    &format!("/api/storage/accounts/{id}/move"),
+                    Some(&token),
+                    Some(json!({ "to": to })),
+                )
+                .await;
+            assert_eq!(r.status, StatusCode::OK, "{r:?}");
+            r.json::<MoveStorageResponse>()
+        }
+    };
+
+    // Everything goes to Drive: nothing is kept or counted here.
+    let m = move_to("linked").await;
+    assert_eq!((m.moved, m.left, m.full), (2, 0, false));
+    for f in [&one, &two] {
+        assert!(!blob_exists(&h, &f.version.as_ref().unwrap().id));
+    }
+    assert_eq!(alice.me(&h).await.used_bytes, 0);
+    let info: StorageInfo = h.get("/api/storage", &alice.token).await.json();
+    assert_eq!(info.accounts[0].only_there, used_before);
+    for (_, bytes) in drive.lock().await.files.values() {
+        assert!(!contains(bytes, MARKER));
+    }
+    let root_key = alice.key_of(&h, &alice.root).await;
+    let fk = c::unwrap_node_key(&root_key, &two.enc_key, &two.id).unwrap();
+    assert_eq!(alice.download(&h, &two, &fk).await.1, big);
+
+    // `check` is happy with both places...
+    let r = maintenance::check(&h.state.db, &h.state.blobs)
+        .await
+        .unwrap();
+    assert!(r.is_ok(), "{r:?}");
+    let linked = thencloud_server::storage::check(&h.state).await.unwrap();
+    assert_eq!(linked.len(), 1);
+    assert!(linked[0].is_ok(), "{linked:?}");
+    assert!(linked[0].chunks >= 2);
+    // ...and notices a chunk that went missing there.
+    {
+        let mut d = drive.lock().await;
+        let gone = d
+            .files
+            .iter()
+            .find(|(_, f)| !f.1.is_empty())
+            .map(|(id, _)| id.clone())
+            .unwrap();
+        let kept = d.files.remove(&gone).unwrap();
+        drop(d);
+        let linked = thencloud_server::storage::check(&h.state).await.unwrap();
+        assert_eq!(linked[0].missing.len(), 1, "{linked:?}");
+        drive.lock().await.files.insert(gone, kept);
+    }
+
+    // Unlinking is refused while files are kept only there.
+    let r = h
+        .call(
+            Method::DELETE,
+            &format!("/api/storage/accounts/{}", a.id),
+            Some(&alice.token),
+            None::<()>,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::CONFLICT);
+
+    // Bringing them home stops once the server is full...
+    sqlx::query("UPDATE users SET quota_bytes = ? WHERE username = 'alice'")
+        .bind(1 << 20)
+        .execute(&h.state.db)
+        .await
+        .unwrap();
+    let m = move_to("server").await;
+    assert!(m.full);
+    assert_eq!((m.moved, m.left), (1, 1));
+    assert!(blob_exists(&h, &one.version.as_ref().unwrap().id));
+    // ...and goes on once there's room.
+    sqlx::query("UPDATE users SET quota_bytes = ? WHERE username = 'alice'")
+        .bind(1i64 << 30)
+        .execute(&h.state.db)
+        .await
+        .unwrap();
+    let m = move_to("server").await;
+    assert_eq!((m.moved, m.left, m.full), (1, 0, false));
+    assert_eq!(alice.me(&h).await.used_bytes, used_before);
+    assert_eq!(alice.download(&h, &two, &fk).await.1, big);
+    assert_eq!(drive.lock().await.files.len(), 1, "only the folder is left");
+    let info: StorageInfo = h.get("/api/storage", &alice.token).await.json();
+    assert_eq!(
+        (info.accounts[0].only_there, info.accounts[0].used_bytes),
+        (0, 0)
+    );
+    let r = maintenance::check(&h.state.db, &h.state.blobs)
+        .await
+        .unwrap();
+    assert!(r.is_ok(), "{r:?}");
+
+    // A mirror takes no files of its own.
+    let r = h
+        .call(
+            Method::PATCH,
+            &format!("/api/storage/accounts/{}", a.id),
+            Some(&alice.token),
+            Some(json!({ "mode": "mirror" })),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    let r = h
+        .call(
+            Method::POST,
+            &format!("/api/storage/accounts/{}/move", a.id),
+            Some(&alice.token),
+            Some(json!({ "to": "linked" })),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+
+    let r = h
+        .call(
+            Method::DELETE,
+            &format!("/api/storage/accounts/{}", a.id),
+            Some(&alice.token),
+            None::<()>,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
 }

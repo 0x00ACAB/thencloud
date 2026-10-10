@@ -184,6 +184,31 @@ async fn check(config: Config) -> Result<ExitCode, Box<dyn std::error::Error + S
         }
         ok &= r.is_ok();
     }
+    for c in thencloud_server::storage::check(&state).await? {
+        println!(
+            "In linked account {} ({}, of user {}): {} chunks",
+            c.account_id, c.mode, c.user_id, c.chunks
+        );
+        if let Some(e) = &c.unreachable {
+            println!("  couldn't list it: {e}");
+        }
+        for (version, idx) in &c.missing {
+            println!("  missing: {version}/{idx}");
+        }
+        for (what, expected, found) in &c.wrong_size {
+            println!("  wrong size: {what} (expected {expected} bytes, found {found})");
+        }
+        for version in &c.incomplete {
+            println!("  kept only there, but chunks aren't recorded: {version}");
+        }
+        if c.unknown > 0 {
+            println!("  {} files there that nothing refers to", c.unknown);
+        }
+        if c.is_ok() {
+            println!("  Everything the database expects there is there.");
+        }
+        ok &= c.is_ok();
+    }
     Ok(if ok {
         ExitCode::SUCCESS
     } else {

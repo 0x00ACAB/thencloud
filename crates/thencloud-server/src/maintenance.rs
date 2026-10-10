@@ -335,9 +335,11 @@ impl CheckReport {
 /// Check every chunk the database expects against the blob store.
 pub async fn check(db: &SqlitePool, blobs: &BlobStore) -> Result<CheckReport> {
     let mut report = CheckReport::default();
-    let totals: Vec<(String, i64)> = sqlx::query_as("SELECT id, size FROM file_versions")
-        .fetch_all(db)
-        .await?;
+    // Versions kept in a linked account aren't here (see `storage::check`).
+    let totals: Vec<(String, i64)> =
+        sqlx::query_as("SELECT id, size FROM file_versions WHERE account_id IS NULL")
+            .fetch_all(db)
+            .await?;
     let totals: std::collections::HashMap<String, i64> = totals.into_iter().collect();
     report.versions = totals.len() as u64;
 
