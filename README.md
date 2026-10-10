@@ -32,7 +32,7 @@ Files, folder names and keys are encrypted and decrypted **in your browser**. Th
   <img src=".github/assets/screenshot-light.png" alt="The thencloud file browser: folders and files in My files, with storage use and an end-to-end encrypted note in the sidebar">
 </picture>
 
-> **Status:** 1.0, in use. A complete file cloud: accounts, folders, versions, sharing and public links, with a web app, desktop and Android apps and a command line. It hasn't had an independent security audit yet. See [CHANGELOG.md](CHANGELOG.md) and [MILESTONES.md](MILESTONES.md).
+> **Status:** 1.0, in use. A complete file cloud: accounts, folders, versions, sharing and public links, with a web app, desktop and Android apps and a command line. See [CHANGELOG.md](CHANGELOG.md) and [MILESTONES.md](MILESTONES.md).
 
 ## Features
 
@@ -111,7 +111,7 @@ Every flag can also be set as an environment variable.
 | `--s3-snapshots-kept` | `THENCLOUD_S3_SNAPSHOTS_KEPT` | `7` (older database snapshots are deleted) |
 | `--web-dir` | `THENCLOUD_WEB_DIR` | `./web/dist` (the built web client) |
 | `--admin-username` | `THENCLOUD_ADMIN_USERNAME` | unset. The name the first account (the admin) must have; it also needs the setup code from the log |
-| `--allow-registration` | `THENCLOUD_ALLOW_REGISTRATION` | `true` (the first user can always register, with the setup code, and becomes an admin). Admins can switch between open, invite-only and closed at runtime in the Admin view, which overrides this |
+| `--allow-registration` | `THENCLOUD_ALLOW_REGISTRATION` | `true` (the first user can always register, with the setup code, and becomes an admin). Admins can switch between open, invite-only and closed at runtime in the Admin view, which overrides this. Open means anyone who finds the server gets an account and the default quota, and you can't see what they store; the server warns at start while it's open |
 | `--default-quota` | `THENCLOUD_DEFAULT_QUOTA` | 10 GiB |
 | `--session-days` | `THENCLOUD_SESSION_DAYS` | `30` |
 | `--max-versions` | `THENCLOUD_MAX_VERSIONS` | `10` (versions kept per file, including the current one) |
@@ -122,6 +122,8 @@ Every flag can also be set as an environment variable.
 | `--ffmpeg` | `THENCLOUD_FFMPEG` | `ffmpeg` (lets the downloader merge separate video and audio, which most YouTube videos need) |
 | `--downloader-max-bytes` | `THENCLOUD_DOWNLOADER_MAX_BYTES` | `2147483648` (2 GiB per video) |
 | `--trust-proxy` | `THENCLOUD_TRUST_PROXY` | `false`. Behind a reverse proxy, take the client's address from `X-Forwarded-For` (used only to rate-limit sign-in attempts, never stored). Only turn it on when clients can't reach the server directly |
+| `--hsts` | `THENCLOUD_HSTS` | `false`. Send `Strict-Transport-Security` (two years, with subdomains), so browsers only reach the server over HTTPS. Turn it on when the server is only served over HTTPS, unless the reverse proxy already sends the header; not for an onion service |
+| `--public-origin` | `THENCLOUD_PUBLIC_ORIGIN` | unset. The address people open the server at, e.g. `https://cloud.example.com` (comma-separated for several). When set, passkeys only work from pages at one of these, so a passkey made on any other site is refused |
 | `--metrics-token` | `THENCLOUD_METRICS_TOKEN` | unset. When set, `GET /api/metrics` serves Prometheus metrics (the counts in the admin view) to requests with `Authorization: Bearer <token>` |
 
 `GET /api/health` answers `200 ok` while the database and data directory are available, and `503` otherwise. It needs no sign-in.

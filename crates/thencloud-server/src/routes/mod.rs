@@ -32,6 +32,7 @@ use thencloud_crypto::MAX_ENCRYPTED_CHUNK;
 use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
 use tower_http::set_header::SetResponseHeaderLayer;
+use tower_http::timeout::RequestBodyTimeoutLayer;
 use tower_http::trace::TraceLayer;
 
 use crate::AppState;
@@ -57,9 +58,22 @@ User-agent: *\n\
 Disallow: /\n";
 const X_ROBOTS_TAG: &str = "noindex, nofollow, noarchive, noai, noimageai";
 
+/// With `--hsts`: HTTPS only, for two years, subdomains included.
+const HSTS: &str = "max-age=63072000; includeSubDomains";
+
 const AUTH_CSP: &str = "default-src 'self'; script-src 'self' https://challenges.cloudflare.com; \
      frame-src https://challenges.cloudflare.com; connect-src 'self'; img-src 'self'; style-src 'self'; \
      object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'";
+
+/// Browser features the app never uses, turned off for it and anything it
+/// shows. Fullscreen (the video player) and passkeys keep their defaults.
+const PERMISSIONS_POLICY: &str = "camera=(), microphone=(), geolocation=(), usb=(), serial=(), hid=(), \
+     bluetooth=(), payment=(), browsing-topics=()";
+
+/// How long a request body may take to arrive. A 4 MiB chunk takes about
+/// two minutes at 256 kbit/s; a client that stalls longer gives up its
+/// connection and buffer.
+const BODY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 
 /// Origins of the desktop and Android apps (`crates/thencloud-app`), which
 /// bundle the web client instead of loading it from here: `tauri://localhost`
@@ -253,6 +267,7 @@ pub fn router(state: AppState) -> Router {
         .layer(app_cors());
 
     let web = state.config.web_dir.clone();
+    let hsts = state.config.hsts.then(|| HeaderValue::from_static(HSTS));
     let auth_csp = if crate::turnstile::enabled(&state) {
         AUTH_CSP
     } else {
@@ -311,7 +326,16 @@ pub fn router(state: AppState) -> Router {
             HeaderName::from_static("cross-origin-opener-policy"),
             HeaderValue::from_static("same-origin"),
         ))
+        .layer(SetResponseHeaderLayer::if_not_present(
+            header::STRICT_TRANSPORT_SECURITY,
+            move |_: &Response| hsts.clone(),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            HeaderName::from_static("permissions-policy"),
+            HeaderValue::from_static(PERMISSIONS_POLICY),
+        ))
         .layer(middleware::from_fn(cache_control))
+        .layer(RequestBodyTimeoutLayer::new(BODY_TIMEOUT))
         .layer(TraceLayer::new_for_http())
         .with_state(state)
 }
