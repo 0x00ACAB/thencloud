@@ -14,6 +14,7 @@ use crate::AppState;
 use crate::access::{self, Access};
 use crate::auth::AuthUser;
 use crate::error::{AppError, Result};
+use crate::link_tokens;
 use crate::routes::shares::NodeFilter;
 use crate::util::*;
 
@@ -81,12 +82,20 @@ pub async fn create(
         opens: 0,
         enc_link_secret: req.enc_link_secret.clone(),
     };
+    // Only the token's hash and a sealed copy are kept (see link_tokens.rs).
     sqlx::query(
-        "INSERT INTO public_links (id, token, node_id, owner_id, password_hash, expires_at, created_at, \
-         upload_only, max_opens, enc_link_key, enc_link_secret) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO public_links (id, token, token_hash, enc_token, node_id, owner_id, password_hash, \
+         expires_at, created_at, upload_only, max_opens, enc_link_key, enc_link_secret) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&link.id)
-    .bind(&link.token)
+    .bind(link_tokens::placeholder(&link.id))
+    .bind(link_tokens::hash(&link.token))
+    .bind(thencloud_crypto::seal_link_token(
+        &state.link_token_key,
+        &link.token,
+        &link.id,
+    ))
     .bind(&link.node_id)
     .bind(&user.id)
     .bind(password_hash)
@@ -105,6 +114,7 @@ pub async fn create(
 struct LinkRow {
     id: String,
     token: String,
+    enc_token: Option<Vec<u8>>,
     node_id: String,
     has_password: bool,
     expires_at: Option<i64>,
@@ -121,7 +131,7 @@ pub async fn list(
     Query(f): Query<NodeFilter>,
 ) -> Result<Json<Vec<Link>>> {
     let rows: Vec<LinkRow> = sqlx::query_as(
-        "SELECT id, token, node_id, password_hash IS NOT NULL AS has_password, expires_at, created_at, upload_only, \
+        "SELECT id, token, enc_token, node_id, password_hash IS NOT NULL AS has_password, expires_at, created_at, upload_only, \
          max_opens, opens, enc_link_secret FROM public_links \
          WHERE owner_id = ? AND (? IS NULL OR node_id = ?) ORDER BY created_at",
     )
@@ -140,8 +150,16 @@ pub async fn list(
         visible
             .into_iter()
             .map(|r| Link {
+                // Without the key file (lost in a restore), the token can't
+                // be shown; the link itself still opens.
+                token: match &r.enc_token {
+                    Some(sealed) => {
+                        thencloud_crypto::open_link_token(&state.link_token_key, sealed, &r.id)
+                            .unwrap_or_default()
+                    }
+                    None => r.token,
+                },
                 id: r.id,
-                token: r.token,
                 node_id: r.node_id,
                 has_password: r.has_password,
                 expires_at: r.expires_at,

@@ -13,6 +13,7 @@ pub mod downloader;
 pub mod error;
 pub mod janitor;
 pub mod limiter;
+pub mod link_tokens;
 pub mod maintenance;
 pub mod routes;
 pub mod s3;
@@ -39,6 +40,8 @@ pub struct AppState {
     pub config: Arc<Config>,
     /// Server-side secret for HMACs (fake prelogin salts, link tokens).
     pub secret: Arc<[u8; 32]>,
+    /// Seals public-link tokens; kept outside the database (link_tokens.rs).
+    pub link_token_key: Arc<thencloud_crypto::Key>,
     pub limiter: Arc<limiter::Limiter>,
     /// Hash verified against when a user doesn't exist, so login timing
     /// doesn't reveal which usernames are registered.
@@ -61,6 +64,8 @@ impl AppState {
         tokio::fs::create_dir_all(&config.data_dir).await?;
         let db = db::open(&config.data_dir.join("thencloud.db")).await?;
         let secret = db::server_secret(&db).await?;
+        let link_token_key = link_tokens::load_key(&config.data_dir)?;
+        link_tokens::seal_old(&db, &link_token_key).await?;
         let blobs = match (s3::target_from_config(&config)?, config.s3_mirror) {
             (Some(target), true) => blob::BlobStore::mirror(config.data_dir.join("blobs"), target),
             (Some(target), false) => blob::BlobStore::s3(target),
@@ -81,6 +86,7 @@ impl AppState {
             blobs,
             config: Arc::new(config),
             secret: Arc::new(secret),
+            link_token_key: Arc::new(link_token_key),
             limiter: Arc::new(limiter::Limiter::new(10, 15 * 60)),
             turnstile_used: Arc::default(),
             chunk_locks: Arc::default(),

@@ -158,6 +158,28 @@ pub struct BackupReport {
     pub missing: Vec<(String, i64)>,
 }
 
+/// Copy `<data dir>/link-token-key` into a directory backup, so the restored
+/// server can still show owners their public links (see link_tokens.rs).
+/// An S3 backup doesn't get it: keeping it apart from the database is the
+/// point. Returns whether there was one to copy.
+pub async fn copy_link_token_key(data_dir: &Path, dest: &BackupDest) -> Result<bool> {
+    let BackupDest::Dir(dir) = dest else {
+        return Ok(false);
+    };
+    let from = data_dir.join("link-token-key");
+    if !from.exists() {
+        return Ok(false);
+    }
+    let to = dir.join("link-token-key");
+    tokio::fs::copy(&from, &to).await?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        tokio::fs::set_permissions(&to, std::fs::Permissions::from_mode(0o600)).await?;
+    }
+    Ok(true)
+}
+
 /// Snapshot the database into `dest` as `thencloud.db` and copy the blobs
 /// it refers to under `dest/blobs`. A directory destination is then a data
 /// directory of its own: restoring is pointing `--data-dir` at a copy. To

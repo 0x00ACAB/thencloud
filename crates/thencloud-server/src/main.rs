@@ -131,12 +131,20 @@ async fn backup(
     dest: String,
 ) -> Result<ExitCode, Box<dyn std::error::Error + Send + Sync>> {
     let parsed = maintenance::BackupDest::parse(&dest, &config)?;
+    let data_dir = config.data_dir.clone();
     let state = open(config).await?;
     let r = maintenance::backup(&state.db, &state.blobs, &parsed).await?;
     println!(
         "Backed up the database and {} chunks ({} bytes) to {}",
         r.chunks, r.bytes, dest
     );
+    if !maintenance::copy_link_token_key(&data_dir, &parsed).await? {
+        println!(
+            "Keep {} somewhere safe too: without it, a restored server still opens \
+             public links but can't show their owners the links made before.",
+            data_dir.join("link-token-key").display()
+        );
+    }
     if r.missing.is_empty() {
         return Ok(ExitCode::SUCCESS);
     }
