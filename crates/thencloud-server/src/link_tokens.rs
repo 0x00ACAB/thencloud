@@ -7,7 +7,6 @@
 //! that opens anything. Without that file, links still open; only showing
 //! the ones made before it was lost stops working.
 
-use std::io::Write;
 use std::path::Path;
 
 use sqlx::SqlitePool;
@@ -27,32 +26,9 @@ pub fn hash(token: &str) -> Vec<u8> {
     sha256(token.as_bytes())
 }
 
-/// The key from `<data dir>/link-token-key`, made (readable by the server's
-/// user only) the first time.
+/// The key from `<data dir>/link-token-key`, made the first time.
 pub fn load_key(data_dir: &Path) -> std::io::Result<Key> {
-    let path = data_dir.join(FILE);
-    let mut opts = std::fs::OpenOptions::new();
-    opts.write(true).create_new(true);
-    #[cfg(unix)]
-    std::os::unix::fs::OpenOptionsExt::mode(&mut opts, 0o600);
-    match opts.open(&path) {
-        Ok(mut f) => {
-            let key = Key::generate();
-            f.write_all(format!("{}\n", key.to_b64()).as_bytes())?;
-            f.sync_all()?;
-            Ok(key)
-        }
-        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-            let text = std::fs::read_to_string(&path)?;
-            Key::from_b64(text.trim()).map_err(|_| {
-                std::io::Error::new(
-                    std::io::ErrorKind::InvalidData,
-                    format!("{} isn't a link-token key", path.display()),
-                )
-            })
-        }
-        Err(e) => Err(e),
-    }
+    crate::util::load_key_file(&data_dir.join(FILE))
 }
 
 /// Seal the tokens of links made before tokens were sealed. Runs at start;

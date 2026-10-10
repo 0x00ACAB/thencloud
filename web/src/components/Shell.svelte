@@ -30,6 +30,7 @@
   import { unloadHealth } from '../lib/health.svelte.js';
   import { modules, loadModules } from '../lib/modules.svelte.js';
   import { t } from '../lib/i18n.svelte.js';
+  import { storage, loadStorage, dropStorage } from '../lib/storage.svelte.js';
 
   const rootId = session.me.keys.root_node_id;
   loadMyAvatar().catch(() => {});
@@ -37,6 +38,14 @@
   onDestroy(unloadNotes);
   onDestroy(unloadPhotos);
   onDestroy(unloadHealth);
+  onDestroy(dropStorage);
+  // Linked storage for the meter; what's kept there changes as files move,
+  // so it's asked again now and then while anything is linked.
+  $effect(() => {
+    loadStorage();
+    const every = setInterval(() => storage.info?.accounts.length && loadStorage(), 60_000);
+    return () => clearInterval(every);
+  });
   loadModules().catch(() => {});
 
   // Phones get a bottom tab bar; fixed things (toasts, the transfer tray,
@@ -132,7 +141,26 @@
     else if (x.parentId) go({ name: 'files', folderId: x.parentId, open: x.id });
   }
 
-  const usedPct = $derived(Math.min(100, (session.me.used_bytes / Math.max(1, session.me.quota_bytes)) * 100));
+  // The meter: this server's share, plus each linked extra space (a mirror
+  // is a copy, not more room), out of all the room there is.
+  const extras = $derived((storage.info?.accounts ?? []).filter((a) => a.mode === 'extra' && !a.broken));
+  const meter = $derived.by(() => {
+    const server = { key: 'server', label: t('This server'), used: session.me.used_bytes, room: session.me.quota_bytes, cls: 'bg-accent' };
+    const linked = extras.map((a) => ({
+      key: a.id,
+      label: t('Google Drive'),
+      used: a.used_bytes,
+      room: a.used_bytes + (a.free_bytes ?? 0),
+      cls: 'bg-place-google',
+    }));
+    const parts = [server, ...linked];
+    const room = Math.max(1, parts.reduce((n, p) => n + p.room, 0));
+    return {
+      parts: parts.map((p) => ({ ...p, pct: Math.min(100, (p.used / room) * 100) })),
+      used: parts.reduce((n, p) => n + p.used, 0),
+      room,
+    };
+  });
 
   const themes = $derived([
     ['system', 'monitor', t('System')],
@@ -224,9 +252,22 @@
       <div class="mt-auto grid gap-2 px-2">
         <div class="flex items-baseline justify-between text-xs">
           <span class="font-medium">{t('Storage')}</span>
-          <span class="text-fg-muted tabular-nums">{t('{used} of {quota}', { used: formatSize(session.me.used_bytes), quota: formatSize(session.me.quota_bytes) })}</span>
+          <span class="text-fg-muted tabular-nums">{t('{used} of {quota}', { used: formatSize(meter.used), quota: formatSize(meter.room) })}</span>
         </div>
-        <div class="progress"><div style:width="{usedPct}%"></div></div>
+        <div class="progress flex">
+          {#each meter.parts as p (p.key)}<div class="rounded-none first:rounded-l-full last:rounded-r-full {p.cls}" style:width="{p.pct}%"></div>{/each}
+        </div>
+        {#if meter.parts.length > 1}
+          <ul class="grid gap-0.5 text-xs text-fg-muted">
+            {#each meter.parts as p (p.key)}
+              <li class="flex items-center gap-1.5">
+                <span class="size-2 shrink-0 rounded-full {p.cls}" aria-hidden="true"></span>
+                <span class="truncate">{p.label}</span>
+                <span class="ml-auto tabular-nums">{formatSize(p.used)}</span>
+              </li>
+            {/each}
+          </ul>
+        {/if}
         <p class="mt-2 flex items-center gap-1.5 text-xs text-fg-muted">
           <Icon name="lock" class="size-3.5" /> {t('End-to-end encrypted')}
         </p>

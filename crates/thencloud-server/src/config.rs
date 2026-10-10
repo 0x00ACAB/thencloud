@@ -168,6 +168,21 @@ pub struct Config {
     #[arg(long, env = "THENCLOUD_TURNSTILE_HOSTNAMES", value_delimiter = ',')]
     pub turnstile_hostnames: Vec<String>,
 
+    /// Client id of the server's Google OAuth app ("Web application", with
+    /// the Drive API on and `<public origin>/api/storage/google/callback` as
+    /// a redirect URI). With the secret, people can link their Google Drive
+    /// as a mirror or as extra space. Off when unset.
+    #[arg(long, env = "THENCLOUD_GOOGLE_CLIENT_ID")]
+    pub google_client_id: Option<String>,
+
+    /// Client secret of that Google OAuth app.
+    #[arg(long, env = "THENCLOUD_GOOGLE_CLIENT_SECRET", hide_env_values = true)]
+    pub google_client_secret: Option<String>,
+
+    /// Google's endpoints; tests point these at a stand-in.
+    #[arg(skip = crate::storage::google::Endpoints::default())]
+    pub google_endpoints: crate::storage::google::Endpoints,
+
     /// Where tokens are checked; tests point this at a stand-in.
     #[arg(skip = String::from(crate::turnstile::SITEVERIFY))]
     pub turnstile_verify_url: String,
@@ -212,6 +227,9 @@ impl Config {
             turnstile_secret: None,
             turnstile_hostnames: Vec::new(),
             turnstile_verify_url: crate::turnstile::SITEVERIFY.into(),
+            google_client_id: None,
+            google_client_secret: None,
+            google_endpoints: Default::default(),
             trust_proxy: false,
             hsts: false,
             public_origin: Vec::new(),

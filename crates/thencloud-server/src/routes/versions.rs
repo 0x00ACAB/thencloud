@@ -151,24 +151,29 @@ pub async fn delete(
     let mut tx = state.db.begin().await?;
     remove_versions(&mut tx, &node.owner_id, &[(v.id.clone(), v.size)]).await?;
     tx.commit().await?;
-    state.blobs.delete_version(&v.id).await;
+    crate::storage::delete_versions(&state, std::slice::from_ref(&v.id)).await;
     Ok(StatusCode::NO_CONTENT)
 }
 
-/// Delete version rows and release their quota. The caller deletes the
+/// Delete version rows and release their quota (only what's kept here: a
+/// version in a linked account never counted). The caller deletes the
 /// blobs after the transaction commits.
 pub async fn remove_versions(
     tx: &mut Transaction<'_, Sqlite>,
     owner_id: &str,
     versions: &[(String, i64)],
 ) -> Result<()> {
+    let mut freed = 0;
     for (id, _) in versions {
-        sqlx::query("DELETE FROM file_versions WHERE id = ?")
-            .bind(id)
-            .execute(&mut **tx)
-            .await?;
+        let gone: Option<(i64, Option<String>)> =
+            sqlx::query_as("DELETE FROM file_versions WHERE id = ? RETURNING size, account_id")
+                .bind(id)
+                .fetch_optional(&mut **tx)
+                .await?;
+        if let Some((size, None)) = gone {
+            freed += size;
+        }
     }
-    let freed: i64 = versions.iter().map(|v| v.1).sum();
     sqlx::query("UPDATE users SET used_bytes = MAX(0, used_bytes - ?) WHERE id = ?")
         .bind(freed)
         .bind(owner_id)
@@ -195,12 +200,13 @@ pub async fn excess_versions(
     .await?)
 }
 
-/// Free at least `needed` bytes for `owner_id` by deleting their oldest
-/// non-current versions. Returns how much was freed.
+/// Free at least `needed` bytes of this server's space for `owner_id` by
+/// deleting their oldest non-current versions kept here. Returns how much
+/// was freed.
 pub async fn prune_for_space(state: &AppState, owner_id: &str, needed: i64) -> Result<i64> {
     let candidates: Vec<(String, i64)> = sqlx::query_as(
         "SELECT v.id, v.size FROM file_versions v JOIN nodes n ON n.id = v.node_id \
-         WHERE n.owner_id = ? AND v.id IS NOT n.current_version_id \
+         WHERE n.owner_id = ? AND v.id IS NOT n.current_version_id AND v.account_id IS NULL \
          ORDER BY v.created_at, v.rowid",
     )
     .bind(owner_id)
@@ -221,9 +227,8 @@ pub async fn prune_for_space(state: &AppState, owner_id: &str, needed: i64) -> R
     let mut tx = state.db.begin().await?;
     remove_versions(&mut tx, owner_id, &picked).await?;
     tx.commit().await?;
-    for (id, _) in &picked {
-        state.blobs.delete_version(id).await;
-    }
+    let ids: Vec<String> = picked.iter().map(|p| p.0.clone()).collect();
+    crate::storage::delete_versions(state, &ids).await;
     tracing::info!(
         owner_id,
         versions = picked.len(),
@@ -289,9 +294,8 @@ pub async fn thin_all(state: &AppState) -> Result<usize> {
         let mut tx = state.db.begin().await?;
         remove_versions(&mut tx, &file[0].2, &picked).await?;
         tx.commit().await?;
-        for (id, _) in &picked {
-            state.blobs.delete_version(id).await;
-        }
+        let ids: Vec<String> = picked.iter().map(|p| p.0.clone()).collect();
+        crate::storage::delete_versions(state, &ids).await;
         removed += picked.len();
     }
     Ok(removed)

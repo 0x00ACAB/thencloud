@@ -772,6 +772,17 @@
       "key": "jcObBHbGbWRO7bFdIWjbpujkOji3J9eWFz95P6iamcU",
       "plaintext": "cTF3MmUzcjR0NXk2dTdpOG85cDBhMXMy",
       "sealed": "ASWIIyvJUlIgsK2iVezdtV6TiDpDybvxJkCd7wUtScb6n6BYnhbDRU33I1oKv6neQmOueDcgecbiXLxdzdPyGSY"
+    },
+    {
+      "aad": "dGhlbmNsb3VkL3YxL3N0b3JhZ2Utc2VjcmV0ADhlMmY0YTZjLTFiM2QtNGU1Zi05YTdiLTBjMWQyZTNmNGE1YgByZWZyZXNoLXRva2Vu",
+      "context": [
+        "8e2f4a6c-1b3d-4e5f-9a7b-0c1d2e3f4a5b",
+        "refresh-token"
+      ],
+      "format": "storage-secret",
+      "key": "EW-y46AHOmF8HgwL63NWSw-OuXEhPNZSGK5raxAjYrM",
+      "plaintext": "MS8vMGctZXhhbXBsZS1yZWZyZXNoLXRva2Vu",
+      "sealed": "AdRGM1-EsP-icgSdukoR0uD6ro7jfKvozq82J5QhpZjTnH-koag5T-iJ4XyxoajpMQmgONgIh-oT3TzmCASGm0qdSXg"
     }
   ]
 }

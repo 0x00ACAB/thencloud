@@ -58,6 +58,7 @@ See [Storing blobs in S3](s3.md).
 | `--turnstile-site-key` | `THENCLOUD_TURNSTILE_SITE_KEY` | unset. See [Bot check](turnstile.md) |
 | `--turnstile-secret` | `THENCLOUD_TURNSTILE_SECRET` | unset |
 | `--turnstile-hostnames` | `THENCLOUD_TURNSTILE_HOSTNAMES` | the host the sign-in request was sent to; comma-separated |
+| `--google-client-id`, `--google-client-secret` | `THENCLOUD_GOOGLE_CLIENT_ID`, `THENCLOUD_GOOGLE_CLIENT_SECRET` | unset. A Google OAuth app, so people can link their Google Drive as a mirror or extra space. See [Linked storage](google-drive.md) |
 | `--yt-dlp` | `THENCLOUD_YT_DLP` | `yt-dlp`. See [Video downloader](downloader.md) |
 | `--ffmpeg` | `THENCLOUD_FFMPEG` | `ffmpeg` |
 | `--downloader-max-bytes` | `THENCLOUD_DOWNLOADER_MAX_BYTES` | 2 GiB per video |

@@ -41,7 +41,8 @@ fn chunk_path(root: &Path, version_id: &str, idx: i64) -> PathBuf {
 async fn expected_chunks(db: &SqlitePool) -> Result<Vec<(String, i64, Option<i64>)>> {
     let mut out = Vec::new();
     let versions: Vec<(String, i64)> =
-        sqlx::query_as("SELECT id, chunk_count FROM file_versions ORDER BY id")
+        // Versions kept in a linked account (storage/mod.rs) aren't here.
+        sqlx::query_as("SELECT id, chunk_count FROM file_versions WHERE account_id IS NULL ORDER BY id")
             .fetch_all(db)
             .await?;
     for (id, count) in versions {
@@ -49,7 +50,7 @@ async fn expected_chunks(db: &SqlitePool) -> Result<Vec<(String, i64, Option<i64
     }
     let partial: Vec<(String, i64, i64)> = sqlx::query_as(
         "SELECT u.version_id, c.idx, c.size FROM upload_chunks c JOIN uploads u ON u.id = c.upload_id \
-         ORDER BY u.version_id, c.idx",
+         WHERE u.account_id IS NULL ORDER BY u.version_id, c.idx",
     )
     .fetch_all(db)
     .await?;

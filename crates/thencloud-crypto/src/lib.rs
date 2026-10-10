@@ -545,6 +545,33 @@ pub fn open_link_token(key: &Key, sealed: &[u8], link_id: &str) -> Result<String
         .map_err(|_| Error::Decrypt)
 }
 
+/// What the server keeps about a storage account someone linked (Google
+/// Drive): its refresh token and the account's address, sealed under a key
+/// held outside the database, like link tokens, so a copy of the database
+/// gives no access to anyone's Drive. `what` names the field, so one can't
+/// be passed off as the other.
+pub fn seal_storage_secret(key: &Key, account_id: &str, what: &str, plaintext: &str) -> Vec<u8> {
+    seal(
+        key,
+        plaintext.as_bytes(),
+        &aad("storage-secret", &[account_id, what]),
+    )
+}
+
+pub fn open_storage_secret(
+    key: &Key,
+    account_id: &str,
+    what: &str,
+    sealed: &[u8],
+) -> Result<String> {
+    String::from_utf8(open(
+        key,
+        sealed,
+        &aad("storage-secret", &[account_id, what]),
+    )?)
+    .map_err(|_| Error::Decrypt)
+}
+
 // ---------------------------------------------------------------------------
 // Private account data (e.g. verified contacts): sealed under the master key
 // and bound to the user and a label, so the server can store it but not read
