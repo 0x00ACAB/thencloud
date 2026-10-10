@@ -8,6 +8,10 @@ the apps (see "Keeping existing data working" in CLAUDE.md).
 
 - **Android:** music keeps playing with the screen off or another app open,
   with a notification, lock screen controls and headphone buttons.
+- The server warns at start while registration is open to anyone. The
+  example `deploy/compose.yaml` now sets `THENCLOUD_ALLOW_REGISTRATION=false`:
+  if you run it and rely on open sign-up, choose it in the Admin view (that
+  setting wins) or remove the line.
 
 ## v1.0.0 (2026-10-05)
 

@@ -16,7 +16,7 @@ Every option is a command-line flag and an environment variable. `thencloud-serv
 
 | Flag | Env | Default |
 |---|---|---|
-| `--allow-registration` | `THENCLOUD_ALLOW_REGISTRATION` | `true`. The first account can always be made (with the setup code). Admins can switch between open, invite only and closed at runtime, which overrides this |
+| `--allow-registration` | `THENCLOUD_ALLOW_REGISTRATION` | `true`. The first account can always be made (with the setup code). Admins can switch between open, invite only and closed at runtime, which overrides this. Open means anyone who finds the server gets an account and the default quota, and you can't see what they store; the server warns at start while it's open. With `false`, choose invite only in the Admin view to let people in by invite |
 | `--admin-username` | `THENCLOUD_ADMIN_USERNAME` | unset. The username the first account must have |
 | `--default-quota` | `THENCLOUD_DEFAULT_QUOTA` | 10 GiB, in bytes of ciphertext |
 | `--session-days` | `THENCLOUD_SESSION_DAYS` | `30`, sliding |

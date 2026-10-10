@@ -35,6 +35,23 @@ pub async fn registration(state: &AppState) -> Result<Registration> {
     })
 }
 
+/// At start: say so when anyone who finds the server can make an account.
+/// Their files are encrypted, so whoever runs it can't see what they store.
+pub async fn warn_if_open(state: &AppState) -> Result<()> {
+    let users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+        .fetch_one(&state.db)
+        .await?;
+    if users > 0 && registration(state).await? == Registration::Open {
+        tracing::warn!(
+            quota_bytes = state.config.default_quota,
+            bot_check = crate::turnstile::enabled(state),
+            "registration is open: anyone who finds this server can make an account. \
+             Switch to invite only in the Admin view, or set THENCLOUD_ALLOW_REGISTRATION=false"
+        );
+    }
+    Ok(())
+}
+
 pub async fn set_registration(state: &AppState, mode: Registration) -> Result<()> {
     let v = match mode {
         Registration::Open => "open",

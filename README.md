@@ -111,7 +111,7 @@ Every flag can also be set as an environment variable.
 | `--s3-snapshots-kept` | `THENCLOUD_S3_SNAPSHOTS_KEPT` | `7` (older database snapshots are deleted) |
 | `--web-dir` | `THENCLOUD_WEB_DIR` | `./web/dist` (the built web client) |
 | `--admin-username` | `THENCLOUD_ADMIN_USERNAME` | unset. The name the first account (the admin) must have; it also needs the setup code from the log |
-| `--allow-registration` | `THENCLOUD_ALLOW_REGISTRATION` | `true` (the first user can always register, with the setup code, and becomes an admin). Admins can switch between open, invite-only and closed at runtime in the Admin view, which overrides this |
+| `--allow-registration` | `THENCLOUD_ALLOW_REGISTRATION` | `true` (the first user can always register, with the setup code, and becomes an admin). Admins can switch between open, invite-only and closed at runtime in the Admin view, which overrides this. Open means anyone who finds the server gets an account and the default quota, and you can't see what they store; the server warns at start while it's open |
 | `--default-quota` | `THENCLOUD_DEFAULT_QUOTA` | 10 GiB |
 | `--session-days` | `THENCLOUD_SESSION_DAYS` | `30` |
 | `--max-versions` | `THENCLOUD_MAX_VERSIONS` | `10` (versions kept per file, including the current one) |
