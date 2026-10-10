@@ -8,6 +8,10 @@ the apps (see "Keeping existing data working" in CLAUDE.md).
 
 - **Android:** music keeps playing with the screen off or another app open,
   with a notification, lock screen controls and headphone buttons.
+- **Security:** the web client and the apps refuse to sign in when a server
+  asks for weaker password hashing (Argon2 settings or salt) than thencloud
+  allows. A malicious server could otherwise have asked for cheap settings and
+  guessed the password from what the client sent.
 
 ## v1.0.0 (2026-10-05)
 
