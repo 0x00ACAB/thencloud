@@ -78,3 +78,14 @@ pub async fn set_downloader(state: &AppState, access: DownloaderAccess) -> Resul
     };
     set(state, "downloader", v).await
 }
+
+/// Whether people may link a new Google Drive. On unless an admin turned
+/// it off (and only if the server has a Google app at all).
+pub async fn google_drive(state: &AppState) -> Result<bool> {
+    Ok(state.storage.google.is_some()
+        && get(state, "google_drive").await?.as_deref() != Some("off"))
+}
+
+pub async fn set_google_drive(state: &AppState, on: bool) -> Result<()> {
+    set(state, "google_drive", if on { "on" } else { "off" }).await
+}

@@ -276,6 +276,10 @@ pub async fn get_settings(
         yt_dlp_version: state.downloader.version.clone(),
         downloader_can_merge: state.downloader.can_merge,
         downloader_max_bytes: state.config.downloader_max_bytes,
+        google_drive: match state.storage.google {
+            Some(_) => Some(settings::google_drive(&state).await?),
+            None => None,
+        },
     }))
 }
 
@@ -304,6 +308,20 @@ pub async fn update_settings(
             action::DOWNLOADER,
             None,
             Some(wire_name(&d)),
+        )
+        .await?;
+    }
+    if let Some(on) = req.google_drive {
+        if state.storage.google.is_none() {
+            return Err(AppError::bad("this server has no Google app set up"));
+        }
+        settings::set_google_drive(&state, on).await?;
+        audit::record(
+            &state.db,
+            &user.username,
+            action::GOOGLE_DRIVE,
+            None,
+            Some(if on { "on" } else { "off" }.to_string()),
         )
         .await?;
     }
