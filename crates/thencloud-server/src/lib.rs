@@ -10,6 +10,7 @@ pub mod blob;
 pub mod config;
 pub mod db;
 pub mod downloader;
+pub mod egress;
 pub mod error;
 pub mod janitor;
 pub mod limiter;
@@ -72,6 +73,7 @@ impl AppState {
             config.yt_dlp.clone(),
             config.ffmpeg.clone(),
             &config.data_dir,
+            config.downloader_public_only,
         )
         .await;
         Ok(AppState {

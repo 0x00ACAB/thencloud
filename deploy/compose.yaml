@@ -9,7 +9,12 @@
 
 services:
   thencloud:
-    build: ..
+    build:
+      context: ..
+      # THENCLOUD_TARGET=with-downloader builds the image with yt-dlp,
+      # ffmpeg and deno, for the optional video downloader (still off until
+      # an admin turns it on in the Admin view).
+      target: ${THENCLOUD_TARGET:-runtime}
     image: thencloud
     restart: unless-stopped
     environment:
