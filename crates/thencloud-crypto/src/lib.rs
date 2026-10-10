@@ -1384,6 +1384,7 @@ mod tests {
     #[test]
     fn account_keys_refuse_weak_params() {
         let salt = random_bytes(SALT_LEN);
+        let password = b64_encode(&random_bytes(12));
         for weak in [
             KdfParams {
                 m_cost: 8,
@@ -1402,14 +1403,14 @@ mod tests {
             },
         ] {
             assert_eq!(
-                derive_account_keys("hunter2", &salt, weak).err(),
+                derive_account_keys(&password, &salt, weak).err(),
                 Some(Error::KdfParams),
                 "{weak:?}"
             );
         }
         for salt_len in [0, SALT_LEN - 1, 65] {
             assert_eq!(
-                derive_account_keys("hunter2", &vec![0; salt_len], fast()).err(),
+                derive_account_keys(&password, &random_bytes(salt_len), fast()).err(),
                 Some(Error::KdfParams),
                 "salt of {salt_len} bytes"
             );
