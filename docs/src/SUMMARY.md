@@ -28,6 +28,7 @@
 - [Bot check (Turnstile)](host/turnstile.md)
 - [Monitoring](host/monitoring.md)
 - [Video downloader](host/downloader.md)
+- [Linked storage (Google Drive)](host/google-drive.md)
 
 # Security
 

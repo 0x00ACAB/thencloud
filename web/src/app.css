@@ -95,6 +95,10 @@
   --mood-yellow: #e0a800;
   --mood-blue: #3e7bfa;
   --mood-green: #2f9e5b;
+  /* Linked storage in the storage meter (the server's share is the accent).
+   * Fills only, each at least 3:1 on the meter's muted track. */
+  --place-google: #b07c00;
+  --place-onedrive: #2f6fe0;
   --ring: color-mix(in srgb, var(--accent-base) 35%, transparent);
   color-scheme: light;
 }
@@ -123,6 +127,8 @@
   --mood-yellow: #f5c542;
   --mood-blue: #6b9bff;
   --mood-green: #4cc38a;
+  --place-google: #f5c542;
+  --place-onedrive: #6b9bff;
   --ring: color-mix(in srgb, var(--accent-base) 45%, transparent);
   color-scheme: dark;
 }
@@ -177,6 +183,8 @@
   --color-diff-del: var(--diff-del);
   --color-success: var(--success);
   --color-warning: var(--warning);
+  --color-place-google: var(--place-google);
+  --color-place-onedrive: var(--place-onedrive);
   --color-mood-red: var(--mood-red);
   --color-mood-yellow: var(--mood-yellow);
   --color-mood-blue: var(--mood-blue);

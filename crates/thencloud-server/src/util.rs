@@ -156,3 +156,31 @@ pub fn normalize_username(raw: &str) -> Result<String> {
     }
     Ok(u)
 }
+
+/// A key kept in a file of its own (base64, readable by the server's user
+/// only), outside the database: made the first time, read after that.
+pub fn load_key_file(path: &std::path::Path) -> std::io::Result<thencloud_crypto::Key> {
+    use std::io::Write;
+    let mut opts = std::fs::OpenOptions::new();
+    opts.write(true).create_new(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut opts, 0o600);
+    match opts.open(path) {
+        Ok(mut f) => {
+            let key = thencloud_crypto::Key::generate();
+            f.write_all(format!("{}\n", key.to_b64()).as_bytes())?;
+            f.sync_all()?;
+            Ok(key)
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+            let text = std::fs::read_to_string(path)?;
+            thencloud_crypto::Key::from_b64(text.trim()).map_err(|_| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("{} isn't a key file", path.display()),
+                )
+            })
+        }
+        Err(e) => Err(e),
+    }
+}

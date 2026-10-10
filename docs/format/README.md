@@ -173,6 +173,7 @@ Each of these is `seal(key, plaintext, aad)`:
 | `link-key` | a link password's KEK | node key | `aad("link-key", node_id)` |
 | `link-secret` | the node key | the link's secret, so the owner can show the link again | `aad("link-secret", node_id)` |
 | `link-token` | the server's link-token key (`<data dir>/link-token-key`, never in the database) | a public link's token, UTF-8, so the server can show the owner their link again; links are looked up by the token's SHA-256 | `aad("link-token", link_id)` |
+| `storage-secret` | the server's storage-token key (`<data dir>/storage-token-key`, never in the database) | something about a storage account linked to thencloud (Google Drive), UTF-8: `refresh-token` is its OAuth refresh token, `label` the account's address shown in Settings | `aad("storage-secret", account_id, what)` |
 | `thumbnail` | the file's node key | a small JPEG of that version | `aad("thumbnail", node_id, version_id)` |
 | `comment` | the node key | a comment: JSON `{"text": "...", "at": <ms>}` | `aad("comment", node_id, comment_id, author_user_id)` |
 | `backup` | a backup key | one backup record (see [Backups](#backups)) | `aad("backup", base64url(backup_id), decimal(index))` |

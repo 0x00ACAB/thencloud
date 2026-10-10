@@ -65,6 +65,7 @@ async fn main() -> Result<ExitCode, Box<dyn std::error::Error + Send + Sync>> {
     thencloud_server::setup::prepare(&state).await?;
     thencloud_server::settings::warn_if_open(&state).await?;
     snapshot::spawn(state.clone());
+    thencloud_server::storage::spawn(state.clone());
 
     let listener = tokio::net::TcpListener::bind(config.bind).await?;
     tracing::info!("thencloud listening on http://{}", listener.local_addr()?);

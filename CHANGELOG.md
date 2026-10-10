@@ -6,6 +6,18 @@ the apps (see "Keeping existing data working" in CLAUDE.md).
 
 ## Unreleased
 
+- **Linked storage:** link your own Google Drive in Settings, as a mirror (a
+  second copy of everything, filled in the background) or as extra space (new
+  files can be kept there, on top of your quota), and choose which comes
+  first. Only ciphertext goes to Google. The storage meter shows the server's
+  share and your Drive's. Servers turn it on with `--google-client-id` and
+  `--google-client-secret`; tokens are sealed under `<data dir>/storage-token-key`.
+- **Linked storage:** link your own Google Drive in Settings, as a mirror (a
+  second copy of everything, filled in the background) or as extra space (new
+  files can be kept there, on top of your quota), and choose which comes
+  first. Only ciphertext goes to Google. The storage meter shows the server's
+  share and your Drive's. Servers turn it on with `--google-client-id` and
+  `--google-client-secret`; tokens are sealed under `<data dir>/storage-token-key`.
 - **Android:** music keeps playing with the screen off or another app open,
   with a notification, lock screen controls and headphone buttons.
 - **Security:** the web client and the apps refuse to sign in when a server

@@ -254,6 +254,8 @@ pub(crate) async fn delete_account(state: &AppState, id: &str) -> Result<()> {
     {
         delete_subtree(state, &root, id).await?;
     }
+    // Linked storage accounts: copies deleted, tokens given back.
+    crate::storage::forget_user(state, id).await?;
     // Sessions, shares, links and invites go via ON DELETE CASCADE.
     sqlx::query("DELETE FROM users WHERE id = ?")
         .bind(id)

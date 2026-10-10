@@ -1231,3 +1231,82 @@ pub struct VideoOption {
     #[serde(default)]
     pub quality: Option<VideoQuality>,
 }
+
+// ---------------------------------------------------------------------------
+// Linked storage (Google Drive first): a mirror of your files, or extra space
+// ---------------------------------------------------------------------------
+
+/// What a linked storage account is for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StorageMode {
+    /// A copy of everything kept on the server.
+    Mirror,
+    /// Room for new files, on top of the server quota.
+    Extra,
+}
+
+/// Where new files go first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StoragePrefer {
+    Server,
+    Linked,
+}
+
+/// `GET /api/storage`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageInfo {
+    /// Whether this server can link Google Drive.
+    pub google: bool,
+    pub prefer: StoragePrefer,
+    /// Bytes kept on this server, and its quota (as in `Me`).
+    pub server_used: i64,
+    pub server_quota: i64,
+    pub accounts: Vec<StorageAccount>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageAccount {
+    pub id: String,
+    /// `google`.
+    pub provider: String,
+    pub mode: StorageMode,
+    /// The account's address, to tell accounts apart.
+    pub label: Option<String>,
+    /// Bytes thencloud keeps there.
+    pub used_bytes: i64,
+    /// Free space there when last asked; None for no limit or not known yet.
+    pub free_bytes: Option<i64>,
+    /// The provider stopped accepting the token: link it again.
+    pub broken: bool,
+    pub created_at: i64,
+    /// For a mirror: bytes this server keeps that it should have, and how
+    /// many of those it has.
+    pub mirror_total: Option<i64>,
+    pub mirror_done: Option<i64>,
+}
+
+/// `POST /api/storage/google`: start linking.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinkStorageRequest {
+    pub mode: StorageMode,
+}
+
+/// Where to send the browser to approve access.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinkStorageResponse {
+    pub url: String,
+}
+
+/// `PATCH /api/storage/accounts/{id}`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateStorageAccountRequest {
+    pub mode: StorageMode,
+}
+
+/// `PUT /api/storage/prefer`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StoragePreferRequest {
+    pub prefer: StoragePrefer,
+}
