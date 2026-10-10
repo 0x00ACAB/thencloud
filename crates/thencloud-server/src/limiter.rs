@@ -20,10 +20,20 @@ impl Limiter {
         }
     }
 
+    /// Failures allowed in a window by default.
+    pub fn max(&self) -> u32 {
+        self.max
+    }
+
     pub fn blocked(&self, key: &str) -> bool {
+        self.blocked_at(key, self.max)
+    }
+
+    /// Blocked after `max` failures in the window, instead of the default.
+    pub fn blocked_at(&self, key: &str, max: u32) -> bool {
         let map = self.failures.lock().unwrap();
         map.get(key)
-            .is_some_and(|&(n, start)| now() - start < self.window && n >= self.max)
+            .is_some_and(|&(n, start)| now() - start < self.window && n >= max)
     }
 
     pub fn fail(&self, key: &str) {

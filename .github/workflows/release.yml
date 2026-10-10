@@ -30,8 +30,8 @@ jobs:
         os: [ubuntu-24.04, ubuntu-22.04]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
       - uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
@@ -40,7 +40,7 @@ jobs:
       - run: scripts/release-web.sh "$VERSION"
         env:
           VERSION: ${{ github.ref_type == 'tag' && github.ref_name || github.sha }}
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: web-${{ matrix.os }}
           path: thencloud-web-*
@@ -56,7 +56,7 @@ jobs:
           - { os: macos-15, target: aarch64-apple-darwin }
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
       - run: cargo build --release --locked -p thencloud-server -p thencloud-cli
       - name: Package
@@ -68,7 +68,7 @@ jobs:
           mkdir "$dir"
           cp target/release/thencloud-server target/release/thencloud LICENSE README.md "$dir"
           tar czf "$dir.tar.gz" "$dir"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: bin-${{ matrix.target }}
           path: thencloud-*.tar.gz
@@ -85,8 +85,8 @@ jobs:
       run:
         shell: bash
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
@@ -109,7 +109,7 @@ jobs:
           cp $b/deb/*.deb $b/rpm/*.rpm $b/appimage/*.AppImage out/ 2>/dev/null || true
           cp $b/nsis/*.exe $b/msi/*.msi out/ 2>/dev/null || true
           ls -la out
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: app-${{ matrix.os }}
           path: out/*
@@ -118,11 +118,11 @@ jobs:
     name: App (Android)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-      - uses: actions/setup-java@v6
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: 17
@@ -158,7 +158,7 @@ jobs:
             --key-pass env:KEY_PASS --out "out/thencloud-$VERSION-android.apk" "$RUNNER_TEMP/aligned.apk"
           rm "$RUNNER_TEMP/release.jks"
           "$tools/apksigner" verify --print-certs "out/thencloud-$VERSION-android.apk"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: github.ref_type == 'tag'
         with:
           name: app-android
@@ -177,7 +177,7 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Build and push by digest
         env:
           VERSION: ${{ github.ref_name }}
@@ -195,7 +195,7 @@ jobs:
             --metadata-file meta.json .
           mkdir digests
           jq -r '."containerimage.digest"' meta.json > "digests/${{ matrix.arch }}"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: digest-${{ matrix.arch }}
           path: digests/*
@@ -209,7 +209,7 @@ jobs:
       packages: write
       id-token: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: digest-*
           merge-multiple: true
@@ -240,7 +240,7 @@ jobs:
       # this tag, is signing.
       id-token: write
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
       - name: Both builds must be identical
         run: |
           cmp web-ubuntu-24.04/thencloud-web-*.json web-ubuntu-22.04/thencloud-web-*.json
@@ -260,7 +260,7 @@ jobs:
             cosign sign-blob --yes --bundle "$f.sigstore.json" --use-signing-config=false \
               --fulcio-url https://fulcio.sigstore.dev --rekor-url https://rekor.sigstore.dev "$f"
           done
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: github.ref_type == 'tag'
         with:
           path: src
