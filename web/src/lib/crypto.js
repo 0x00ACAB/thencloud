@@ -47,8 +47,13 @@ export function deriveAccountKeys(password, salt, params) {
     worker.onmessage = ({ data }) => {
       const p = pending.get(data.id);
       pending.delete(data.id);
-      if (data.error) p.reject(new Error(data.error));
-      else p.resolve({ authKey: data.authKey, kek: data.kek });
+      if (data.error) {
+        const err = new Error(data.error);
+        // The salt or Argon2 settings from prelogin were weaker than
+        // thencloud allows (see `derive_account_keys`).
+        if (data.error === 'invalid KDF parameters') err.code = 'weak_kdf';
+        p.reject(err);
+      } else p.resolve({ authKey: data.authKey, kek: data.kek });
     };
   }
   const id = ++seq;
