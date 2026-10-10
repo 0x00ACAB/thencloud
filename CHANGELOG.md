@@ -15,6 +15,8 @@ the apps (see "Keeping existing data working" in CLAUDE.md).
 - **Security:** Markdown previews drop inline SVG and MathML. An SVG image
   filter in a shared `.md` file could make the browser request a path from
   the server.
+- **Security:** sending the same piece of an upload many times at once can no
+  longer push an account's used space down past what it stores.
 
 ## v1.0.0 (2026-10-05)
 
