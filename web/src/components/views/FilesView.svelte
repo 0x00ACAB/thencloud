@@ -12,6 +12,8 @@
   import NameDialog from '../dialogs/NameDialog.svelte';
   import VersionsDialog from '../dialogs/VersionsDialog.svelte';
   import CommentsDialog from '../dialogs/CommentsDialog.svelte';
+  import { storage } from '../../lib/storage.svelte.js';
+  import StorageDialog from '../dialogs/StorageDialog.svelte';
   import TagsDialog from '../dialogs/TagsDialog.svelte';
   import ActivityDialog from '../dialogs/ActivityDialog.svelte';
   import { fade, fly, flip, flipParams } from '../../lib/motion.js';
@@ -774,6 +776,7 @@
         ? [
             { label: t('Share'), icon: 'share-2', onclick: () => (dialog = { type: 'share', entry }) },
             { label: t('Public link'), icon: 'link', onclick: () => (dialog = { type: 'link', entry }) },
+            ...(storage.info?.accounts.length ? [{ label: t('Where it is kept'), icon: 'cloud', onclick: () => (dialog = { type: 'storage', entry }) }] : []),
           ]
         : []),
       ...(canWrite
@@ -1413,6 +1416,8 @@
       toast(t('Saved. It is under My files in the sidebar.'), { kind: 'success' });
     }}
     onclose={() => (dialog = null)} />
+{:else if dialog?.type === 'storage'}
+  <StorageDialog entry={dialog.entry} onclose={() => (dialog = null)} />
 {:else if dialog?.type === 'tags'}
   <TagsDialog entry={dialog.entry} onclose={() => (dialog = null)} />
 {:else if dialog?.type === 'comments'}

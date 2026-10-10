@@ -273,7 +273,87 @@ pub async fn move_files(
     Json(req): Json<MoveStorageRequest>,
 ) -> Result<Json<MoveStorageResponse>> {
     let a = own_account(&state, &user, &id).await?;
-    let m = storage::move_batch(&state, &a, req.to == StoragePrefer::Server).await?;
+    let m = storage::move_batch(&state, &a, req.to == StoragePrefer::Server, None).await?;
+    Ok(Json(MoveStorageResponse {
+        moved: m.versions,
+        moved_bytes: m.bytes,
+        left: m.left,
+        left_bytes: m.left_bytes,
+        full: m.full,
+    }))
+}
+
+/// The node, if `user` owns it (trashed or not: its versions still take
+/// room somewhere).
+async fn own_node(state: &AppState, user: &AuthUser, id: &str) -> Result<()> {
+    let owner: Option<String> = sqlx::query_scalar("SELECT owner_id FROM nodes WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&state.db)
+        .await?;
+    match owner {
+        Some(o) if o == user.id => Ok(()),
+        _ => Err(AppError::NotFound),
+    }
+}
+
+/// Where a file's (or a folder's files') versions are kept.
+pub async fn node_places(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<String>,
+) -> Result<Json<NodeStorage>> {
+    own_node(&state, &user, &id).await?;
+    let rows: Vec<(Option<String>, i64, i64)> = sqlx::query_as(
+        "WITH RECURSIVE sub(id) AS (SELECT ? UNION ALL \
+           SELECT n.id FROM nodes n JOIN sub ON n.parent_id = sub.id) \
+         SELECT v.account_id, COUNT(*), COALESCE(SUM(v.size), 0) FROM file_versions v \
+         WHERE v.node_id IN (SELECT id FROM sub) GROUP BY v.account_id ORDER BY v.account_id",
+    )
+    .bind(&id)
+    .fetch_all(&state.db)
+    .await?;
+    Ok(Json(NodeStorage {
+        places: rows
+            .into_iter()
+            .map(|(account_id, versions, bytes)| NodePlace {
+                account_id,
+                versions,
+                bytes,
+            })
+            .collect(),
+    }))
+}
+
+/// Move a batch of a file's (or a folder's files') versions.
+pub async fn move_node(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<String>,
+    Json(req): Json<MoveNodeStorageRequest>,
+) -> Result<Json<MoveStorageResponse>> {
+    own_node(&state, &user, &id).await?;
+    let m = match req.to {
+        Some(account) => {
+            let a = own_account(&state, &user, &account).await?;
+            storage::move_batch(&state, &a, false, Some(&id)).await?
+        }
+        // Home from every account that has some of them.
+        None => {
+            let mut total = storage::Moved::default();
+            for a in storage::accounts_of(&state.db, &user.id).await? {
+                if a.broken_at.is_some() {
+                    continue;
+                }
+                let m = storage::move_batch(&state, &a, true, Some(&id)).await?;
+                total.versions += m.versions;
+                total.bytes += m.bytes;
+                total.left += m.left;
+                total.left_bytes += m.left_bytes;
+                total.full |= m.full;
+            }
+            total
+        }
+    };
     Ok(Json(MoveStorageResponse {
         moved: m.versions,
         moved_bytes: m.bytes,
