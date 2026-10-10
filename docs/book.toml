@@ -1,0 +1,27 @@
+[book]
+title = "thencloud"
+description = "Documentation for thencloud, an end-to-end encrypted file cloud."
+authors = ["thencloud contributors"]
+language = "en"
+src = "src"
+
+[build]
+build-dir = "book"
+create-missing = false
+
+[output.html]
+cname = "docs.kkaii.xyz"
+git-repository-url = "https://github.com/0x00ACAB/thencloud"
+edit-url-template = "https://github.com/0x00ACAB/thencloud/edit/main/docs/{path}"
+default-theme = "light"
+preferred-dark-theme = "navy"
+additional-css = ["theme/thencloud.css"]
+no-section-label = true
+site-url = "/"
+mathjax-support = false
+
+[output.html.search]
+enable = true
+
+[output.html.print]
+enable = false

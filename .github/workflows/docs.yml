@@ -1,0 +1,52 @@
+name: Docs
+
+# Builds docs/ with mdBook and publishes it to GitHub Pages
+# (docs.kkaii.xyz). Pull requests only build it, to catch a broken book.
+on:
+  push:
+    branches: [main]
+    paths:
+      - docs/**
+      - CHANGELOG.md
+      - .github/workflows/docs.yml
+  pull_request:
+    paths:
+      - docs/**
+      - CHANGELOG.md
+      - .github/workflows/docs.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
+        with:
+          tool: mdbook@0.5.4
+      - run: mdbook build docs
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: docs/book
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
