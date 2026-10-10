@@ -12,6 +12,9 @@ the apps (see "Keeping existing data working" in CLAUDE.md).
   asks for weaker password hashing (Argon2 settings or salt) than thencloud
   allows. A malicious server could otherwise have asked for cheap settings and
   guessed the password from what the client sent.
+- **Security:** Markdown previews drop inline SVG and MathML. An SVG image
+  filter in a shared `.md` file could make the browser request a path from
+  the server.
 
 ## v1.0.0 (2026-10-05)
 
