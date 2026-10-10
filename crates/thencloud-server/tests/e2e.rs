@@ -8157,3 +8157,82 @@ async fn moving_one_folder_to_drive() {
     let fk = c::unwrap_node_key(&root_key, &inside.enc_key, &inside.id).unwrap();
     assert_eq!(alice.download(&h, &inside, &fk).await.1, MARKER);
 }
+
+/// An admin can turn off linking new Drives; ones already linked keep
+/// working, and the change is in the audit log.
+#[tokio::test]
+async fn admins_can_turn_off_linking_google_drive() {
+    let (h, _drive) = storage_harness().await;
+    let admin = register(&h, "root", "pw").await;
+    let alice = register(&h, "alice", "pw").await;
+    let a = link_drive(&h, &alice.token, "extra").await;
+    let s: AdminSettings = h.get("/api/admin/settings", &admin.token).await.json();
+    assert_eq!(s.google_drive, Some(true));
+
+    // Only admins may change it.
+    let off = json!({ "google_drive": false });
+    let r = h
+        .call(
+            Method::PATCH,
+            "/api/admin/settings",
+            Some(&alice.token),
+            Some(&off),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN);
+    let r = h
+        .call(
+            Method::PATCH,
+            "/api/admin/settings",
+            Some(&admin.token),
+            Some(&off),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{r:?}");
+    assert_eq!(r.json::<AdminSettings>().google_drive, Some(false));
+
+    // No new links; the linked Drive still holds and serves files.
+    let info: StorageInfo = h.get("/api/storage", &alice.token).await.json();
+    assert!(!info.google);
+    assert_eq!(info.accounts.len(), 1);
+    let r = h
+        .call(
+            Method::POST,
+            "/api/storage/google",
+            Some(&alice.token),
+            Some(json!({ "mode": "mirror" })),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::SERVICE_UNAVAILABLE);
+    let r = h
+        .call(
+            Method::POST,
+            &format!("/api/storage/accounts/{}/move", a.id),
+            Some(&alice.token),
+            Some(json!({ "to": "linked" })),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+
+    let page: AuditPage = h.get("/api/admin/audit", &admin.token).await.json();
+    let e = &page.entries[0];
+    assert_eq!(
+        (e.actor.as_str(), e.action.as_str(), e.detail.as_deref()),
+        ("root", "google_drive", Some("off"))
+    );
+
+    // Without a Google app, there's nothing to turn on.
+    let plain = Harness::new().await;
+    let root = register(&plain, "root", "pw").await;
+    let s: AdminSettings = plain.get("/api/admin/settings", &root.token).await.json();
+    assert_eq!(s.google_drive, None);
+    let r = plain
+        .call(
+            Method::PATCH,
+            "/api/admin/settings",
+            Some(&root.token),
+            Some(json!({ "google_drive": true })),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+}

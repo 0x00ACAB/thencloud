@@ -865,6 +865,10 @@ pub struct AdminSettings {
     pub downloader_can_merge: bool,
     /// Largest download passed through, in bytes.
     pub downloader_max_bytes: u64,
+    /// Whether people may link a new Google Drive: None when the server has
+    /// no Google app set up. Drives already linked keep working either way.
+    #[serde(default)]
+    pub google_drive: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -873,6 +877,8 @@ pub struct UpdateSettingsRequest {
     pub registration: Option<Registration>,
     #[serde(default)]
     pub downloader: Option<DownloaderAccess>,
+    #[serde(default)]
+    pub google_drive: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

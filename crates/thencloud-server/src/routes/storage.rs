@@ -74,7 +74,7 @@ pub async fn info(State(state): State<AppState>, user: AuthUser) -> Result<Json<
         });
     }
     Ok(Json(StorageInfo {
-        google: state.storage.google.is_some(),
+        google: crate::settings::google_drive(&state).await?,
         prefer: if prefer == "linked" {
             StoragePrefer::Linked
         } else {
@@ -134,6 +134,11 @@ pub async fn google_start(
         .google
         .as_ref()
         .ok_or_else(|| AppError::Unavailable("this server can't link Google Drive".into()))?;
+    if !crate::settings::google_drive(&state).await? {
+        return Err(AppError::Unavailable(
+            "linking Google Drive is turned off on this server".into(),
+        ));
+    }
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM storage_accounts WHERE user_id = ?")
         .bind(&user.id)
         .fetch_one(&state.db)
