@@ -39,6 +39,14 @@ services:
     volumes:
       - thencloud-data:/data
     # No ports: only Caddy reaches it, over the compose network.
+    # It writes nothing outside /data and needs no privileges.
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
 
   caddy:
     image: caddy:2
@@ -52,6 +60,12 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
     depends_on:
       - thencloud
 

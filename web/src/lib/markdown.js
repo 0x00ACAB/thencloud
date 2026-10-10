@@ -17,7 +17,11 @@ const marked = new Marked({ gfm: true, breaks: false });
 
 const purify = DOMPurify();
 purify.addHook('afterSanitizeAttributes', (node) => {
-  if (node.tagName === 'A') {
+  // Links only on HTML <a> (nodeName 'A'; an SVG <a> would be 'a').
+  if (node.nodeName !== 'A') {
+    node.removeAttribute('href');
+    node.removeAttribute('xlink:href');
+  } else {
     const href = node.getAttribute('href') || '';
     if (/^(https?:|mailto:)/i.test(href)) {
       node.setAttribute('target', '_blank');
@@ -44,7 +48,12 @@ export function renderMarkdown(text) {
   const html = marked.parse(text, { async: false });
   const frag = purify.sanitize(html, {
     RETURN_DOM_FRAGMENT: true,
-    FORBID_TAGS: ['style', 'form', 'button', 'textarea', 'select', 'iframe', 'video', 'audio', 'source', 'picture'],
+    // SVG can fetch on its own (<feImage href>, <image>), so it's out
+    // altogether, as in EPUB chapters (lib/books.js).
+    FORBID_TAGS: [
+      'style', 'form', 'button', 'textarea', 'select', 'iframe', 'video', 'audio', 'source', 'picture',
+      'svg', 'math', 'link', 'meta', 'base', 'object', 'embed',
+    ],
     FORBID_ATTR: ['style', 'srcset', 'background', 'poster'],
   });
   for (const img of frag.querySelectorAll('img')) {

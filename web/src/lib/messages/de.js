@@ -340,6 +340,7 @@ export default {
     'Du hast das heutige Download-Limit auf diesem Server erreicht. Es beginnt um Mitternacht UTC von vorn.',
   'Something went wrong on the server. Try again in a moment.': 'Auf dem Server ist etwas schiefgelaufen. Versuch es gleich noch einmal.',
   'Could not reach the server. Check your connection.': 'Der Server ist nicht erreichbar. Prüf deine Verbindung.',
+  "This server asked for weaker password protection than thencloud allows, so your password wasn't sent. Don't sign in here, and tell the person who runs it.": "Dieser Server hat einen schwächeren Passwortschutz verlangt, als thencloud erlaubt, deshalb wurde dein Passwort nicht gesendet. Melde dich hier nicht an und sag der Person Bescheid, die ihn betreibt.",
   'Something went wrong': 'Etwas ist schiefgelaufen',
 
   // Moving
