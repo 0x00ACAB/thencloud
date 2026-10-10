@@ -762,6 +762,16 @@
       "sealed": "Q6qh2TqU3ir0Xfa4j9f2hd12MiZ6Cm41d7Jm3PF6Maxci0JIU4mC9oubY-WKc1EqyVhXjttiSoDozAnM-nYco1Jg_qcwPhJx",
       "valid": false,
       "why": "the version byte left out"
+    },
+    {
+      "aad": "dGhlbmNsb3VkL3YxL2xpbmstdG9rZW4ANWQwYzhmM2UtMmIxYS00YzlkLThlN2YtNmE1YjRjM2QyZTFm",
+      "context": [
+        "5d0c8f3e-2b1a-4c9d-8e7f-6a5b4c3d2e1f"
+      ],
+      "format": "link-token",
+      "key": "jcObBHbGbWRO7bFdIWjbpujkOji3J9eWFz95P6iamcU",
+      "plaintext": "cTF3MmUzcjR0NXk2dTdpOG85cDBhMXMy",
+      "sealed": "ASWIIyvJUlIgsK2iVezdtV6TiDpDybvxJkCd7wUtScb6n6BYnhbDRU33I1oKv6neQmOueDcgecbiXLxdzdPyGSY"
     }
   ]
 }

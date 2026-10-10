@@ -917,6 +917,8 @@ async fn full_lifecycle_is_zero_knowledge() {
         other_key.as_bytes(),
         file_key.as_bytes(),
         alice.kp.secret.as_bytes(),
+        // Public-link tokens are kept hashed, and sealed outside the database.
+        link.token.as_bytes(),
     ];
     for p in &files {
         let bytes = std::fs::read(p).unwrap();
@@ -5093,6 +5095,20 @@ async fn backup_restore_and_check() {
         .unwrap();
     assert_eq!(b.chunks, 2);
     assert!(b.missing.is_empty());
+    // The link-token key goes along, so links can still be shown.
+    let data_dir = h.dir.path().join("data");
+    assert!(
+        maintenance::copy_link_token_key(&data_dir, &dest)
+            .await
+            .unwrap()
+    );
+    let maintenance::BackupDest::Dir(d) = &dest else {
+        unreachable!()
+    };
+    assert_eq!(
+        std::fs::read(d.join("link-token-key")).unwrap(),
+        std::fs::read(data_dir.join("link-token-key")).unwrap()
+    );
     // A second backup into the same place is refused.
     assert!(
         maintenance::backup(&h.state.db, &h.state.blobs, &dest)
@@ -7091,4 +7107,81 @@ async fn the_first_account_needs_the_setup_code() {
         .await
         .unwrap();
     assert_eq!(admins, ["bob"]);
+}
+
+/// Links made before tokens were sealed get sealed when the server starts,
+/// and keep opening and showing; the database then holds no token, and the
+/// key that seals them is a file of its own.
+#[tokio::test]
+async fn old_link_tokens_are_sealed_at_start() {
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "pw").await;
+    let file = alice
+        .upload(&h, &alice.root, None, "a.txt", b"hello")
+        .await
+        .unwrap();
+    let link: Link = h
+        .call(
+            Method::POST,
+            "/api/links",
+            Some(&alice.token),
+            Some(CreateLinkRequest {
+                node_id: file.id.clone(),
+                password_auth: None,
+                enc_link_key: None,
+                enc_link_secret: None,
+                expires_at: None,
+                upload_only: false,
+                max_opens: None,
+            }),
+        )
+        .await
+        .json();
+    // As an older server wrote it: the token in the clear, no hash.
+    sqlx::query(
+        "UPDATE public_links SET token = ?, token_hash = NULL, enc_token = NULL WHERE id = ?",
+    )
+    .bind(&link.token)
+    .bind(&link.id)
+    .execute(&h.state.db)
+    .await
+    .unwrap();
+
+    let state = AppState::new(Config::for_dir(h.dir.path())).await.unwrap();
+    let again = Harness {
+        app: router(state.clone()),
+        state,
+        dir: tempfile::tempdir().unwrap(),
+    };
+    let (token, hash): (String, Option<Vec<u8>>) =
+        sqlx::query_as("SELECT token, token_hash FROM public_links WHERE id = ?")
+            .bind(&link.id)
+            .fetch_one(&again.state.db)
+            .await
+            .unwrap();
+    assert_ne!(token, link.token);
+    assert_eq!(
+        hash.unwrap(),
+        thencloud_server::util::sha256(link.token.as_bytes())
+    );
+    let r = again
+        .raw(
+            Method::GET,
+            &format!("/api/public/{}", link.token),
+            None,
+            &[],
+            Body::empty(),
+            None,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{r:?}");
+    let listed: Vec<Link> = again.get("/api/links", &alice.token).await.json();
+    assert_eq!(listed[0].token, link.token);
+    let key_file = h.dir.path().join("data/link-token-key");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&key_file).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
 }

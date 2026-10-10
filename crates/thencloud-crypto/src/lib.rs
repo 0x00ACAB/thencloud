@@ -525,6 +525,19 @@ pub fn decrypt_link_secret(node_key: &Key, sealed: &[u8], node_id: &str) -> Resu
     open_key(node_key, sealed, &aad("link-secret", &[node_id]))
 }
 
+/// A public link's token as the server keeps it: sealed under a key it holds
+/// outside its database, so a copy of the database (a backup, a snapshot)
+/// doesn't hold tokens that open links. The server looks links up by the
+/// token's SHA-256 and opens this only to show the owner their link again.
+pub fn seal_link_token(key: &Key, token: &str, link_id: &str) -> Vec<u8> {
+    seal(key, token.as_bytes(), &aad("link-token", &[link_id]))
+}
+
+pub fn open_link_token(key: &Key, sealed: &[u8], link_id: &str) -> Result<String> {
+    String::from_utf8(open(key, sealed, &aad("link-token", &[link_id]))?)
+        .map_err(|_| Error::Decrypt)
+}
+
 // ---------------------------------------------------------------------------
 // Private account data (e.g. verified contacts): sealed under the master key
 // and bound to the user and a label, so the server can store it but not read

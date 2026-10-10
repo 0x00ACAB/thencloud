@@ -8,6 +8,11 @@ the apps (see "Keeping existing data working" in CLAUDE.md).
 
 - **Android:** music keeps playing with the screen off or another app open,
   with a notification, lock screen controls and headphone buttons.
+- **Security:** public-link tokens are no longer stored in the database. The
+  server keeps their SHA-256 and a copy sealed under `<data dir>/link-token-key`,
+  so a database backup or S3 snapshot alone holds no working link. Existing
+  links are converted at start and keep working. Back that file up: directory
+  backups (`backup DEST`) include it, S3 backups and snapshots don't.
 
 ## v1.0.0 (2026-10-05)
 
