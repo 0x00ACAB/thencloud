@@ -107,6 +107,10 @@ pub struct Downloader {
     /// Lookups by (user, link), so the download fetches what was shown.
     plans: Mutex<HashMap<(String, String), Planned>>,
     scratch: PathBuf,
+    /// The proxy every yt-dlp run goes through (see egress.rs), started
+    /// the first time it's needed.
+    egress: tokio::sync::OnceCell<crate::egress::Egress>,
+    public_only: bool,
 }
 
 /// Holds a user's one download slot until dropped.
@@ -124,7 +128,12 @@ impl Drop for Slot {
 impl Downloader {
     /// Look for yt-dlp and ffmpeg, and clear out scratch directories left
     /// by a crash.
-    pub async fn new(program: PathBuf, ffmpeg: PathBuf, data_dir: &Path) -> Self {
+    pub async fn new(
+        program: PathBuf,
+        ffmpeg: PathBuf,
+        data_dir: &Path,
+        public_only: bool,
+    ) -> Self {
         let scratch = data_dir.join("downloads");
         let _ = tokio::fs::remove_dir_all(&scratch).await;
         let run = |p: &Path, arg: &str| {
@@ -161,6 +170,8 @@ impl Downloader {
             active: Arc::default(),
             plans: Mutex::default(),
             scratch,
+            egress: tokio::sync::OnceCell::new(),
+            public_only,
         }
     }
 
@@ -182,11 +193,28 @@ impl Downloader {
         Ok(ScratchDir(dir))
     }
 
-    fn yt_dlp(&self, dir: &Path) -> Command {
+    /// The proxy's address for `--proxy`.
+    async fn proxy(&self) -> Result<String> {
+        let e = self
+            .egress
+            .get_or_try_init(|| crate::egress::Egress::start(self.public_only))
+            .await
+            .map_err(|_| AppError::Unavailable("the downloader couldn't be started".into()))?;
+        Ok(e.url())
+    }
+
+    fn yt_dlp(&self, dir: &Path, proxy: &str) -> Command {
         let mut c = Command::new(&self.program);
         // Its own process group, so stopping it also stops anything it
-        // starts (yt-dlp runs ffmpeg itself for some sites).
+        // starts (yt-dlp runs ffmpeg itself for some sites). Every
+        // connection goes through the proxy, which refuses private and
+        // local addresses wherever yt-dlp is sent.
         c.args(COMMON)
+            .args(["--proxy", proxy])
+            // Anything yt-dlp or its JavaScript runtime (deno, for YouTube)
+            // would cache goes in the scratch directory, which is deleted.
+            .env("DENO_DIR", dir)
+            .env("XDG_CACHE_HOME", dir)
             .current_dir(dir)
             .stdin(Stdio::null())
             .process_group(0)
@@ -197,10 +225,11 @@ impl Downloader {
     /// Look a link up without downloading it, and remember what the
     /// download would fetch.
     pub async fn info(&self, user: &str, url: &str) -> Result<VideoInfo> {
+        let proxy = self.proxy().await?;
         let dir = self.scratch_dir().await?;
         let out = tokio::time::timeout(
             Duration::from_secs(60),
-            self.yt_dlp(&dir.0)
+            self.yt_dlp(&dir.0, &proxy)
                 .args(["--dump-single-json", "--flat-playlist", "--", url])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -273,10 +302,11 @@ impl Downloader {
         slot: Slot,
     ) -> Result<DownloadStream> {
         let plan = self.plan(user, url, kind, quality).await?;
+        let proxy = self.proxy().await?;
         let dir = self.scratch_dir().await?;
         let spawn_err = |_| AppError::Unavailable("the downloader couldn't be started".into());
         let fetch = |id: &str| {
-            let mut c = self.yt_dlp(&dir.0);
+            let mut c = self.yt_dlp(&dir.0, &proxy);
             c.args(["--quiet", "-f", id, "-o", "-", "--", url])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::null());
@@ -814,7 +844,7 @@ pub async fn check_link(url: &str, public_only: bool) -> Result<()> {
     Ok(())
 }
 
-fn split_host_port(authority: &str) -> Option<(String, u16)> {
+pub(crate) fn split_host_port(authority: &str) -> Option<(String, u16)> {
     if let Some(rest) = authority.strip_prefix('[') {
         let (host, after) = rest.split_once(']')?;
         let port = match after.strip_prefix(':') {
@@ -830,7 +860,7 @@ fn split_host_port(authority: &str) -> Option<(String, u16)> {
     }
 }
 
-fn is_public(ip: &IpAddr) -> bool {
+pub(crate) fn is_public(ip: &IpAddr) -> bool {
     match ip {
         IpAddr::V4(v4) => {
             let o = v4.octets();

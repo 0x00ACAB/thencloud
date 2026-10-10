@@ -43,10 +43,8 @@ COPY crates crates
 RUN cargo build --release --locked -p thencloud-server
 
 # --- runtime --------------------------------------------------------------
-FROM debian:bookworm-slim
-# curl is for the health check. The optional video downloader needs yt-dlp
-# (and ffmpeg for most sites); add them in an image of your own if you
-# want it: FROM thencloud, then install both.
+FROM debian:bookworm-slim AS base
+# curl is for the health check.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl \
  && rm -rf /var/lib/apt/lists/* \
@@ -57,8 +55,45 @@ COPY --from=web /thencloud/web/dist /usr/share/thencloud/web
 ENV THENCLOUD_BIND=0.0.0.0:8080 \
     THENCLOUD_DATA_DIR=/data \
     THENCLOUD_WEB_DIR=/usr/share/thencloud/web
-USER thencloud
 VOLUME /data
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s CMD curl -fsS http://127.0.0.1:8080/api/health || exit 1
 ENTRYPOINT ["thencloud-server"]
+
+# --- with the video downloader (optional) ---------------------------------
+#   docker build --target with-downloader -t thencloud .
+# or THENCLOUD_TARGET=with-downloader with deploy/compose.yaml. It stays off
+# until an admin turns it on. yt-dlp (the zipapp, on Debian's python3),
+# ffmpeg to merge video and audio, and deno, which yt-dlp needs for YouTube.
+# Sites change often: to update yt-dlp, pass a newer YT_DLP_VERSION with its
+# YT_DLP_SHA256 (the "yt-dlp" line of the release's SHA2-256SUMS).
+FROM base AS with-downloader
+ARG TARGETARCH
+ARG YT_DLP_VERSION=2026.08.19
+ARG YT_DLP_SHA256=1fa6733c37ea6fb51c99ad8fe785e7b7e5f3246c9b980230329d4fb72ed8d4d6
+ARG DENO_VERSION=v2.9.7
+ARG DENO_SHA256_AMD64=c6527f24f4b16031d3ae4fa9f658d5f11534c8d84ce7dc8502420280919c3490
+ARG DENO_SHA256_ARM64=c832298b1ad4422481334855f6003e0f54145762c5a134f20a489511d2f65bbf
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ffmpeg python3 \
+ && rm -rf /var/lib/apt/lists/* \
+ && curl -fsSLo /usr/local/bin/yt-dlp \
+      "https://github.com/yt-dlp/yt-dlp/releases/download/${YT_DLP_VERSION}/yt-dlp" \
+ && echo "${YT_DLP_SHA256}  /usr/local/bin/yt-dlp" | sha256sum -c - \
+ && chmod 755 /usr/local/bin/yt-dlp \
+ && case "${TARGETARCH:-amd64}" in \
+      amd64) arch=x86_64; sum="$DENO_SHA256_AMD64" ;; \
+      arm64) arch=aarch64; sum="$DENO_SHA256_ARM64" ;; \
+      *) echo "no deno for $TARGETARCH" >&2; exit 1 ;; \
+    esac \
+ && curl -fsSLo /tmp/deno.zip \
+      "https://github.com/denoland/deno/releases/download/${DENO_VERSION}/deno-${arch}-unknown-linux-gnu.zip" \
+ && echo "${sum}  /tmp/deno.zip" | sha256sum -c - \
+ && python3 -m zipfile -e /tmp/deno.zip /usr/local/bin/ \
+ && chmod 755 /usr/local/bin/deno \
+ && rm /tmp/deno.zip
+USER thencloud
+
+# --- the default image: no downloader --------------------------------------
+FROM base AS runtime
+USER thencloud

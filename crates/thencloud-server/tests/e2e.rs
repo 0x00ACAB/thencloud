@@ -3634,6 +3634,8 @@ case " $* " in *" --version "*) echo 2099.01.01; exit 0;; esac
 for f in --ignore-config --no-cache-dir --no-playlist --no-part "--use-extractors default,-generic"; do
   case " $* " in *" $f "*) ;; *) echo "ERROR: missing $f" >&2; exit 9;; esac
 done
+# Every run goes through the server's own proxy (egress.rs).
+case " $* " in *" --proxy http://thencloud:"*"@127.0.0.1:"*) ;; *) echo "ERROR: missing --proxy" >&2; exit 9;; esac
 echo leftover > scratch-file.tmp
 url=""; for a in "$@"; do url="$a"; done
 case "$url" in *fail*) echo "ERROR: [youtube] abc: Video unavailable" >&2; exit 1;; esac
