@@ -195,6 +195,14 @@ Smaller things:
 - [ ] **Moving and checking**: see what lives where, move files between places, and have `check` cover linked accounts; unlinking one brings its files home first, or says what can't be
   - [x] Move everything to or from a linked account (Settings, a batch at a time, stops when the destination is full); unlinking brings files home first; `check` covers linked accounts
   - [ ] Per file: see where it lives and move just that
+- [ ] **More providers**, ones anyone can sign up to for free, each linked through an OAuth consent page like Google Drive (the server's own app, no keys for people to copy), and with a scope that reaches only thencloud's own folder where the provider has one. Free tiers as of 2026-10; check them again before building each one:
+  - [x] Google Drive: 15 GB, `drive.file` (only files thencloud made)
+  - [ ] Microsoft OneDrive: 5 GB, Microsoft Graph, `Files.ReadWrite.AppFolder` (only its app folder)
+  - [ ] Dropbox: 2 GB, OAuth with PKCE, an "App folder" app (only `/Apps/thencloud`)
+  - [ ] pCloud: 10 GB, OAuth; no folder-only scope, so the token can reach the whole account. Say so before linking
+  - [ ] Box: 10 GB, OAuth; also no folder-only scope, and 250 MB per file, which is fine for chunks
+  - [ ] Yandex Disk: 5 GB, OAuth, `cloud_api:disk.app_folder` (only its app folder); sign-up may not be open in every country
+  - [ ] Without OAuth, as plain keys or an app password in Settings: any S3 bucket (Backblaze B2 and Cloudflare R2 have 10 GB free), and WebDAV (Koofr: 10 GB free with app passwords)
 
 ## Later
 
