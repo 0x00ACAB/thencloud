@@ -449,9 +449,15 @@ pub struct Moved {
     pub full: bool,
 }
 
-/// Move a batch of the account owner's versions: to this server
-/// (`home`), or from it into the account (extra space only).
-pub async fn move_batch(state: &AppState, a: &Account, home: bool) -> Result<Moved> {
+/// Move a batch of the account owner's versions (all of them, or those
+/// under the node `scope`): to this server (`home`), or from it into the
+/// account (extra space only).
+pub async fn move_batch(
+    state: &AppState,
+    a: &Account,
+    home: bool,
+    scope: Option<&str>,
+) -> Result<Moved> {
     if !home && a.mode != "extra" {
         return Err(AppError::bad("files only move into extra space"));
     }
@@ -464,7 +470,7 @@ pub async fn move_batch(state: &AppState, a: &Account, home: bool) -> Result<Mov
         AppError::Conflict("files are already being moved; try again when that's done".into())
     })?;
     let mut done = Moved::default();
-    for (version_id, count, size) in movable(&state.db, a, home).await? {
+    for (version_id, count, size) in movable(&state.db, a, home, scope).await? {
         if done.versions as usize >= MOVE_BATCH_VERSIONS
             || (done.versions > 0 && done.bytes + size > MOVE_BATCH_BYTES)
         {
@@ -490,52 +496,67 @@ pub async fn move_batch(state: &AppState, a: &Account, home: bool) -> Result<Mov
             Err(e) => return Err(e),
         }
     }
-    let (left, left_bytes) = left_to_move(&state.db, a, home).await?;
+    let (left, left_bytes) = left_to_move(&state.db, a, home, scope).await?;
     done.left = left;
     done.left_bytes = left_bytes;
     Ok(done)
 }
 
-/// What's still to move, oldest first: `(version id, chunk count, size)`.
-async fn movable(db: &SqlitePool, a: &Account, home: bool) -> Result<Vec<(String, i64, i64)>> {
-    Ok(if home {
-        sqlx::query_as(
-            "SELECT id, chunk_count, size FROM file_versions WHERE account_id = ? \
-             ORDER BY created_at, id LIMIT ?",
-        )
-        .bind(&a.id)
-        .bind(MOVE_BATCH_VERSIONS as i64)
-        .fetch_all(db)
-        .await?
+/// The versions a move covers: all of the account owner's, or with
+/// `scope` only those of files in that folder (or that file). The query
+/// binds `?1` to the account id, `?2` to the owner and `?3` to the scope.
+fn move_set(home: bool) -> &'static str {
+    if home {
+        "WITH RECURSIVE sub(id) AS (SELECT ?3 UNION ALL \
+           SELECT n.id FROM nodes n JOIN sub ON n.parent_id = sub.id) \
+         SELECT v.id, v.chunk_count, v.size FROM file_versions v \
+         WHERE v.account_id = ?1 AND ?2 IS NOT NULL \
+         AND (?3 IS NULL OR v.node_id IN (SELECT id FROM sub))"
     } else {
-        sqlx::query_as(
-            "SELECT v.id, v.chunk_count, v.size FROM file_versions v JOIN nodes n ON n.id = v.node_id \
-             WHERE n.owner_id = ? AND v.account_id IS NULL ORDER BY v.created_at, v.id LIMIT ?",
-        )
-        .bind(&a.user_id)
-        .bind(MOVE_BATCH_VERSIONS as i64)
-        .fetch_all(db)
-        .await?
-    })
+        "WITH RECURSIVE sub(id) AS (SELECT ?3 UNION ALL \
+           SELECT n.id FROM nodes n JOIN sub ON n.parent_id = sub.id) \
+         SELECT v.id, v.chunk_count, v.size FROM file_versions v JOIN nodes n ON n.id = v.node_id \
+         WHERE n.owner_id = ?2 AND v.account_id IS NULL AND ?1 IS NOT NULL \
+         AND (?3 IS NULL OR v.node_id IN (SELECT id FROM sub))"
+    }
 }
 
-async fn left_to_move(db: &SqlitePool, a: &Account, home: bool) -> Result<(i64, i64)> {
-    Ok(if home {
-        sqlx::query_as(
-            "SELECT COUNT(*), COALESCE(SUM(size), 0) FROM file_versions WHERE account_id = ?",
-        )
+/// What's still to move, smallest first (so once one doesn't fit, the
+/// rest don't either): `(version id, chunk count, size)`.
+async fn movable(
+    db: &SqlitePool,
+    a: &Account,
+    home: bool,
+    scope: Option<&str>,
+) -> Result<Vec<(String, i64, i64)>> {
+    let sql = format!(
+        "{} ORDER BY v.size, v.id LIMIT {MOVE_BATCH_VERSIONS}",
+        move_set(home)
+    );
+    Ok(sqlx::query_as(sqlx::AssertSqlSafe(sql))
         .bind(&a.id)
-        .fetch_one(db)
-        .await?
-    } else {
-        sqlx::query_as(
-            "SELECT COUNT(*), COALESCE(SUM(v.size), 0) FROM file_versions v \
-             JOIN nodes n ON n.id = v.node_id WHERE n.owner_id = ? AND v.account_id IS NULL",
-        )
         .bind(&a.user_id)
+        .bind(scope)
+        .fetch_all(db)
+        .await?)
+}
+
+async fn left_to_move(
+    db: &SqlitePool,
+    a: &Account,
+    home: bool,
+    scope: Option<&str>,
+) -> Result<(i64, i64)> {
+    let sql = format!(
+        "SELECT COUNT(*), COALESCE(SUM(size), 0) FROM ({})",
+        move_set(home)
+    );
+    Ok(sqlx::query_as(sqlx::AssertSqlSafe(sql))
+        .bind(&a.id)
+        .bind(&a.user_id)
+        .bind(scope)
         .fetch_one(db)
-        .await?
-    })
+        .await?)
 }
 
 /// Bytes of versions kept only in the account.

@@ -1331,6 +1331,30 @@ pub struct MoveStorageResponse {
     pub full: bool,
 }
 
+/// `GET /api/nodes/{id}/storage` (owner only): where a file's versions, or
+/// those of every file in a folder, are kept.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeStorage {
+    pub places: Vec<NodePlace>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodePlace {
+    /// The linked account, or None for this server.
+    pub account_id: Option<String>,
+    pub versions: i64,
+    pub bytes: i64,
+}
+
+/// `POST /api/nodes/{id}/storage` (owner only): move a batch of the file's
+/// (or folder's) versions to this server (`to: null`) or into an
+/// extra-space account. Answered with a `MoveStorageResponse`; call again
+/// while `left` is above zero.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MoveNodeStorageRequest {
+    pub to: Option<String>,
+}
+
 /// `PUT /api/storage/prefer`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoragePreferRequest {

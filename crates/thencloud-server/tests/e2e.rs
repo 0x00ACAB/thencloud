@@ -8083,3 +8083,77 @@ async fn moving_files_between_server_and_drive() {
         .await;
     assert_eq!(r.status, StatusCode::NO_CONTENT);
 }
+
+/// One file or one folder's files can be moved on their own, and the owner
+/// (only) can see where they're kept.
+#[tokio::test]
+async fn moving_one_folder_to_drive() {
+    let (h, drive) = storage_harness().await;
+    let alice = register(&h, "alice", "pw").await;
+    let bob = register(&h, "bob", "pw").await;
+    let a = link_drive(&h, &alice.token, "extra").await;
+    let (folder, _) = alice.mkdir(&h, &alice.root, "Photos").await;
+    let inside = alice
+        .upload(&h, &folder, None, "in.txt", MARKER)
+        .await
+        .unwrap();
+    let outside = alice
+        .upload(&h, &alice.root, None, "out.txt", b"stays")
+        .await
+        .unwrap();
+    let places = |id: String, token: String| {
+        let h = &h;
+        async move { h.get(&format!("/api/nodes/{id}/storage"), &token).await }
+    };
+    let move_node = |id: String, to: Option<String>| {
+        let (h, token) = (&h, alice.token.clone());
+        async move {
+            let r = h
+                .call(
+                    Method::POST,
+                    &format!("/api/nodes/{id}/storage"),
+                    Some(&token),
+                    Some(json!({ "to": to })),
+                )
+                .await;
+            assert_eq!(r.status, StatusCode::OK, "{r:?}");
+            r.json::<MoveStorageResponse>()
+        }
+    };
+
+    let p: NodeStorage = places(folder.clone(), alice.token.clone()).await.json();
+    assert_eq!(p.places.len(), 1);
+    assert_eq!(p.places[0].account_id, None);
+
+    // The folder goes to Drive; the file outside it stays.
+    let m = move_node(folder.clone(), Some(a.id.clone())).await;
+    assert_eq!((m.moved, m.left), (1, 0));
+    assert!(!blob_exists(&h, &inside.version.as_ref().unwrap().id));
+    assert!(blob_exists(&h, &outside.version.as_ref().unwrap().id));
+    let p: NodeStorage = places(inside.id.clone(), alice.token.clone()).await.json();
+    assert_eq!(p.places[0].account_id.as_deref(), Some(a.id.as_str()));
+    for (_, bytes) in drive.lock().await.files.values() {
+        assert!(!contains(bytes, MARKER));
+    }
+
+    // Someone else can't see or move it.
+    let r = places(folder.clone(), bob.token.clone()).await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+    let r = h
+        .call(
+            Method::POST,
+            &format!("/api/nodes/{folder}/storage"),
+            Some(&bob.token),
+            Some(json!({ "to": null })),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NOT_FOUND);
+
+    // And it comes home.
+    let m = move_node(inside.id.clone(), None).await;
+    assert_eq!((m.moved, m.left), (1, 0));
+    assert!(blob_exists(&h, &inside.version.as_ref().unwrap().id));
+    let root_key = alice.key_of(&h, &folder).await;
+    let fk = c::unwrap_node_key(&root_key, &inside.enc_key, &inside.id).unwrap();
+    assert_eq!(alice.download(&h, &inside, &fk).await.1, MARKER);
+}

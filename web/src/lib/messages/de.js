@@ -1545,6 +1545,12 @@ export default {
   "{size} of your files are kept only in this Drive. They are moved back to this server first, then thencloud loses access.": "{size} deiner Dateien liegen nur in diesem Drive. Sie werden zuerst auf diesen Server zurückverschoben, dann verliert thencloud den Zugriff.",
   "thencloud loses access to it. Your files here stay as they are.": "thencloud verliert den Zugriff darauf. Deine Dateien hier bleiben, wie sie sind.",
   "Move back and unlink": "Zurückverschieben und trennen",
+  "Where {name} is kept": "Wo {name} gespeichert ist",
+  "There are no files in this folder.": "In diesem Ordner sind keine Dateien.",
+  "Every file in this folder, older versions included.": "Alle Dateien in diesem Ordner, ältere Versionen eingeschlossen.",
+  "This file, older versions included.": "Diese Datei, ältere Versionen eingeschlossen.",
+  "Move to Google Drive": "Nach Google Drive verschieben",
+  "Where it is kept": "Wo es gespeichert ist",
   "Unlink Google Drive?": "Google Drive trennen?",
   "The copies in it are deleted and thencloud loses access. Your files here stay as they are.": "Die Kopien darin werden gelöscht und thencloud verliert den Zugriff. Deine Dateien hier bleiben, wie sie sind.",
 };
