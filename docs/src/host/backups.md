@@ -8,7 +8,7 @@ Everything the server holds is ciphertext, wrapped keys and public keys, so a ba
 thencloud-server --data-dir ./data backup /backups/thencloud-2026-10-10
 ```
 
-This writes a consistent snapshot of the database (SQLite `VACUUM INTO`) and every blob it refers to into a new directory. It's safe while the server is running. On the same filesystem blobs are hard links, which is instant and takes no extra space; elsewhere they're copied. If a file is deleted while the backup runs, its missing pieces are listed and the command exits with status 2.
+This writes a consistent snapshot of the database (SQLite `VACUUM INTO`) and every blob it refers to into a new directory. It's safe while the server is running. On the same filesystem blobs are hard links, which is instant and takes no extra space; elsewhere they're copied. If a file is deleted while the backup runs, its missing pieces are listed and the command exits with status 2. A directory backup also gets `link-token-key`, the key public-link tokens are sealed under (the database keeps only their hashes); an S3 backup doesn't, so keep a copy of that file yourself. Without it, a restored server still opens every link but can't show owners the links they made before.
 
 The destination can also be a bucket, using the configured S3 endpoint and credentials, from either a local or an S3 blob store:
 
