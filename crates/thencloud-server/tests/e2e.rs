@@ -1323,6 +1323,17 @@ async fn security_headers_are_set() {
         assert!(directives.contains_key(name), "{name} is missing");
     }
     assert_eq!(r.headers.get("cache-control").unwrap(), "no-store");
+    // Browser features the app never uses are off for it and anything in it.
+    let pp = r
+        .headers
+        .get("permissions-policy")
+        .unwrap()
+        .to_str()
+        .unwrap();
+    for f in ["camera=()", "microphone=()", "geolocation=()", "usb=()"] {
+        assert!(pp.contains(f), "{pp}");
+    }
+    assert!(!pp.contains("fullscreen"), "the video player uses it: {pp}");
 
     // Pages are always revalidated; hashed assets are cached for good, but
     // only when they exist.
@@ -7091,4 +7102,37 @@ async fn the_first_account_needs_the_setup_code() {
         .await
         .unwrap();
     assert_eq!(admins, ["bob"]);
+}
+
+/// A request whose body stops arriving is cut off instead of holding its
+/// connection and buffer for good.
+#[tokio::test]
+async fn a_stalled_request_body_times_out() {
+    let h = Harness::new().await;
+    // Time only moves when everything is waiting; the body never comes.
+    tokio::time::pause();
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<axum::body::Bytes, std::io::Error>>(1);
+    tx.send(Ok(axum::body::Bytes::from_static(b"{\"username\": ")))
+        .await
+        .unwrap();
+    let body = Body::from_stream(tokio_stream_from(rx));
+    let r = h
+        .raw(
+            Method::POST,
+            "/api/auth/prelogin",
+            None,
+            &[],
+            body,
+            Some("application/json"),
+        )
+        .await;
+    // axum reports the cut-off body as a bad request.
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    drop(tx);
+}
+
+fn tokio_stream_from<T: Send + 'static>(
+    mut rx: tokio::sync::mpsc::Receiver<T>,
+) -> impl futures_core::Stream<Item = T> + Send + 'static {
+    futures_util::stream::poll_fn(move |cx| rx.poll_recv(cx))
 }
