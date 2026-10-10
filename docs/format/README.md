@@ -172,6 +172,7 @@ Each of these is `seal(key, plaintext, aad)`:
 | `display-name` | the user's avatar key | the display name, UTF-8, zero-padded to 256 bytes (see below) | `aad("display-name", owner_username)` |
 | `link-key` | a link password's KEK | node key | `aad("link-key", node_id)` |
 | `link-secret` | the node key | the link's secret, so the owner can show the link again | `aad("link-secret", node_id)` |
+| `link-token` | the server's link-token key (`<data dir>/link-token-key`, never in the database) | a public link's token, UTF-8, so the server can show the owner their link again; links are looked up by the token's SHA-256 | `aad("link-token", link_id)` |
 | `thumbnail` | the file's node key | a small JPEG of that version | `aad("thumbnail", node_id, version_id)` |
 | `comment` | the node key | a comment: JSON `{"text": "...", "at": <ms>}` | `aad("comment", node_id, comment_id, author_user_id)` |
 | `backup` | a backup key | one backup record (see [Backups](#backups)) | `aad("backup", base64url(backup_id), decimal(index))` |

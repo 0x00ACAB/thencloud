@@ -134,6 +134,7 @@ fn open_symmetric(v: &Value) -> Result<Vec<u8>> {
         "content-key" => bytes(unwrap_content_key(&k, &sealed, c[0], c[1])?),
         "link-key" => bytes(unwrap_link_key(&k, &sealed, c[0])?),
         "link-secret" => bytes(decrypt_link_secret(&k, &sealed, c[0])?),
+        "link-token" => open_link_token(&k, &sealed, c[0])?.into_bytes(),
         "thumbnail" => decrypt_thumbnail(&k, c[0], c[1], &sealed)?,
         "comment" => decrypt_comment(&k, c[0], c[1], c[2], &sealed)?,
         "backup" => open_backup_record(&k, &b64_decode(c[0])?, c[1].parse().unwrap(), &sealed)?,
@@ -603,6 +604,17 @@ fn write_vectors() {
             &[node],
             link_secret.as_bytes(),
             encrypt_link_secret(&node_key, &link_secret, node),
+        ),
+        sym(
+            "link-token",
+            &key("link token key"),
+            &["5d0c8f3e-2b1a-4c9d-8e7f-6a5b4c3d2e1f"],
+            b"q1w2e3r4t5y6u7i8o9p0a1s2",
+            seal_link_token(
+                &key("link token key"),
+                "q1w2e3r4t5y6u7i8o9p0a1s2",
+                "5d0c8f3e-2b1a-4c9d-8e7f-6a5b4c3d2e1f",
+            ),
         ),
         sym(
             "thumbnail",

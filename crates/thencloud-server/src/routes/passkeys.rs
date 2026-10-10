@@ -76,6 +76,7 @@ pub(crate) async fn check_assertion(
         &a.signature,
         challenge,
         user_verified,
+        &state.config.public_origin,
     )?;
     sqlx::query("UPDATE passkeys SET sign_count = ?, last_used_at = ? WHERE id = ?")
         .bind(count as i64)
@@ -169,6 +170,7 @@ pub async fn register(
         &req.client_data_json,
         &req.attestation_object,
         &ch.challenge,
+        &state.config.public_origin,
     )?;
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM passkeys WHERE user_id = ?")
         .bind(&user.id)

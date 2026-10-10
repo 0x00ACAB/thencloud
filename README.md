@@ -32,7 +32,7 @@ Files, folder names and keys are encrypted and decrypted **in your browser**. Th
   <img src=".github/assets/screenshot-light.png" alt="The thencloud file browser: folders and files in My files, with storage use and an end-to-end encrypted note in the sidebar">
 </picture>
 
-> **Status:** 1.0, in use. A complete file cloud: accounts, folders, versions, sharing and public links, with a web app, desktop and Android apps and a command line. It hasn't had an independent security audit yet. See [CHANGELOG.md](CHANGELOG.md) and [MILESTONES.md](MILESTONES.md).
+> **Status:** 1.0, in use. A complete file cloud: accounts, folders, versions, sharing and public links, with a web app, desktop and Android apps and a command line. See [CHANGELOG.md](CHANGELOG.md) and [MILESTONES.md](MILESTONES.md).
 
 ## Features
 
@@ -111,7 +111,7 @@ Every flag can also be set as an environment variable.
 | `--s3-snapshots-kept` | `THENCLOUD_S3_SNAPSHOTS_KEPT` | `7` (older database snapshots are deleted) |
 | `--web-dir` | `THENCLOUD_WEB_DIR` | `./web/dist` (the built web client) |
 | `--admin-username` | `THENCLOUD_ADMIN_USERNAME` | unset. The name the first account (the admin) must have; it also needs the setup code from the log |
-| `--allow-registration` | `THENCLOUD_ALLOW_REGISTRATION` | `true` (the first user can always register, with the setup code, and becomes an admin). Admins can switch between open, invite-only and closed at runtime in the Admin view, which overrides this |
+| `--allow-registration` | `THENCLOUD_ALLOW_REGISTRATION` | `true` (the first user can always register, with the setup code, and becomes an admin). Admins can switch between open, invite-only and closed at runtime in the Admin view, which overrides this. Open means anyone who finds the server gets an account and the default quota, and you can't see what they store; the server warns at start while it's open |
 | `--default-quota` | `THENCLOUD_DEFAULT_QUOTA` | 10 GiB |
 | `--session-days` | `THENCLOUD_SESSION_DAYS` | `30` |
 | `--max-versions` | `THENCLOUD_MAX_VERSIONS` | `10` (versions kept per file, including the current one) |
@@ -122,6 +122,8 @@ Every flag can also be set as an environment variable.
 | `--ffmpeg` | `THENCLOUD_FFMPEG` | `ffmpeg` (lets the downloader merge separate video and audio, which most YouTube videos need) |
 | `--downloader-max-bytes` | `THENCLOUD_DOWNLOADER_MAX_BYTES` | `2147483648` (2 GiB per video) |
 | `--trust-proxy` | `THENCLOUD_TRUST_PROXY` | `false`. Behind a reverse proxy, take the client's address from `X-Forwarded-For` (used only to rate-limit sign-in attempts, never stored). Only turn it on when clients can't reach the server directly |
+| `--hsts` | `THENCLOUD_HSTS` | `false`. Send `Strict-Transport-Security` (two years, with subdomains), so browsers only reach the server over HTTPS. Turn it on when the server is only served over HTTPS, unless the reverse proxy already sends the header; not for an onion service |
+| `--public-origin` | `THENCLOUD_PUBLIC_ORIGIN` | unset. The address people open the server at, e.g. `https://cloud.example.com` (comma-separated for several). When set, passkeys only work from pages at one of these, so a passkey made on any other site is refused |
 | `--metrics-token` | `THENCLOUD_METRICS_TOKEN` | unset. When set, `GET /api/metrics` serves Prometheus metrics (the counts in the admin view) to requests with `Authorization: Bearer <token>` |
 
 `GET /api/health` answers `200 ok` while the database and data directory are available, and `503` otherwise. It needs no sign-in.
@@ -132,11 +134,11 @@ Every flag can also be set as an environment variable.
 thencloud-server --data-dir ./data backup /backups/thencloud-2026-09-28
 ```
 
-This writes a consistent snapshot of the database and every blob it refers to into a new directory. It's safe while the server is running. On the same filesystem the blobs are hard links, which is instant and takes no extra space; elsewhere they're copied. If a file is deleted while the backup runs, its missing pieces are listed and the command exits with status 2. Like the server, a backup holds only ciphertext and wrapped keys.
+This writes a consistent snapshot of the database and every blob it refers to into a new directory. It's safe while the server is running. On the same filesystem the blobs are hard links, which is instant and takes no extra space; elsewhere they're copied. If a file is deleted while the backup runs, its missing pieces are listed and the command exits with status 2. A directory backup also gets `link-token-key` (public-link tokens are sealed under it, outside the database); an S3 backup doesn't, so keep that file yourself. Like the server, a backup holds only ciphertext and wrapped keys.
 
 The destination can also be a bucket: `backup s3://my-backups/thencloud/` (using the configured `--s3-endpoint` and credentials), from either a local or an S3 blob store.
 
-With S3 configured, the bucket is a backup in its own right: the database goes there as a snapshot once a day (`--s3-snapshot-hours`), next to the blobs, and with `--s3-mirror` the blobs are on the local disk as well. If the disk is lost, `thencloud-server --data-dir <new dir> <the same S3 options> restore-snapshot` puts the newest snapshot back, and the server starts as it was then. Files uploaded after that snapshot aren't in its database, and `check` lists their blobs as not referred to. Snapshots hold what the server already has, wrapped keys and ciphertext, never a key or a name.
+With S3 configured, the bucket is a backup in its own right: the database goes there as a snapshot once a day (`--s3-snapshot-hours`), next to the blobs, and with `--s3-mirror` the blobs are on the local disk as well. If the disk is lost, `thencloud-server --data-dir <new dir> <the same S3 options> restore-snapshot` puts the newest snapshot back, and the server starts as it was then. Files uploaded after that snapshot aren't in its database, and `check` lists their blobs as not referred to. Snapshots hold what the server already has, wrapped keys and ciphertext, never a key or a name. They don't hold `<data dir>/link-token-key`, which public-link tokens are sealed under; keep a copy of it elsewhere, or a rebuilt server opens links but can't show owners the ones they made before.
 
 To restore, stop the server, copy the backup to where the data should live, and start the server with `--data-dir` pointing at it. Then run `thencloud-server --data-dir <dir> check`: it checks that every blob the database expects is there with the right size, and lists any that nothing refers to. To restore an S3 backup, put its `thencloud.db` in a data directory and run with `--s3-prefix` pointing at the backup's `blobs/` prefix. To check that files also decrypt, use Settings > Check your files in the web client.
 

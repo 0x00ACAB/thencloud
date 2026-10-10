@@ -34,4 +34,3 @@ thencloud has no telemetry, tracking or crash reporting, and never will. The web
 - **"Keep me signed in"** keeps your session and master key in the browser, encrypted with a key no script can export. That's about as safe as your browser profile and disk encryption: anyone who can use that computer account can open your files.
 - **There's no password reset.** Without a recovery key, a forgotten password means the data is lost.
 - **Previews render files other people shared with you** inside the app, where your keys live. Decrypted bytes always get a fixed, known-safe type, Markdown is sanitised and never loads images, Office documents are shown as plain data, and PDFs are drawn to a canvas without running their JavaScript. The CSP is the second line of defence.
-- **No independent security audit yet.**
