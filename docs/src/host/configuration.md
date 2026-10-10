@@ -10,6 +10,7 @@ Every option is a command-line flag and an environment variable. `thencloud-serv
 | `--data-dir` | `THENCLOUD_DATA_DIR` | `./data`. The SQLite database, and the encrypted blobs unless S3 is configured |
 | `--web-dir` | `THENCLOUD_WEB_DIR` | `./web/dist`, the built web client |
 | `--trust-proxy` | `THENCLOUD_TRUST_PROXY` | `false`. Behind a reverse proxy, take the client's address from the last `X-Forwarded-For` entry. Only turn it on when clients can't reach the server directly. The address is used to rate-limit sign-in attempts and never stored |
+| `--hsts` | `THENCLOUD_HSTS` | `false`. Send `Strict-Transport-Security` (two years, with subdomains), so browsers only reach the server over HTTPS. Turn it on when the server is only served over HTTPS, unless the reverse proxy already sends the header; not for an onion service |
 | `--public-origin` | `THENCLOUD_PUBLIC_ORIGIN` | unset. The address people open the server at, e.g. `https://cloud.example.com` (comma-separated for several). When set, passkeys only work from pages at one of these, so a passkey made on any other site is refused |
 | `--limit-by-address` | `THENCLOUD_LIMIT_BY_ADDRESS` | `true`. Rate-limit sign-in attempts by address as well as by account. Turn it off for a [Tor onion service](tor.md) |
 
@@ -17,7 +18,7 @@ Every option is a command-line flag and an environment variable. `thencloud-serv
 
 | Flag | Env | Default |
 |---|---|---|
-| `--allow-registration` | `THENCLOUD_ALLOW_REGISTRATION` | `true`. The first account can always be made (with the setup code). Admins can switch between open, invite only and closed at runtime, which overrides this |
+| `--allow-registration` | `THENCLOUD_ALLOW_REGISTRATION` | `true`. The first account can always be made (with the setup code). Admins can switch between open, invite only and closed at runtime, which overrides this. Open means anyone who finds the server gets an account and the default quota, and you can't see what they store; the server warns at start while it's open. With `false`, choose invite only in the Admin view to let people in by invite |
 | `--admin-username` | `THENCLOUD_ADMIN_USERNAME` | unset. The username the first account must have |
 | `--default-quota` | `THENCLOUD_DEFAULT_QUOTA` | 10 GiB, in bytes of ciphertext |
 | `--session-days` | `THENCLOUD_SESSION_DAYS` | `30`, sliding |

@@ -13,7 +13,11 @@ test('sign up, upload, preview, folders and search stay in the browser', async (
 
   await upload(page, {
     [NAME]: `${SECRET}\nline two\n`,
-    'notes-7f3a91.md': '# Heading 7f3a91\n\nSome *text*.\n',
+    // Inline SVG could make the browser fetch a path (feImage, <a> inside
+    // SVG); the preview must not let it.
+    'notes-7f3a91.md':
+      '# Heading 7f3a91\n\nSome *text*.\n\n<svg width="10" height="10"><filter id="f"><feImage href="leak-7f3a91.png"/></filter>' +
+      '<rect width="10" height="10" filter="url(#f)"/><a href="leak-7f3a91-link"><text>x</text></a></svg>\n',
     'table-7f3a91.csv': 'name,score\nAda,10\nBob,2\n',
   });
 
@@ -47,7 +51,7 @@ test('sign up, upload, preview, folders and search stay in the browser', async (
   await page.locator('button.row-open', { hasText: 'Private folder 7f3a91' }).click();
   await expect(page).toHaveURL(/#\/files\/[0-9a-f-]{36}$/);
 
-  await requests.expectNone([SECRET, NAME, 'Quarterly', 'Private folder', 'Heading 7f3a91', 'Ada,10', PASSWORD]);
+  await requests.expectNone([SECRET, NAME, 'Quarterly', 'Private folder', 'Heading 7f3a91', 'Ada,10', 'leak-7f3a91', PASSWORD]);
 });
 
 test('a public link opens without an account, and its key stays after the #', async ({ page, context, browser }) => {

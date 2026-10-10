@@ -47,6 +47,11 @@ function apiMessage(e) {
 
 export function errorMessage(e) {
   if (e instanceof ApiError) return apiMessage(e);
+  if (e?.code === 'weak_kdf') {
+    return t(
+      "This server asked for weaker password protection than thencloud allows, so your password wasn't sent. Don't sign in here, and tell the person who runs it.",
+    );
+  }
   return String(e?.message || e || t('Something went wrong'));
 }
 

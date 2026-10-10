@@ -26,6 +26,26 @@ use crate::util::*;
 /// 1M chunks of 4 MiB = 4 TiB per file.
 const MAX_CHUNKS: u32 = 1 << 20;
 
+/// Locks for chunk writes, by (upload, index) hashed into a fixed set.
+/// Storing a chunk reads its old size and charges the difference; two
+/// writes of the same chunk at once would each subtract the old size, and
+/// enough of them could take the quota down to nothing.
+pub struct ChunkLocks([tokio::sync::Mutex<()>; 64]);
+
+impl Default for ChunkLocks {
+    fn default() -> Self {
+        ChunkLocks(std::array::from_fn(|_| tokio::sync::Mutex::new(())))
+    }
+}
+
+impl ChunkLocks {
+    fn of(&self, upload_id: &str, idx: u32) -> &tokio::sync::Mutex<()> {
+        use std::hash::{BuildHasher, BuildHasherDefault, DefaultHasher};
+        let h = BuildHasherDefault::<DefaultHasher>::default().hash_one((upload_id, idx));
+        &self.0[(h % self.0.len() as u64) as usize]
+    }
+}
+
 #[derive(sqlx::FromRow)]
 struct UploadRow {
     id: String,
@@ -298,6 +318,8 @@ pub async fn store_chunk(
     if body.len() < SEALED_OVERHEAD || body.len() > MAX_ENCRYPTED_CHUNK {
         return Err(AppError::bad("chunk has an invalid size"));
     }
+    // Held until the chunk and its charge are recorded (see `ChunkLocks`).
+    let _lock = state.chunk_locks.of(id, idx).lock().await;
     let old: Option<i64> =
         sqlx::query_scalar("SELECT size FROM upload_chunks WHERE upload_id = ? AND idx = ?")
             .bind(id)
