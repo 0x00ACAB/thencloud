@@ -3,5 +3,8 @@
 	# thencloud sets its own security headers (CSP and the rest). Caddy
 	# keeps no access log unless one is configured; leave it that way, as it
 	# would record who fetched which public link.
+	# HSTS: once a browser has been here, it only comes back over HTTPS, so
+	# nobody on the network can hand it a different web client over HTTP.
+	header Strict-Transport-Security "max-age=63072000; includeSubDomains"
 	reverse_proxy thencloud:8080
 }
