@@ -202,7 +202,9 @@ Smaller things:
   - [ ] pCloud: 10 GB, OAuth; no folder-only scope, so the token can reach the whole account. Say so before linking
   - [ ] Box: 10 GB, OAuth; also no folder-only scope, and 250 MB per file, which is fine for chunks
   - [ ] Yandex Disk: 5 GB, OAuth, `cloud_api:disk.app_folder` (only its app folder); sign-up may not be open in every country
-  - [ ] Without OAuth, as plain keys or an app password in Settings: any S3 bucket (Backblaze B2 and Cloudflare R2 have 10 GB free), and WebDAV (Koofr: 10 GB free with app passwords)
+  - [ ] S3-compatible buckets, linked with an access key pasted in Settings (one integration, reusing `s3.rs`): Backblaze B2 (10 GB free), Cloudflare R2 (10 GB free, free downloads), Storj (free tier has changed over time; check it), or any other bucket
+  - [ ] MEGA: 20 GB free, its own API and SDK (signs in with the account's password, no OAuth), with a download transfer quota, so better as extra space than as a mirror that gets read often
+  - [ ] WebDAV, with an app password (Koofr: 10 GB free)
 
 ## Later
 
