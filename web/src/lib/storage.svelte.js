@@ -30,7 +30,7 @@ export function dropStorage() {
 /**
  * Move files between this server and account `id`, a batch per request,
  * until none are left. `to` is 'server' or 'linked'. Resolves with
- * 'done', 'full' (the destination ran out of room) or 'stopped'.
+ * 'done', 'full' (what's left doesn't fit at the destination) or 'stopped'.
  */
 export async function moveFiles(id, to) {
   if (storage.moving) return 'stopped';
@@ -43,10 +43,9 @@ export async function moveFiles(id, to) {
       moving.done += r.moved_bytes;
       moving.total = moving.done + r.left_bytes;
       storage.moving = { ...moving };
-      if (r.full) return 'full';
       if (r.left === 0) return 'done';
-      // Nothing moved but no reason given: don't spin.
-      if (r.moved === 0) return 'stopped';
+      // Nothing more fits, or nothing moved for no given reason: don't spin.
+      if (r.moved === 0) return r.full ? 'full' : 'stopped';
       if (stopRequested) return 'stopped';
     }
   } finally {

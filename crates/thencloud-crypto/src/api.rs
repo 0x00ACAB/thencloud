@@ -1326,7 +1326,8 @@ pub struct MoveStorageResponse {
     /// Versions still to move, and their bytes.
     pub left: i64,
     pub left_bytes: i64,
-    /// Moving stopped because the destination is full.
+    /// Some versions didn't fit at the destination, so they stay where
+    /// they are.
     pub full: bool,
 }
 

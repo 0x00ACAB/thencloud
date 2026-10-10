@@ -445,7 +445,7 @@ pub struct Moved {
     pub bytes: i64,
     pub left: i64,
     pub left_bytes: i64,
-    /// Stopped because the destination is full.
+    /// Some versions didn't fit at the destination.
     pub full: bool,
 }
 
@@ -481,10 +481,8 @@ pub async fn move_batch(state: &AppState, a: &Account, home: bool) -> Result<Mov
                 done.bytes += size;
             }
             Ok(false) => {}
-            Err(AppError::QuotaExceeded) => {
-                done.full = true;
-                break;
-            }
+            // Doesn't fit; a smaller one after it might.
+            Err(AppError::QuotaExceeded) => done.full = true,
             Err(e) if done.versions > 0 => {
                 tracing::warn!(error = %e, "moving a version stopped");
                 break;
