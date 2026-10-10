@@ -184,10 +184,17 @@ async fn check(config: Config) -> Result<ExitCode, Box<dyn std::error::Error + S
         }
         ok &= r.is_ok();
     }
-    for c in thencloud_server::storage::check(&state).await? {
+    // Accounts by number only: the version ids below say what's affected.
+    for (n, c) in thencloud_server::storage::check(&state)
+        .await?
+        .iter()
+        .enumerate()
+    {
         println!(
-            "In linked account {} ({}, of user {}): {} chunks",
-            c.account_id, c.mode, c.user_id, c.chunks
+            "In linked account {} ({}): {} chunks",
+            n + 1,
+            c.mode,
+            c.chunks
         );
         if let Some(e) = &c.unreachable {
             println!("  couldn't list it: {e}");
