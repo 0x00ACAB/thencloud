@@ -29,6 +29,8 @@ the apps (see "Keeping existing data working" in CLAUDE.md).
   example `deploy/compose.yaml` now sets `THENCLOUD_ALLOW_REGISTRATION=false`:
   if you run it and rely on open sign-up, choose it in the Admin view (that
   setting wins) or remove the line.
+- `--public-origin` (`THENCLOUD_PUBLIC_ORIGIN`): the address people open the
+  server at. When set, passkeys only work from there.
 
 ## v1.0.0 (2026-10-05)
 
