@@ -1597,6 +1597,8 @@ export default {
   "Moving stopped, so the Drive stays linked.": "Przenoszenie zostało przerwane, więc Dysk pozostaje połączony.",
   "Moving to this server: {done} of {total}": "Przenoszenie na ten serwer: {done} z {total}",
   "Moving to Google Drive: {done} of {total}": "Przenoszenie na Dysk Google: {done} z {total}",
+  "Moving to this server": "Przenoszenie na ten serwer",
+  "Moving to Google Drive": "Przenoszenie na Dysk Google",
   "{size} of your files are kept only in this Drive.": "{size} Twoich plików jest tylko na tym Dysku.",
   "Move to this server": "Przenieś na ten serwer",
   "Move everything from this server here": "Przenieś tu wszystko z tego serwera",
