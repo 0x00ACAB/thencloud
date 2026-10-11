@@ -7520,6 +7520,8 @@ mod fake_google {
         pub peak_uploading: usize,
         /// Uploads still to refuse with 429 Too Many Requests.
         pub rate_limit: u32,
+        /// How long each download takes.
+        pub download_delay: std::time::Duration,
     }
 
     pub type Shared = Arc<Mutex<Drive>>;
@@ -7570,6 +7572,10 @@ mod fake_google {
     }
 
     async fn handle(drive: Shared, req: Request) -> Response {
+        if req.uri().query().is_some_and(|q| q.contains("alt=media")) {
+            let delay = drive.lock().await.download_delay;
+            tokio::time::sleep(delay).await;
+        }
         if req.uri().path() != "/upload/drive/v3/files" {
             return answer(drive, req).await;
         }
@@ -8109,6 +8115,84 @@ async fn moving_files_between_server_and_drive() {
         )
         .await;
     assert_eq!(r.status, StatusCode::NO_CONTENT);
+}
+
+/// A file too big to move in one batch moves over several, both ways: what
+/// a batch copied is kept for the next, the file stays readable from its
+/// old home meanwhile, and the progress counts it.
+#[tokio::test]
+async fn a_big_file_moves_over_several_batches() {
+    let (h, drive) = storage_harness().await;
+    let alice = register(&h, "alice", "pw").await;
+    let a = link_drive(&h, &alice.token, "extra").await;
+    // Thirteen chunks.
+    let big: Vec<u8> = [MARKER, &[7u8; 48 << 20][..]].concat();
+    let f = alice
+        .upload(&h, &alice.root, None, "big.bin", &big)
+        .await
+        .unwrap();
+    let vid = f.version.as_ref().unwrap().id.clone();
+    let root_key = alice.key_of(&h, &alice.root).await;
+    let fk = c::unwrap_node_key(&root_key, &f.enc_key, &f.id).unwrap();
+    let used = alice.me(&h).await.used_bytes;
+    let move_to = |to: &'static str| {
+        let (h, token, id) = (&h, alice.token.clone(), a.id.clone());
+        async move {
+            let r = h
+                .call(
+                    Method::POST,
+                    &format!("/api/storage/accounts/{id}/move"),
+                    Some(&token),
+                    Some(json!({ "to": to })),
+                )
+                .await;
+            assert_eq!(r.status, StatusCode::OK, "{r:?}");
+            r.json::<MoveStorageResponse>()
+        }
+    };
+
+    // Four chunks at a time, two seconds each: twelve go before the cut-off.
+    drive.lock().await.upload_delay = std::time::Duration::from_secs(2);
+    let m = move_to("linked").await;
+    assert_eq!((m.moved, m.left), (0, 1));
+    assert!(m.moved_bytes > 40 << 20, "{m:?}");
+    assert!(m.left_bytes < 5 << 20, "{m:?}");
+    assert!(blob_exists(&h, &vid));
+    assert_eq!(alice.me(&h).await.used_bytes, used);
+    drive.lock().await.upload_delay = std::time::Duration::ZERO;
+    assert_eq!(alice.download(&h, &f, &fk).await.1, big);
+    let m = move_to("linked").await;
+    assert_eq!((m.moved, m.left), (1, 0));
+    assert!(m.moved_bytes < 5 << 20, "only the last chunk: {m:?}");
+    assert!(!blob_exists(&h, &vid));
+    assert_eq!(alice.me(&h).await.used_bytes, 0);
+    assert_eq!(
+        drive.lock().await.files.len(),
+        14,
+        "the folder and 13 chunks"
+    );
+
+    // And home again the same way.
+    drive.lock().await.download_delay = std::time::Duration::from_secs(2);
+    let m = move_to("server").await;
+    assert_eq!((m.moved, m.left), (0, 1));
+    assert!(m.moved_bytes > 40 << 20, "{m:?}");
+    assert_eq!(
+        alice.me(&h).await.used_bytes,
+        0,
+        "not charged until it's home"
+    );
+    drive.lock().await.download_delay = std::time::Duration::ZERO;
+    assert_eq!(alice.download(&h, &f, &fk).await.1, big);
+    let m = move_to("server").await;
+    assert_eq!((m.moved, m.left), (1, 0));
+    assert_eq!(alice.me(&h).await.used_bytes, used);
+    assert_eq!(alice.download(&h, &f, &fk).await.1, big);
+    assert_eq!(drive.lock().await.files.len(), 1, "only the folder is left");
+    let r = thencloud_server::maintenance::check(&h.state.db, &h.state.blobs)
+        .await
+        .unwrap();
+    assert!(r.is_ok(), "{r:?}");
 }
 
 /// A move request starts no file after a few seconds, so the web client
