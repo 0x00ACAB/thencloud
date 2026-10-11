@@ -45,7 +45,8 @@ export async function moveFiles(id, to) {
       storage.moving = { ...moving };
       if (r.left === 0) return 'done';
       // Nothing more fits, or nothing moved for no given reason: don't spin.
-      if (r.moved === 0) return r.full ? 'full' : 'stopped';
+      // (A big file moves over several batches: some bytes, no file yet.)
+      if (r.moved === 0 && r.moved_bytes === 0) return r.full ? 'full' : 'stopped';
       if (stopRequested) return 'stopped';
     }
   } finally {

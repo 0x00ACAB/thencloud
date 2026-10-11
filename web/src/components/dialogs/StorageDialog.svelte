@@ -51,7 +51,8 @@
         moving.done += r.moved_bytes;
         moving.total = moving.done + r.left_bytes;
         if (r.left === 0) break;
-        if (r.moved === 0 || stop) {
+        // A big file moves over several batches: some bytes, no file yet.
+        if ((r.moved === 0 && r.moved_bytes === 0) || stop) {
           if (r.full) toast(to == null ? t("This server doesn't have room for the rest of your files.") : t("This Google Drive doesn't have room for the rest of your files."), { kind: 'error' });
           break;
         }
