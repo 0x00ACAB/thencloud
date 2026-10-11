@@ -20,13 +20,15 @@ pub mod google;
 
 use std::time::Duration;
 
+use futures_util::StreamExt;
 use sqlx::SqlitePool;
 use thencloud_crypto::{Key, MAX_ENCRYPTED_CHUNK};
+use tokio::sync::Semaphore;
 
 use crate::AppState;
 use crate::error::{AppError, Result};
 use crate::util::now;
-use google::{DriveError, Google};
+use google::{DriveError, DriveResult, Google};
 
 pub const KEY_FILE: &str = "storage-token-key";
 
@@ -106,11 +108,37 @@ fn app_error(e: DriveError) -> AppError {
             "Google Drive no longer lets thencloud in; link it again in Settings".into(),
         ),
         DriveError::NotFound => AppError::Internal("a chunk is missing from Google Drive".into()),
+        DriveError::RateLimited => {
+            AppError::Unavailable("Google Drive asked to slow down; try again in a moment".into())
+        }
         DriveError::Other(e) => {
             tracing::warn!(error = %e, "a linked storage account didn't answer");
             AppError::Unavailable("Google Drive didn't answer; try again in a moment".into())
         }
     }
+}
+
+/// Pauses before trying a Drive call again when Google asks to slow down.
+const BACKOFF: [Duration; 5] = [
+    Duration::from_millis(500),
+    Duration::from_secs(1),
+    Duration::from_secs(2),
+    Duration::from_secs(4),
+    Duration::from_secs(8),
+];
+
+/// Make a Drive call, trying again (a few times, waiting longer each time)
+/// while it's rate limited.
+async fn retried<T, F: Future<Output = DriveResult<T>>>(
+    mut call: impl FnMut() -> F,
+) -> DriveResult<T> {
+    for pause in BACKOFF {
+        match call().await {
+            Err(DriveError::RateLimited) => tokio::time::sleep(pause).await,
+            r => return r,
+        }
+    }
+    call().await
 }
 
 /// The Google client, or an error if this server has none set up.
@@ -218,8 +246,7 @@ pub async fn put_remote(
     }
     let token = access(state, &a).await.map_err(app_error)?;
     let g = google(state)?;
-    let remote_id = g
-        .upload(&token, &a.folder_id, data)
+    let remote_id = retried(|| g.upload(&token, &a.folder_id, data))
         .await
         .map_err(app_error)?;
     let old: Option<(String, i64)> = sqlx::query_as(
@@ -323,8 +350,8 @@ async fn get_remote(
         .await?
         .ok_or_else(|| AppError::Internal("the account a chunk is in is gone".into()))?;
     let token = access(state, &a).await.map_err(app_error)?;
-    let data = google(state)?
-        .download(&token, &remote_id, MAX_ENCRYPTED_CHUNK as u64 + 64 * 1024)
+    let g = google(state)?;
+    let data = retried(|| g.download(&token, &remote_id, MAX_ENCRYPTED_CHUNK as u64 + 64 * 1024))
         .await
         .map_err(app_error)?;
     // The chunk is decrypted (and so checked) by the client; a length that
@@ -412,6 +439,10 @@ async fn delete_remote(state: &AppState, version_id: &str, rows: Vec<(String, u3
 /// reasonable time.
 const MOVE_BATCH_BYTES: i64 = 64 << 20;
 const MOVE_BATCH_VERSIONS: usize = 32;
+/// How many chunks a move sends or fetches at once. Each one is a request
+/// to Google, and for a small chunk most of its time is Google's, not the
+/// transfer's.
+const MOVE_PARALLEL: usize = 4;
 
 /// People whose files are being moved right now.
 static MOVING: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
@@ -469,32 +500,56 @@ pub async fn move_batch(
     let _moving = MovingGuard::take(&a.user_id).ok_or_else(|| {
         AppError::Conflict("files are already being moved; try again when that's done".into())
     })?;
-    let mut done = Moved::default();
+    // Picked up front, so the versions can move side by side.
+    let mut batch = Vec::new();
+    let mut bytes = 0;
     for (version_id, count, size) in movable(&state.db, a, home, scope).await? {
-        if done.versions as usize >= MOVE_BATCH_VERSIONS
-            || (done.versions > 0 && done.bytes + size > MOVE_BATCH_BYTES)
+        if batch.len() >= MOVE_BATCH_VERSIONS
+            || (!batch.is_empty() && bytes + size > MOVE_BATCH_BYTES)
         {
             break;
         }
-        let r = if home {
-            bring_home(state, a, &version_id, count as u32, size).await
-        } else {
-            send_away(state, a, &version_id, count as u32, size).await
-        };
+        bytes += size;
+        batch.push((version_id, count as u32, size));
+    }
+    let slots = Semaphore::new(MOVE_PARALLEL);
+    // Each one runs to its end, even once another has failed.
+    let results: Vec<(i64, Result<bool>)> = futures_util::stream::iter(batch)
+        .map(|(version_id, count, size)| {
+            let slots = &slots;
+            async move {
+                let r = if home {
+                    bring_home(state, a, &version_id, count, size, slots).await
+                } else {
+                    send_away(state, a, &version_id, count, size, slots).await
+                };
+                (size, r)
+            }
+        })
+        .buffer_unordered(MOVE_PARALLEL)
+        .collect()
+        .await;
+    let mut done = Moved::default();
+    let mut failed = None;
+    for (size, r) in results {
         match r {
             Ok(true) => {
                 done.versions += 1;
                 done.bytes += size;
             }
             Ok(false) => {}
-            // Doesn't fit; a smaller one after it might.
+            // Doesn't fit; a smaller one might have.
             Err(AppError::QuotaExceeded) => done.full = true,
-            Err(e) if done.versions > 0 => {
-                tracing::warn!(error = %e, "moving a version stopped");
-                break;
+            Err(e) => {
+                failed.get_or_insert(e);
             }
-            Err(e) => return Err(e),
         }
+    }
+    if let Some(e) = failed {
+        if done.versions == 0 {
+            return Err(e);
+        }
+        tracing::warn!(error = %e, "moving a version stopped");
     }
     let (left, left_bytes) = left_to_move(&state.db, a, home, scope).await?;
     done.left = left;
@@ -569,6 +624,32 @@ pub async fn only_there(db: &SqlitePool, account_id: &str) -> Result<i64> {
     )
 }
 
+/// Run `copy` for each chunk index, at most `MOVE_PARALLEL` at once across
+/// the whole move (`slots`). Every copy runs to its end, so none is dropped
+/// halfway (an upload cut off there could leave a file in the Drive that
+/// nothing records); the first error is returned.
+async fn each_chunk<F: Future<Output = Result<()>>>(
+    slots: &Semaphore,
+    idxs: impl Iterator<Item = u32>,
+    copy: impl Fn(u32) -> F,
+) -> Result<()> {
+    let results: Vec<Result<()>> = futures_util::stream::iter(idxs)
+        .map(|idx| {
+            let copy = &copy;
+            async move {
+                let _slot = slots
+                    .acquire()
+                    .await
+                    .expect("the semaphore is never closed");
+                copy(idx).await
+            }
+        })
+        .buffer_unordered(MOVE_PARALLEL)
+        .collect()
+        .await;
+    results.into_iter().collect()
+}
+
 /// Copy one version from the account to this server, then make this
 /// server its home. False if it was deleted or moved meanwhile. A mirror
 /// keeps its chunks as its copy; extra space has them deleted.
@@ -578,6 +659,7 @@ async fn bring_home(
     version_id: &str,
     count: u32,
     size: i64,
+    slots: &Semaphore,
 ) -> Result<bool> {
     // Charged first, so two moves can't both fit in the same room.
     let charged = sqlx::query(
@@ -598,16 +680,15 @@ async fn bring_home(
             .await;
         state.blobs.delete_version(version_id).await;
     };
-    for idx in 0..count {
-        let copied = async {
-            let data = get_remote(state, &a.id, version_id, idx).await?;
-            state.blobs.put_chunk(version_id, idx, &data).await?;
-            Ok::<_, AppError>(())
-        };
-        if let Err(e) = copied.await {
-            refund().await;
-            return Err(e);
-        }
+    let copied = each_chunk(slots, 0..count, |idx| async move {
+        let data = get_remote(state, &a.id, version_id, idx).await?;
+        state.blobs.put_chunk(version_id, idx, &data).await?;
+        Ok(())
+    })
+    .await;
+    if let Err(e) = copied {
+        refund().await;
+        return Err(e);
     }
     let moved =
         sqlx::query("UPDATE file_versions SET account_id = NULL WHERE id = ? AND account_id = ?")
@@ -642,6 +723,7 @@ async fn send_away(
     version_id: &str,
     count: u32,
     size: i64,
+    slots: &Semaphore,
 ) -> Result<bool> {
     let free: Option<i64> =
         sqlx::query_scalar("SELECT free_bytes FROM storage_accounts WHERE id = ?")
@@ -657,10 +739,12 @@ async fn send_away(
             .bind(version_id)
             .fetch_all(&state.db)
             .await?;
-    for idx in (0..count).filter(|i| !have.contains(i)) {
+    let missing = (0..count).filter(|i| !have.contains(i));
+    each_chunk(slots, missing, |idx| async move {
         let data = get_chunk(state, version_id, idx).await?;
-        put_remote(state, &a.id, version_id, idx, &data).await?;
-    }
+        put_remote(state, &a.id, version_id, idx, &data).await
+    })
+    .await?;
     let mut tx = state.db.begin().await?;
     let moved =
         sqlx::query("UPDATE file_versions SET account_id = ? WHERE id = ? AND account_id IS NULL")
