@@ -212,8 +212,8 @@
   </header>
 
   <div class="flex flex-1">
-    <aside class="sticky top-14 hidden h-[calc(100dvh-3.5rem-var(--player-bar))] w-60 shrink-0 flex-col border-r border-line px-3 py-4 md:flex">
-      <nav class="grid gap-0.5" aria-label={t('Sections')}>
+    <aside class="sticky top-[calc(3.5rem+1px)] hidden h-[calc(100dvh-3.5rem-1px-var(--player-bar))] w-60 shrink-0 flex-col border-r border-line px-3 py-4 md:flex">
+      <nav class="-mx-1 grid min-h-0 content-start gap-0.5 overflow-y-auto px-1" aria-label={t('Sections')}>
         {#each nav as item (item.name)}
           <button type="button" class="nav-item" aria-current={current === item.name ? 'page' : undefined} onclick={() => go(item.to())}>
             <Icon name={item.icon} />{item.label}
@@ -249,7 +249,7 @@
         {/each}
       </nav>
 
-      <div class="mt-auto grid gap-2 px-2">
+      <div class="mt-auto grid shrink-0 gap-2 px-2 pt-3">
         <div class="flex items-baseline justify-between text-xs">
           <span class="font-medium">{t('Storage')}</span>
           <span class="text-fg-muted tabular-nums">{t('{used} of {quota}', { used: formatSize(meter.used), quota: formatSize(meter.room) })}</span>

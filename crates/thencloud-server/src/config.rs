@@ -183,6 +183,11 @@ pub struct Config {
     #[arg(skip = crate::storage::google::Endpoints::default())]
     pub google_endpoints: crate::storage::google::Endpoints,
 
+    /// For browser tests only: a stand-in for all of Google's endpoints
+    /// (`<base>/auth`, `/token`, `/revoke`, `/upload` and the API at `<base>`).
+    #[arg(long, hide = true)]
+    pub google_test_base: Option<String>,
+
     /// Where tokens are checked; tests point this at a stand-in.
     #[arg(skip = String::from(crate::turnstile::SITEVERIFY))]
     pub turnstile_verify_url: String,
@@ -230,6 +235,7 @@ impl Config {
             google_client_id: None,
             google_client_secret: None,
             google_endpoints: Default::default(),
+            google_test_base: None,
             trust_proxy: false,
             hsts: false,
             public_origin: Vec::new(),
