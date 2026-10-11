@@ -24,6 +24,7 @@ use futures_util::StreamExt;
 use sqlx::SqlitePool;
 use thencloud_crypto::{Key, MAX_ENCRYPTED_CHUNK};
 use tokio::sync::Semaphore;
+use tokio::time::Instant;
 
 use crate::AppState;
 use crate::error::{AppError, Result};
@@ -475,7 +476,10 @@ impl Drop for MovingGuard {
 /// What `move_batch` did.
 #[derive(Debug, Default)]
 pub struct Moved {
+    /// Versions now in their new home.
     pub versions: u32,
+    /// Bytes copied, including chunks of versions that aren't all there yet
+    /// (a big file moves over several batches).
     pub bytes: i64,
     pub left: i64,
     pub left_bytes: i64,
@@ -487,6 +491,33 @@ pub struct Moved {
 /// under the node `scope`): to this server (`home`), or from it into the
 /// account (extra space only).
 pub async fn move_batch(
+    state: &AppState,
+    a: &Account,
+    home: bool,
+    scope: Option<&str>,
+) -> Result<Moved> {
+    // On a task of its own, so a request that's cut off (a proxy's time
+    // limit, a closed tab) doesn't stop an upload halfway, which could leave
+    // a file in the Drive that nothing records.
+    let (state, a, scope) = (state.clone(), a.clone(), scope.map(str::to_string));
+    tokio::spawn(async move { move_some(&state, &a, home, scope.as_deref()).await })
+        .await
+        .map_err(|e| AppError::Internal(format!("a move stopped: {e}")))?
+}
+
+/// What moving one version did.
+enum Step {
+    /// It's in its new home, after copying this many bytes (less than its
+    /// size if an earlier batch copied some).
+    Moved(i64),
+    /// Some of its chunks were copied (this many bytes); the rest go with
+    /// a later batch.
+    Partly(i64),
+    /// Not started, or deleted or moved meanwhile.
+    Skipped,
+}
+
+async fn move_some(
     state: &AppState,
     a: &Account,
     home: bool,
@@ -516,22 +547,21 @@ pub async fn move_batch(
         batch.push((version_id, count as u32, size));
     }
     let slots = Semaphore::new(MOVE_PARALLEL);
-    let deadline = tokio::time::Instant::now() + MOVE_BATCH_TIME;
+    let deadline = Instant::now() + MOVE_BATCH_TIME;
     // Each one runs to its end, even once another has failed.
-    let results: Vec<(i64, Result<bool>)> = futures_util::stream::iter(batch)
+    let results: Vec<Result<Step>> = futures_util::stream::iter(batch)
         .map(|(version_id, count, size)| {
             let slots = &slots;
             async move {
                 // Not started: the next batch picks it up.
-                if tokio::time::Instant::now() >= deadline {
-                    return (size, Ok(false));
+                if Instant::now() >= deadline {
+                    return Ok(Step::Skipped);
                 }
-                let r = if home {
-                    bring_home(state, a, &version_id, count, size, slots).await
+                if home {
+                    bring_home(state, a, &version_id, count, size, slots, deadline).await
                 } else {
-                    send_away(state, a, &version_id, count, size, slots).await
-                };
-                (size, r)
+                    send_away(state, a, &version_id, count, size, slots, deadline).await
+                }
             }
         })
         .buffer_unordered(MOVE_PARALLEL)
@@ -539,13 +569,14 @@ pub async fn move_batch(
         .await;
     let mut done = Moved::default();
     let mut failed = None;
-    for (size, r) in results {
+    for r in results {
         match r {
-            Ok(true) => {
+            Ok(Step::Moved(bytes)) => {
                 done.versions += 1;
-                done.bytes += size;
+                done.bytes += bytes;
             }
-            Ok(false) => {}
+            Ok(Step::Partly(bytes)) => done.bytes += bytes,
+            Ok(Step::Skipped) => {}
             // Doesn't fit; a smaller one might have.
             Err(AppError::QuotaExceeded) => done.full = true,
             Err(e) => {
@@ -554,7 +585,7 @@ pub async fn move_batch(
         }
     }
     if let Some(e) = failed {
-        if done.versions == 0 {
+        if done.bytes == 0 {
             return Err(e);
         }
         tracing::warn!(error = %e, "moving a version stopped");
@@ -610,8 +641,18 @@ async fn left_to_move(
     home: bool,
     scope: Option<&str>,
 ) -> Result<(i64, i64)> {
+    // Less what's already there of versions that moved partly.
+    let partly = if home {
+        "0".to_string()
+    } else {
+        format!(
+            "(SELECT COALESCE(SUM(r.size), 0) FROM remote_chunks r \
+             WHERE r.account_id = ?1 AND r.version_id IN (SELECT id FROM ({})))",
+            move_set(home)
+        )
+    };
     let sql = format!(
-        "SELECT COUNT(*), COALESCE(SUM(size), 0) FROM ({})",
+        "SELECT COUNT(*), COALESCE(SUM(size), 0) - {partly} FROM ({})",
         move_set(home)
     );
     Ok(sqlx::query_as(sqlx::AssertSqlSafe(sql))
@@ -633,15 +674,16 @@ pub async fn only_there(db: &SqlitePool, account_id: &str) -> Result<i64> {
 }
 
 /// Run `copy` for each chunk index, at most `MOVE_PARALLEL` at once across
-/// the whole move (`slots`). Every copy runs to its end, so none is dropped
+/// the whole move (`slots`), starting none after `deadline`. Every copy runs to its end, so none is dropped
 /// halfway (an upload cut off there could leave a file in the Drive that
 /// nothing records); the first error is returned.
-async fn each_chunk<F: Future<Output = Result<()>>>(
+async fn each_chunk<F: Future<Output = Result<i64>>>(
     slots: &Semaphore,
+    deadline: Instant,
     idxs: impl Iterator<Item = u32>,
     copy: impl Fn(u32) -> F,
-) -> Result<()> {
-    let results: Vec<Result<()>> = futures_util::stream::iter(idxs)
+) -> Result<Copied> {
+    let results: Vec<Result<Option<i64>>> = futures_util::stream::iter(idxs)
         .map(|idx| {
             let copy = &copy;
             async move {
@@ -649,13 +691,34 @@ async fn each_chunk<F: Future<Output = Result<()>>>(
                     .acquire()
                     .await
                     .expect("the semaphore is never closed");
-                copy(idx).await
+                // Past the batch's time: left for the next one.
+                if Instant::now() >= deadline {
+                    return Ok(None);
+                }
+                copy(idx).await.map(Some)
             }
         })
         .buffer_unordered(MOVE_PARALLEL)
         .collect()
         .await;
-    results.into_iter().collect()
+    let mut c = Copied {
+        bytes: 0,
+        all: true,
+    };
+    for r in results {
+        match r? {
+            Some(n) => c.bytes += n,
+            None => c.all = false,
+        }
+    }
+    Ok(c)
+}
+
+/// What `each_chunk` copied.
+struct Copied {
+    bytes: i64,
+    /// Every chunk asked for, not only some before the time ran out.
+    all: bool,
 }
 
 /// Copy one version from the account to this server, then make this
@@ -668,7 +731,8 @@ async fn bring_home(
     count: u32,
     size: i64,
     slots: &Semaphore,
-) -> Result<bool> {
+    deadline: Instant,
+) -> Result<Step> {
     // Charged first, so two moves can't both fit in the same room.
     let charged = sqlx::query(
         "UPDATE users SET used_bytes = used_bytes + ?1 WHERE id = ?2 AND used_bytes + ?1 <= quota_bytes",
@@ -680,23 +744,53 @@ async fn bring_home(
     if charged.rows_affected() == 0 {
         return Err(AppError::QuotaExceeded);
     }
-    let refund = || async {
+    let uncharge = || async {
         let _ = sqlx::query("UPDATE users SET used_bytes = MAX(0, used_bytes - ?) WHERE id = ?")
             .bind(size)
             .bind(&a.user_id)
             .execute(&state.db)
             .await;
+    };
+    let refund = || async {
+        uncharge().await;
         state.blobs.delete_version(version_id).await;
     };
-    let copied = each_chunk(slots, 0..count, |idx| async move {
+    // Chunks an earlier batch already copied here are kept.
+    let sizes: Vec<(u32, i64)> = sqlx::query_as(
+        "SELECT idx, size FROM remote_chunks WHERE account_id = ? AND version_id = ?",
+    )
+    .bind(&a.id)
+    .bind(version_id)
+    .fetch_all(&state.db)
+    .await?;
+    let mut missing = Vec::new();
+    for idx in 0..count {
+        let here = state.blobs.chunk_size(version_id, idx).await.ok();
+        let there = sizes
+            .iter()
+            .find(|(i, _)| *i == idx)
+            .map(|(_, n)| *n as u64);
+        if here.is_none() || here != there {
+            missing.push(idx);
+        }
+    }
+    let copied = each_chunk(slots, deadline, missing.into_iter(), |idx| async move {
         let data = get_remote(state, &a.id, version_id, idx).await?;
         state.blobs.put_chunk(version_id, idx, &data).await?;
-        Ok(())
+        Ok(data.len() as i64)
     })
     .await;
-    if let Err(e) = copied {
-        refund().await;
-        return Err(e);
+    let copied = match copied {
+        Ok(c) => c,
+        Err(e) => {
+            refund().await;
+            return Err(e);
+        }
+    };
+    if !copied.all {
+        // Kept here for the next batch, which charges for it again.
+        uncharge().await;
+        return Ok(Step::Partly(copied.bytes));
     }
     let moved =
         sqlx::query("UPDATE file_versions SET account_id = NULL WHERE id = ? AND account_id = ?")
@@ -706,7 +800,7 @@ async fn bring_home(
             .await?;
     if moved.rows_affected() == 0 {
         refund().await;
-        return Ok(false);
+        return Ok(Step::Skipped);
     }
     if a.mode != "mirror" {
         let rows: Vec<(String, u32, String, i64)> = sqlx::query_as(
@@ -719,7 +813,7 @@ async fn bring_home(
         .await?;
         delete_remote(state, version_id, rows).await;
     }
-    Ok(true)
+    Ok(Step::Moved(copied.bytes))
 }
 
 /// Copy one version from this server to the account, then make the
@@ -732,27 +826,36 @@ async fn send_away(
     count: u32,
     size: i64,
     slots: &Semaphore,
-) -> Result<bool> {
+    deadline: Instant,
+) -> Result<Step> {
+    let have: Vec<(u32, i64)> = sqlx::query_as(
+        "SELECT idx, size FROM remote_chunks WHERE account_id = ? AND version_id = ?",
+    )
+    .bind(&a.id)
+    .bind(version_id)
+    .fetch_all(&state.db)
+    .await?;
+    // What an earlier batch sent is already counted against the room there.
+    let to_send = size - have.iter().map(|(_, n)| n).sum::<i64>();
     let free: Option<i64> =
         sqlx::query_scalar("SELECT free_bytes FROM storage_accounts WHERE id = ?")
             .bind(&a.id)
             .fetch_one(&state.db)
             .await?;
-    if free.is_some_and(|f| f < size) {
+    if free.is_some_and(|f| f < to_send) {
         return Err(AppError::QuotaExceeded);
     }
-    let have: Vec<u32> =
-        sqlx::query_scalar("SELECT idx FROM remote_chunks WHERE account_id = ? AND version_id = ?")
-            .bind(&a.id)
-            .bind(version_id)
-            .fetch_all(&state.db)
-            .await?;
-    let missing = (0..count).filter(|i| !have.contains(i));
-    each_chunk(slots, missing, |idx| async move {
+    let missing = (0..count).filter(|i| !have.iter().any(|(h, _)| h == i));
+    let copied = each_chunk(slots, deadline, missing, |idx| async move {
         let data = get_chunk(state, version_id, idx).await?;
-        put_remote(state, &a.id, version_id, idx, &data).await
+        put_remote(state, &a.id, version_id, idx, &data).await?;
+        Ok(data.len() as i64)
     })
     .await?;
+    if !copied.all {
+        // What's there stays recorded, and the next batch sends the rest.
+        return Ok(Step::Partly(copied.bytes));
+    }
     let mut tx = state.db.begin().await?;
     let moved =
         sqlx::query("UPDATE file_versions SET account_id = ? WHERE id = ? AND account_id IS NULL")
@@ -773,7 +876,7 @@ async fn send_away(
         .fetch_all(&state.db)
         .await?;
         delete_remote(state, version_id, rows).await;
-        return Ok(false);
+        return Ok(Step::Skipped);
     }
     sqlx::query("UPDATE users SET used_bytes = MAX(0, used_bytes - ?) WHERE id = ?")
         .bind(size)
@@ -784,7 +887,7 @@ async fn send_away(
     // A read that looked up the old home finds the chunk missing here and
     // falls back to the account's copy (`get_chunk`).
     state.blobs.delete_version(version_id).await;
-    Ok(true)
+    Ok(Step::Moved(copied.bytes))
 }
 
 // ---------------------------------------------------------------------------
