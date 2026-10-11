@@ -55,7 +55,12 @@ fn get<T: DeserializeOwned>(s: &Server, path: &str) -> T {
 fn start() -> Server {
     let dir = tempfile::tempdir().unwrap();
     let (tx, rx) = std::sync::mpsc::channel();
-    let cfg = Config::for_dir(dir.path());
+    let mut cfg = Config::for_dir(dir.path());
+    // Nothing to find, so the downloader starts no child process: a child's
+    // SIGCHLD can interrupt the client's reads (sockets with a timeout ignore
+    // SA_RESTART), and requests failed with EINTR.
+    cfg.yt_dlp = dir.path().join("no-yt-dlp");
+    cfg.ffmpeg = dir.path().join("no-ffmpeg");
     std::thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async move {
