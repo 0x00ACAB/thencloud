@@ -42,3 +42,8 @@
 - [Formats and test vectors](reference/format.md)
 - [Contributing](reference/contributing.md)
 - [Changelog](reference/changelog.md)
+
+# cloud.kkaii.xyz
+
+- [Privacy policy](legal/privacy.md)
+- [Terms of service](legal/terms.md)
