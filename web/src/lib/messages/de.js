@@ -1546,6 +1546,8 @@ export default {
   "Moving stopped, so the Drive stays linked.": "Das Verschieben wurde angehalten, deshalb bleibt das Drive verknüpft.",
   "Moving to this server: {done} of {total}": "Wird auf diesen Server verschoben: {done} von {total}",
   "Moving to Google Drive: {done} of {total}": "Wird nach Google Drive verschoben: {done} von {total}",
+  "Moving to this server": "Wird auf diesen Server verschoben",
+  "Moving to Google Drive": "Wird nach Google Drive verschoben",
   "{size} of your files are kept only in this Drive.": "{size} deiner Dateien liegen nur in diesem Drive.",
   "Move to this server": "Auf diesen Server verschieben",
   "Move everything from this server here": "Alles von diesem Server hierher verschieben",

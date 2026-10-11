@@ -8111,6 +8111,46 @@ async fn moving_files_between_server_and_drive() {
     assert_eq!(r.status, StatusCode::NO_CONTENT);
 }
 
+/// A move request starts no file after a few seconds, so the web client
+/// can show progress; what's left goes in the next one.
+#[tokio::test]
+async fn a_move_batch_ends_after_a_few_seconds() {
+    let (h, drive) = storage_harness().await;
+    let alice = register(&h, "alice", "pw").await;
+    let a = link_drive(&h, &alice.token, "extra").await;
+    for i in 0..16 {
+        alice
+            .upload(&h, &alice.root, None, &format!("{i}.txt"), MARKER)
+            .await
+            .unwrap();
+    }
+    // Four at a time, two seconds each: they start at 0, 2 and 4 seconds,
+    // and the fourth four would start after the five-second cut-off.
+    drive.lock().await.upload_delay = std::time::Duration::from_secs(2);
+    let move_all = || {
+        let (h, token, id) = (&h, alice.token.clone(), a.id.clone());
+        async move {
+            let r = h
+                .call(
+                    Method::POST,
+                    &format!("/api/storage/accounts/{id}/move"),
+                    Some(&token),
+                    Some(json!({ "to": "linked" })),
+                )
+                .await;
+            assert_eq!(r.status, StatusCode::OK, "{r:?}");
+            r.json::<MoveStorageResponse>()
+        }
+    };
+    let m = move_all().await;
+    assert_eq!((m.moved, m.left, m.full), (12, 4, false));
+    drive.lock().await.upload_delay = std::time::Duration::ZERO;
+    let m = move_all().await;
+    assert_eq!((m.moved, m.left), (4, 0));
+    let linked = thencloud_server::storage::check(&h.state).await.unwrap();
+    assert!(linked[0].is_ok(), "{linked:?}");
+}
+
 /// A move sends several chunks at once, of different files and of one
 /// file, never more than a few, and waits when Google asks it to slow down.
 #[tokio::test]
