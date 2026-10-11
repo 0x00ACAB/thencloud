@@ -21,6 +21,12 @@ It's one Rust binary with SQLite and a folder of encrypted blobs (or an S3-compa
 - **Libraries:** pick a folder and get a music player, a video library with series and episodes, a photo timeline, notes, or audiobooks with chapters.
 - **Accounts:** an authenticator app or passkeys as a second step, an optional recovery key, app passwords for other devices, and an admin view that counts things but can't read them.
 
+## Google Drive
+
+On a server that turns it on, you can link your own Google Drive in Settings, as a second copy of your files or as extra space. thencloud then keeps encrypted pieces of your files in a "thencloud" folder in your Drive. It asks only for access to the files it creates there (the `drive.file` permission), never the rest of your Drive, and Google sees only encrypted data under random names. See [Linked storage](host/google-drive.md).
+
+The server at cloud.kkaii.xyz has its own [privacy policy](legal/privacy.md) and [terms of service](legal/terms.md).
+
 ## The one rule
 
 No key, password or plaintext ever reaches the server. Every feature is built around that, and the test suite checks it: after each end-to-end run it scans the database and blob store for plaintext, and the browser tests fail if any request carries a name, contents, a password or a key.
