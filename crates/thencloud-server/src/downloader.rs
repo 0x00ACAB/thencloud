@@ -125,6 +125,19 @@ impl Drop for Slot {
     }
 }
 
+/// Whether `program` names an executable file, directly or through `PATH`.
+fn installed(program: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    let runnable = |p: &Path| {
+        std::fs::metadata(p).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+    };
+    if program.components().count() > 1 {
+        return runnable(program);
+    }
+    std::env::var_os("PATH")
+        .is_some_and(|path| std::env::split_paths(&path).any(|d| runnable(&d.join(program))))
+}
+
 impl Downloader {
     /// Look for yt-dlp and ffmpeg, and clear out scratch directories left
     /// by a crash.
@@ -144,7 +157,14 @@ impl Downloader {
                 .kill_on_drop(true);
             c
         };
+        // Only what's installed is started: a spawn whose exec fails ends
+        // while the spawning thread has every signal blocked, so its SIGCHLD
+        // is queued instead of dropped, and it cuts short a socket read
+        // with a timeout elsewhere in the process (EINTR).
         let version = async {
+            if !installed(&program) {
+                return None;
+            }
             let out =
                 tokio::time::timeout(Duration::from_secs(15), run(&program, "--version").output())
                     .await
@@ -154,14 +174,15 @@ impl Downloader {
             (out.status.success() && !v.is_empty()).then_some(v)
         }
         .await;
-        let can_merge = tokio::time::timeout(
-            Duration::from_secs(15),
-            run(&ffmpeg, "-version").stdout(Stdio::null()).status(),
-        )
-        .await
-        .ok()
-        .and_then(|s| s.ok())
-        .is_some_and(|s| s.success());
+        let can_merge = installed(&ffmpeg)
+            && tokio::time::timeout(
+                Duration::from_secs(15),
+                run(&ffmpeg, "-version").stdout(Stdio::null()).status(),
+            )
+            .await
+            .ok()
+            .and_then(|s| s.ok())
+            .is_some_and(|s| s.success());
         Downloader {
             program,
             ffmpeg,
