@@ -865,6 +865,10 @@ pub struct AdminSettings {
     pub downloader_can_merge: bool,
     /// Largest download passed through, in bytes.
     pub downloader_max_bytes: u64,
+    /// Whether people may link a new Google Drive: None when the server has
+    /// no Google app set up. Drives already linked keep working either way.
+    #[serde(default)]
+    pub google_drive: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -873,6 +877,8 @@ pub struct UpdateSettingsRequest {
     pub registration: Option<Registration>,
     #[serde(default)]
     pub downloader: Option<DownloaderAccess>,
+    #[serde(default)]
+    pub google_drive: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1285,6 +1291,11 @@ pub struct StorageAccount {
     /// many of those it has.
     pub mirror_total: Option<i64>,
     pub mirror_done: Option<i64>,
+    /// Bytes of file versions kept only there (none in a mirror until it
+    /// was switched from extra space). These come back here before the
+    /// account can be unlinked.
+    #[serde(default)]
+    pub only_there: i64,
 }
 
 /// `POST /api/storage/google`: start linking.
@@ -1303,6 +1314,51 @@ pub struct LinkStorageResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateStorageAccountRequest {
     pub mode: StorageMode,
+}
+
+/// `POST /api/storage/accounts/{id}/move`: move a batch of file versions
+/// between this server and a linked account (`Linked` only for extra space).
+/// Call again while `left` is above zero.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MoveStorageRequest {
+    pub to: StoragePrefer,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MoveStorageResponse {
+    /// Versions moved by this call, and their bytes.
+    pub moved: u32,
+    pub moved_bytes: i64,
+    /// Versions still to move, and their bytes.
+    pub left: i64,
+    pub left_bytes: i64,
+    /// Some versions didn't fit at the destination, so they stay where
+    /// they are.
+    pub full: bool,
+}
+
+/// `GET /api/nodes/{id}/storage` (owner only): where a file's versions, or
+/// those of every file in a folder, are kept.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeStorage {
+    pub places: Vec<NodePlace>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodePlace {
+    /// The linked account, or None for this server.
+    pub account_id: Option<String>,
+    pub versions: i64,
+    pub bytes: i64,
+}
+
+/// `POST /api/nodes/{id}/storage` (owner only): move a batch of the file's
+/// (or folder's) versions to this server (`to: null`) or into an
+/// extra-space account. Answered with a `MoveStorageResponse`; call again
+/// while `left` is above zero.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MoveNodeStorageRequest {
+    pub to: Option<String>,
 }
 
 /// `PUT /api/storage/prefer`.

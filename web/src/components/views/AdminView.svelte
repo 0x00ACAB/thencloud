@@ -89,6 +89,8 @@
         return t('{actor} set registration to {value}', { ...p, value: modes.find((m) => m[0] === e.detail)?.[1] ?? e.detail });
       case 'downloader':
         return t('{actor} set the video downloader to {value}', { ...p, value: downloaderModes.find((m) => m[0] === e.detail)?.[1] ?? e.detail });
+      case 'google_drive':
+        return e.detail === 'off' ? t('{actor} turned off linking Google Drive', p) : t('{actor} turned on linking Google Drive', p);
       case 'invite_created':
         return t('{actor} made an invite link valid for {count} days', { actor: e.actor, count: Number(e.detail) });
       case 'invite_deleted':
@@ -126,6 +128,21 @@
       settings = await adminUpdateSettings({ downloader });
       refreshAudit();
       resetToolsInfo();
+    } catch (e) {
+      toastError(e);
+    }
+  }
+
+  const driveModes = $derived([
+    [true, t('On'), t('People can link their Google Drive in Settings.')],
+    [false, t('Off'), t('No new links. Drives already linked keep working, so files kept there stay reachable.')],
+  ]);
+
+  async function setGoogleDrive(google_drive) {
+    if (settings.google_drive === google_drive) return;
+    try {
+      settings = await adminUpdateSettings({ google_drive });
+      refreshAudit();
     } catch (e) {
       toastError(e);
     }
@@ -382,6 +399,32 @@
       </div>
     </div>
   </section>
+
+  {#if settings.google_drive != null}
+    <section class="card mt-6 overflow-hidden">
+      <div class="grid gap-4 p-6">
+        <div class="grid gap-1">
+          <h2 class="text-base font-semibold tracking-tight">{t('Linked storage')}</h2>
+          <p class="text-[13px] text-fg-muted">
+            {t("People can link their own Google Drive as a mirror of their files or as extra space. Only encrypted pieces go there, through this server, which keeps each Drive's access token sealed.")}
+          </p>
+        </div>
+        <div class="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label={t('Linking Google Drive')}>
+          {#each driveModes as [value, label, text] (value)}
+            <button
+              type="button"
+              role="radio"
+              aria-checked={settings.google_drive === value}
+              class="grid cursor-pointer gap-1 rounded-md border p-3 text-left transition-colors {settings.google_drive === value ? 'border-accent bg-accent-soft' : 'border-line hover:bg-subtle'}"
+              onclick={() => setGoogleDrive(value)}>
+              <span class="text-sm font-medium {settings.google_drive === value ? 'text-accent-text' : ''}">{label}</span>
+              <span class="text-xs text-fg-muted">{text}</span>
+            </button>
+          {/each}
+        </div>
+      </div>
+    </section>
+  {/if}
 
   <section class="card mt-6 overflow-hidden">
     <div class="p-6 pb-4">

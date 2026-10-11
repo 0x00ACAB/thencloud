@@ -3,7 +3,7 @@
   // extra space, and where new files go first. Only ciphertext goes there.
   import { onMount } from 'svelte';
   import { t } from '../lib/i18n.svelte.js';
-  import { storage, loadStorage, linkDrive } from '../lib/storage.svelte.js';
+  import { storage, loadStorage, linkDrive, moveFiles, stopMoving } from '../lib/storage.svelte.js';
   import { setStorageMode, setStoragePrefer, unlinkStorage } from '../lib/cloud.svelte.js';
   import { toast, toastError } from '../lib/ui.svelte.js';
   import { formatSize } from '../lib/format.js';
@@ -19,6 +19,7 @@
   onMount(loadStorage);
 
   const info = $derived(storage.info);
+  const moving = $derived(storage.moving);
   const hasExtra = $derived(info?.accounts.some((a) => a.mode === 'extra') ?? false);
 
   async function link(mode) {
@@ -54,17 +55,37 @@
     }
   }
 
+  async function move(a, to) {
+    try {
+      const outcome = await moveFiles(a.id, to);
+      if (outcome === 'done') {
+        toast(to === 'server' ? t('Your files are back on this server') : t('Your files are in Google Drive now'), { kind: 'success' });
+      } else if (outcome === 'full') {
+        toast(to === 'server' ? t("This server doesn't have room for the rest of your files.") : t("This Google Drive doesn't have room for the rest of your files."), { kind: 'error' });
+      }
+    } catch (e) {
+      toastError(e);
+    }
+  }
+
+  // Files kept only in the account come back first; then it's unlinked.
   async function unlink() {
     busy = true;
     try {
+      if (unlinking.only_there > 0) {
+        const outcome = await moveFiles(unlinking.id, 'server');
+        if (outcome === 'full') {
+          throw new Error(t("This server doesn't have room for the rest of your files, so the Drive stays linked. Make some room here, then try again."));
+        }
+        if (outcome !== 'done') throw new Error(t('Moving stopped, so the Drive stays linked.'));
+      }
       await unlinkStorage(unlinking.id);
       unlinking = null;
       await loadStorage();
       toast(t('Google Drive is unlinked'), { kind: 'success' });
     } catch (e) {
-      if (e?.code === 'conflict') toast(t("Some files are kept only in this Google Drive, so it can't be unlinked yet."), { kind: 'error' });
-      else toastError(e);
-      unlinking = null;
+      if (e?.code === 'conflict') throw new Error(t("Some files are kept only in this Google Drive, so it can't be unlinked yet."));
+      throw e;
     } finally {
       busy = false;
     }
@@ -133,6 +154,37 @@
               {:else if a.mode === 'extra'}
                 <p class="text-xs text-fg-muted">{t('New files can be kept here instead of on this server.')}</p>
               {/if}
+              {#if moving?.id === a.id}
+                <div class="grid gap-1">
+                  <div class="flex items-center gap-2">
+                    <p class="flex-1 text-xs text-fg-muted tabular-nums">
+                      {#if moving.to === 'server'}
+                        {t('Moving to this server: {done} of {total}', { done: formatSize(moving.done), total: formatSize(moving.total) })}
+                      {:else}
+                        {t('Moving to Google Drive: {done} of {total}', { done: formatSize(moving.done), total: formatSize(moving.total) })}
+                      {/if}
+                    </p>
+                    {#if !unlinking}
+                      <button type="button" class="btn btn-ghost h-7 px-2 text-xs" onclick={stopMoving}>{t('Stop')}</button>
+                    {/if}
+                  </div>
+                  <div class="progress"><div class="bg-place-google" style:width="{pct(moving.done, moving.total)}%"></div></div>
+                </div>
+              {:else if !a.broken && (a.only_there > 0 || (a.mode === 'extra' && info.server_used > 0))}
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  {#if a.only_there > 0}
+                    <p class="text-xs text-fg-muted tabular-nums">{t('{size} of your files are kept only in this Drive.', { size: formatSize(a.only_there) })}</p>
+                    <button type="button" class="btn btn-ghost h-7 px-2 text-xs" disabled={moving !== null} onclick={() => move(a, 'server')}>
+                      <Icon name="arrow-down-to-line" class="size-3.5" />{t('Move to this server')}
+                    </button>
+                  {/if}
+                  {#if a.mode === 'extra' && info.server_used > 0}
+                    <button type="button" class="btn btn-ghost h-7 px-2 text-xs" disabled={moving !== null} onclick={() => move(a, 'linked')}>
+                      <Icon name="arrow-up-from-line" class="size-3.5" />{t('Move everything from this server here')}
+                    </button>
+                  {/if}
+                </div>
+              {/if}
             </li>
           {/each}
         </ul>
@@ -177,12 +229,16 @@
 {#if unlinking}
   <ConfirmDialog
     title={t('Unlink Google Drive?')}
-    description={unlinking.mode === 'mirror'
-      ? t('The copies in it are deleted and thencloud loses access. Your files here stay as they are.')
-      : t('thencloud loses access to it. Files kept only there must be moved back first.')}
-    confirmLabel={t('Unlink')}
+    description={unlinking.only_there > 0
+      ? t('{size} of your files are kept only in this Drive. They are moved back to this server first, then thencloud loses access.', { size: formatSize(unlinking.only_there) })
+      : unlinking.mode === 'mirror'
+        ? t('The copies in it are deleted and thencloud loses access. Your files here stay as they are.')
+        : t('thencloud loses access to it. Your files here stay as they are.')}
+    confirmLabel={unlinking.only_there > 0 ? t('Move back and unlink') : t('Unlink')}
     danger
     disabled={busy}
     onconfirm={unlink}
-    onclose={() => (unlinking = null)} />
+    onclose={() => {
+      if (!busy) unlinking = null;
+    }} />
 {/if}
