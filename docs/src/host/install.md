@@ -10,6 +10,14 @@ Each release is on GitHub's registry, for amd64 and arm64:
 docker run -p 127.0.0.1:8080:8080 -v thencloud-data:/data ghcr.io/0x00acab/thencloud:v1.0.0
 ```
 
+Every change to `main` is there too, as `edge` and `sha-<commit>` (the first 12 characters of the commit). They're untested beyond the test suite and not covered by `verify-web`; pin a `sha-` tag rather than following `edge` if you run one. Both are signed by the `edge.yml` workflow:
+
+```sh
+cosign verify ghcr.io/0x00acab/thencloud:sha-<commit> \
+  --certificate-identity https://github.com/0x00ACAB/thencloud/.github/workflows/edge.yml@refs/heads/main \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
 ### With Caddy and a certificate
 
 [`deploy/compose.yaml`](https://github.com/0x00ACAB/thencloud/blob/main/deploy/compose.yaml) runs thencloud behind [Caddy](https://caddyserver.com), which gets a TLS certificate for your domain:
