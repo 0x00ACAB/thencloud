@@ -7513,6 +7513,13 @@ mod fake_google {
         pub next: u32,
         /// Total space, for `about`.
         pub limit: i64,
+        /// How long each upload takes, and how many were running at once
+        /// (now, and at most).
+        pub upload_delay: std::time::Duration,
+        pub uploading: usize,
+        pub peak_uploading: usize,
+        /// Uploads still to refuse with 429 Too Many Requests.
+        pub rate_limit: u32,
     }
 
     pub type Shared = Arc<Mutex<Drive>>;
@@ -7563,6 +7570,26 @@ mod fake_google {
     }
 
     async fn handle(drive: Shared, req: Request) -> Response {
+        if req.uri().path() != "/upload/drive/v3/files" {
+            return answer(drive, req).await;
+        }
+        let delay = {
+            let mut d = drive.lock().await;
+            if d.rate_limit > 0 {
+                d.rate_limit -= 1;
+                return StatusCode::TOO_MANY_REQUESTS.into_response();
+            }
+            d.uploading += 1;
+            d.peak_uploading = d.peak_uploading.max(d.uploading);
+            d.upload_delay
+        };
+        tokio::time::sleep(delay).await;
+        let r = answer(drive.clone(), req).await;
+        drive.lock().await.uploading -= 1;
+        r
+    }
+
+    async fn answer(drive: Shared, req: Request) -> Response {
         let (parts, body) = req.into_parts();
         let body = body.collect().await.unwrap().to_bytes().to_vec();
         let path = parts.uri.path().to_string();
@@ -8082,6 +8109,61 @@ async fn moving_files_between_server_and_drive() {
         )
         .await;
     assert_eq!(r.status, StatusCode::NO_CONTENT);
+}
+
+/// A move sends several chunks at once, of different files and of one
+/// file, never more than a few, and waits when Google asks it to slow down.
+#[tokio::test]
+async fn moves_to_drive_run_side_by_side() {
+    let (h, drive) = storage_harness().await;
+    let alice = register(&h, "alice", "pw").await;
+    let a = link_drive(&h, &alice.token, "extra").await;
+    let mut files = Vec::new();
+    for i in 0..6 {
+        let f = alice
+            .upload(&h, &alice.root, None, &format!("{i}.txt"), MARKER)
+            .await
+            .unwrap();
+        files.push(f);
+    }
+    // Three chunks of one file.
+    let big: Vec<u8> = [MARKER, &[7u8; 9 << 20][..]].concat();
+    let big_file = alice
+        .upload(&h, &alice.root, None, "big.bin", &big)
+        .await
+        .unwrap();
+    {
+        let mut d = drive.lock().await;
+        d.upload_delay = std::time::Duration::from_millis(300);
+        d.rate_limit = 2;
+    }
+    let r = h
+        .call(
+            Method::POST,
+            &format!("/api/storage/accounts/{}/move", a.id),
+            Some(&alice.token),
+            Some(json!({ "to": "linked" })),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{r:?}");
+    let m = r.json::<MoveStorageResponse>();
+    assert_eq!((m.moved, m.left, m.full), (7, 0, false));
+    let d = drive.lock().await;
+    assert_eq!(d.rate_limit, 0);
+    assert!(
+        (2..=4).contains(&d.peak_uploading),
+        "{} at once",
+        d.peak_uploading
+    );
+    drop(d);
+    for f in files.iter().chain([&big_file]) {
+        assert!(!blob_exists(&h, &f.version.as_ref().unwrap().id));
+    }
+    let linked = thencloud_server::storage::check(&h.state).await.unwrap();
+    assert!(linked[0].is_ok(), "{linked:?}");
+    let root_key = alice.key_of(&h, &alice.root).await;
+    let fk = c::unwrap_node_key(&root_key, &big_file.enc_key, &big_file.id).unwrap();
+    assert_eq!(alice.download(&h, &big_file, &fk).await.1, big);
 }
 
 /// One file or one folder's files can be moved on their own, and the owner

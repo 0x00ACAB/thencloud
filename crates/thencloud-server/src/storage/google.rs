@@ -58,7 +58,9 @@ pub enum DriveError {
     /// The Drive is full.
     Full,
     NotFound,
-    /// Anything else (Google down, rate limits, the network): try again later.
+    /// Too many requests: worth trying again after a pause.
+    RateLimited,
+    /// Anything else (Google down, the network): try again later.
     Other(String),
 }
 
@@ -68,6 +70,7 @@ impl std::fmt::Display for DriveError {
             DriveError::Unauthorized => write!(f, "Google Drive refused the token"),
             DriveError::Full => write!(f, "the Google Drive is full"),
             DriveError::NotFound => write!(f, "not found in Google Drive"),
+            DriveError::RateLimited => write!(f, "Google Drive asked to slow down"),
             DriveError::Other(e) => write!(f, "Google Drive: {e}"),
         }
     }
@@ -392,6 +395,9 @@ fn status(res: &mut ureq::http::Response<ureq::Body>) -> DriveResult<()> {
         // A refresh token that no longer works.
         400 if body.contains("invalid_grant") => DriveError::Unauthorized,
         403 if body.contains("storageQuotaExceeded") => DriveError::Full,
+        429 => DriveError::RateLimited,
+        // rateLimitExceeded, userRateLimitExceeded
+        403 if body.contains("ateLimitExceeded") => DriveError::RateLimited,
         404 => DriveError::NotFound,
         _ => DriveError::Other(format!("HTTP {code}")),
     })
