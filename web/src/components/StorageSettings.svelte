@@ -158,7 +158,10 @@
                 <div class="grid gap-1">
                   <div class="flex items-center gap-2">
                     <p class="flex-1 text-xs text-fg-muted tabular-nums">
-                      {#if moving.to === 'server'}
+                      {#if moving.total === 0}
+                        <!-- Until the first batch says how much there is. -->
+                        {moving.to === 'server' ? t('Moving to this server') : t('Moving to Google Drive')}
+                      {:else if moving.to === 'server'}
                         {t('Moving to this server: {done} of {total}', { done: formatSize(moving.done), total: formatSize(moving.total) })}
                       {:else}
                         {t('Moving to Google Drive: {done} of {total}', { done: formatSize(moving.done), total: formatSize(moving.total) })}

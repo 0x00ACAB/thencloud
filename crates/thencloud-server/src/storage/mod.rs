@@ -439,6 +439,9 @@ async fn delete_remote(state: &AppState, version_id: &str, rows: Vec<(String, u3
 /// reasonable time.
 const MOVE_BATCH_BYTES: i64 = 64 << 20;
 const MOVE_BATCH_VERSIONS: usize = 32;
+/// No version starts moving after this, so the web client hears back (and
+/// shows progress) every few seconds even when files are small and many.
+const MOVE_BATCH_TIME: Duration = Duration::from_secs(5);
 /// How many chunks a move sends or fetches at once. Each one is a request
 /// to Google, and for a small chunk most of its time is Google's, not the
 /// transfer's.
@@ -513,11 +516,16 @@ pub async fn move_batch(
         batch.push((version_id, count as u32, size));
     }
     let slots = Semaphore::new(MOVE_PARALLEL);
+    let deadline = tokio::time::Instant::now() + MOVE_BATCH_TIME;
     // Each one runs to its end, even once another has failed.
     let results: Vec<(i64, Result<bool>)> = futures_util::stream::iter(batch)
         .map(|(version_id, count, size)| {
             let slots = &slots;
             async move {
+                // Not started: the next batch picks it up.
+                if tokio::time::Instant::now() >= deadline {
+                    return (size, Ok(false));
+                }
                 let r = if home {
                     bring_home(state, a, &version_id, count, size, slots).await
                 } else {
