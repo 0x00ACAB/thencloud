@@ -190,6 +190,7 @@ pub fn router(state: AppState) -> Router {
         .route("/nodes/{id}/path", get(nodes::path))
         .route("/nodes/{id}/name-tags", post(nodes::tag_names))
         .route("/nodes/{id}/chunks/{idx}", get(nodes::chunk))
+        .route("/nodes/{id}/cache-manifest", get(nodes::cache_manifest))
         .route(
             "/nodes/{id}/comments",
             get(comments::list).post(comments::create),

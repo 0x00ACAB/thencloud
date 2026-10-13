@@ -7,6 +7,7 @@ const COMMANDS: &[&str] = &[
     "media_update",
     "media_artwork",
     "media_stop",
+    "network_status",
     "share_pending",
     "share_read",
     "share_done",

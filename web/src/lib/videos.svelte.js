@@ -339,7 +339,7 @@ export async function readAllTags() {
     while (next < todo.length && !ctl.signal.aborted) {
       const v = todo[next++];
       try {
-        results[v.id] = (await readVideoTags(openEntry(v.entry))) ?? {};
+        results[v.id] = (await readVideoTags(await openEntry(v.entry))) ?? {};
       } catch {
         results[v.id] = {};
       }
@@ -437,7 +437,7 @@ export async function openVideo(v) {
   const type = videoType(v.entry.meta);
   const { streamsAvailable, serveFile } = await import('./stream.js');
   if (await streamsAvailable()) {
-    const f = openEntry(v.entry);
+    const f = await openEntry(v.entry);
     return serveFile({
       size: f.size,
       chunkSize: f.chunkSize,
