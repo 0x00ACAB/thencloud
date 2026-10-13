@@ -1455,8 +1455,26 @@ export default {
   '{count} unchanged lines': { one: '{count} unveränderte Zeile', other: '{count} unveränderte Zeilen' },
   Added: 'Hinzugefügt',
   Removed: 'Entfernt',
-  'What changed in this version': 'Was sich in dieser Version geändert hat',
-  Changes: 'Änderungen',
+  'Pick to compare with another version': 'Zum Vergleich mit einer anderen Version auswählen',
+  Compare: 'Vergleichen',
+  'Pick one more version to compare it with.': 'Wähle eine weitere Version zum Vergleichen aus.',
+  'Pick two versions to see what changed between them.': 'Wähle zwei Versionen aus, um zu sehen, was sich zwischen ihnen geändert hat.',
+
+  // Duplicate files
+  'Duplicate files': 'Doppelte Dateien',
+  'Find duplicates': 'Duplikate finden',
+  'Looks for files under My files with exactly the same content, read and compared here, and offers to move all but one copy of each to the trash.':
+    'Sucht nach Dateien in Meine Dateien mit genau demselben Inhalt, liest und vergleicht sie hier, und bietet an, bis auf eine Kopie von jedem Duplikat in den Papierkorb zu verschieben.',
+  'Files under My files with exactly the same content. Same-sized files are read and compared here; nothing is sent anywhere.':
+    'Dateien in Meine Dateien mit genau demselben Inhalt. Gleich große Dateien werden hier gelesen und verglichen; nichts wird irgendwohin gesendet.',
+  'Comparing {done} of {total} same-sized files…': '{done} von {total} gleich großen Dateien werden verglichen…',
+  'Looking through My files…': 'Meine Dateien werden durchsucht…',
+  'No duplicate files found.': 'Keine doppelten Dateien gefunden.',
+  "Keeping the oldest copy of each by default; pick another if you'd rather. {size} would be freed.":
+    'Standardmäßig wird die älteste Kopie von jedem behalten; wähle bei Bedarf eine andere. {size} würden frei.',
+  '{count} copies, {size} each': { one: '{count} Kopie, je {size}', other: '{count} Kopien, je {size}' },
+  'Move {count} to the trash': '{count} in den Papierkorb verschieben',
+  'Moved {count} duplicates to the trash': '{count} Duplikate in den Papierkorb verschoben',
 
   // App data
   "Your {name} library data couldn't be decrypted. It may have been tampered with.":
