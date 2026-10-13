@@ -1,7 +1,8 @@
 <script>
-  import { session, resolvePath, listFolder, createFolder, rename, move, trash, untrash, download, downloadZip, fetchEntry, upload, saveText, refreshMe, toolsInfo, loadDraft, storeDraft, dropDraft, searchTree, searchContents, openEntry, strayDrops, bookProgress, watchFolder } from '../../lib/cloud.svelte.js';
-  import { toast, toastError, trackTransfer, errorMessage, sort, sortBy, photoDetails, fileView, setFileView } from '../../lib/ui.svelte.js';
-  import { fileInfo, hasDetails, stripFile } from '../../lib/exif.js';
+  import { session, resolvePath, listFolder, createFolder, rename, move, trash, untrash, download, downloadZip, fetchEntry, upload, saveText, refreshMe, toolsInfo, loadDraft, storeDraft, dropDraft, searchTree, searchContents, openEntry, strayDrops, bookProgress, watchFolder, shareEntry } from '../../lib/cloud.svelte.js';
+  import { nativeSaves } from '../../lib/native.js';
+  import { toast, toastError, trackTransfer, errorMessage, sort, sortBy, fileView, setFileView } from '../../lib/ui.svelte.js';
+  import { checkPhotos, runUploadJobs } from '../../lib/uploadJobs.js';
   import Modal from '../Modal.svelte';
   import { formatSize, formatWhen, fullDate, sortEntries, nameError, changedAt } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
@@ -246,6 +247,18 @@
     );
   }
 
+  /** Ask (Modal-based) whether to remove a photo's location; `runUploads`'s `checkPhotos` step. */
+  async function askPhotoDetails(located) {
+    const choice = await new Promise((resolve) => (dialog = { type: 'photo-details', located, resolve }));
+    dialog = null;
+    return choice;
+  }
+
+  async function runUploads(jobs, target) {
+    if (!(await checkPhotos(jobs, askPhotoDetails))) return;
+    await runUploadJobs(jobs, () => target.node.id === folderId && load());
+  }
+
   // Files the OS adds to folders that nobody means to upload.
   const JUNK = new Set(['.ds_store', 'thumbs.db', 'desktop.ini']);
 
@@ -295,58 +308,6 @@
     }
     if (target.node.id === folderId) await load();
     await runUploads(jobs, target);
-  }
-
-  /**
-   * Location and camera details in photos: removed, kept, or (by default)
-   * asked about when a photo has a location. Marks the jobs to clean; the
-   * cleaning happens as each one uploads. Resolves to false if cancelled.
-   */
-  async function checkPhotos(jobs) {
-    if (photoDetails.value === 'keep') return true;
-    const found = [];
-    for (const job of jobs) {
-      const info = await fileInfo(job.file).catch(() => null);
-      if (hasDetails(info)) found.push({ job, info });
-    }
-    if (!found.length) return true;
-    if (photoDetails.value === 'ask') {
-      const located = found.filter((f) => f.info.gps).length;
-      if (!located) return true;
-      const choice = await new Promise((resolve) => (dialog = { type: 'photo-details', located, resolve }));
-      dialog = null;
-      if (choice === 'cancel') return false;
-      if (choice === 'keep') return true;
-    }
-    for (const f of found) f.job.clean = true;
-    return true;
-  }
-
-  async function runUploads(jobs, target) {
-    if (!jobs.length) return;
-    if (!(await checkPhotos(jobs))) return;
-    const one = async ({ file, dest, label, clean }) => {
-      const job = trackTransfer('upload', label, file.size);
-      try {
-        if (clean) {
-          file = await stripFile(file);
-          job.size = file.size;
-        }
-        await upload(file, dest, (p) => (job.progress = p));
-        job.status = 'done';
-      } catch (e) {
-        job.status = 'error';
-        job.error = e?.code === 'quota_exceeded' ? t('Not enough storage left') : errorMessage(e);
-      }
-    };
-    // Three files at a time; each file's chunks go up sequentially.
-    let next = 0;
-    const worker = async () => {
-      while (next < jobs.length) await one(jobs[next++]);
-    };
-    await Promise.all(Array.from({ length: Math.min(3, jobs.length) }, worker));
-    if (target.node.id === folderId) await load();
-    refreshMe().catch(() => {});
   }
 
   function onPick(e) {
@@ -499,6 +460,18 @@
     const job = trackTransfer('download', entry.meta.name, entry.meta.size);
     try {
       await download(entry, (p) => (job.progress = p));
+      job.status = 'done';
+    } catch (e) {
+      job.status = 'error';
+      job.error = errorMessage(e);
+    }
+  }
+
+  async function shareFile(entry) {
+    noteRecent(entry.node.id);
+    const job = trackTransfer('download', entry.meta.name, entry.meta.size);
+    try {
+      await shareEntry(entry, (p) => (job.progress = p));
       job.status = 'done';
     } catch (e) {
       job.status = 'error';
@@ -768,6 +741,7 @@
       folder
         ? { label: t('Download as zip'), icon: 'download', onclick: () => zipEntries([entry], `${entry.meta.name}.zip`) }
         : { label: t('Download'), icon: 'download', onclick: () => downloadEntry(entry) },
+      ...(nativeSaves && !folder ? [{ label: t('Send to another app'), icon: 'share', onclick: () => shareFile(entry) }] : []),
       isFavourite(entry.node.id)
         ? { label: t('Remove from favourites'), icon: 'star-off', onclick: () => star(entry) }
         : { label: t('Add to favourites'), icon: 'star', onclick: () => star(entry) },
