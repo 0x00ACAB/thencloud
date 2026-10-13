@@ -62,11 +62,14 @@ ENTRYPOINT ["thencloud-server"]
 
 # --- with the video downloader (optional) ---------------------------------
 #   docker build --target with-downloader -t thencloud .
-# or THENCLOUD_TARGET=with-downloader with deploy/compose.yaml. It stays off
-# until an admin turns it on. yt-dlp (the zipapp, on Debian's python3),
-# ffmpeg to merge video and audio, and deno, which yt-dlp needs for YouTube.
-# Sites change often: to update yt-dlp, pass a newer YT_DLP_VERSION with its
-# YT_DLP_SHA256 (the "yt-dlp" line of the release's SHA2-256SUMS).
+# or THENCLOUD_TARGET=with-downloader with deploy/compose.yaml; or pull the
+# ready-built ghcr.io/0x00acab/thencloud:latest-downloader (or
+# :edge-downloader, :vX.Y.Z-downloader) instead of building it yourself. It
+# stays off until an admin turns it on. yt-dlp (the zipapp, on Debian's
+# python3), ffmpeg to merge video and audio, and deno, which yt-dlp needs
+# for YouTube. Sites change often: to update yt-dlp, pass a newer
+# YT_DLP_VERSION with its YT_DLP_SHA256 (the "yt-dlp" line of the release's
+# SHA2-256SUMS).
 FROM base AS with-downloader
 ARG TARGETARCH
 ARG YT_DLP_VERSION=2026.08.19
