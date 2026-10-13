@@ -88,6 +88,32 @@ Denies the media_update command without any pre-configured scope.
 <tr>
 <td>
 
+`thencloud:allow-network-status`
+
+</td>
+<td>
+
+Enables the network_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`thencloud:deny-network-status`
+
+</td>
+<td>
+
+Denies the network_status command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `thencloud:allow-save-begin`
 
 </td>

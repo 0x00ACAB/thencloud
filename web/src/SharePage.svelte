@@ -182,7 +182,7 @@
     const job = trackTransfer('download', entry.meta.name, entry.meta.size);
     try {
       if (entry.meta.size > 16 * 1024 * 1024 && (await canSaveStreams())) {
-        await streamDownload(openEntry(entry), (p) => (job.progress = p));
+        await streamDownload(await openEntry(entry), (p) => (job.progress = p));
       } else {
         const { blob, meta } = await fetchEntry(entry, (p) => (job.progress = p));
         await saveBlob(blob, meta.name);

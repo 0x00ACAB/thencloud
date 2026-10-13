@@ -3,6 +3,8 @@ package org.thencloud.plugin
 import android.app.Activity
 import android.content.ContentValues
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
@@ -10,6 +12,7 @@ import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.provider.OpenableColumns
+import android.provider.Settings
 import android.util.Base64
 import android.view.View
 import android.webkit.WebResourceRequest
@@ -101,6 +104,17 @@ class ArtworkArgs {
  * -left and -right), with a keyboard-open class on <html> while the keyboard
  * is up, on every change and on every page load. The keyboard itself shrinks
  * the WebView.
+ *
+ * Network: networkStatus tells the page whether it's connected, on a
+ * metered network, and whether Data Saver is on, so the page's on-device
+ * file cache knows whether it may refresh a changed file.
+ *
+ * Sharing: "Share to thencloud" from another app queues its content: Uris
+ * (queueIntent, onNewIntent, and the activity's own intent at load() for a
+ * cold start); the page lists, reads and clears them (sharePending,
+ * shareRead, shareDone). The reverse, sending a file out, writes it into
+ * the app's own cache and hands it to the system share sheet
+ * (shareOutBegin, shareOutWrite, shareOutEnd).
  */
 @TauriPlugin
 class ThencloudPlugin(private val activity: Activity) : Plugin(activity) {
@@ -373,6 +387,27 @@ class ThencloudPlugin(private val activity: Activity) : Plugin(activity) {
       NowPlaying.stop(activity)
       invoke.resolve()
     }
+  }
+
+  /** Whether refreshing cached ciphertext is allowed on the current network. */
+  @Command
+  fun networkStatus(invoke: Invoke) {
+    val manager = activity.getSystemService(ConnectivityManager::class.java)
+    val capabilities = manager.activeNetwork?.let { manager.getNetworkCapabilities(it) }
+    val connected = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+    val metered = capabilities == null ||
+      !capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_NOT_METERED)
+    val dataSaver = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+      manager.restrictBackgroundStatus != ConnectivityManager.RESTRICT_BACKGROUND_STATUS_DISABLED
+    } else {
+      Settings.Global.getInt(activity.contentResolver, "restrict_background_data", 0) == 1
+    }
+    invoke.resolve(
+      JSObject()
+        .put("connected", connected)
+        .put("metered", metered)
+        .put("dataSaver", dataSaver),
+    )
   }
 
   // The one with the activity takes AppCompatActivity, which the plugin
