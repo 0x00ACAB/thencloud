@@ -1,0 +1,13 @@
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
+
+[[permission]]
+identifier = "allow-network-status"
+description = "Enables the network_status command without any pre-configured scope."
+commands.allow = ["network_status"]
+
+[[permission]]
+identifier = "deny-network-status"
+description = "Denies the network_status command without any pre-configured scope."
+commands.deny = ["network_status"]

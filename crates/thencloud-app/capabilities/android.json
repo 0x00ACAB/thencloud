@@ -11,6 +11,7 @@
     "thencloud:allow-media-update",
     "thencloud:allow-media-artwork",
     "thencloud:allow-media-stop",
+    "thencloud:allow-network-status",
     "thencloud:allow-share-pending",
     "thencloud:allow-share-read",
     "thencloud:allow-share-done",

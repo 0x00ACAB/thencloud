@@ -90,7 +90,7 @@
       if (await streamsAvailable()) {
         if (my !== seq) return;
         try {
-          const file = open(e);
+          const file = await open(e);
           served = serveFile({ size: file.size, chunkSize: file.chunkSize, type: k.type, read: (i) => file.read(i) });
           return set({ status: 'ready', url: served.url });
         } catch (err) {

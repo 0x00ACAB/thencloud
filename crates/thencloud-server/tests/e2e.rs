@@ -11,6 +11,7 @@ use http_body_util::BodyExt;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use thencloud_crypto::api::*;
 use thencloud_crypto::{self as c, KdfParams, Key, KeyPair, Metadata};
 use thencloud_server::{AppState, Config, router};
@@ -561,6 +562,85 @@ fn contains(hay: &[u8], needle: &[u8]) -> bool {
 }
 
 #[tokio::test]
+async fn cache_manifest_hashes_ciphertext_and_backfills_existing_versions() {
+    let h = Harness::new().await;
+    let alice = register(&h, "alice", "correct horse").await;
+    let data = secret_payload(c::CHUNK_SIZE * 2 + 12345);
+    let file = alice
+        .upload(&h, &alice.root, None, "cached.bin", &data)
+        .await
+        .unwrap();
+    let version = file.version.as_ref().unwrap();
+    assert_eq!(version.chunk_count, 3);
+    let route = format!("/api/nodes/{}/cache-manifest", file.id);
+
+    let r = h.get(&route, &alice.token).await;
+    assert_eq!(r.status, StatusCode::OK, "{r:?}");
+    let manifest: serde_json::Value = r.json();
+    assert_eq!(manifest["node"]["version"]["id"], version.id);
+    let hashes = manifest["chunk_hashes"].as_array().unwrap();
+    assert_eq!(hashes.len(), version.chunk_count as usize);
+
+    let expected_hash = async |idx: u32| {
+        let encrypted = h
+            .get(
+                &format!(
+                    "/api/nodes/{}/versions/{}/chunks/{idx}",
+                    file.id, version.id
+                ),
+                &alice.token,
+            )
+            .await;
+        assert_eq!(encrypted.status, StatusCode::OK, "{encrypted:?}");
+        let digest: String = Sha256::digest(&encrypted.body)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        digest
+    };
+    let expected0 = expected_hash(0).await;
+    let expected1 = expected_hash(1).await;
+    let expected2 = expected_hash(2).await;
+    assert_eq!(hashes[0].as_str(), Some(expected0.as_str()));
+    assert_eq!(hashes[1].as_str(), Some(expected1.as_str()));
+    assert_eq!(hashes[2].as_str(), Some(expected2.as_str()));
+
+    // Backfill when every row is missing (an older build never wrote them).
+    sqlx::query("DELETE FROM file_chunk_hashes WHERE version_id = ?")
+        .bind(&version.id)
+        .execute(&h.state.db)
+        .await
+        .unwrap();
+    let backfilled: serde_json::Value = h.get(&route, &alice.token).await.json();
+    let backfilled = backfilled["chunk_hashes"].as_array().unwrap();
+    assert_eq!(backfilled[0].as_str(), Some(expected0.as_str()));
+    assert_eq!(backfilled[1].as_str(), Some(expected1.as_str()));
+    assert_eq!(backfilled[2].as_str(), Some(expected2.as_str()));
+
+    // Backfill when only one row is missing: the others must come back
+    // unchanged (a regression here previously re-hashed every chunk instead
+    // of just the missing one).
+    sqlx::query("DELETE FROM file_chunk_hashes WHERE version_id = ? AND idx = 1")
+        .bind(&version.id)
+        .execute(&h.state.db)
+        .await
+        .unwrap();
+    let partial: serde_json::Value = h.get(&route, &alice.token).await.json();
+    let partial = partial["chunk_hashes"].as_array().unwrap();
+    assert_eq!(partial.len(), 3);
+    assert_eq!(partial[0].as_str(), Some(expected0.as_str()));
+    assert_eq!(partial[1].as_str(), Some(expected1.as_str()));
+    assert_eq!(partial[2].as_str(), Some(expected2.as_str()));
+    let stored: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM file_chunk_hashes WHERE version_id = ?")
+            .bind(&version.id)
+            .fetch_one(&h.state.db)
+            .await
+            .unwrap();
+    assert_eq!(stored, 3);
+}
+
+#[tokio::test]
 async fn full_lifecycle_is_zero_knowledge() {
     let h = Harness::new().await;
     let alice = register(&h, "alice", "correct horse battery staple").await;
@@ -579,6 +659,13 @@ async fn full_lifecycle_is_zero_knowledge() {
         .await
         .unwrap();
     assert_eq!(file.version.as_ref().unwrap().chunk_count, 3);
+    let fingerprints = h
+        .get(
+            &format!("/api/nodes/{}/cache-manifest", file.id),
+            &alice.token,
+        )
+        .await;
+    assert_eq!(fingerprints.status, StatusCode::OK, "{fingerprints:?}");
 
     let kids: Vec<Node> = alice.children(&h, &docs).await.json();
     assert_eq!(names(&kids, &docs_key), vec!["secret-plan.txt"]);
