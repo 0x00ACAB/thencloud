@@ -31,9 +31,14 @@
   import { modules, loadModules } from '../lib/modules.svelte.js';
   import { t } from '../lib/i18n.svelte.js';
   import { storage, loadStorage, dropStorage } from '../lib/storage.svelte.js';
+  import { shareImport, refreshPendingShares } from '../lib/shareImport.svelte.js';
+  import ShareImportDialog from './dialogs/ShareImportDialog.svelte';
 
   const rootId = session.me.keys.root_node_id;
   loadMyAvatar().catch(() => {});
+  // Android only: a file shared in before sign-in, or while on another
+  // screen, is waiting as soon as there's a session to put it in.
+  refreshPendingShares();
   onDestroy(unloadVideos);
   onDestroy(unloadNotes);
   onDestroy(unloadPhotos);
@@ -340,3 +345,7 @@
 
 <PlayerBar {go} />
 <TransferTray />
+
+{#if shareImport.items.length}
+  <ShareImportDialog onclose={() => {}} />
+{/if}

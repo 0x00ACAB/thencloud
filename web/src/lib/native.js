@@ -3,7 +3,13 @@
 //
 // Saving files: Android's WebView drops a download of a blob: URL, and has
 // no service worker for the app's pages, so there the page hands each
-// decrypted piece to the plugin, which writes it to Downloads. The only other
+// decrypted piece to the plugin, which writes it to Downloads. Sharing a
+// file to another app works the same way, in reverse (shareNative): pieces
+// go to the plugin, which writes them into our own cache and hands the
+// result to the system share sheet. Sharing one in from another app
+// (importShare) has no pieces to start from: the plugin only has a
+// content:// Uri, which no web API can read, so the page pulls the
+// plaintext back out of it a piece at a time instead. The only other
 // native calls the app's pages may make are for what music is playing
 // (nowplaying.svelte.js; capabilities/android.json).
 
@@ -29,6 +35,8 @@ export function base64(bytes) {
   for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(s);
 }
+
+const unbase64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
 
 const cancelled = () => Object.assign(new Error('The download was cancelled.'), { name: 'AbortError' });
 
@@ -77,6 +85,67 @@ export async function* filePieces(file, onProgress) {
     onProgress?.((i + 1) / file.count);
   }
 }
+
+/**
+ * Share what `parts` (an async iterable of Uint8Array) yields as one file,
+ * to another app through the system share sheet. The plugin writes it into
+ * its own cache first, since the share sheet needs a content: URI, not
+ * bytes; that copy is cleaned up opportunistically, not right after.
+ */
+export async function shareNative(parts, name, type) {
+  const failed = (e) => (console.error(e), new Error(t("Couldn't share {name} from this device.", { name })));
+  const { id } = await call('share_out_begin', { name, mime: type || null }).catch((e) => {
+    throw failed(e);
+  });
+  let ok = false;
+  try {
+    for await (const piece of parts) {
+      for (let i = 0; i < piece.length; i += SLICE) {
+        await call('share_out_write', { id, data: base64(piece.subarray(i, i + SLICE)) }).catch((e) => {
+          throw failed(e);
+        });
+      }
+    }
+    ok = true;
+  } finally {
+    await call('share_out_end', { id, ok }).catch(() => {});
+  }
+}
+
+export const shareBlobNative = (blob, name) => shareNative(blobPieces(blob), name, blob.type);
+
+/** Files shared in from another app ("Share to thencloud"), not yet imported. */
+export const pendingShares = () => call('share_pending').then((r) => r.items);
+
+/**
+ * Read a pending share's whole plaintext into memory as a real File: the
+ * plugin only has a content: URI, which the page can't read lazily by
+ * itself, so there's no streaming this one the way a local file upload
+ * streams from disk. Tells the plugin it's done (closing the stream,
+ * whether this finished, failed, or was cancelled) either way.
+ */
+export async function importShare(item, onProgress) {
+  const pieces = [];
+  let got = 0;
+  try {
+    for (;;) {
+      const { data, eof } = await call('share_read', { id: item.id });
+      const bytes = unbase64(data);
+      if (bytes.length) {
+        pieces.push(bytes);
+        got += bytes.length;
+        onProgress?.(item.size > 0 ? Math.min(1, got / item.size) : 0);
+      }
+      if (eof) break;
+    }
+  } finally {
+    await call('share_done', { id: item.id }).catch(() => {});
+  }
+  return new File(pieces, item.name, { type: item.mime, lastModified: Date.now() });
+}
+
+/** Decline a pending share without reading it (it was never opened with share_read, so there's no stream to close, only the queue entry). */
+export const cancelShare = (id) => call('share_done', { id }).catch(() => {});
 
 // Android's back gesture (crates/thencloud-app/android-plugin) first asks the
 // page, through this, to close what's on top: a menu, a dialog, then other

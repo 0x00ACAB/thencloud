@@ -8,6 +8,12 @@ const COMMANDS: &[&str] = &[
     "media_artwork",
     "media_stop",
     "network_status",
+    "share_pending",
+    "share_read",
+    "share_done",
+    "share_out_begin",
+    "share_out_write",
+    "share_out_end",
 ];
 
 fn main() {
