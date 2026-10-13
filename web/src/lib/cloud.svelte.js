@@ -22,6 +22,9 @@ import { canSaveStreams, streamDownload } from './stream.js';
 import { shareNative, filePieces } from './native.js';
 import { createPasskey, usePasskey, passkeysSupported } from './passkeys.js';
 import { apiUrl, serverOrigin, setServer } from './server.svelte.js';
+import { inAndroidApp, networkStatus } from './native.js';
+import { cacheId, canRefresh, chooseFileSnapshot, deleteCachedChunk, getCachedChunk, getCachedFile, sameHashes, saveCachedChunk, sha256Hex } from './file-cache.js';
+import { toast } from './ui.svelte.js';
 
 export const session = $state({
   token: null,
@@ -34,6 +37,7 @@ export const session = $state({
 let mk = null; // master key
 let sk = null; // X25519 secret key, followed by the ML-KEM seed when there is one
 const keyCache = new Map(); // node id -> node key
+const cacheNotices = new Set();
 
 /**
  * Authenticated request. A 401 while signed in means this session was ended
@@ -711,7 +715,7 @@ export async function verifyTree(top, { signal, onProgress, onProblem } = {}) {
         problem(location, node, meta.name, 'It has no content.');
       } else {
         try {
-          const f = openEntry({ node, key });
+          const f = await openEntry({ node, key });
           for (let i = 0; i < f.count && !signal?.aborted; i++) {
             done.bytes += (await f.read(i)).length;
             onProgress?.({ ...done });
@@ -1068,15 +1072,174 @@ export async function restoreVersion(entry, v) {
 export const deleteVersion = (entry, v) => api('DELETE', `/api/nodes/${entry.node.id}/versions/${v.id}`);
 
 /** Download and decrypt a file's current version into memory. */
-export function fetchEntry(entry, onProgress) {
+export async function fetchEntry(entry, onProgress) {
   const { node, key } = entry;
+  if (inAndroidApp) {
+    const file = await openEntry(entry);
+    const pieces = [];
+    for (let i = 0; i < file.count; i++) {
+      pieces.push(await file.read(i));
+      onProgress?.((i + 1) / file.count);
+    }
+    return { blob: new Blob(pieces, { type: file.meta.mime || 'application/octet-stream' }), meta: file.meta };
+  }
   return fetchFile(node, key, (i) => api('GET', `/api/nodes/${node.id}/chunks/${i}`), onProgress);
 }
 
 /** A file's decrypted pieces, one at a time (see openFile in crypto.js). */
-export function openEntry(entry) {
+export async function openEntry(entry) {
   const { node, key } = entry;
-  return openFile(node, key, (i) => api('GET', `/api/nodes/${node.id}/chunks/${i}`));
+  if (!inAndroidApp || !session.me) {
+    return openFile(node, key, (i) => api('GET', `/api/nodes/${node.id}/versions/${node.version.id}/chunks/${i}`));
+  }
+
+  const id = cacheId(serverOrigin(), session.me.user_id, node.id);
+  let cached = null;
+  try {
+    cached = await getCachedFile(id);
+  } catch (e) {
+    console.error('Could not read the on-device file cache.', e);
+  }
+  const validSnapshot = (record) =>
+    record?.id === id &&
+    record?.node?.version &&
+    record.node.id === node.id &&
+    typeof record.node.enc_key === 'string' &&
+    typeof record.node.enc_metadata === 'string' &&
+    typeof record.node.version.id === 'string' &&
+    typeof record.node.version.enc_content_key === 'string' &&
+    Number.isInteger(record.node.version.chunk_count) &&
+    Array.isArray(record.hashes) &&
+    record.hashes.length === record.node.version.chunk_count &&
+    record.hashes.every((hash) => /^[\da-f]{64}$/.test(hash));
+  if (!validSnapshot(cached)) cached = null;
+
+  let status;
+  try {
+    status = await networkStatus();
+  } catch (e) {
+    console.error('Could not check Android network status.', e);
+    status = { connected: true, metered: true, dataSaver: true };
+  }
+  const refresh = canRefresh(status);
+  let current = null;
+  if (status.connected) {
+    try {
+      current = await api('GET', `/api/nodes/${node.id}/cache-manifest`);
+    } catch (e) {
+      if (e?.status === 404) {
+        return openFile(node, key, (i) => api('GET', `/api/nodes/${node.id}/versions/${node.version.id}/chunks/${i}`));
+      }
+      if (e?.status !== 0) throw e;
+    }
+  }
+
+  let selected;
+  let hashes;
+  let saveCache = false;
+  let cachedOnly = false;
+  if (current) {
+    const fresh = current.node;
+    if (
+      fresh.id !== node.id ||
+      !fresh.version ||
+      typeof fresh.enc_key !== 'string' ||
+      fresh.enc_key !== node.enc_key ||
+      typeof fresh.enc_metadata !== 'string' ||
+      typeof fresh.version.enc_content_key !== 'string' ||
+      !Number.isInteger(fresh.version.chunk_count) ||
+      !Array.isArray(current.chunk_hashes) ||
+      current.chunk_hashes.length !== fresh.version.chunk_count ||
+      !current.chunk_hashes.every((hash) => /^[\da-f]{64}$/.test(hash))
+    ) {
+      throw new Error(t('The server returned an invalid file fingerprint.'));
+    }
+    const source = chooseFileSnapshot(cached?.node, fresh, refresh);
+    if (source === 'invalid') {
+      throw new Error(t("This file's ciphertext changed without a new version."));
+    }
+    if (source === 'current' && cached?.node.version.id === fresh.version.id) {
+      if (!sameHashes(cached.hashes, current.chunk_hashes)) {
+        throw new Error(t("This file's ciphertext changed without a new version."));
+      }
+      selected = fresh;
+      hashes = current.chunk_hashes;
+      saveCache = true;
+    } else if (source === 'cached-stale') {
+      selected = cached.node;
+      hashes = cached.hashes;
+      cachedOnly = true;
+      announceCacheStatus(id, 'stale', cached.node.version.id);
+    } else if (source === 'current') {
+      selected = fresh;
+      hashes = current.chunk_hashes;
+      saveCache = true;
+    } else {
+      throw new Error(t('The server returned an invalid file cache state.'));
+    }
+  } else if (cached) {
+    selected = cached.node;
+    hashes = cached.hashes;
+    cachedOnly = true;
+    announceCacheStatus(id, 'unverified', cached.node.version.id);
+  } else {
+    throw new Error(status.connected ? t('Could not check the file before opening it.') : t('This file has no saved copy on this device.'));
+  }
+
+  const snapshot = {
+    id,
+    node: {
+      id: selected.id,
+      enc_key: selected.enc_key,
+      enc_metadata: selected.enc_metadata,
+      version: { ...selected.version },
+    },
+    hashes,
+    savedAt: Date.now(),
+  };
+  return openFile(selected, key, async (i) => {
+    let hit = null;
+    try {
+      hit = await getCachedChunk(id, selected.version.id, i);
+    } catch (e) {
+      console.error('Could not read a cached file chunk.', e);
+    }
+    if (hit) {
+      const bytes = new Uint8Array(hit.bytes);
+      if (hit.hash === hashes[i] && (await sha256Hex(bytes)) === hashes[i]) return bytes;
+      try {
+        await deleteCachedChunk(id, selected.version.id, i);
+      } catch (e) {
+        console.error('Could not remove a damaged cached file chunk.', e);
+      }
+      if (!status.connected || !refresh) throw new Error(t('A saved file chunk failed its fingerprint check.'));
+    } else if (cachedOnly) {
+      throw new Error(t('This part of the file is not saved on this device.'));
+    }
+
+    const bytes = await api('GET', `/api/nodes/${node.id}/versions/${selected.version.id}/chunks/${i}`);
+    if ((await sha256Hex(bytes)) !== hashes[i]) throw new Error(t('The downloaded file chunk failed its fingerprint check.'));
+    if (saveCache) {
+      try {
+        await saveCachedChunk(snapshot, i, hashes[i], bytes);
+      } catch (e) {
+        console.error('Could not save a file chunk to the on-device cache.', e);
+      }
+    }
+    return bytes;
+  });
+}
+
+function announceCacheStatus(id, kind, versionId) {
+  const key = `${id}:${kind}:${versionId}`;
+  if (cacheNotices.has(key)) return;
+  cacheNotices.add(key);
+  toast(
+    kind === 'stale'
+      ? t('Using the saved copy. A newer version is available.')
+      : t("Couldn't verify whether this is the newest copy."),
+    { kind: 'info', timeout: 8000 },
+  );
 }
 
 /** Download files and folders as one zip, decrypted and zipped in the browser (and streamed to disk where possible). */
@@ -1112,7 +1275,7 @@ export async function exportAccount(onProgress) {
   const day = new Date(now).toISOString().slice(0, 10);
   await saveZip(entries, `thencloud-${session.me.username}-${day}.zip`, {
     list: (e) => e.children ?? listFolder(e.node.id, e.key),
-    open: (e) => (e.bytes ? { count: 1, read: async () => e.bytes } : openEntry(e)),
+    open: async (e) => (e.bytes ? { count: 1, read: async () => e.bytes } : openEntry(e)),
     onProgress,
   });
 }
@@ -1121,7 +1284,7 @@ export async function exportAccount(onProgress) {
 const STREAM_FROM = 16 * 1024 * 1024;
 
 export async function download(entry, onProgress) {
-  if (entry.meta.size > STREAM_FROM && (await canSaveStreams())) return streamDownload(openEntry(entry), onProgress);
+  if (entry.meta.size > STREAM_FROM && (await canSaveStreams())) return streamDownload(await openEntry(entry), onProgress);
   const { blob, meta } = await fetchEntry(entry, onProgress);
   await saveBlob(blob, meta.name);
 }

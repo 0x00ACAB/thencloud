@@ -10,6 +10,7 @@ use axum::Json;
 use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
+use sha2::{Digest, Sha256};
 use sqlx::AssertSqlSafe;
 use thencloud_crypto::api::*;
 use thencloud_crypto::{MAX_ENCRYPTED_CHUNK, SEALED_OVERHEAD};
@@ -356,12 +357,13 @@ pub async fn store_chunk(
         }
         let mut tx = state.db.begin().await?;
         sqlx::query(
-            "INSERT INTO upload_chunks (upload_id, idx, size) VALUES (?, ?, ?) \
-             ON CONFLICT (upload_id, idx) DO UPDATE SET size = excluded.size",
+            "INSERT INTO upload_chunks (upload_id, idx, size, sha256) VALUES (?, ?, ?, ?) \
+             ON CONFLICT (upload_id, idx) DO UPDATE SET size = excluded.size, sha256 = excluded.sha256",
         )
         .bind(id)
         .bind(idx)
         .bind(body.len() as i64)
+        .bind(Sha256::digest(&body).as_slice())
         .execute(&mut *tx)
         .await?;
         sqlx::query("UPDATE uploads SET received_bytes = received_bytes + ? WHERE id = ?")
@@ -511,6 +513,14 @@ pub async fn publish(
     .bind(&created_by)
     .bind(t)
     .bind(&up.account_id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query(
+        "INSERT INTO file_chunk_hashes (version_id, idx, sha256) \
+         SELECT ?, idx, sha256 FROM upload_chunks WHERE upload_id = ? AND sha256 IS NOT NULL",
+    )
+    .bind(&up.version_id)
+    .bind(&up.id)
     .execute(&mut *tx)
     .await?;
     // The previous version stays in the history; drop any beyond the limit.

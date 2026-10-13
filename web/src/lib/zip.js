@@ -122,7 +122,7 @@ export async function* zipParts(entries, { list, open, onProgress }) {
     let crc = 0;
     let written = 0;
     if (!dir) {
-      const file = open(entry);
+      const file = await open(entry);
       for (let i = 0; i < file.count; i++) {
         const piece = await file.read(i);
         crc = crc32(crc, piece);
