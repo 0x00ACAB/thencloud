@@ -467,7 +467,7 @@ async function load(autoplay = true) {
     const { streamsAvailable, serveFile } = await import('./stream.js');
     let src;
     if (await streamsAvailable()) {
-      const f = openEntry(track.entry);
+      const f = await openEntry(track.entry);
       const s = serveFile({
         size: f.size,
         chunkSize: f.chunkSize,
@@ -716,7 +716,7 @@ function resume() {
 /** Chapters from an M4B/MP4, read from its moov box (a few pieces at most). */
 async function findChapters(track, seq) {
   if (!/\.(m4b|m4a|mp4)$/i.test(track.entry.meta.name)) return;
-  const list = await readChapters(openEntry(track.entry));
+  const list = await readChapters(await openEntry(track.entry));
   if (seq === loadSeq) player.chapters = list;
 }
 
