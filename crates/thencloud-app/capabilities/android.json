@@ -10,6 +10,7 @@
     "thencloud:allow-save-end",
     "thencloud:allow-media-update",
     "thencloud:allow-media-artwork",
-    "thencloud:allow-media-stop"
+    "thencloud:allow-media-stop",
+    "thencloud:allow-network-status"
   ]
 }

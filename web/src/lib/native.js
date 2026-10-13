@@ -17,6 +17,9 @@ export const nativeSaves = inAndroidApp && !!globalThis.__TAURI_INTERNALS__;
 
 export const call = (cmd, args) => globalThis.__TAURI_INTERNALS__.invoke(`plugin:thencloud|${cmd}`, args);
 
+/** Android's current connectivity and whether background data use is restricted. */
+export const networkStatus = () => call('network_status');
+
 // The bridge carries JSON, so pieces go over as base64, in slices that keep
 // each message small.
 const SLICE = 512 * 1024;

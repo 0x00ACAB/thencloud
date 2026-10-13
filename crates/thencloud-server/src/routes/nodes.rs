@@ -2,6 +2,8 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
+use serde::Serialize;
+use sha2::{Digest, Sha256};
 use thencloud_crypto::api::*;
 
 use crate::access::{self, Access};
@@ -340,6 +342,85 @@ pub async fn chunk(
     access::require(&state.db, &user.id, &id, Access::Read).await?;
     let node = get_node(&state.db, &id).await?.ok_or(AppError::NotFound)?;
     current_chunk(&state, node, idx, &user.id).await
+}
+
+#[derive(Serialize)]
+pub struct CacheManifest {
+    pub node: Node,
+    pub chunk_hashes: Vec<String>,
+}
+
+/// Ciphertext-only fingerprints for a file's current version. Older versions
+/// are fingerprinted once on demand; new uploads persist hashes as they arrive.
+pub async fn cache_manifest(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<String>,
+) -> Result<Json<CacheManifest>> {
+    access::require(&state.db, &user.id, &id, Access::Read).await?;
+    let node = get_node(&state.db, &id).await?.ok_or(AppError::NotFound)?;
+    if node.is_folder() {
+        return Err(AppError::bad("not a file"));
+    }
+    let (Some(version_id), Some(count)) = (node.v_id.as_deref(), node.v_chunks) else {
+        return Err(AppError::NotFound);
+    };
+
+    let mut hashes: Vec<(i64, Vec<u8>)> = sqlx::query_as(
+        "SELECT idx, sha256 FROM file_chunk_hashes WHERE version_id = ? ORDER BY idx",
+    )
+    .bind(version_id)
+    .fetch_all(&state.db)
+    .await?;
+
+    if hashes.len() != count as usize {
+        let have: std::collections::HashSet<i64> = hashes.iter().map(|(idx, _)| *idx).collect();
+        let mut computed = Vec::with_capacity(count as usize - have.len());
+        for idx in 0..count as u32 {
+            if have.contains(&(idx as i64)) {
+                continue;
+            }
+            let bytes = crate::storage::get_chunk(&state, version_id, idx).await?;
+            computed.push((idx, Sha256::digest(bytes).to_vec()));
+        }
+        let mut tx = state.db.begin().await?;
+        for (idx, hash) in &computed {
+            sqlx::query(
+                "INSERT INTO file_chunk_hashes (version_id, idx, sha256) VALUES (?, ?, ?) \
+                 ON CONFLICT (version_id, idx) DO NOTHING",
+            )
+            .bind(version_id)
+            .bind(idx)
+            .bind(hash)
+            .execute(&mut *tx)
+            .await?;
+        }
+        tx.commit().await?;
+        hashes = sqlx::query_as(
+            "SELECT idx, sha256 FROM file_chunk_hashes WHERE version_id = ? ORDER BY idx",
+        )
+        .bind(version_id)
+        .fetch_all(&state.db)
+        .await?;
+    }
+
+    if hashes.len() != count as usize
+        || hashes
+            .iter()
+            .enumerate()
+            .any(|(i, (idx, hash))| *idx != i as i64 || hash.len() != 32)
+    {
+        return Err(AppError::Internal(
+            "the file's ciphertext fingerprints are incomplete".into(),
+        ));
+    }
+    Ok(Json(CacheManifest {
+        node: node.into_api(),
+        chunk_hashes: hashes
+            .into_iter()
+            .map(|(_, hash)| hash.iter().map(|b| format!("{b:02x}")).collect())
+            .collect(),
+    }))
 }
 
 /// Serve one chunk of a file's current version, counted against `payer`'s
