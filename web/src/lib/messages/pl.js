@@ -1542,6 +1542,7 @@ export default {
     many: 'Przeniesiono {count} duplikatów do kosza',
     other: 'Przeniesiono {count} duplikatu do kosza',
   },
+  'Moving to the trash…': 'Przenoszenie do kosza…',
 
   // App data
   "Your {name} library data couldn't be decrypted. It may have been tampered with.":

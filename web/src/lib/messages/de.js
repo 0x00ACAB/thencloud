@@ -1475,6 +1475,7 @@ export default {
   '{count} copies, {size} each': { one: '{count} Kopie, je {size}', other: '{count} Kopien, je {size}' },
   'Move {count} to the trash': '{count} in den Papierkorb verschieben',
   'Moved {count} duplicates to the trash': '{count} Duplikate in den Papierkorb verschoben',
+  'Moving to the trash…': 'Wird in den Papierkorb verschoben…',
 
   // App data
   "Your {name} library data couldn't be decrypted. It may have been tampered with.":
