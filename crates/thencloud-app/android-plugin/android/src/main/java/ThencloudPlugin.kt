@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.MediaStore
+import android.provider.OpenableColumns
 import android.provider.Settings
 import android.util.Base64
 import android.view.View
@@ -20,6 +21,8 @@ import android.webkit.WebView
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.ActivityResult
+import androidx.core.content.FileProvider
+import androidx.core.content.IntentCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.webkit.ScriptHandler
@@ -32,8 +35,11 @@ import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
 import app.tauri.plugin.Invoke
+import app.tauri.plugin.JSArray
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
+import java.io.File
+import java.io.InputStream
 import java.io.OutputStream
 import org.json.JSONObject
 
@@ -53,6 +59,11 @@ class WriteArgs {
 class EndArgs {
   var id: Int = 0
   var ok: Boolean = false
+}
+
+@InvokeArg
+class IdArgs {
+  var id: Int = 0
 }
 
 @InvokeArg
@@ -93,6 +104,17 @@ class ArtworkArgs {
  * -left and -right), with a keyboard-open class on <html> while the keyboard
  * is up, on every change and on every page load. The keyboard itself shrinks
  * the WebView.
+ *
+ * Network: networkStatus tells the page whether it's connected, on a
+ * metered network, and whether Data Saver is on, so the page's on-device
+ * file cache knows whether it may refresh a changed file.
+ *
+ * Sharing: "Share to thencloud" from another app queues its content: Uris
+ * (queueIntent, onNewIntent, and the activity's own intent at load() for a
+ * cold start); the page lists, reads and clears them (sharePending,
+ * shareRead, shareDone). The reverse, sending a file out, writes it into
+ * the app's own cache and hands it to the system share sheet
+ * (shareOutBegin, shareOutWrite, shareOutEnd).
  */
 @TauriPlugin
 class ThencloudPlugin(private val activity: Activity) : Plugin(activity) {
@@ -153,6 +175,149 @@ class ThencloudPlugin(private val activity: Activity) : Plugin(activity) {
     val id = nextId++
     synchronized(saves) { saves[id] = save }
     return JSObject().put("id", id)
+  }
+
+  // Sharing in: Android's share sheet ("Share to thencloud" from another
+  // app) delivers a SEND or SEND_MULTIPLE intent carrying one or more
+  // content:// Uris, which only native code can read. Queued here by uri,
+  // name, mime and size (no bytes yet); the page lists them (sharePending),
+  // picks a folder, then pulls each one's plaintext a piece at a time
+  // (shareRead, base64) to encrypt and upload like any local file, and
+  // tells us it's done (shareDone) so the stream closes. Nothing is copied
+  // to disk first.
+  private class Shared(val uri: Uri, val name: String, val mime: String, val size: Long, var stream: InputStream? = null)
+
+  private val shares = HashMap<Int, Shared>()
+  private val SHARE_CHUNK = 512 * 1024
+
+  /** A SEND/SEND_MULTIPLE intent's Uris, queued for the page to list and import. */
+  private fun queueIntent(intent: Intent?) {
+    val uris = when (intent?.action) {
+      Intent.ACTION_SEND -> IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)?.let { listOf(it) }
+      Intent.ACTION_SEND_MULTIPLE -> IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java)
+      else -> null
+    } ?: return
+    val resolver = activity.contentResolver
+    for (uri in uris) {
+      var name = uri.lastPathSegment ?: "shared"
+      var size = -1L
+      resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE), null, null, null)?.use { c ->
+        if (c.moveToFirst()) {
+          c.getColumnIndex(OpenableColumns.DISPLAY_NAME).takeIf { it >= 0 }?.let { name = c.getString(it) ?: name }
+          c.getColumnIndex(OpenableColumns.SIZE).takeIf { it >= 0 }?.let { size = c.getLong(it) }
+        }
+      }
+      val mime = resolver.getType(uri) ?: "application/octet-stream"
+      synchronized(shares) { shares[nextId++] = Shared(uri, name, mime, size) }
+    }
+  }
+
+  /** Pending shared files not yet imported: `[{ id, name, mime, size }]`. */
+  @Command
+  fun sharePending(invoke: Invoke) {
+    val items = JSArray()
+    synchronized(shares) { shares.entries.sortedBy { it.key } }.forEach { (id, s) ->
+      items.put(JSObject().put("id", id).put("name", s.name).put("mime", s.mime).put("size", s.size))
+    }
+    invoke.resolve(JSObject().put("items", items))
+  }
+
+  /** The next piece of a pending share's plaintext (base64), opening it on the first call. `eof` when there's no more. */
+  @Command
+  fun shareRead(invoke: Invoke) {
+    val args = invoke.parseArgs(IdArgs::class.java)
+    val shared = synchronized(shares) { shares[args.id] } ?: return invoke.reject("No such shared file.")
+    try {
+      val stream = shared.stream ?: activity.contentResolver.openInputStream(shared.uri)?.also { shared.stream = it }
+        ?: return invoke.reject("Couldn't open the shared file.")
+      val buf = ByteArray(SHARE_CHUNK)
+      var read = 0
+      // A content:// stream may return a short read before more is ready.
+      while (read < buf.size) {
+        val n = stream.read(buf, read, buf.size - read)
+        if (n < 0) break
+        read += n
+      }
+      invoke.resolve(JSObject().put("data", Base64.encodeToString(buf, 0, read, Base64.NO_WRAP)).put("eof", read < buf.size))
+    } catch (e: Exception) {
+      invoke.reject(e.message)
+    }
+  }
+
+  /** Done with a pending share (imported, failed or dismissed): closes its stream. */
+  @Command
+  fun shareDone(invoke: Invoke) {
+    val args = invoke.parseArgs(IdArgs::class.java)
+    val shared = synchronized(shares) { shares.remove(args.id) }
+    try {
+      shared?.stream?.close()
+    } catch (_: Exception) {
+    }
+    invoke.resolve()
+  }
+
+  // Sharing out: a decrypted file, written into our own cache (shared_out/,
+  // pruned of anything older than an hour before each new one starts, since
+  // we can't tell when the other app is done reading it) and handed to
+  // another app as a content:// Uri through the FileProvider Tauri's
+  // Android template already declares, via the system share sheet.
+  private class ShareOut(val file: File, val out: OutputStream, val mime: String)
+
+  private val shareOuts = HashMap<Int, ShareOut>()
+
+  @Command
+  fun shareOutBegin(invoke: Invoke) {
+    val args = invoke.parseArgs(BeginArgs::class.java)
+    val mime = args.mime?.takeIf { it.isNotBlank() } ?: "application/octet-stream"
+    try {
+      val dir = File(activity.cacheDir, "shared_out").apply { mkdirs() }
+      val cutoff = System.currentTimeMillis() - 60 * 60 * 1000
+      dir.listFiles()?.forEach { if (it.lastModified() < cutoff) it.delete() }
+      val name = args.name.replace('/', '_').replace('\\', '_').trim().ifEmpty { "shared" }
+      val file = File(dir, "${nextId}_$name")
+      val out = file.outputStream()
+      val id = nextId++
+      synchronized(shareOuts) { shareOuts[id] = ShareOut(file, out, mime) }
+      invoke.resolve(JSObject().put("id", id))
+    } catch (e: Exception) {
+      invoke.reject(e.message)
+    }
+  }
+
+  @Command
+  fun shareOutWrite(invoke: Invoke) {
+    val args = invoke.parseArgs(WriteArgs::class.java)
+    val out = synchronized(shareOuts) { shareOuts[args.id] }?.out ?: return invoke.reject("No such share.")
+    try {
+      out.write(Base64.decode(args.data, Base64.DEFAULT))
+      invoke.resolve()
+    } catch (e: Exception) {
+      invoke.reject(e.message)
+    }
+  }
+
+  /** Finish a share-out; with ok, hands the file to the system share sheet. */
+  @Command
+  fun shareOutEnd(invoke: Invoke) {
+    val args = invoke.parseArgs(EndArgs::class.java)
+    val share = synchronized(shareOuts) { shareOuts.remove(args.id) } ?: return invoke.resolve()
+    try {
+      share.out.close()
+      if (!args.ok) {
+        share.file.delete()
+        return invoke.resolve()
+      }
+      val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.fileprovider", share.file)
+      val send = Intent(Intent.ACTION_SEND).apply {
+        type = share.mime
+        putExtra(Intent.EXTRA_STREAM, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+      }
+      activity.startActivity(Intent.createChooser(send, null))
+      invoke.resolve()
+    } catch (e: Exception) {
+      invoke.reject(e.message)
+    }
   }
 
   @Command
@@ -254,9 +419,31 @@ class ThencloudPlugin(private val activity: Activity) : Plugin(activity) {
     NowPlaying.stop(activity)
   }
 
+  private var sharedWebView: WebView? = null
+
+  /** The app was already open: tell the page a new share arrived. */
+  override fun onNewIntent(intent: Intent) {
+    activity.setIntent(intent)
+    queueIntent(intent)
+    notifyShareArrived()
+  }
+
+  private fun notifyShareArrived() {
+    if (synchronized(shares) { shares.isEmpty() }) return
+    sharedWebView?.evaluateJavascript(
+      "(function(){try{window.thencloudShareArrived&&window.thencloudShareArrived()}catch(e){}})()",
+      null,
+    )
+  }
+
   private var insetsScript: ScriptHandler? = null
 
   override fun load(webView: WebView) {
+    sharedWebView = webView
+    // A share that opened the app fresh: onNewIntent isn't called for the
+    // intent an activity was started with, only for ones delivered later.
+    queueIntent(activity.intent)
+
     // Buttons in the notification, on the lock screen or on headphones. If
     // the page has no player to take them (it was reloaded, or signed out),
     // the notification goes.

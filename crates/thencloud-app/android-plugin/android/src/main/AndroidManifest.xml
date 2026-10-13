@@ -10,5 +10,24 @@
             android:name="org.thencloud.plugin.PlaybackService"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+
+        <!--
+          "Share to thencloud": merged into the app's own MainActivity (hence
+          the fully-qualified name, not the usual ".MainActivity" relative to
+          this module's own package), so the app shows up in the system share
+          sheet. ThencloudPlugin reads the shared file(s) from there.
+        -->
+        <activity android:name="org.thencloud.client.MainActivity" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="*/*" />
+            </intent-filter>
+        </activity>
     </application>
 </manifest>

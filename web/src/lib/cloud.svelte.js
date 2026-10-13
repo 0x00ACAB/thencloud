@@ -19,6 +19,7 @@ import { previewKind } from './preview.js';
 import { rememberSession, rememberedSession, forgetSession } from './remember.js';
 import { arrivedFromCheck } from './turnstile.js';
 import { canSaveStreams, streamDownload } from './stream.js';
+import { shareNative, filePieces } from './native.js';
 import { createPasskey, usePasskey, passkeysSupported } from './passkeys.js';
 import { apiUrl, serverOrigin, setServer } from './server.svelte.js';
 import { inAndroidApp, networkStatus } from './native.js';
@@ -1286,6 +1287,12 @@ export async function download(entry, onProgress) {
   if (entry.meta.size > STREAM_FROM && (await canSaveStreams())) return streamDownload(await openEntry(entry), onProgress);
   const { blob, meta } = await fetchEntry(entry, onProgress);
   await saveBlob(blob, meta.name);
+}
+
+/** Share a file to another app through the system share sheet (Android app only; gate with nativeSaves). */
+export async function shareEntry(entry, onProgress) {
+  const file = openEntry(entry);
+  await shareNative(filePieces(file, onProgress), entry.meta.name, entry.meta.mime);
 }
 
 /**
