@@ -1,0 +1,30 @@
+Categories:
+  - Cloud Storage & File Sync
+  - Multimedia
+License: AGPL-3.0-or-later
+AuthorName: 0x00ACAB
+WebSite: https://docs.kkaii.xyz/
+SourceCode: https://github.com/0x00ACAB/thencloud
+IssueTracker: https://github.com/0x00ACAB/thencloud/issues
+Changelog: https://github.com/0x00ACAB/thencloud/blob/main/CHANGELOG.md
+
+Name: thencloud
+Summary: End-to-end encrypted files, photos, music and notes
+Description: |-
+  thencloud is a file cloud that encrypts everything on your device before
+  it's uploaded. The server stores ciphertext, wrapped keys and public keys,
+  and never sees your password, your keys, your file names or their contents.
+
+  The app connects to any thencloud server, yours or someone else's:
+
+  * Files and folders with versions, a trash and search inside files
+  * Sharing with other people (with key fingerprints to compare) and public links
+  * Photos by date, music with playlists, videos by series, notes and books
+  * Previews of images, video, PDF, Office documents, Markdown and archives
+  * Share files in from other apps, and send them out again
+  * Offline copies are cached encrypted on the device
+
+  There is no analytics, telemetry or crash reporting.
+
+AutoUpdateMode: None
+UpdateCheckMode: None
