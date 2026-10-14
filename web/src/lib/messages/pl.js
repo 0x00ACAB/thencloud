@@ -1522,8 +1522,37 @@ export default {
   '{count} unchanged lines': { one: '{count} niezmieniony wiersz', few: '{count} niezmienione wiersze', many: '{count} niezmienionych wierszy', other: '{count} niezmienionego wiersza' },
   Added: 'Dodano',
   Removed: 'Usunięto',
-  'What changed in this version': 'Co zmieniło się w tej wersji',
-  Changes: 'Zmiany',
+  'Pick to compare with another version': 'Wybierz, aby porównać z inną wersją',
+  Compare: 'Porównaj',
+  'Pick one more version to compare it with.': 'Wybierz jeszcze jedną wersję do porównania.',
+  'Pick two versions to see what changed between them.': 'Wybierz dwie wersje, aby zobaczyć, co się między nimi zmieniło.',
+
+  // Duplicate files
+  'Duplicate files': 'Duplikaty plików',
+  'Find duplicates': 'Znajdź duplikaty',
+  'Looks for files under My files with exactly the same content, read and compared here, and offers to move all but one copy of each to the trash.':
+    'Szuka plików w Moich plikach o dokładnie takiej samej zawartości, czyta je i porównuje tutaj, a następnie proponuje przeniesienie wszystkich kopii oprócz jednej do kosza.',
+  'Files under My files with exactly the same content. Same-sized files are read and compared here; nothing is sent anywhere.':
+    'Pliki w Moich plikach o dokładnie takiej samej zawartości. Pliki o tym samym rozmiarze są tutaj odczytywane i porównywane; nic nie jest nigdzie wysyłane.',
+  'Comparing {done} of {total} same-sized files…': 'Porównywanie {done} z {total} plików o tym samym rozmiarze…',
+  'Looking through My files…': 'Przeszukiwanie Moich plików…',
+  'No duplicate files found.': 'Nie znaleziono duplikatów plików.',
+  "Keeping the oldest copy of each by default; pick another if you'd rather. {size} would be freed.":
+    'Domyślnie zachowywana jest najstarsza kopia każdego pliku; możesz wybrać inną. Zwolni się {size}.',
+  '{count} copies, {size} each': {
+    one: '{count} kopia, każda po {size}',
+    few: '{count} kopie, każda po {size}',
+    many: '{count} kopii, każda po {size}',
+    other: '{count} kopii, każda po {size}',
+  },
+  'Move {count} to the trash': 'Przenieś {count} do kosza',
+  'Moved {count} duplicates to the trash': {
+    one: 'Przeniesiono {count} duplikat do kosza',
+    few: 'Przeniesiono {count} duplikaty do kosza',
+    many: 'Przeniesiono {count} duplikatów do kosza',
+    other: 'Przeniesiono {count} duplikatu do kosza',
+  },
+  'Moving to the trash…': 'Przenoszenie do kosza…',
 
   // App data
   "Your {name} library data couldn't be decrypted. It may have been tampered with.":

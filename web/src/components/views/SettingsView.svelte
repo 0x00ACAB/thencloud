@@ -10,6 +10,7 @@
   import RecoveryKeyDialog from '../dialogs/RecoveryKeyDialog.svelte';
   import ConfirmDialog from '../dialogs/ConfirmDialog.svelte';
   import AppPasswordDialog from '../dialogs/AppPasswordDialog.svelte';
+  import DuplicatesDialog from '../dialogs/DuplicatesDialog.svelte';
   import { theme, setTheme, toast, toastError, errorMessage, copyText, accent, setAccent, ACCENT_PRESETS, DEFAULT_ACCENT, contrast, accentForeground, iconPack, setIconPack, folderIcons, setFolderIcons, tint, setTint, photoDetails, setPhotoDetails } from '../../lib/ui.svelte.js';
   import { formatSize, formatWhen, formatDate, fullDate } from '../../lib/format.js';
   import { slide } from '../../lib/motion.js';
@@ -45,6 +46,7 @@
   const verifyCommand = $derived(`thencloud verify-web ${serverOrigin() ?? location.origin} --manifest thencloud-web-${appVersion}.json`);
   const watched = typeof navigator !== 'undefined' && !!navigator.serviceWorker?.controller;
   let checkRun = $state(null); // { files, folders, bytes, problems, done, stopped }
+  let duplicatesDialog = $state(false);
   let checkCtl = null;
   onMount(() => () => checkCtl?.abort());
 
@@ -925,6 +927,14 @@
   {/snippet}
   {@render section(t('Check your files'), null, checkBody, checkFooter)}
 
+  {#snippet duplicatesBody()}
+    <p class="text-[13px] text-fg-muted">{t('Looks for files under My files with exactly the same content, read and compared here, and offers to move all but one copy of each to the trash.')}</p>
+  {/snippet}
+  {#snippet duplicatesFooter()}
+    <button type="button" class="btn btn-secondary" onclick={() => (duplicatesDialog = true)}><Icon name="file-diff" /> {t('Find duplicates')}</button>
+  {/snippet}
+  {@render section(t('Duplicate files'), null, duplicatesBody, duplicatesFooter)}
+
   {#snippet deleteBody()}
     <p class="text-[13px] text-fg-muted">
       {t("Your files, folders, versions, links and shares are deleted from the server straight away. There is no undo, and an admin can't bring them back. Files you added to folders other people shared with you belong to them and stay.")}
@@ -1000,6 +1010,10 @@
 
 {#if appDialog}
   <AppPasswordDialog onclose={() => (appDialog = false)} oncreated={loadAppPasswords} />
+{/if}
+
+{#if duplicatesDialog}
+  <DuplicatesDialog onclose={() => (duplicatesDialog = false)} />
 {/if}
 
 {#if revokingApp}

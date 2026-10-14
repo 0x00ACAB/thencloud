@@ -19,11 +19,23 @@
   let file = $state(untrack(() => entry));
   let list = $state(null);
   let busy = $state(null); // version id with an action in flight
-  let comparing = $state(null); // { before, after }
+  // The last one or two versions picked to compare, oldest click dropped
+  // once a third comes in; two picked versions opens DiffDialog.
+  let picked = $state([]);
+  const comparing = $derived.by(() => {
+    if (picked.length !== 2) return null;
+    const [a, b] = picked.map((id) => list.find((v) => v.id === id));
+    return versionAt(a) <= versionAt(b) ? { before: a, after: b } : { before: b, after: a };
+  });
+  function pick(v) {
+    if (picked.includes(v.id)) picked = picked.filter((id) => id !== v.id);
+    else picked = picked.length < 2 ? [...picked, v.id] : [picked[1], v.id];
+  }
   // Text, Markdown, CSV and code can show what each version changed.
   const textual = $derived(['text', 'markdown'].includes(previewKind(file.meta)?.kind));
 
   async function load() {
+    picked = [];
     try {
       list = await versions(file);
     } catch (e) {
@@ -100,8 +112,14 @@
               {v.meta ? formatSize(v.meta.size) : t("Can't read this version's details")}{v.created_by ? ` · ${t('uploaded by {name}', { name: v.created_by })}` : ''}
             </p>
           </div>
-          {#if textual && list[i + 1]?.meta && v.meta}
-            <button type="button" class="btn btn-ghost btn-icon" aria-label={t('What changed in this version')} title={t('Changes')} onclick={() => (comparing = { before: list[i + 1], after: v })}>
+          {#if textual && v.meta}
+            <button
+              type="button"
+              class="btn btn-ghost btn-icon {picked.includes(v.id) ? 'text-accent-text' : ''}"
+              aria-label={t('Pick to compare with another version')}
+              aria-pressed={picked.includes(v.id)}
+              title={t('Compare')}
+              onclick={() => pick(v)}>
               <Icon name="file-diff" />
             </button>
           {/if}
@@ -122,6 +140,10 @@
     </ul>
     {#if list.length === 1}
       <p class="hint">{t('This is the only version so far. Uploading a new version keeps this one here.')}</p>
+    {:else if textual && picked.length === 1}
+      <p class="hint">{t('Pick one more version to compare it with.')}</p>
+    {:else if textual}
+      <p class="hint">{t('Pick two versions to see what changed between them.')}</p>
     {/if}
   {/if}
   {#snippet footer()}
@@ -130,5 +152,5 @@
 </Modal>
 
 {#if comparing}
-  <DiffDialog entry={file} before={comparing.before} after={comparing.after} at={versionAt} onclose={() => (comparing = null)} />
+  <DiffDialog entry={file} before={comparing.before} after={comparing.after} at={versionAt} onclose={() => (picked = [])} />
 {/if}
