@@ -11,6 +11,7 @@
   import ConfirmDialog from '../dialogs/ConfirmDialog.svelte';
   import AppPasswordDialog from '../dialogs/AppPasswordDialog.svelte';
   import DuplicatesDialog from '../dialogs/DuplicatesDialog.svelte';
+  import SecureSendDialog from '../dialogs/SecureSendDialog.svelte';
   import { theme, setTheme, toast, toastError, errorMessage, copyText, accent, setAccent, ACCENT_PRESETS, DEFAULT_ACCENT, contrast, accentForeground, iconPack, setIconPack, folderIcons, setFolderIcons, tint, setTint, photoDetails, setPhotoDetails } from '../../lib/ui.svelte.js';
   import { formatSize, formatWhen, formatDate, fullDate } from '../../lib/format.js';
   import { slide } from '../../lib/motion.js';
@@ -47,6 +48,7 @@
   const watched = typeof navigator !== 'undefined' && !!navigator.serviceWorker?.controller;
   let checkRun = $state(null); // { files, folders, bytes, problems, done, stopped }
   let duplicatesDialog = $state(false);
+  let secureSendDialog = $state(false);
   let checkCtl = null;
   onMount(() => () => checkCtl?.abort());
 
@@ -935,6 +937,14 @@
   {/snippet}
   {@render section(t('Duplicate files'), null, duplicatesBody, duplicatesFooter)}
 
+  {#snippet secureSendBody()}
+    <p class="text-[13px] text-fg-muted">{t('Share a password or a short note as a one-time link, kept in a Secure Send folder in My files until it expires or is opened.')}</p>
+  {/snippet}
+  {#snippet secureSendFooter()}
+    <button type="button" class="btn btn-secondary" onclick={() => (secureSendDialog = true)}><Icon name="link" /> {t('Secure Send')}</button>
+  {/snippet}
+  {@render section(t('Secure Send'), null, secureSendBody, secureSendFooter)}
+
   {#snippet deleteBody()}
     <p class="text-[13px] text-fg-muted">
       {t("Your files, folders, versions, links and shares are deleted from the server straight away. There is no undo, and an admin can't bring them back. Files you added to folders other people shared with you belong to them and stay.")}
@@ -1014,6 +1024,10 @@
 
 {#if duplicatesDialog}
   <DuplicatesDialog onclose={() => (duplicatesDialog = false)} />
+{/if}
+
+{#if secureSendDialog}
+  <SecureSendDialog onclose={() => (secureSendDialog = false)} />
 {/if}
 
 {#if revokingApp}

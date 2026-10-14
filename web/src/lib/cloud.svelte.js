@@ -1749,6 +1749,30 @@ export async function links(nodeId) {
 
 export const deleteLink = (id) => api('DELETE', `/api/links/${id}`);
 
+// Secure Send: a one-off piece of text (a password, a note) shared as a
+// public link, reusing counted links. There's no node type for "just a
+// link with no file", so it's kept as a small file in a "Secure Send"
+// folder (made the first time it's needed; upload() renames around any
+// name clash on its own), the same as anything else you upload.
+const SECURE_SEND_FOLDER = 'Secure Send';
+
+async function secureSendFolder() {
+  const { items } = await resolvePath(session.me.keys.root_node_id);
+  const root = items[0];
+  const rows = await listFolder(root.node.id, root.key);
+  const existing = rows.find((r) => r.node.kind === 'folder' && r.meta.name === SECURE_SEND_FOLDER);
+  if (existing) return { id: existing.node.id, key: existing.key };
+  return createFolder(root.node.id, root.key, SECURE_SEND_FOLDER);
+}
+
+/** Share `text` as a public link that opens it once (or per `maxOpens`); returns the created link. */
+export async function sendSecurely(text, { password, expiresAt, maxOpens = 1 } = {}) {
+  const { id: parentId, key: parentKey } = await secureSendFolder();
+  const file = new File([text], 'Message.txt', { type: 'text/plain', lastModified: Date.now() });
+  const entry = await upload(file, { parentId, parentKey });
+  return createLink(entry, { password, expiresAt, maxOpens });
+}
+
 // ---------------------------------------------------------------------------
 // Live updates: the server streams the ids of nodes that change in a folder
 // (Server-Sent Events). Read with fetch, not EventSource, so the session
