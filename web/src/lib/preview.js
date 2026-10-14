@@ -42,7 +42,8 @@ export function extension(name) {
 /**
  * How to preview a file: { kind, type } where kind is image, video, audio,
  * pdf, book, office, archive, markdown or text and type is the Blob type to
- * use, or null if there is no preview for it. A book has `format` (epub or
+ * use, or null if there is no preview for it. An archive is a zip, tar or
+ * gzipped tar (ArchiveView tells them apart by their bytes). A book has `format` (epub or
  * cbz), an office document too (docx, odt, xlsx or pptx). CSV and TSV are
  * text with `table` set, so they can be shown as a table and still edited
  * as text.
@@ -57,6 +58,7 @@ export function previewKind(meta) {
   if (ext === 'epub' || ext === 'cbz') return { kind: 'book', type: 'application/octet-stream', format: ext };
   if (OFFICE.has(ext)) return { kind: 'office', type: 'application/octet-stream', format: ext };
   if (ext === 'zip') return { kind: 'archive', type: 'application/zip' };
+  if (ext === 'tar' || ext === 'tgz' || /\.tar\.gz$/i.test(meta.name)) return { kind: 'archive', type: 'application/octet-stream' };
   if (MARKDOWN.has(ext) || mime === 'text/markdown') return { kind: 'markdown', type: 'text/plain' };
   if (ext === 'csv' || ext === 'tsv') return { kind: 'text', type: 'text/plain', table: true };
   if (

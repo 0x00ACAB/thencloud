@@ -138,7 +138,7 @@ Smaller things:
 - [x] **Activity in shared folders**: who added, changed or deleted what, with names decrypted in the browser. The server already sees these events; it doesn't learn the names. Kept 90 days as node ids, kinds and hours, listed under every folder that held the item (both sides of a move); one event per person, item and kind per hour, so autosaves don't flood it. From a folder's menu or the clock button above the list
 - [x] Drag rows onto a folder (or the breadcrumb) to move them
 - [x] Paste to upload (Ctrl+V a screenshot or copied files)
-- [ ] **Tags**: labels with colours, kept encrypted in the app data by node id; filter by tag in any folder and Everywhere
+- [x] **Tags**: labels with colours, kept encrypted in the app data by node id; filter by tag in any folder and Everywhere. Colours are picked in the Tags view and shown as a dot on the tag (`tagColours` in the `files` app data)
 - [ ] **Self-destructing files**: an optional date after which a file or folder goes to the trash on its own (run by the client that set it, or by the janitor on a server-visible date the owner chose to reveal)
 - [x] **Secure Send**: share a short encrypted text (a password, a note) as a one-time public link, reusing counted links. Kept as an encrypted file in a "Secure Send" folder in My files (not invisible to the owner), same as anything else uploaded
 - [ ] **Photos: Live Photos and bursts** grouped as one item (HEIC + MOV pairs by name and content identifier)
@@ -190,6 +190,8 @@ Smaller things:
 - [ ] **HEIC/HEIF and RAW previews**: decoded in WASM (libheif, LibRaw or the embedded JPEG), with thumbnails and EXIF dates like other photos, and HEIC in Convert
 - [ ] **Codec fallback**: when the browser can't play a video (HEVC, some MKVs), offer to transcode it for viewing with the existing ffmpeg WASM
 - [ ] **Archive browsing**: look inside zip, tar(.gz) and 7z files in the preview and download or save single entries, with the bounds-checked zip reader and the same zip-bomb caps
+  - [x] zip, tar and tar.gz (`lib/untar.js`: checksummed headers, GNU long names and pax paths, gunzip capped at 512 MiB; told apart by their bytes)
+  - [ ] 7z
 - [x] **Version diff**: compare any two versions of a text, Markdown or code file, from the versions list (`DiffDialog`, inline hunks)
 
 ## Milestone 11: People and organisations

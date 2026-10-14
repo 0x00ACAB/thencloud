@@ -2,7 +2,7 @@
   import { t } from '../../lib/i18n.svelte.js';
   // Favourites and Recent: node ids from the encrypted app data, resolved
   // and decrypted here. Items that are gone are quietly dropped.
-  import { places, loadPlaces, resolvePlaces, forgetPlaces, toggleFavourite, allTags, taggedWith } from '../../lib/places.svelte.js';
+  import { places, loadPlaces, resolvePlaces, forgetPlaces, toggleFavourite, allTags, taggedWith, tagColour, setTagColour, TAG_COLOURS } from '../../lib/places.svelte.js';
   import { toastError } from '../../lib/ui.svelte.js';
   import { formatSize, changedAt } from '../../lib/format.js';
   import Icon from '../Icon.svelte';
@@ -53,6 +53,25 @@
     }
   }
 
+  async function colour(c) {
+    try {
+      await setTagColour(picked, c);
+    } catch (e) {
+      toastError(e);
+    }
+  }
+
+  const colourNames = $derived({
+    red: t('Red'),
+    orange: t('Orange'),
+    yellow: t('Yellow'),
+    green: t('Green'),
+    teal: t('Teal'),
+    blue: t('Blue'),
+    purple: t('Purple'),
+    pink: t('Pink'),
+  });
+
   const title = $derived(mode === 'favourites' ? t('Favourites') : mode === 'tags' ? t('Tags') : t('Recent'));
 </script>
 
@@ -73,9 +92,25 @@
         class="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border px-2.5 text-[13px] transition-colors {picked === x.tag
           ? 'border-accent bg-accent-soft font-medium text-accent-text'
           : 'border-line text-fg-muted hover:bg-subtle hover:text-fg'}"
-        onclick={() => (tag = x.tag)}>{x.tag}<span class="text-xs tabular-nums opacity-80">{x.n}</span></button>
+        onclick={() => (tag = x.tag)}>{#if tagColour(x.tag)}<span class="tag-dot" style:background-color="var(--tag-{tagColour(x.tag)})" aria-hidden="true"></span>{/if}{x.tag}<span class="text-xs tabular-nums opacity-80">{x.n}</span></button>
     {/each}
   </div>
+  {#if picked}
+    {@const current = tagColour(picked)}
+    <div class="mt-3 flex flex-wrap items-center gap-2">
+      <span class="text-[13px] text-fg-muted" id="tag-colour-label">{t('Colour of {tag}', { tag: picked })}</span>
+      <div class="flex flex-wrap items-center gap-1" role="radiogroup" aria-labelledby="tag-colour-label">
+        <button type="button" role="radio" aria-checked={!current} class="tag-swatch grid place-items-center" title={t('No colour')} aria-label={t('No colour')} onclick={() => colour(null)}>
+          <Icon name="x" class="size-3 text-fg-muted" />
+        </button>
+        {#each TAG_COLOURS as c (c)}
+          <button type="button" role="radio" aria-checked={current === c} class="tag-swatch" title={colourNames[c]} aria-label={colourNames[c]} onclick={() => colour(c)}>
+            <span style:background-color="var(--tag-{c})"></span>
+          </button>
+        {/each}
+      </div>
+    </div>
+  {/if}
 {/if}
 
 <div class="card mt-6 overflow-hidden">

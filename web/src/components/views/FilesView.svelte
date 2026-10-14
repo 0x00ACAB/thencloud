@@ -8,6 +8,7 @@
   import Icon from '../Icon.svelte';
   import FileIcon from '../FileIcon.svelte';
   import FolderIcon from '../FolderIcon.svelte';
+  import TagBadge from '../TagBadge.svelte';
   import Thumb from '../Thumb.svelte';
   import Menu from '../Menu.svelte';
   import NameDialog from '../dialogs/NameDialog.svelte';
@@ -1219,7 +1220,7 @@
                   <span class="grid min-w-0">
                     <span class="flex min-w-0 items-center gap-1.5">
                       <span class="truncate font-medium group-hover:underline group-hover:underline-offset-4 group-hover:decoration-line-strong">{entry.meta.name}</span>
-                      {#each tagsOf(entry.node.id).slice(0, 3) as tag (tag)}<span class="badge hidden shrink-0 text-[11px] sm:inline-flex">{tag}</span>{/each}
+                      {#each tagsOf(entry.node.id).slice(0, 3) as tag (tag)}<TagBadge {tag} class="hidden shrink-0 text-[11px] sm:inline-flex" />{/each}
                     </span>
                     <span class="truncate text-xs text-fg-muted md:hidden">
                       {#if !folder}<span class="sm:hidden">{formatSize(entry.meta.size)}{' · '}</span>{/if}{formatWhen(changedAt(entry))}
