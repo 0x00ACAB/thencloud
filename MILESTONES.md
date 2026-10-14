@@ -46,6 +46,8 @@
 - [x] "Keep me signed in on this browser" (opt-in): token and master key saved in IndexedDB under a non-extractable WebCrypto key, removed on sign-out, "Stop keeping signed in", or when the server ends the session
 - [x] App passwords for sync clients: made in the browser and shown once, each wrapping its own copy of the master key; full or read-only; revoking one signs out its sessions; never the account password
 - [x] Server stats for admins, without revealing anything encrypted: accounts, sessions, storage, file/folder/version counts, shares and links
+- [ ] **Admin audit log**: which admin changed what (quotas, roles, registration, settings) and when, visible to every admin
+- [ ] **Storage and quota alerts** for admins: disk or bucket nearly full, users near their quota
 
 ## Tools
 
@@ -62,6 +64,9 @@
   - Limits: one download at a time per user, a size cap, and public addresses only (no fetching from the server's own network)
   - With ffmpeg installed, separate video and audio (most YouTube videos) are fetched at full speed by two yt-dlp processes into FIFOs and copied by ffmpeg into a fragmented MP4 as they stream, H.264 + AAC preferred up to 1080p; without it, only single-file formats work
   - [x] A quality choice (each distinct resolution the site offers, 1080p by default, "best" beyond it), and playlists: listed flat, picked with checkboxes, fetched one video at a time
+  - [x] **YT-DLP bundled into docker container**: `edge.yml`/`release.yml` also build and push the `with-downloader` target, tagged `*-downloader`
+- [x] **Duplicate finder**: hash files in the browser and group identical ones, with a choice of which to keep
+- [ ] **Storage analyzer**: a treemap of what takes space, by folder and type, from decrypted sizes in the browser
 
 ## UI
 
@@ -115,6 +120,9 @@ Smaller things:
 - [x] **One-time and counted links**: a download limit on public links, and "expires after first open". An open is one visit to the link page, counted by the server, which hands that visit a signed token for the rest of it (browsing, downloads, streaming); once they're used up the link is gone for new visitors, while visits under way can finish
 - [x] **Delete my account** from Settings, with the password and a typed confirmation. Not from an app password, and the only admin can't leave others without one
 - [x] **Account export**: everything decrypted into a zip in the browser (streamed), plus an encrypted backup the CLI can restore to another server. Settings, "Export your data": My files plus library data and contacts as JSON. `thencloud backup <folder> <file>` writes one file under a new backup key shown once; `thencloud restore <file> <folder>` puts it back on any server, encrypted afresh there
+- [ ] **Emergency access**: name a verified contact who can request access to your files; it's granted after a waiting period you choose unless you deny it. A copy of the master key (or chosen folders' keys) is sealed to their hybrid key ahead of time and the server releases it only when the wait runs out
+- [ ] **Social recovery**: split the recovery key with Shamir's secret sharing among verified contacts (for example any 3 of 5), each share sealed to their key; they approve a recovery from their own client
+- [ ] **New sign-in alerts**: a notice in the app (and by push, once notifications exist) when a new device, passkey or app password signs in, with a link to sign it out
 
 ## Milestone 6: Everyday files
 
@@ -130,6 +138,10 @@ Smaller things:
 - [x] **Activity in shared folders**: who added, changed or deleted what, with names decrypted in the browser. The server already sees these events; it doesn't learn the names. Kept 90 days as node ids, kinds and hours, listed under every folder that held the item (both sides of a move); one event per person, item and kind per hour, so autosaves don't flood it. From a folder's menu or the clock button above the list
 - [x] Drag rows onto a folder (or the breadcrumb) to move them
 - [x] Paste to upload (Ctrl+V a screenshot or copied files)
+- [ ] **Tags**: labels with colours, kept encrypted in the app data by node id; filter by tag in any folder and Everywhere
+- [ ] **Self-destructing files**: an optional date after which a file or folder goes to the trash on its own (run by the client that set it, or by the janitor on a server-visible date the owner chose to reveal)
+- [x] **Secure Send**: share a short encrypted text (a password, a note) as a one-time public link, reusing counted links. Kept as an encrypted file in a "Secure Send" folder in My files (not invisible to the owner), same as anything else uploaded
+- [ ] **Photos: Live Photos and bursts** grouped as one item (HEIC + MOV pairs by name and content identifier)
 
 ## Milestone 7: Clients and self-hosting
 
@@ -142,6 +154,9 @@ Smaller things:
 - [x] **Integrity check**: the server checks every blob it expects exists with the right size; the client can verify that everything decrypts and flags what doesn't (`thencloud-server check`, and Settings > Check your files)
 - [x] **Translations**: move UI strings into message files and pick the language from the browser. English, Polish and German (`lib/messages/`), loaded on demand, with plural and grammatical-gender forms; a test fails on any string missing a translation. Dates, numbers, 12/24-hour time and units follow a separate region setting
 - [x] **Accessibility pass**: screen reader labels, focus handling in dialogs and menus, and colour contrast checked in both themes and with the tint on. Every text element on the main pages and dialogs measured in the browser against WCAG AA in dark, light and both tinted themes: the faint grey and danger buttons were below 4.5:1 and are fixed. Menus take Home/End, and Tab closes them; icon-only buttons all have names
+- [ ] **Import from other services**: Google Drive, Dropbox and OneDrive through the CLI (like the Nextcloud import), and Google Takeout archives with photo dates taken from Takeout's JSON sidecars
+- [ ] **Public API docs**: an OpenAPI spec of every route, generated and checked in CI, alongside the format spec
+- [ ] **Packaging**: a Helm chart, a NixOS module, and TrueNAS / Unraid app templates
 
 ## Milestone 8: Hardening
 
@@ -153,6 +168,8 @@ Smaller things:
 - [x] **Turnstile on sign-in and registration**: Cloudflare Turnstile as a bot check on password sign-in, and on registration only while it's open to everyone (not invite-only, not the first account). Opt-in by an admin with their own keys (`--turnstile-site-key`, `--turnstile-secret`), off by default. The check runs on `/auth`, a page of its own that alone may load Cloudflare's script and has no password field or key (a sandboxed frame doesn't work: Turnstile never finishes in an opaque origin); the token comes back through sessionStorage, the server checks it with Siteverify (secret and token only) and takes each token once, and a kept sign-in is dropped after a visit to `/auth`. The desktop and Android app can't show the check yet
 - [ ] **Master key rotation**: after a suspected leak, re-wrap every key under a new master key and keypair, and re-seal shares
 - [ ] **Independent security audit** of the crypto crate, the web client and the server, with the report published
+- [ ] **Rollback and freshness protection**: a signed, versioned root over each tree (or per-folder counters the client remembers), so the server can't quietly serve an older version of a file, an older folder listing, or hide a recent change
+- [ ] **Signed writes**: an Ed25519 signing key per account (published with the encryption keys and covered by fingerprints), and every new version, metadata change and move signed by its author, so in a shared folder a member with the write key can't pass off content as someone else's
 
 ## Milestone 9: Less metadata
 
@@ -170,6 +187,10 @@ Smaller things:
 - [x] **Office previews**: DOCX, XLSX, ODT and PPTX rendered in the browser, loaded only when needed and sanitised like Markdown. Read by our own code (the bounds-checked zip reader and a small XML reader without DTDs or entities, both fuzzed) into plain data that's shown as text, so nothing needs sanitising: headings, bold and italic, numbered and bulleted lists, tables, pictures (typed from their bytes) and web or mail links; sheets with their tabs; slides one after another. The text, not the layout: fonts, page layout, number formats and charts aren't shown
 - [x] **PDF tools**: merge, split, rotate and reorder pages in the browser, saved as a new encrypted file. Also remove or extract pages; pdf-lib is loaded only when the dialog opens, and new documents carry no producer or dates
 - [x] **Notes view**: a folder of Markdown files as a notebook, with a list, search and pinned notes. Saved as you type as new versions, with a choice when a note changed elsewhere; search reads notes' text in the browser; pins are kept in the encrypted app data
+- [ ] **HEIC/HEIF and RAW previews**: decoded in WASM (libheif, LibRaw or the embedded JPEG), with thumbnails and EXIF dates like other photos, and HEIC in Convert
+- [ ] **Codec fallback**: when the browser can't play a video (HEVC, some MKVs), offer to transcode it for viewing with the existing ffmpeg WASM
+- [ ] **Archive browsing**: look inside zip, tar(.gz) and 7z files in the preview and download or save single entries, with the bounds-checked zip reader and the same zip-bomb caps
+- [x] **Version diff**: compare any two versions of a text, Markdown or code file, from the versions list (`DiffDialog`, inline hunks)
 
 ## Milestone 11: People and organisations
 
@@ -178,6 +199,7 @@ Smaller things:
 - [ ] **Single sign-on (OIDC)** as a gate on login for organisations; the encryption password or passkey stays separate, since the identity provider must never hold keys
 - [ ] **Federation**: share with `user@other-server`, with public keys fetched and pinned like local ones (and checked against key transparency once that exists)
 - [x] **Per-user limits** on bandwidth and upload rate, set by admins. Daily download and upload limits in encrypted bytes per UTC day, counted per chunk (a public link's traffic counts for its owner); 429 once reached, and users see theirs
+- [ ] **Notifications**: Web Push (or ntfy for self-hosters) for new shares, comments, file drops, sign-in alerts and quota warnings. The push carries only a kind and node ids; the client decrypts names when it shows the notice
 
 ## Milestone 12: Sync and scale
 
@@ -185,6 +207,7 @@ Smaller things:
 - [x] **Live updates**: open views refresh when something changes in a shared folder (Server-Sent Events carrying only node ids). `GET /api/nodes/<id>/changes`, fed by the same hook as the activity history; access is checked again for each event. The browser reads it with fetch (the token stays in a header, not the URL) and reloads the folder quietly, waiting while the tab is hidden or a name is being edited
 - [x] **Large folders**: paginated listings on the server and a virtualised file table, so a folder with 100,000 items stays fast. `?limit=` with an opaque cursor in index order; past 400 items the list renders only the rows near the screen, and the grid adds tiles as you scroll
 - [ ] **PostgreSQL** as an alternative to SQLite for bigger installs
+  - [ ] A migration command from SQLite to PostgreSQL, checked with `check` afterwards
 - [ ] **Several server instances** behind a load balancer, sharing PostgreSQL and the S3 blob store
 
 ## Milestone 13: Bring your own storage
@@ -206,6 +229,13 @@ Smaller things:
   - [ ] MEGA: 20 GB free, its own API and SDK (signs in with the account's password, no OAuth), with a download transfer quota, so better as extra space than as a mirror that gets read often
   - [ ] WebDAV, with an app password (Koofr: 10 GB free)
 
+## Milestone 14: Safety nets
+
+- [ ] **Point-in-time restore**: roll a whole folder (or My files) back to how it was at a chosen moment, from versions and the trash, as one undoable step. Recovery from ransomware or a bad sync
+- [ ] **Mass-change detection**: when many files are rewritten, renamed or deleted in a short time, pause that session's writes and ask the owner to confirm, with a one-click point-in-time restore. Judged from the server's own event counts, no plaintext needed
+- [ ] **Pinned versions**: name a version ("Final draft") and keep it out of thinning and quota pruning
+- [ ] **Immutable backups**: `backup` to an S3 bucket with Object Lock, so a compromised server can't delete or overwrite older backups
+
 ## Later
 
 - [x] **Recovery key**: an optional printable key that also wraps the master key; "Forgot your password?" uses it to set a new one without losing data
@@ -225,3 +255,14 @@ Smaller things:
 - [ ] **Collaborative editing**: live Markdown editing with others in a shared folder, with every update encrypted under the file's key and the server only relaying them
 - [ ] **Mount on macOS and Windows** (FUSE-T, WinFsp), reusing the Linux mount's code
 - [ ] **Mobile apps** reusing `thencloud-crypto`, with camera upload
+- [ ] **Admin quorum**: on servers with several admins, major server-wide changes need approval from more than half of them. Covers global storage and bandwidth limits, registration mode, enabling yt-dlp or a storage provider, and adding or removing admins
+  - A change is proposed with a reason, shown to every admin, and applied once the count is reached; it expires if it isn't (for example after 7 days)
+  - Each vote is signed with the admin's own key (signed writes), so the record in the audit log can be checked and the server can't invent approvals
+  - The threshold counts active admins only; a server with one admin acts directly, and a `thencloud-server` command with shell access stays as the break-glass way in
+  - Minor settings and per-user actions (one user's quota, signing someone out) stay single-admin
+- [ ] **Offline files**: mark files, folders or notes as available offline, kept encrypted in OPFS and synced through the change feed
+- [ ] **OCR**: text from images and scanned PDFs (Tesseract in WASM) fed into the full-text index
+- [ ] **On-device photo search**: face grouping and object search with a small model run in WASM or WebGPU; the results are kept in the encrypted app data and nothing leaves the browser
+- [ ] **Photo map**: photos that kept their location on a map, with self-hosted tiles so no third party sees where you've been
+- [ ] **Whiteboard and drawings**: an Excalidraw-style editor for `.excalidraw` files, saved as encrypted versions like notes
+- [ ] **Client libraries**: `thencloud-crypto` bindings for JavaScript (npm) and Python (pyo3), so others can write clients against the API docs and format spec
