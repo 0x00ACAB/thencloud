@@ -1,16 +1,14 @@
 name: CI
 
-# Pull requests: a merge to main is the code its pull request already
-# tested, so it isn't run again (CI minutes are limited), and documentation
-# alone doesn't run it. The one exception: when a lockfile changes on main,
-# the Rust and Web jobs run there to refresh the build caches, since caches
-# saved in a pull request can't be used by the next one.
+# Pull requests only: a merge to main is the code its pull request already
+# tested, so nothing runs again on main (CI minutes are limited), and
+# documentation alone doesn't run it. Caches saved in a pull request can't
+# be used by the next one, only those saved on main, so once a week the Rust
+# and Web jobs run on main to keep those warm (GitHub drops caches unused
+# for 7 days).
 on:
-  push:
-    branches: [main]
-    paths:
-      - Cargo.lock
-      - web/package-lock.json
+  schedule:
+    - cron: '23 5 * * 1'
   pull_request:
     paths-ignore:
       - '**.md'
@@ -80,7 +78,7 @@ jobs:
   browser:
     name: Browser tests (Playwright)
     # Nothing to cache here that the other jobs don't.
-    if: github.event_name != 'push'
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

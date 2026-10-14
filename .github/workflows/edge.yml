@@ -1,6 +1,6 @@
 name: Edge image
 
-# Builds the Docker image from every push to main and puts it on ghcr.io as
+# Builds the Docker image from main, when run, and puts it on ghcr.io as
 # `edge` and `sha-<commit>`, for both architectures, signed with Sigstore
 # (keyless, as this workflow on main); and the with-downloader target
 # (Dockerfile) the same way, as `edge-downloader` and
@@ -15,12 +15,9 @@ name: Edge image
 #     --certificate-identity https://github.com/0x00ACAB/thencloud/.github/workflows/edge.yml@refs/heads/main \
 #     --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
+# Run by hand (Actions > Edge image > Run workflow, on main), not on every
+# push: four Docker builds take about 26 runner minutes.
 on:
-  push:
-    branches: [main]
-    paths-ignore:
-      - "docs/**"
-      - "**.md"
   workflow_dispatch:
 
 permissions:
@@ -33,6 +30,8 @@ concurrency:
 
 jobs:
   docker:
+    # Only main is published as edge (and only main matches the cosign identity above).
+    if: github.ref == 'refs/heads/main'
     name: Docker image (${{ matrix.arch }}, ${{ matrix.target }})
     strategy:
       matrix:

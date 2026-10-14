@@ -1,8 +1,9 @@
 name: CodeQL
 
+# Pull requests, and weekly on main for alerts in code that hasn't changed
+# (new queries, new advisories). Not on pushes to main: a merge is the code
+# its pull request already analysed.
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
   schedule:
