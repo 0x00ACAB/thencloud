@@ -1509,6 +1509,12 @@ export default {
   'Accounts using 90% or more of their quota. Change a quota from the menu next to the account below.':
     'Konten, die 90 % oder mehr ihres Kontingents nutzen. Ein Kontingent änderst du im Menü neben dem Konto unten.',
 
+  // Tag colours
+  Yellow: 'Gelb',
+  Purple: 'Lila',
+  'Colour of {tag}': 'Farbe von {tag}',
+  'No colour': 'Keine Farbe',
+
   // Duplicate files
   'Duplicate files': 'Doppelte Dateien',
   'Find duplicates': 'Duplikate finden',
