@@ -10,7 +10,7 @@ Each release is on GitHub's registry, for amd64 and arm64:
 docker run -p 127.0.0.1:8080:8080 -v thencloud-data:/data ghcr.io/0x00acab/thencloud:v1.1.0
 ```
 
-Every change to `main` is there too, as `edge` and `sha-<commit>` (the first 12 characters of the commit). They're untested beyond the test suite and not covered by `verify-web`; pin a `sha-` tag rather than following `edge` if you run one. Both are signed by the `edge.yml` workflow:
+Builds of `main` between releases are there too, as `edge` and `sha-<commit>` (the first 12 characters of the commit), when a maintainer runs the edge workflow, so `edge` may lag behind `main`. They're untested beyond the test suite and not covered by `verify-web`; pin a `sha-` tag rather than following `edge` if you run one. Both are signed by the `edge.yml` workflow:
 
 ```sh
 cosign verify ghcr.io/0x00acab/thencloud:sha-<commit> \
