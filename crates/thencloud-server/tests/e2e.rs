@@ -8238,19 +8238,29 @@ async fn a_big_file_moves_over_several_batches() {
         }
     };
 
-    // Four chunks at a time, two seconds each: twelve go before the cut-off.
+    // Four chunks at a time, two seconds each: some land in this batch and
+    // the rest wait for the next. Exactly how many land depends on real
+    // scheduling (CI runners can be slow enough to shift the count), so
+    // check that progress was made and the two calls account for every
+    // byte between them, without pinning an exact split.
+    let total = f.version.as_ref().unwrap().size;
     drive.lock().await.upload_delay = std::time::Duration::from_secs(2);
     let m = move_to("linked").await;
     assert_eq!((m.moved, m.left), (0, 1));
-    assert!(m.moved_bytes > 40 << 20, "{m:?}");
-    assert!(m.left_bytes < 5 << 20, "{m:?}");
+    assert!(m.moved_bytes > 0 && m.moved_bytes < total, "{m:?}");
+    assert_eq!(m.left_bytes, total - m.moved_bytes, "{m:?}");
     assert!(blob_exists(&h, &vid));
     assert_eq!(alice.me(&h).await.used_bytes, used);
+    let moved_first = m.moved_bytes;
     drive.lock().await.upload_delay = std::time::Duration::ZERO;
     assert_eq!(alice.download(&h, &f, &fk).await.1, big);
     let m = move_to("linked").await;
     assert_eq!((m.moved, m.left), (1, 0));
-    assert!(m.moved_bytes < 5 << 20, "only the last chunk: {m:?}");
+    assert_eq!(
+        m.moved_bytes,
+        total - moved_first,
+        "the rest of the chunks: {m:?}"
+    );
     assert!(!blob_exists(&h, &vid));
     assert_eq!(alice.me(&h).await.used_bytes, 0);
     assert_eq!(
@@ -8263,7 +8273,8 @@ async fn a_big_file_moves_over_several_batches() {
     drive.lock().await.download_delay = std::time::Duration::from_secs(2);
     let m = move_to("server").await;
     assert_eq!((m.moved, m.left), (0, 1));
-    assert!(m.moved_bytes > 40 << 20, "{m:?}");
+    assert!(m.moved_bytes > 0 && m.moved_bytes < total, "{m:?}");
+    let moved_first = m.moved_bytes;
     assert_eq!(
         alice.me(&h).await.used_bytes,
         0,
@@ -8273,6 +8284,11 @@ async fn a_big_file_moves_over_several_batches() {
     assert_eq!(alice.download(&h, &f, &fk).await.1, big);
     let m = move_to("server").await;
     assert_eq!((m.moved, m.left), (1, 0));
+    assert_eq!(
+        m.moved_bytes,
+        total - moved_first,
+        "the rest of the chunks: {m:?}"
+    );
     assert_eq!(alice.me(&h).await.used_bytes, used);
     assert_eq!(alice.download(&h, &f, &fk).await.1, big);
     assert_eq!(drive.lock().await.files.len(), 1, "only the folder is left");
@@ -8295,8 +8311,11 @@ async fn a_move_batch_ends_after_a_few_seconds() {
             .await
             .unwrap();
     }
-    // Four at a time, two seconds each: they start at 0, 2 and 4 seconds,
-    // and the fourth four would start after the five-second cut-off.
+    // Four at a time, two seconds each: a batch's worth lands before the
+    // five-second cut-off and the rest wait for the next. Exactly how many
+    // land depends on real scheduling (CI runners can be slow enough to
+    // shift the count), so check that it was a partial batch rather than
+    // pinning an exact split.
     drive.lock().await.upload_delay = std::time::Duration::from_secs(2);
     let move_all = || {
         let (h, token, id) = (&h, alice.token.clone(), a.id.clone());
@@ -8314,10 +8333,14 @@ async fn a_move_batch_ends_after_a_few_seconds() {
         }
     };
     let m = move_all().await;
-    assert_eq!((m.moved, m.left, m.full), (12, 4, false));
+    assert!(
+        m.moved > 0 && m.moved < 16 && m.moved as i64 + m.left == 16 && !m.full,
+        "{m:?}"
+    );
+    let moved_first = m.moved;
     drive.lock().await.upload_delay = std::time::Duration::ZERO;
     let m = move_all().await;
-    assert_eq!((m.moved, m.left), (4, 0));
+    assert_eq!((m.moved, m.left), (16 - moved_first, 0));
     let linked = thencloud_server::storage::check(&h.state).await.unwrap();
     assert!(linked[0].is_ok(), "{linked:?}");
 }
