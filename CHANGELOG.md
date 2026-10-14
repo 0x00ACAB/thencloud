@@ -75,6 +75,9 @@ migrations only add, and older apps and the CLI work against this server.
   answer can't reach the server's own network. IPv6 addresses that carry an
   IPv4 one are judged by that address.
 - Stalled request bodies time out, and pages send a `Permissions-Policy`.
+- The server and the CLI use rustls 0.23.46 for their outgoing TLS (S3,
+  Google Drive, Turnstile, the CLI's connection to your server), which fixes
+  RUSTSEC-2026-0346 to 0349.
 
 ### Self-hosting
 
