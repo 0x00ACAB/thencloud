@@ -1554,6 +1554,16 @@ export default {
   },
   'Moving to the trash…': 'Przenoszenie do kosza…',
 
+  // Secure Send
+  'Secure Send': 'Secure Send',
+  'Share a password or a short note as a one-time link, without it sitting in a chat or an email.':
+    'Udostępnij hasło lub krótką notatkę jako jednorazowy link, bez zostawiania go w czacie czy e-mailu.',
+  'Share a password or a short note as a one-time link, kept in a Secure Send folder in My files until it expires or is opened.':
+    'Udostępnij hasło lub krótką notatkę jako jednorazowy link; zostaje w folderze Secure Send w Moich plikach, aż wygaśnie albo zostanie otwarty.',
+  Message: 'Wiadomość',
+  'A password, a code, a short note…': 'Hasło, kod, krótka notatka…',
+  'Send another': 'Wyślij kolejną',
+
   // App data
   "Your {name} library data couldn't be decrypted. It may have been tampered with.":
     'Nie udało się odszyfrować danych biblioteki ({name}). Ktoś mógł przy nich majstrować.',
