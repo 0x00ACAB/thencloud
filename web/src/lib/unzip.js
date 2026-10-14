@@ -1,5 +1,6 @@
-// Reading zip files (EPUB and CBZ books) in the browser. The file comes
-// from someone else, so everything is bounds-checked, and nothing may make
+// Reading zip files (EPUB and CBZ books, office documents, and plain .zip
+// archive browsing) in the browser. The file comes from someone else, so
+// everything is bounds-checked, and nothing may make
 // us use more memory than a set limit: the entry count, each entry's size
 // once inflated, and the total read are all capped, whatever the headers
 // claim. Deflate is the browser's own (DecompressionStream). ZIP64,
@@ -80,7 +81,13 @@ export function openZip(bytes) {
     return out;
   }
 
-  return { names: () => [...entries.keys()], has: (n) => entries.has(n), read };
+  return {
+    names: () => [...entries.keys()],
+    has: (n) => entries.has(n),
+    read,
+    /** Every entry's name and uncompressed size, for listing without reading them. */
+    list: () => [...entries].map(([name, e]) => ({ name, size: e.size })),
+  };
 }
 
 function fail(what) {

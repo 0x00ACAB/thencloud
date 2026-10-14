@@ -18,6 +18,7 @@
   import PdfView from './preview/PdfView.svelte';
   import BookView from './preview/BookView.svelte';
   import OfficeView from './preview/OfficeView.svelte';
+  import ArchiveView from './preview/ArchiveView.svelte';
   import TableView from './preview/TableView.svelte';
   import SubtitlePicker from './SubtitlePicker.svelte';
   import { matchSubtitles, loadSubtitles, release as releaseSubtitles } from '../lib/subtitles.js';
@@ -111,7 +112,7 @@
         const text = await readText(blob);
         if (my !== seq) return;
         set(text === null ? { status: 'binary', blob } : { status: 'ready', blob, text });
-      } else if (k.kind === 'pdf' || k.kind === 'book' || k.kind === 'office') {
+      } else if (k.kind === 'pdf' || k.kind === 'book' || k.kind === 'office' || k.kind === 'archive') {
         set({ status: 'ready', blob });
       } else {
         url = URL.createObjectURL(blob);
@@ -436,6 +437,8 @@
             {#key entry.node.id}<BookView blob={view.blob} {entry} format={kind.format} progress={bookProgress} />{/key}
           {:else if kind.kind === 'office'}
             {#key entry.node.id}<OfficeView blob={view.blob} format={kind.format} />{/key}
+          {:else if kind.kind === 'archive'}
+            {#key entry.node.id}<ArchiveView blob={view.blob} />{/key}
           {:else if kind.kind === 'markdown' && editing}
             {#key editorKey}<MarkdownEditor text={editorText} onchange={onEdit} />{/key}
           {:else if kind.kind === 'text' && editing}

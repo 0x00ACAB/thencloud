@@ -41,10 +41,11 @@ export function extension(name) {
 
 /**
  * How to preview a file: { kind, type } where kind is image, video, audio,
- * pdf, book, office, markdown or text and type is the Blob type to use, or
- * null if there is no preview for it. A book has `format` (epub or cbz), an
- * office document too (docx, odt, xlsx or pptx). CSV and TSV are text with `table` set, so they can
- * be shown as a table and still edited as text.
+ * pdf, book, office, archive, markdown or text and type is the Blob type to
+ * use, or null if there is no preview for it. A book has `format` (epub or
+ * cbz), an office document too (docx, odt, xlsx or pptx). CSV and TSV are
+ * text with `table` set, so they can be shown as a table and still edited
+ * as text.
  */
 export function previewKind(meta) {
   const ext = extension(meta.name);
@@ -55,6 +56,7 @@ export function previewKind(meta) {
   if (ext === 'pdf' || mime === 'application/pdf') return { kind: 'pdf', type: 'application/pdf' };
   if (ext === 'epub' || ext === 'cbz') return { kind: 'book', type: 'application/octet-stream', format: ext };
   if (OFFICE.has(ext)) return { kind: 'office', type: 'application/octet-stream', format: ext };
+  if (ext === 'zip') return { kind: 'archive', type: 'application/zip' };
   if (MARKDOWN.has(ext) || mime === 'text/markdown') return { kind: 'markdown', type: 'text/plain' };
   if (ext === 'csv' || ext === 'tsv') return { kind: 'text', type: 'text/plain', table: true };
   if (
