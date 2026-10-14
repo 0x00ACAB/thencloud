@@ -8,9 +8,10 @@ const MAX_RECENT = 30;
 
 /**
  * `favourites`: [node id]; `recent`: [{ id, at }], newest first; `tags`: { node id: [tag] };
+ * `tagColours`: { tag in lower case: colour from TAG_COLOURS } (no entry is no colour);
  * `searches`: [{ id, name, query, scope }] (scope 'all' or 'contents').
  */
-export const places = $state({ favourites: [], recent: [], tags: {}, searches: [], loaded: false });
+export const places = $state({ favourites: [], recent: [], tags: {}, tagColours: {}, searches: [], loaded: false });
 
 let loading = null;
 
@@ -20,6 +21,7 @@ export function loadPlaces() {
       places.favourites = d.favourites ?? [];
       places.recent = d.recent ?? [];
       places.tags = d.tags ?? {};
+      places.tagColours = d.tagColours ?? {};
       places.searches = d.searches ?? [];
       places.loaded = true;
     },
@@ -140,6 +142,44 @@ export async function setTags(id, tags) {
     places.tags = d.tags;
   } catch (e) {
     places.tags = before;
+    throw e;
+  }
+}
+
+/** The colours a tag can have; each is a `--tag-<name>` token. */
+export const TAG_COLOURS = ['red', 'orange', 'yellow', 'green', 'teal', 'blue', 'purple', 'pink'];
+const MAX_TAG_COLOURS = 200;
+
+const colourKey = (tag) => cleanTag(tag).toLocaleLowerCase();
+
+/** A tag's colour, or null. Anything not in TAG_COLOURS (say, from a newer build) counts as none. */
+export function tagColour(tag) {
+  const c = places.tagColours[colourKey(tag)];
+  return TAG_COLOURS.includes(c) ? c : null;
+}
+
+/** Give a tag a colour, or take it away with null. Applies to the tag wherever it's used. */
+export async function setTagColour(tag, colour) {
+  const key = colourKey(tag);
+  if (!key) return;
+  const apply = (all = {}) => {
+    const next = { ...all };
+    delete next[key];
+    if (colour) {
+      next[key] = colour;
+      // Oldest first out, once there are more than anyone needs.
+      const keys = Object.keys(next);
+      for (const k of keys.slice(0, Math.max(0, keys.length - MAX_TAG_COLOURS))) delete next[k];
+    }
+    return next;
+  };
+  const before = places.tagColours;
+  places.tagColours = apply(places.tagColours);
+  try {
+    const d = await saveAppData('files', (d) => (d.tagColours = apply(d.tagColours)));
+    places.tagColours = d.tagColours;
+  } catch (e) {
+    places.tagColours = before;
     throw e;
   }
 }

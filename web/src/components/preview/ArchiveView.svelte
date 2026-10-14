@@ -1,8 +1,10 @@
 <script>
-  // Looking inside a plain .zip file: read with the same bounds-checked
-  // reader as EPUB/CBZ and office documents (lib/unzip.js), so the same
-  // entry, size and zip-bomb caps apply. Nothing is extracted until a single
-  // entry is downloaded.
+  // Looking inside a .zip, .tar or .tar.gz: a zip is read with the same
+  // bounds-checked reader as EPUB/CBZ and office documents (lib/unzip.js),
+  // so the same entry, size and zip-bomb caps apply; a tar with
+  // lib/untar.js, gunzipped first (up to its cap) when it's compressed.
+  // Which one it is comes from the bytes, not the name. Nothing is
+  // extracted until a single entry is downloaded.
   import { onMount } from 'svelte';
   import { t } from '../../lib/i18n.svelte.js';
   import { formatSize } from '../../lib/format.js';
@@ -36,13 +38,20 @@
     return top;
   }
 
-  let zip = null;
+  let archive = null;
   onMount(() => {
     (async () => {
       try {
-        const { openZip } = await import('../../lib/unzip.js');
-        zip = openZip(new Uint8Array(await blob.arrayBuffer()));
-        root = buildTree(zip.list());
+        let bytes = new Uint8Array(await blob.arrayBuffer());
+        const { openTar, isTar, isGzip, gunzip } = await import('../../lib/untar.js');
+        if (isGzip(bytes)) bytes = await gunzip(bytes);
+        if (isTar(bytes)) {
+          archive = openTar(bytes);
+        } else {
+          const { openZip } = await import('../../lib/unzip.js');
+          archive = openZip(bytes);
+        }
+        root = buildTree(archive.list());
       } catch {
         error = t("This file couldn't be opened.");
       }
@@ -61,7 +70,7 @@
     if (saving.has(entry.path)) return;
     saving = new Set(saving).add(entry.path);
     try {
-      const bytes = await zip.read(entry.path);
+      const bytes = await archive.read(entry.path);
       saveBlob(new Blob([bytes], { type: 'application/octet-stream' }), entry.name);
     } catch (e) {
       toastError(e);

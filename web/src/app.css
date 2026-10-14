@@ -108,6 +108,16 @@
   --kind-archive: #b07c00;
   --kind-text: #0f8b8d;
   --kind-other: #8f8f8f;
+  /* Tag colours (lib/places.svelte.js TAG_COLOURS): the dot on a tag's
+   * badge and the swatches that pick it. Fills only, never text colours. */
+  --tag-red: #e5484d;
+  --tag-orange: #e5631a;
+  --tag-yellow: #d4a000;
+  --tag-green: #2f9e5b;
+  --tag-teal: #0f8b8d;
+  --tag-blue: #3e7bfa;
+  --tag-purple: #8e4ec6;
+  --tag-pink: #d6409f;
   --ring: color-mix(in srgb, var(--accent-base) 35%, transparent);
   color-scheme: light;
 }
@@ -145,6 +155,14 @@
   --kind-archive: #f5c542;
   --kind-text: #3dd6d0;
   --kind-other: #8f8f8f;
+  --tag-red: #ff6369;
+  --tag-orange: #ff8a4c;
+  --tag-yellow: #f5c542;
+  --tag-green: #4cc38a;
+  --tag-teal: #3dd6d0;
+  --tag-blue: #6b9bff;
+  --tag-purple: #bf8cff;
+  --tag-pink: #f17ac6;
   --ring: color-mix(in srgb, var(--accent-base) 45%, transparent);
   color-scheme: dark;
 }
@@ -929,5 +947,41 @@
     width: 10px;
     height: 10px;
     border-radius: 2px;
+  }
+}
+
+/* A tag's colour on its badge (TagBadge, TagsDialog, the Tags view). */
+@layer components {
+  .tag-dot {
+    display: inline-block;
+    flex-shrink: 0;
+    width: 7px;
+    height: 7px;
+    border-radius: 9999px;
+  }
+  .tag-swatch {
+    width: 22px;
+    height: 22px;
+    padding: 4px;
+    border: 1px solid var(--line);
+    border-radius: 9999px;
+    cursor: pointer;
+  }
+  .tag-swatch:hover {
+    border-color: var(--line-strong);
+  }
+  .tag-swatch[aria-checked='true'] {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .tag-swatch:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 1px;
+  }
+  .tag-swatch > span {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border-radius: 9999px;
   }
 }

@@ -4,7 +4,8 @@
   import { untrack } from 'svelte';
   import Modal from '../Modal.svelte';
   import Icon from '../Icon.svelte';
-  import { tagsOf, setTags, allTags, cleanTag, MAX_TAG } from '../../lib/places.svelte.js';
+  import { tagsOf, setTags, allTags, cleanTag, tagColour, MAX_TAG } from '../../lib/places.svelte.js';
+  import TagBadge from '../TagBadge.svelte';
   import { toastError } from '../../lib/ui.svelte.js';
   import { t } from '../../lib/i18n.svelte.js';
 
@@ -54,12 +55,11 @@
 <Modal title={t('Tags')} description={t('On {name}. Only you see them.', { name: entry.meta.name })} {onclose} onsubmit={save} class="max-w-md">
   <div class="flex min-h-10 flex-wrap items-center gap-1.5 rounded-md border border-line px-2 py-1.5 focus-within:border-accent">
     {#each list as tag (tag)}
-      <span class="badge gap-1 pr-1">
-        {tag}
+      <TagBadge {tag} class="gap-1 pr-1">
         <button type="button" class="grid size-4 cursor-pointer place-items-center rounded hover:bg-muted" aria-label={t('Remove {tag}', { tag })} onclick={() => (list = list.filter((x) => x !== tag))}>
           <Icon name="x" class="size-3" />
         </button>
-      </span>
+      </TagBadge>
     {/each}
     <!-- svelte-ignore a11y_autofocus -->
     <input
@@ -75,7 +75,7 @@
   {#if suggestions.length}
     <div class="flex flex-wrap gap-1.5">
       {#each suggestions as tag (tag)}
-        <button type="button" class="badge cursor-pointer hover:bg-muted" onclick={() => add(tag)}><Icon name="plus" class="size-3" />{tag}</button>
+        <button type="button" class="badge cursor-pointer hover:bg-muted" onclick={() => add(tag)}><Icon name="plus" class="size-3" />{#if tagColour(tag)}<span class="tag-dot" style:background-color="var(--tag-{tagColour(tag)})" aria-hidden="true"></span>{/if}{tag}</button>
       {/each}
     </div>
   {/if}

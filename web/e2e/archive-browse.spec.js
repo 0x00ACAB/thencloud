@@ -4,6 +4,8 @@
 import { test, expect } from '@playwright/test';
 import { watchRequests, uniqueName, signUp, upload } from './helpers.js';
 import { zip } from '../tests/zipfile.js';
+import { tar } from '../tests/tarfile.js';
+import { gzipSync } from 'node:zlib';
 
 const PASSWORD = 'correct horse battery e2e';
 const ROOT_SECRET = 'TOP-SECRET-ROOT-3e91fa';
@@ -35,4 +37,27 @@ test('an archive can be browsed by folder and a single entry downloads decrypted
   expect(Buffer.concat(chunks).toString()).toBe(NESTED_SECRET);
 
   await requests.expectNone([ROOT_SECRET, NESTED_SECRET, ARCHIVE, PASSWORD]);
+});
+
+test('a .tar.gz can be browsed and an entry downloads decrypted', async ({ page, context }) => {
+  const requests = watchRequests(context);
+  await signUp(page, uniqueName('tara'), PASSWORD);
+  const name = 'Backup 7c2d10.tar.gz';
+  const bytes = gzipSync(tar({ 'top-7c2d10.txt': ROOT_SECRET, 'inner/deep-7c2d10.txt': NESTED_SECRET }));
+  await upload(page, { [name]: bytes });
+
+  await page.locator('button.row-open', { hasText: name }).click();
+  const preview = page.locator('dialog.preview');
+  await expect(preview.getByText('top-7c2d10.txt')).toBeVisible();
+  await preview.getByText('inner', { exact: true }).click();
+  await expect(preview.getByText('deep-7c2d10.txt')).toBeVisible();
+
+  const download = page.waitForEvent('download');
+  await preview.getByRole('button', { name: 'Download deep-7c2d10.txt' }).click();
+  const saved = await download;
+  const chunks = [];
+  for await (const c of await saved.createReadStream()) chunks.push(c);
+  expect(Buffer.concat(chunks).toString()).toBe(NESTED_SECRET);
+
+  await requests.expectNone([ROOT_SECRET, NESTED_SECRET, name, PASSWORD]);
 });
