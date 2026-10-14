@@ -47,7 +47,7 @@
 - [x] App passwords for sync clients: made in the browser and shown once, each wrapping its own copy of the master key; full or read-only; revoking one signs out its sessions; never the account password
 - [x] Server stats for admins, without revealing anything encrypted: accounts, sessions, storage, file/folder/version counts, shares and links
 - [x] **Admin audit log**: which admin changed what (quotas, roles, registration, settings) and when, visible to every admin
-- [ ] **Storage and quota alerts** for admins: disk or bucket nearly full, users near their quota
+- [x] **Storage and quota alerts** for admins: disk or bucket nearly full, users near their quota. Admin > Server storage (`GET /api/admin/alerts`), with a mark on Admin in the sidebar; the bucket's size comes from `--s3-capacity`, and the data disk is in `/api/metrics`
 
 ## Tools
 

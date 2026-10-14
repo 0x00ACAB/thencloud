@@ -85,6 +85,21 @@ pub async fn metrics(State(state): State<AppState>, headers: HeaderMap) -> Resul
     gauge("versions", "Stored file versions.", s.versions);
     gauge("shares", "Shares between users.", s.shares);
     gauge("public_links", "Public links.", s.public_links);
+    let dir = state.config.data_dir.clone();
+    if let Ok(Some((total, free, _))) =
+        tokio::task::spawn_blocking(move || crate::space::disk_space(&dir)).await
+    {
+        gauge(
+            "data_disk_total_bytes",
+            "Size of the disk holding the data directory.",
+            total as i64,
+        );
+        gauge(
+            "data_disk_free_bytes",
+            "Free space on the disk holding the data directory.",
+            free as i64,
+        );
+    }
     Ok((
         [(
             header::CONTENT_TYPE,

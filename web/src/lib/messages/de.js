@@ -1495,6 +1495,20 @@ export default {
     'Nur die aktuelle Version jeder Datei in Meine Dateien. Ältere Versionen und der Papierkorb zählen auch zu deinem Speicher und machen zusammen mit der Verschlüsselung den Rest der belegten {used} aus.',
   'See what takes space': 'Ansehen, was Platz belegt',
 
+  // Server storage (admin)
+  'Needs attention': 'Braucht Aufmerksamkeit',
+  'Data directory': 'Datenverzeichnis',
+  'Blob directory': 'Blob-Verzeichnis',
+  Bucket: 'Bucket',
+  'Server storage': 'Speicher des Servers',
+  'How full the disks and bucket are, and who is close to their quota.': 'Wie voll die Festplatten und der Bucket sind, und wer nahe an seinem Kontingent ist.',
+  '{free} free of {total}': '{free} frei von {total}',
+  'Nearly full. Uploads will start failing once the bucket is full.': 'Fast voll. Sobald der Bucket voll ist, schlagen Uploads fehl.',
+  'Nearly full. Uploads will start failing once the disk is full.': 'Fast voll. Sobald die Festplatte voll ist, schlagen Uploads fehl.',
+  'Near their quota': 'Nahe am Kontingent',
+  'Accounts using 90% or more of their quota. Change a quota from the menu next to the account below.':
+    'Konten, die 90 % oder mehr ihres Kontingents nutzen. Ein Kontingent änderst du im Menü neben dem Konto unten.',
+
   // Duplicate files
   'Duplicate files': 'Doppelte Dateien',
   'Find duplicates': 'Duplikate finden',

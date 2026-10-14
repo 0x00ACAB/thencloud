@@ -5226,6 +5226,7 @@ async fn health_check_and_metrics() {
     assert_eq!(r.status, StatusCode::OK);
     let text = String::from_utf8(r.body).unwrap();
     assert!(text.contains("# TYPE thencloud_users gauge\nthencloud_users 1\n"));
+    assert!(text.contains("\nthencloud_data_disk_free_bytes "));
     assert!(text.contains("\nthencloud_files 1\n"));
     assert!(!text.contains("counted"));
 }
@@ -8551,4 +8552,65 @@ async fn admins_can_turn_off_linking_google_drive() {
         )
         .await;
     assert_eq!(r.status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn admins_see_storage_alerts() {
+    let h = Harness::new().await;
+    let admin = register(&h, "root", "admin password").await;
+    let bob = register(&h, "bob", "bob's password").await;
+    register(&h, "carol", "carol's password").await;
+    register(&h, "dave", "dave's password").await;
+    let set = |user: &'static str, used: i64, quota: i64| {
+        let db = h.state.db.clone();
+        async move {
+            sqlx::query("UPDATE users SET used_bytes = ?, quota_bytes = ? WHERE username = ?")
+                .bind(used)
+                .bind(quota)
+                .bind(user)
+                .execute(&db)
+                .await
+                .unwrap();
+        }
+    };
+    set("bob", 950, 1000).await;
+    set("carol", 899, 1000).await;
+    set("dave", 1200, 1000).await;
+
+    let r = h.get("/api/admin/alerts", &bob.token).await;
+    assert_eq!(r.status, StatusCode::FORBIDDEN);
+
+    let a: AdminAlerts = h.get("/api/admin/alerts", &admin.token).await.json();
+    let near: Vec<_> = a
+        .near_quota
+        .iter()
+        .map(|q| (q.username.as_str(), q.used_bytes, q.quota_bytes))
+        .collect();
+    assert_eq!(
+        near,
+        [("dave", 1200, 1000), ("bob", 950, 1000)],
+        "fullest first, carol under 90%"
+    );
+    // The test's data directory is on some real disk; no bucket without S3.
+    assert_eq!(a.spaces.len(), 1, "{:?}", a.spaces);
+    assert_eq!(a.spaces[0].place, "data");
+    assert!(a.spaces[0].total_bytes > 0 && a.spaces[0].free_bytes <= a.spaces[0].total_bytes);
+
+    // Disabled accounts aren't listed.
+    let dave_id: String = sqlx::query_scalar("SELECT id FROM users WHERE username = 'dave'")
+        .fetch_one(&h.state.db)
+        .await
+        .unwrap();
+    let r = h
+        .call(
+            Method::PATCH,
+            &format!("/api/admin/users/{dave_id}"),
+            Some(&admin.token),
+            Some(json!({"disabled": true})),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK);
+    let a: AdminAlerts = h.get("/api/admin/alerts", &admin.token).await.json();
+    assert_eq!(a.near_quota.len(), 1);
+    assert_eq!(a.near_quota[0].username, "bob");
 }

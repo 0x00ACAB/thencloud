@@ -2,6 +2,7 @@
   // Server administration. Admins manage accounts, never content: nothing
   // here can read anyone's files, names or keys, and the numbers are counts.
   import { onMount } from 'svelte';
+  import { alerts, loadAlerts } from '../../lib/alerts.svelte.js';
   import {
     session,
     adminUsers,
@@ -40,6 +41,8 @@
   let inviteDays = $state(7);
   let busy = $state(false);
 
+  const placeLabels = $derived({ data: t('Data directory'), blobs: t('Blob directory'), bucket: t('Bucket') });
+
   async function load() {
     try {
       [users, settings, invites, stats, audit] = await Promise.all([adminUsers(), adminSettings(), adminInvites(), adminStats(), adminAudit()]);
@@ -47,7 +50,10 @@
       toastError(e);
     }
   }
-  onMount(load);
+  onMount(() => {
+    load();
+    loadAlerts();
+  });
 
   // The first page again, after this admin did something.
   const refreshAudit = () => adminAudit().then((a) => (audit = a), () => {});
@@ -190,6 +196,7 @@
       if (user.id === session.me.user_id) refreshMe().catch(() => {});
       refreshAudit();
       stats = await adminStats();
+      loadAlerts();
     } catch (e) {
       toastError(e);
     }
@@ -283,6 +290,46 @@
     {@render stat(t('Files'), stats.files, `${t('{count} folders', { count: stats.folders })} · ${t('{count} stored versions', { count: stats.versions })}`)}
     {@render stat(t('Sharing'), stats.shares, t('{count} public links', { count: stats.public_links }))}
   </div>
+
+  {#if alerts.data && (alerts.data.spaces.length || alerts.data.near_quota.length)}
+    <section class="card mt-6 grid gap-4 p-6 animate-enter" aria-labelledby="space-heading">
+      <div class="grid gap-1">
+        <h2 id="space-heading" class="text-base font-semibold tracking-tight">{t('Server storage')}</h2>
+        <p class="text-[13px] text-fg-muted">{t('How full the disks and bucket are, and who is close to their quota.')}</p>
+      </div>
+      {#if alerts.data.spaces.length}
+        <ul class="grid gap-3 sm:grid-cols-2">
+          {#each alerts.data.spaces as s (s.place)}
+            {@const used = Math.min(100, ((s.total_bytes - s.free_bytes) / Math.max(1, s.total_bytes)) * 100)}
+            <li class="grid gap-1.5">
+              <div class="flex items-baseline justify-between gap-2 text-[13px]">
+                <span class="font-medium">{placeLabels[s.place] ?? s.place}</span>
+                <span class="text-fg-muted tabular-nums">{t('{free} free of {total}', { free: formatSize(s.free_bytes), total: formatSize(s.total_bytes) })}</span>
+              </div>
+              <div class="progress"><div style:width="{used}%" style:background-color={s.low ? 'var(--warning)' : null}></div></div>
+              {#if s.low}
+                <p class="flex items-center gap-1.5 text-xs text-fg-muted"><Icon name="circle-alert" class="size-3.5 shrink-0 text-warning" />{s.place === 'bucket' ? t('Nearly full. Uploads will start failing once the bucket is full.') : t('Nearly full. Uploads will start failing once the disk is full.')}</p>
+              {/if}
+            </li>
+          {/each}
+        </ul>
+      {/if}
+      {#if alerts.data.near_quota.length}
+        <div class="grid gap-2">
+          <h3 class="text-sm font-semibold">{t('Near their quota')}</h3>
+          <ul class="divide-y divide-line rounded-md border border-line text-[13px]">
+            {#each alerts.data.near_quota as q (q.username)}
+              <li class="flex items-center gap-3 px-3 py-2">
+                <span class="min-w-0 flex-1 truncate font-medium">{q.username}</span>
+                <span class="shrink-0 text-fg-muted tabular-nums">{t('{used} of {quota} used', { used: formatSize(q.used_bytes), quota: formatSize(q.quota_bytes) })}</span>
+              </li>
+            {/each}
+          </ul>
+          <p class="text-xs text-fg-muted">{t('Accounts using 90% or more of their quota. Change a quota from the menu next to the account below.')}</p>
+        </div>
+      {/if}
+    </section>
+  {/if}
 
   <section class="card mt-6 overflow-hidden">
     <div class="grid gap-4 p-6">
@@ -542,6 +589,7 @@
       users = users.filter((x) => x.id !== u.id);
       refreshAudit();
       stats = await adminStats();
+      loadAlerts();
       toast(t('Deleted {name}', { name: u.username }), { kind: 'success' });
     }}
     onclose={() => (dialog = null)}>

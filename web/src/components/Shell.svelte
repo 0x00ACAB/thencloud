@@ -29,6 +29,7 @@
   import HealthView from './views/HealthView.svelte';
   import { unloadHealth } from '../lib/health.svelte.js';
   import { modules, loadModules } from '../lib/modules.svelte.js';
+  import { loadAlerts, needsAttention, dropAlerts } from '../lib/alerts.svelte.js';
   import { t } from '../lib/i18n.svelte.js';
   import { storage, loadStorage, dropStorage } from '../lib/storage.svelte.js';
   import { shareImport, refreshPendingShares } from '../lib/shareImport.svelte.js';
@@ -52,6 +53,8 @@
     return () => clearInterval(every);
   });
   loadModules().catch(() => {});
+  if (session.me.is_admin) loadAlerts();
+  onDestroy(dropAlerts);
 
   // Phones get a bottom tab bar; fixed things (toasts, the transfer tray,
   // the selection bar, the + button) sit above it, and the music player,
@@ -222,6 +225,9 @@
         {#each nav as item (item.name)}
           <button type="button" class="nav-item" aria-current={current === item.name ? 'page' : undefined} onclick={() => go(item.to())}>
             <Icon name={item.icon} />{item.label}
+            {#if item.name === 'admin' && needsAttention()}
+              <span class="ml-auto size-1.5 rounded-full bg-warning" aria-hidden="true"></span><span class="sr-only">{t('Needs attention')}</span>
+            {/if}
           </button>
           {#if item.name === 'files' && places.searches.length}
             <div class="mb-1 ml-4 grid gap-px border-l border-line pl-2">

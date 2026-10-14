@@ -2085,6 +2085,8 @@ export const adminInvites = () => api('GET', '/api/admin/invites');
 export const adminCreateInvite = (days) => api('POST', '/api/admin/invites', { body: { days } });
 export const adminDeleteInvite = (id) => api('DELETE', `/api/admin/invites/${encodeURIComponent(id)}`);
 export const adminStats = () => api('GET', '/api/admin/stats');
+/** { spaces: [{ place, total_bytes, free_bytes, low }], near_quota: [{ username, used_bytes, quota_bytes }] } */
+export const adminAlerts = () => api('GET', '/api/admin/alerts');
 /** What admins did, newest first: { entries, more }; `before` is the last id seen, for older ones. */
 export const adminAudit = (before = null) => api('GET', before ? `/api/admin/audit?before=${before}` : '/api/admin/audit');
 

@@ -58,6 +58,12 @@ pub struct Config {
     #[arg(long, env = "THENCLOUD_S3_SNAPSHOT_HOURS", default_value_t = 24)]
     pub s3_snapshot_hours: u64,
 
+    /// The bucket's size in bytes, if it has one (a plan or a free tier), so
+    /// admins are told when it's nearly full. Compared with the ciphertext
+    /// the accounts hold.
+    #[arg(long, env = "THENCLOUD_S3_CAPACITY")]
+    pub s3_capacity: Option<u64>,
+
     /// Database snapshots kept in the bucket; older ones are deleted.
     #[arg(long, env = "THENCLOUD_S3_SNAPSHOTS_KEPT", default_value_t = 7)]
     pub s3_snapshots_kept: usize,
@@ -215,6 +221,7 @@ impl Config {
             s3_mirror: false,
             s3_snapshot_hours: 0,
             s3_snapshots_kept: 7,
+            s3_capacity: None,
             allow_registration: true,
             admin_username: None,
             default_quota: 1024 * 1024 * 1024,
