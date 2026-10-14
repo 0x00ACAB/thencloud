@@ -1,0 +1,39 @@
+name: Accessibility barrier
+description: Something in thencloud is hard or impossible to use with how you use your device.
+labels: [accessibility]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for telling us. You don't need to describe any disability or know which guideline is involved. See [ACCESSIBILITY.md](https://github.com/0x00ACAB/thencloud/blob/main/ACCESSIBILITY.md) for what happens next.
+
+        Don't paste public links: the part after `#` is the key.
+  - type: textarea
+    id: task
+    attributes:
+      label: What were you trying to do?
+      placeholder: Share a folder with someone, from the file list.
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What got in the way, and where (the page or dialog).
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser or app, and operating system
+      placeholder: Firefox 142 on Windows 11, or the Android app on Android 15
+  - type: input
+    id: assistive
+    attributes:
+      label: Assistive technology, if any
+      placeholder: NVDA 2026.2, VoiceOver, screen magnifier, voice control, keyboard only
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Screenshots or recordings are welcome but not needed.
