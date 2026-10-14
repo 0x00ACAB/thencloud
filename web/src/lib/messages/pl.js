@@ -1528,6 +1528,42 @@ export default {
   'Pick one more version to compare it with.': 'Wybierz jeszcze jedną wersję do porównania.',
   'Pick two versions to see what changed between them.': 'Wybierz dwie wersje, aby zobaczyć, co się między nimi zmieniło.',
 
+  // What takes space
+  Images: 'Obrazy',
+  Archives: 'Archiwa',
+  'Text and code': 'Tekst i kod',
+  'Other files': 'Inne pliki',
+  'What takes space': 'Co zajmuje miejsce',
+  "Sizes are read from your files' encrypted details here, in the browser. Nothing is downloaded, and the server learns nothing new.":
+    'Rozmiary są odczytywane z zaszyfrowanych danych plików tutaj, w przeglądarce. Nic nie jest pobierane, a serwer nie dowiaduje się niczego nowego.',
+  'Looking through My files: {count} items so far': {
+    one: 'Przeglądanie Moich plików: na razie {count} element',
+    few: 'Przeglądanie Moich plików: na razie {count} elementy',
+    many: 'Przeglądanie Moich plików: na razie {count} elementów',
+    other: 'Przeglądanie Moich plików: na razie {count} elementu',
+  },
+  Group: 'Grupuj',
+  'By folder': 'Według folderu',
+  'By type': 'Według typu',
+  '{size} in {count} files': {
+    one: '{size} w {count} pliku',
+    few: '{size} w {count} plikach',
+    many: '{size} w {count} plikach',
+    other: '{size} w {count} pliku',
+  },
+  'Nothing here takes any space.': 'Nic tutaj nie zajmuje miejsca.',
+  '{count} smaller items': {
+    one: '{count} mniejszy element',
+    few: '{count} mniejsze elementy',
+    many: '{count} mniejszych elementów',
+    other: '{count} mniejszego elementu',
+  },
+  'File types': 'Typy plików',
+  'Largest here': 'Największe tutaj',
+  'Only the current version of each file under My files. Older versions and the trash count toward your storage too, so together with encryption they make up the rest of the {used} in use.':
+    'Tylko bieżąca wersja każdego pliku w Moich plikach. Starsze wersje i kosz też liczą się do miejsca, więc razem z szyfrowaniem stanowią resztę z {used} w użyciu.',
+  'See what takes space': 'Zobacz, co zajmuje miejsce',
+
   // Duplicate files
   'Duplicate files': 'Duplikaty plików',
   'Find duplicates': 'Znajdź duplikaty',

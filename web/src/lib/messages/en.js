@@ -3,6 +3,9 @@
 export default {
   '{count} files': { one: '{count} file', other: '{count} files' },
   '{count} folders': { one: '{count} folder', other: '{count} folders' },
+  '{size} in {count} files': { one: '{size} in 1 file', other: '{size} in {count} files' },
+  '{count} smaller items': { one: '1 smaller item', other: '{count} smaller items' },
+  'Looking through My files: {count} items so far': { one: 'Looking through My files: 1 item so far', other: 'Looking through My files: {count} items so far' },
   '{count} items': { one: '{count} item', other: '{count} items' },
   '{count} failed': { other: '{count} failed' },
   'Transferring {count} files': { one: 'Transferring 1 file', other: 'Transferring {count} files' },

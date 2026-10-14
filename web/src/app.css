@@ -99,6 +99,15 @@
    * Fills only, each at least 3:1 on the meter's muted track. */
   --place-google: #b07c00;
   --place-onedrive: #2f6fe0;
+  /* File types in the storage analyzer: the strip and legend swatch on
+   * each tile. Fills only, never text colours. */
+  --kind-image: #2f9e5b;
+  --kind-video: #d9480f;
+  --kind-audio: #8e4ec6;
+  --kind-document: #2f6fe0;
+  --kind-archive: #b07c00;
+  --kind-text: #0f8b8d;
+  --kind-other: #8f8f8f;
   --ring: color-mix(in srgb, var(--accent-base) 35%, transparent);
   color-scheme: light;
 }
@@ -129,6 +138,13 @@
   --mood-green: #4cc38a;
   --place-google: #f5c542;
   --place-onedrive: #6b9bff;
+  --kind-image: #4cc38a;
+  --kind-video: #ff8a4c;
+  --kind-audio: #bf8cff;
+  --kind-document: #6b9bff;
+  --kind-archive: #f5c542;
+  --kind-text: #3dd6d0;
+  --kind-other: #8f8f8f;
   --ring: color-mix(in srgb, var(--accent-base) 45%, transparent);
   color-scheme: dark;
 }
@@ -872,5 +888,46 @@
   }
   .nav-item {
     @apply h-10;
+  }
+}
+
+/* The storage analyzer's treemap (SpaceDialog). */
+@layer components {
+  .space-tile {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 1px;
+    overflow: hidden;
+    padding: 6px 8px;
+    border: 1px solid var(--bg);
+    border-radius: 4px;
+    background: color-mix(in oklab, var(--tile-kind, var(--subtle)) 8%, var(--subtle));
+    box-shadow: inset 0 0 0 1px var(--line);
+    text-align: left;
+    color: var(--fg);
+  }
+  button.space-tile:hover {
+    background: color-mix(in oklab, var(--tile-kind, var(--muted)) 14%, var(--muted));
+    box-shadow: inset 0 0 0 1px var(--line-strong);
+  }
+  button.space-tile:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+  .space-rest {
+    background: repeating-linear-gradient(135deg, var(--subtle) 0 6px, var(--muted) 6px 12px);
+  }
+  .space-strip {
+    position: absolute;
+    inset: 0 0 auto 0;
+    height: 3px;
+  }
+  .space-swatch {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
   }
 }

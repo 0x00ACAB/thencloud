@@ -46,7 +46,7 @@
 - [x] "Keep me signed in on this browser" (opt-in): token and master key saved in IndexedDB under a non-extractable WebCrypto key, removed on sign-out, "Stop keeping signed in", or when the server ends the session
 - [x] App passwords for sync clients: made in the browser and shown once, each wrapping its own copy of the master key; full or read-only; revoking one signs out its sessions; never the account password
 - [x] Server stats for admins, without revealing anything encrypted: accounts, sessions, storage, file/folder/version counts, shares and links
-- [ ] **Admin audit log**: which admin changed what (quotas, roles, registration, settings) and when, visible to every admin
+- [x] **Admin audit log**: which admin changed what (quotas, roles, registration, settings) and when, visible to every admin
 - [ ] **Storage and quota alerts** for admins: disk or bucket nearly full, users near their quota
 
 ## Tools
@@ -66,7 +66,7 @@
   - [x] A quality choice (each distinct resolution the site offers, 1080p by default, "best" beyond it), and playlists: listed flat, picked with checkboxes, fetched one video at a time
   - [x] **YT-DLP bundled into docker container**: `edge.yml`/`release.yml` also build and push the `with-downloader` target, tagged `*-downloader`
 - [x] **Duplicate finder**: hash files in the browser and group identical ones, with a choice of which to keep
-- [ ] **Storage analyzer**: a treemap of what takes space, by folder and type, from decrypted sizes in the browser
+- [x] **Storage analyzer**: a treemap of what takes space, by folder and type, from decrypted sizes in the browser. Settings > Account > "See what takes space": sizes come from the encrypted metadata, so nothing is downloaded; click into folders or a type, with the largest items listed below
 
 ## UI
 
