@@ -19,6 +19,15 @@ test('zip: stored and deflated files read back', async () => {
     assert.equal(new TextDecoder().decode(await z.read('a.txt')), 'hello');
     assert.equal((await z.read('dir/b.txt')).length, 5000);
     await assert.rejects(z.read('missing'), ZipError);
+    assert.deepEqual(
+      z
+        .list()
+        .sort((a, b) => a.name.localeCompare(b.name)),
+      [
+        { name: 'a.txt', size: 5 },
+        { name: 'dir/b.txt', size: 5000 },
+      ],
+    );
   }
 });
 
