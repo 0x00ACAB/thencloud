@@ -18,7 +18,13 @@ scrape_configs:
       - targets: [cloud.example.com]
 ```
 
-Without the token set, the endpoint doesn't exist.
+Without the token set, the endpoint doesn't exist. Besides the counts, it reports `thencloud_data_disk_total_bytes` and `thencloud_data_disk_free_bytes` for the disk holding the data directory.
+
+## Storage alerts
+
+The Admin view's **Server storage** shows how full the data directory's disk is (and the blob directory's, when it's on another disk), and lists accounts using 90% or more of their quota. A disk with under a tenth or under 2 GiB free is marked nearly full, and so is Admin in the sidebar, for every admin.
+
+A bucket has no size the server can ask for. If yours has one (a plan or a free tier), pass it as `--s3-capacity` in bytes, and the bucket is shown too, compared with the ciphertext the accounts hold there (database snapshots aren't counted).
 
 ## Admin audit log
 

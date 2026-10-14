@@ -49,6 +49,7 @@ See [Storing blobs in S3](s3.md).
 | `--s3-mirror` | `THENCLOUD_S3_MIRROR` | `false` |
 | `--s3-snapshot-hours` | `THENCLOUD_S3_SNAPSHOT_HOURS` | `24`; `0` turns it off |
 | `--s3-snapshots-kept` | `THENCLOUD_S3_SNAPSHOTS_KEPT` | `7` |
+| `--s3-capacity` | `THENCLOUD_S3_CAPACITY` | unset. See [Monitoring](monitoring.md) |
 
 ## Optional features
 

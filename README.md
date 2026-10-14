@@ -109,6 +109,7 @@ Every flag can also be set as an environment variable.
 | `--s3-mirror` | `THENCLOUD_S3_MIRROR` | `false`. With S3 configured, keep every blob in the data directory too: written to both, read from the disk (free), and from the bucket only when the disk doesn't have it, which puts it back on the disk |
 | `--s3-snapshot-hours` | `THENCLOUD_S3_SNAPSHOT_HOURS` | `24`. With S3 configured, put a snapshot of the database in the bucket (under `db/`) this often, so the server can be rebuilt from the bucket alone. `0` turns it off |
 | `--s3-snapshots-kept` | `THENCLOUD_S3_SNAPSHOTS_KEPT` | `7` (older database snapshots are deleted) |
+| `--s3-capacity` | `THENCLOUD_S3_CAPACITY` | unset. The bucket's size in bytes, if it has one; the Admin view warns when it's nearly full |
 | `--web-dir` | `THENCLOUD_WEB_DIR` | `./web/dist` (the built web client) |
 | `--admin-username` | `THENCLOUD_ADMIN_USERNAME` | unset. The name the first account (the admin) must have; it also needs the setup code from the log |
 | `--allow-registration` | `THENCLOUD_ALLOW_REGISTRATION` | `true` (the first user can always register, with the setup code, and becomes an admin). Admins can switch between open, invite-only and closed at runtime in the Admin view, which overrides this. Open means anyone who finds the server gets an account and the default quota, and you can't see what they store; the server warns at start while it's open |

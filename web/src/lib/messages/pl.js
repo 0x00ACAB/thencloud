@@ -1564,6 +1564,20 @@ export default {
     'Tylko bieżąca wersja każdego pliku w Moich plikach. Starsze wersje i kosz też liczą się do miejsca, więc razem z szyfrowaniem stanowią resztę z {used} w użyciu.',
   'See what takes space': 'Zobacz, co zajmuje miejsce',
 
+  // Server storage (admin)
+  'Needs attention': 'Wymaga uwagi',
+  'Data directory': 'Katalog danych',
+  'Blob directory': 'Katalog blobów',
+  Bucket: 'Bucket',
+  'Server storage': 'Miejsce na serwerze',
+  'How full the disks and bucket are, and who is close to their quota.': 'Jak pełne są dyski i bucket oraz kto jest blisko swojego limitu.',
+  '{free} free of {total}': '{free} wolne z {total}',
+  'Nearly full. Uploads will start failing once the bucket is full.': 'Prawie pełny. Gdy bucket się zapełni, przesyłanie zacznie się nie udawać.',
+  'Nearly full. Uploads will start failing once the disk is full.': 'Prawie pełny. Gdy dysk się zapełni, przesyłanie zacznie się nie udawać.',
+  'Near their quota': 'Blisko limitu',
+  'Accounts using 90% or more of their quota. Change a quota from the menu next to the account below.':
+    'Konta, które używają 90% lub więcej swojego limitu. Limit zmienisz w menu obok konta poniżej.',
+
   // Duplicate files
   'Duplicate files': 'Duplikaty plików',
   'Find duplicates': 'Znajdź duplikaty',

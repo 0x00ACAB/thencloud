@@ -472,6 +472,13 @@ pub async fn stats(State(state): State<AppState>, user: AuthUser) -> Result<Json
     Ok(Json(server_stats(&state).await?))
 }
 
+/// `GET /api/admin/alerts`: disks or a bucket nearly full, and accounts
+/// near their quota (`space.rs`).
+pub async fn alerts(State(state): State<AppState>, user: AuthUser) -> Result<Json<AdminAlerts>> {
+    require_admin(&user)?;
+    Ok(Json(crate::space::alerts(&state).await?))
+}
+
 /// Counts for the admin view and `/api/metrics`. Nothing about content.
 pub(crate) async fn server_stats(state: &AppState) -> Result<ServerStats> {
     let count = |sql: &'static str| {

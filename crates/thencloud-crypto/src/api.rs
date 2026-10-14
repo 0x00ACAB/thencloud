@@ -939,6 +939,34 @@ pub struct ServerStats {
     pub public_links: i64,
 }
 
+/// `GET /api/admin/alerts`: what an admin should look at. Plain counts,
+/// like the stats.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminAlerts {
+    /// The data directory's disk, the blob directory's if it's another one,
+    /// and the bucket when the server was told its capacity.
+    pub spaces: Vec<StorageSpace>,
+    /// Accounts (not disabled) using at least 90% of their quota, fullest first.
+    pub near_quota: Vec<QuotaAlert>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageSpace {
+    /// `data`, `blobs` or `bucket`.
+    pub place: String,
+    pub total_bytes: i64,
+    pub free_bytes: i64,
+    /// Nearly full: under a tenth free (or, for a disk, under 2 GiB).
+    pub low: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuotaAlert {
+    pub username: String,
+    pub used_bytes: i64,
+    pub quota_bytes: i64,
+}
+
 // ---------------------------------------------------------------------------
 // Recovery keys
 // ---------------------------------------------------------------------------

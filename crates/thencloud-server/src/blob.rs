@@ -144,6 +144,14 @@ impl BlobStore {
         }
     }
 
+    /// The directory, when blobs go to one (on its own or mirrored).
+    pub fn local_root(&self) -> Option<&Path> {
+        match self {
+            BlobStore::Local { root } | BlobStore::Mirror { root, .. } => Some(root),
+            BlobStore::S3(_) => None,
+        }
+    }
+
     /// The bucket, when blobs go to one (on their own or mirrored).
     pub fn s3_target(&self) -> Option<&Arc<S3Target>> {
         match self {

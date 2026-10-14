@@ -21,6 +21,7 @@ pub mod s3;
 pub mod settings;
 pub mod setup;
 pub mod snapshot;
+pub mod space;
 pub mod storage;
 pub mod totp;
 pub mod transfer;
