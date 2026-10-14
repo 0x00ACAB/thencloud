@@ -1471,6 +1471,30 @@ export default {
   'Pick one more version to compare it with.': 'Wähle eine weitere Version zum Vergleichen aus.',
   'Pick two versions to see what changed between them.': 'Wähle zwei Versionen aus, um zu sehen, was sich zwischen ihnen geändert hat.',
 
+  // What takes space
+  Images: 'Bilder',
+  Archives: 'Archive',
+  'Text and code': 'Text und Code',
+  'Other files': 'Andere Dateien',
+  'What takes space': 'Was Platz belegt',
+  "Sizes are read from your files' encrypted details here, in the browser. Nothing is downloaded, and the server learns nothing new.":
+    'Die Größen werden hier im Browser aus den verschlüsselten Angaben deiner Dateien gelesen. Nichts wird heruntergeladen, und der Server erfährt nichts Neues.',
+  'Looking through My files: {count} items so far': {
+    one: 'Meine Dateien werden durchsucht: bisher {count} Element',
+    other: 'Meine Dateien werden durchsucht: bisher {count} Elemente',
+  },
+  Group: 'Gruppieren',
+  'By folder': 'Nach Ordner',
+  'By type': 'Nach Typ',
+  '{size} in {count} files': { one: '{size} in {count} Datei', other: '{size} in {count} Dateien' },
+  'Nothing here takes any space.': 'Hier belegt nichts Platz.',
+  '{count} smaller items': { one: '{count} kleineres Element', other: '{count} kleinere Elemente' },
+  'File types': 'Dateitypen',
+  'Largest here': 'Das Größte hier',
+  'Only the current version of each file under My files. Older versions and the trash count toward your storage too, so together with encryption they make up the rest of the {used} in use.':
+    'Nur die aktuelle Version jeder Datei in Meine Dateien. Ältere Versionen und der Papierkorb zählen auch zu deinem Speicher und machen zusammen mit der Verschlüsselung den Rest der belegten {used} aus.',
+  'See what takes space': 'Ansehen, was Platz belegt',
+
   // Duplicate files
   'Duplicate files': 'Doppelte Dateien',
   'Find duplicates': 'Duplikate finden',

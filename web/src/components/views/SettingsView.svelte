@@ -11,6 +11,7 @@
   import ConfirmDialog from '../dialogs/ConfirmDialog.svelte';
   import AppPasswordDialog from '../dialogs/AppPasswordDialog.svelte';
   import DuplicatesDialog from '../dialogs/DuplicatesDialog.svelte';
+  import SpaceDialog from '../dialogs/SpaceDialog.svelte';
   import SecureSendDialog from '../dialogs/SecureSendDialog.svelte';
   import { theme, setTheme, toast, toastError, errorMessage, copyText, accent, setAccent, ACCENT_PRESETS, DEFAULT_ACCENT, contrast, accentForeground, iconPack, setIconPack, folderIcons, setFolderIcons, tint, setTint, photoDetails, setPhotoDetails } from '../../lib/ui.svelte.js';
   import { formatSize, formatWhen, formatDate, fullDate } from '../../lib/format.js';
@@ -48,6 +49,7 @@
   const watched = typeof navigator !== 'undefined' && !!navigator.serviceWorker?.controller;
   let checkRun = $state(null); // { files, folders, bytes, problems, done, stopped }
   let duplicatesDialog = $state(false);
+  let spaceDialog = $state(false);
   let secureSendDialog = $state(false);
   let checkCtl = null;
   onMount(() => () => checkCtl?.abort());
@@ -426,6 +428,7 @@
       <dd class="grid max-w-sm gap-2">
         <span class="tabular-nums">{t('{used} of {quota} used', { used: formatSize(session.me.used_bytes), quota: formatSize(session.me.quota_bytes) })}</span>
         <div class="progress"><div style:width="{usedPct}%"></div></div>
+        <button type="button" class="w-fit cursor-pointer text-[13px] text-accent-text hover:underline" onclick={() => (spaceDialog = true)}>{t('See what takes space')}</button>
       </dd>
       {#if transfer && (transfer.daily_download_limit || transfer.daily_upload_limit)}
         <dt class="text-fg-muted">{t("Today's transfers")}</dt>
@@ -1020,6 +1023,10 @@
 
 {#if appDialog}
   <AppPasswordDialog onclose={() => (appDialog = false)} oncreated={loadAppPasswords} />
+{/if}
+
+{#if spaceDialog}
+  <SpaceDialog onclose={() => (spaceDialog = false)} />
 {/if}
 
 {#if duplicatesDialog}
