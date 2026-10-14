@@ -1,19 +1,29 @@
 name: Docs
 
 # Builds docs/ with mdBook and publishes it to GitHub Pages
-# (docs.kkaii.xyz). Pull requests only build it, to catch a broken book.
+# (docs.kkaii.xyz), together with the F-Droid repo at /fdroid/repo
+# (scripts/fdroid-repo.sh: the APKs of the latest releases, listed in an
+# index signed with the repo's own key). A deploy replaces the whole site,
+# so every deploy rebuilds both; publishing a release runs it too. Pull
+# requests only build them, the repo with a throwaway key, to catch breakage.
 on:
   push:
     branches: [main]
     paths:
       - docs/**
       - CHANGELOG.md
+      - fdroid/**
+      - scripts/fdroid-repo.sh
       - .github/workflows/docs.yml
   pull_request:
     paths:
       - docs/**
       - CHANGELOG.md
+      - fdroid/**
+      - scripts/fdroid-repo.sh
       - .github/workflows/docs.yml
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -32,6 +42,25 @@ jobs:
         with:
           tool: mdbook@0.5.4
       - run: mdbook build docs
+      # pipx is on the runner image; fdroidserver's apksigner and jarsigner come from its Android SDK and JDK.
+      - run: pipx install fdroidserver==2.4.5
+      - name: F-Droid repo
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FDROID_KEYSTORE: ${{ secrets.FDROID_KEYSTORE }}
+          FDROID_KEYSTORE_PASS: ${{ secrets.FDROID_KEYSTORE_PASS }}
+          PR: ${{ github.event_name == 'pull_request' }}
+        run: |
+          if [ -z "$FDROID_KEYSTORE" ]; then
+            # Only a pull request may go without the real key: its build is never published.
+            [ "$PR" = true ] || { echo "FDROID_KEYSTORE isn't set"; exit 1; }
+            FDROID_KEYSTORE_PASS=$(openssl rand -hex 16)
+            keytool -genkeypair -storetype PKCS12 -keystore "$RUNNER_TEMP/throwaway.p12" -storepass "$FDROID_KEYSTORE_PASS" \
+              -alias thencloud-fdroid -keyalg RSA -keysize 4096 -validity 1 -dname CN=throwaway
+            FDROID_KEYSTORE=$(base64 -w0 "$RUNNER_TEMP/throwaway.p12")
+            export FDROID_KEYSTORE FDROID_KEYSTORE_PASS
+          fi
+          scripts/fdroid-repo.sh docs/book/fdroid
       - if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:

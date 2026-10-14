@@ -43,7 +43,7 @@ Files, folder names and keys are encrypted and decrypted **in your browser**. Th
 - **Music:** pick a folder and play it as a library of albums, with a queue, shuffle, cover art and media keys. Tracks are decrypted as they stream; tags are read in the browser.
 - **Accounts:** two-step sign-in with an authenticator app or passkeys (which can also sign in without the password), an optional recovery key, session and device list, and an admin view that counts things but can't read them.
 - **Command line and Linux drive:** a native client that signs in with an app password, syncs folders, makes encrypted backups you can restore to any server, and mounts your files as a drive (FUSE) for Dolphin, Nautilus or the shell. See [crates/thencloud-cli](crates/thencloud-cli/README.md).
-- **Desktop and Android apps:** the web client bundled into a Tauri app for Linux, Windows and Android, so its code comes with the app instead of from the server. See [crates/thencloud-app](crates/thencloud-app/README.md).
+- **Desktop and Android apps:** the web client bundled into a Tauri app for Linux, Windows and Android, so its code comes with the app instead of from the server. See [crates/thencloud-app](crates/thencloud-app/README.md). The Android app can be installed and kept up to date from thencloud's own [F-Droid repo](https://docs.kkaii.xyz/clients/apps.html#installing-and-updating-through-f-droid) (F-Droid, Neo Store, Obtainium).
 - **Self-hosted and small:** one Rust binary, SQLite and a folder of encrypted blobs (or an S3-compatible bucket). Nothing loads from a CDN.
 
 ## Quick start

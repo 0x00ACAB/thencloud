@@ -1,0 +1,18 @@
+# fdroidserver configuration for the thencloud F-Droid repo, served at
+# https://docs.kkaii.xyz/fdroid/repo (scripts/fdroid-repo.sh, run by
+# .github/workflows/docs.yml). The keystore and its passwords come from the
+# environment, never from this file.
+repo_url: https://docs.kkaii.xyz/fdroid/repo
+repo_name: thencloud
+repo_description: >-
+  The thencloud Android app, straight from its GitHub releases. Each APK is
+  the one the release workflow built and signed; this repo only lists them.
+repo_icon: icon.png
+archive_older: 0
+repo_keyalias: thencloud-fdroid
+keystore: keystore.p12
+keystorepass:
+  env: FDROID_KEYSTORE_PASS
+keypass:
+  env: FDROID_KEYSTORE_PASS
+keydname: CN=thencloud F-Droid repo, O=0x00ACAB
