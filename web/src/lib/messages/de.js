@@ -199,6 +199,7 @@ export default {
   'Added {name} to the queue': '{name} zur Warteschlange hinzugefügt',
   'Download as zip': 'Als ZIP herunterladen',
   Download: 'Herunterladen',
+  'Download {name}': '{name} herunterladen',
   'Remove from favourites': 'Aus den Favoriten entfernen',
   'Add to favourites': 'Zu den Favoriten hinzufügen',
   Share: 'Teilen',

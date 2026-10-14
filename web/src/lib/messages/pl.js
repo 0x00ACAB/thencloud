@@ -221,6 +221,7 @@ export default {
   'Added {name} to the queue': 'Dodano {name} do kolejki',
   'Download as zip': 'Pobierz jako zip',
   Download: 'Pobierz',
+  'Download {name}': 'Pobierz {name}',
   'Remove from favourites': 'Usuń z ulubionych',
   'Add to favourites': 'Dodaj do ulubionych',
   Share: 'Udostępnij',
