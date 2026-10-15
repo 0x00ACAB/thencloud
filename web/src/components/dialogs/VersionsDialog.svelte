@@ -2,7 +2,8 @@
   import { onMount, untrack } from 'svelte';
   import Modal from '../Modal.svelte';
   import Icon from '../Icon.svelte';
-  import { versions, downloadVersion, restoreVersion, deleteVersion, session } from '../../lib/cloud.svelte.js';
+  import { versions, downloadVersion, restoreVersion, deleteVersion, pinVersion, session } from '../../lib/cloud.svelte.js';
+  import { loadPlaces, versionName, setVersionName, MAX_VERSION_NAME } from '../../lib/places.svelte.js';
   import { toast, toastError, trackTransfer, errorMessage } from '../../lib/ui.svelte.js';
   import { formatSize, formatWhen, fullDate } from '../../lib/format.js';
   import { fly, slide } from '../../lib/motion.js';
@@ -44,7 +45,39 @@
     }
   }
 
-  onMount(load);
+  onMount(() => {
+    load();
+    loadPlaces().catch(() => {});
+  });
+
+  // Pinning asks for an optional name first; unpinning doesn't ask.
+  let naming = $state(null); // the version being pinned
+  let pinName = $state('');
+
+  async function setPinned(v, pinned, name = '') {
+    busy = v.id;
+    try {
+      await pinVersion(file, v, pinned);
+      list = list.map((x) => (x.id === v.id ? { ...x, pinned } : x));
+      // The name is only ever in your encrypted app data.
+      if (pinned ? name.trim() : versionName(v.id)) await setVersionName(v.id, pinned ? name : '');
+    } catch (e) {
+      toastError(e);
+    } finally {
+      busy = null;
+    }
+  }
+
+  function startPin(v) {
+    naming = v;
+    pinName = '';
+  }
+
+  async function confirmPin() {
+    const v = naming;
+    naming = null;
+    await setPinned(v, true, pinName);
+  }
 
   async function download(v) {
     const job = trackTransfer('download', v.meta?.name ?? file.meta.name, v.meta?.size ?? v.size);
@@ -88,7 +121,7 @@
 
 <Modal
   title={t('Version history')}
-  description={t('{name}. Up to {count} versions are kept, and the oldest go first when you run out of space.', { name: entry.meta.name, count: session.me.max_versions })}
+  description={`${t('{name}. Up to {count} versions are kept, and the oldest go first when you run out of space.', { name: entry.meta.name, count: session.me.max_versions })} ${t('Pinned versions are always kept.')}`}
   {onclose}
   class="max-w-lg">
   {#if list === null}
@@ -104,9 +137,15 @@
       {#each list as v, i (v.id)}
         <li class="flex items-center gap-3 px-3 py-2.5" out:slide>
           <div class="min-w-0 flex-1">
-            <p class="flex items-center gap-2 text-sm">
-              <span class="font-medium" title={fullDate(versionAt(v))}>{formatWhen(versionAt(v))}</span>
-              {#if v.current}<span class="badge badge-accent">{t('Current')}</span>{/if}
+            <p class="flex min-w-0 items-center gap-2 text-sm">
+              {#if v.pinned && versionName(v.id)}
+                <span class="truncate font-medium">{versionName(v.id)}</span>
+                <span class="shrink-0 text-xs text-fg-muted" title={fullDate(versionAt(v))}>{formatWhen(versionAt(v))}</span>
+              {:else}
+                <span class="font-medium" title={fullDate(versionAt(v))}>{formatWhen(versionAt(v))}</span>
+              {/if}
+              {#if v.current}<span class="badge badge-accent shrink-0">{t('Current')}</span>{/if}
+              {#if v.pinned}<span class="badge shrink-0"><Icon name="pin" />{t('Pinned')}</span>{/if}
             </p>
             <p class="mt-0.5 truncate text-xs text-fg-muted">
               {v.meta ? formatSize(v.meta.size) : t("Can't read this version's details")}{v.created_by ? ` · ${t('uploaded by {name}', { name: v.created_by })}` : ''}
@@ -126,6 +165,18 @@
           <button type="button" class="btn btn-ghost btn-icon" aria-label={t('Download this version')} title={t('Download')} disabled={!v.meta} onclick={() => download(v)}>
             <Icon name="download" />
           </button>
+          {#if canWrite}
+            <button
+              type="button"
+              class="btn btn-ghost btn-icon {v.pinned ? 'text-accent-text' : ''}"
+              aria-label={v.pinned ? t('Unpin this version') : t('Pin this version')}
+              aria-pressed={!!v.pinned}
+              title={v.pinned ? t('Unpin') : t('Pin')}
+              disabled={busy !== null}
+              onclick={() => (v.pinned ? setPinned(v, false) : startPin(v))}>
+              <Icon name={v.pinned ? 'pin-off' : 'pin'} />
+            </button>
+          {/if}
           {#if canWrite && !v.current}
             <button type="button" class="btn btn-secondary h-7 px-2.5 text-[13px]" disabled={busy !== null || !v.meta} onclick={() => restore(v)}>
               {#if busy === v.id}<Icon name="loader-circle" class="spinner" />{/if}
@@ -153,4 +204,24 @@
 
 {#if comparing}
   <DiffDialog entry={file} before={comparing.before} after={comparing.after} at={versionAt} onclose={() => (picked = [])} />
+{/if}
+
+{#if naming}
+  <Modal
+    title={t('Pin this version')}
+    description={t('A pinned version is kept however many newer ones there are, and isn\'t removed to make space. It still counts toward your storage.')}
+    onclose={() => (naming = null)}
+    onsubmit={confirmPin}
+    class="max-w-sm">
+    <div class="field">
+      <label class="label" for="pin-name">{t('Name (optional)')}</label>
+      <!-- svelte-ignore a11y_autofocus -->
+      <input id="pin-name" class="input" bind:value={pinName} maxlength={MAX_VERSION_NAME} placeholder={t('Final draft')} autocomplete="off" autofocus />
+      <p class="hint">{t('Only you see the name. It\'s kept encrypted with your other library data.')}</p>
+    </div>
+    {#snippet footer()}
+      <button type="button" class="btn btn-secondary" onclick={() => (naming = null)}>{t('Cancel')}</button>
+      <button class="btn btn-primary"><Icon name="pin" />{t('Pin')}</button>
+    {/snippet}
+  </Modal>
 {/if}

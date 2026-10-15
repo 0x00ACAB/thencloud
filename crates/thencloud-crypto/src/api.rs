@@ -516,6 +516,16 @@ pub struct FileVersion {
     pub created_at: i64,
     pub created_by: String,
     pub current: bool,
+    /// Kept out of the per-file limit, thinning and pruning for space.
+    /// Missing from older servers, so it defaults to false.
+    #[serde(default)]
+    pub pinned: bool,
+}
+
+/// `PUT /api/nodes/{id}/versions/{vid}/pinned`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PinVersionRequest {
+    pub pinned: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

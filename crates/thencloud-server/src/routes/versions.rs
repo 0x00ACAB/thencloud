@@ -2,7 +2,9 @@
 //!
 //! Every finished upload to an existing file adds a version; the node points
 //! at its current one. Old versions are kept up to `--max-versions` per file
-//! and count toward the owner's quota. Each version's content key is wrapped
+//! and count toward the owner's quota. A pinned version is kept whatever
+//! the limit, thinning or pruning for space would do; only deleting it by
+//! hand removes it. Each version's content key is wrapped
 //! under the file's node key and bound to (node id, version id), so the
 //! client can decrypt any of them without re-encryption.
 
@@ -31,6 +33,7 @@ struct VersionRow {
     size: i64,
     created_at: i64,
     created_by: String,
+    pinned: bool,
 }
 
 async fn file_node(state: &AppState, user: &AuthUser, id: &str, min: Access) -> Result<NodeRow> {
@@ -45,7 +48,7 @@ async fn file_node(state: &AppState, user: &AuthUser, id: &str, min: Access) -> 
 async fn version_of(state: &AppState, node_id: &str, version_id: &str) -> Result<VersionRow> {
     sqlx::query_as(
         "SELECT v.id, v.enc_content_key, v.enc_metadata, v.chunk_count, v.size, v.created_at, \
-         COALESCE(u.username, '') AS created_by \
+         COALESCE(u.username, '') AS created_by, v.pinned != 0 AS pinned \
          FROM file_versions v LEFT JOIN users u ON u.id = v.created_by \
          WHERE v.id = ? AND v.node_id = ?",
     )
@@ -64,7 +67,7 @@ pub async fn list(
     let node = file_node(&state, &user, &id, Access::Read).await?;
     let rows: Vec<VersionRow> = sqlx::query_as(
         "SELECT v.id, v.enc_content_key, v.enc_metadata, v.chunk_count, v.size, v.created_at, \
-         COALESCE(u.username, '') AS created_by \
+         COALESCE(u.username, '') AS created_by, v.pinned != 0 AS pinned \
          FROM file_versions v LEFT JOIN users u ON u.id = v.created_by \
          WHERE v.node_id = ? ORDER BY v.created_at DESC, v.rowid DESC",
     )
@@ -82,6 +85,7 @@ pub async fn list(
                 size: r.size,
                 created_at: r.created_at,
                 created_by: r.created_by,
+                pinned: r.pinned,
             })
             .collect(),
     ))
@@ -136,6 +140,24 @@ pub async fn restore(
     ))
 }
 
+/// Pin a version, or unpin it. Anyone who may change the file may.
+pub async fn set_pinned(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path((id, version_id)): Path<(String, String)>,
+    Json(req): Json<PinVersionRequest>,
+) -> Result<StatusCode> {
+    file_node(&state, &user, &id, Access::Write).await?;
+    version_of(&state, &id, &version_id).await?;
+    sqlx::query("UPDATE file_versions SET pinned = ? WHERE id = ? AND node_id = ?")
+        .bind(req.pinned)
+        .bind(&version_id)
+        .bind(&id)
+        .execute(&state.db)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub async fn delete(
     State(state): State<AppState>,
     user: AuthUser,
@@ -183,7 +205,8 @@ pub async fn remove_versions(
 }
 
 /// Versions of a file beyond the newest `keep`, never including the
-/// current one: `(id, size)`, oldest last.
+/// current one or a pinned one (which don't count toward `keep` either):
+/// `(id, size)`, oldest last.
 pub async fn excess_versions(
     tx: &mut Transaction<'_, Sqlite>,
     node_id: &str,
@@ -191,7 +214,7 @@ pub async fn excess_versions(
 ) -> Result<Vec<(String, i64)>> {
     Ok(sqlx::query_as(
         "SELECT v.id, v.size FROM file_versions v JOIN nodes n ON n.id = v.node_id \
-         WHERE v.node_id = ? AND v.id IS NOT n.current_version_id \
+         WHERE v.node_id = ? AND v.id IS NOT n.current_version_id AND v.pinned = 0 \
          ORDER BY v.created_at DESC, v.rowid DESC LIMIT -1 OFFSET ?",
     )
     .bind(node_id)
@@ -201,12 +224,13 @@ pub async fn excess_versions(
 }
 
 /// Free at least `needed` bytes of this server's space for `owner_id` by
-/// deleting their oldest non-current versions kept here. Returns how much
+/// deleting their oldest non-current, unpinned versions kept here. Returns how much
 /// was freed.
 pub async fn prune_for_space(state: &AppState, owner_id: &str, needed: i64) -> Result<i64> {
     let candidates: Vec<(String, i64)> = sqlx::query_as(
         "SELECT v.id, v.size FROM file_versions v JOIN nodes n ON n.id = v.node_id \
          WHERE n.owner_id = ? AND v.id IS NOT n.current_version_id AND v.account_id IS NULL \
+         AND v.pinned = 0 \
          ORDER BY v.created_at, v.rowid",
     )
     .bind(owner_id)
@@ -271,6 +295,7 @@ pub async fn thin_all(state: &AppState) -> Result<usize> {
         // least two older ones for any to go.
         "SELECT v.id, v.node_id, n.owner_id, v.created_at, v.size FROM file_versions v \
          JOIN nodes n ON n.id = v.node_id WHERE v.id IS NOT n.current_version_id AND v.created_at < ?1 \
+         AND v.pinned = 0 \
          AND v.node_id IN (SELECT node_id FROM file_versions WHERE created_at < ?1 \
                            GROUP BY node_id HAVING COUNT(*) > 1) \
          ORDER BY v.node_id",

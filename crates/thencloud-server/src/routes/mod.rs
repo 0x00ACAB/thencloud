@@ -217,6 +217,10 @@ pub fn router(state: AppState) -> Router {
         .route("/nodes/{id}/versions", get(versions::list))
         .route("/nodes/{id}/versions/{vid}", delete(versions::delete))
         .route(
+            "/nodes/{id}/versions/{vid}/pinned",
+            put(versions::set_pinned),
+        )
+        .route(
             "/nodes/{id}/versions/{vid}/restore",
             post(versions::restore),
         )

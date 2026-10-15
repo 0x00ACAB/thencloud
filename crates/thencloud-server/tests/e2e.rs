@@ -8614,3 +8614,116 @@ async fn admins_see_storage_alerts() {
     assert_eq!(a.near_quota.len(), 1);
     assert_eq!(a.near_quota[0].username, "bob");
 }
+
+#[tokio::test]
+async fn pinned_versions_are_kept() {
+    // Each 1000-byte upload is 16,425 bytes of ciphertext (see above).
+    let h = Harness::with_config(|c| {
+        c.max_versions = 2;
+        c.default_quota = 70_000;
+    })
+    .await;
+    let a = register(&h, "alice", "pw").await;
+    let bob = register(&h, "bob", "pw").await;
+    let mut f = a
+        .upload(&h, &a.root, None, "draft.bin", &[0u8; 1000])
+        .await
+        .unwrap();
+    let first = a.versions(&h, &f.id).await[0].clone();
+    assert!(!first.pinned);
+    let pin = |user: &Client, id: &str, vid: &str, pinned: bool| {
+        let (h, token, uri) = (
+            &h,
+            user.token.clone(),
+            format!("/api/nodes/{id}/versions/{vid}/pinned"),
+        );
+        async move {
+            h.call(
+                Method::PUT,
+                &uri,
+                Some(&token),
+                Some(PinVersionRequest { pinned }),
+            )
+            .await
+            .status
+        }
+    };
+    // Only someone who may change the file can pin.
+    assert_eq!(
+        pin(&bob, &f.id, &first.id, true).await,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        pin(&a, &f.id, &first.id, true).await,
+        StatusCode::NO_CONTENT
+    );
+    assert!(a.versions(&h, &f.id).await[0].pinned);
+
+    // The per-file limit (2) passes over it: three more uploads leave the
+    // pinned one, the current one and the one before it.
+    for i in 1..=3u8 {
+        f = a
+            .upload(&h, "", Some(&f), "draft.bin", &[i; 1000])
+            .await
+            .unwrap();
+    }
+    let vs = a.versions(&h, &f.id).await;
+    assert_eq!(vs.len(), 3, "{vs:?}");
+    assert!(vs.iter().any(|v| v.id == first.id && v.pinned));
+
+    // Age thinning passes over it too: backdate the old versions to the
+    // same day a week ago, the pinned one oldest, so thinning (which keeps
+    // the newest in a day) and pruning (oldest first) would both take it.
+    let day = 24 * 3600;
+    let base = (thencloud_server::util::now() - 7 * day).div_euclid(day) * day;
+    for v in vs.iter().filter(|v| !v.current) {
+        sqlx::query("UPDATE file_versions SET created_at = ? WHERE id = ?")
+            .bind(if v.id == first.id {
+                base + 10
+            } else {
+                base + 20
+            })
+            .bind(&v.id)
+            .execute(&h.state.db)
+            .await
+            .unwrap();
+    }
+    thencloud_server::janitor::run_once(&h.state).await.unwrap();
+    let vs = a.versions(&h, &f.id).await;
+    assert!(
+        vs.iter().any(|v| v.id == first.id),
+        "thinning kept the pinned version"
+    );
+
+    // And so does pruning for space: with the quota nearly full, a new
+    // upload prunes the unpinned old version, never the pinned one.
+    let other = a
+        .upload(&h, &a.root, None, "other.bin", &[9u8; 1000])
+        .await
+        .unwrap();
+    let _ = a
+        .upload(&h, "", Some(&other), "other.bin", &[8u8; 1000])
+        .await
+        .unwrap();
+    let vs = a.versions(&h, &f.id).await;
+    assert!(
+        vs.iter().any(|v| v.id == first.id),
+        "pruning kept the pinned version"
+    );
+    assert!(blob_exists(&h, &first.id));
+    assert!(a.me(&h).await.used_bytes <= 70_000);
+
+    // Unpinned, it's an ordinary old version again.
+    assert_eq!(
+        pin(&a, &f.id, &first.id, false).await,
+        StatusCode::NO_CONTENT
+    );
+    assert!(
+        !a.versions(&h, &f.id)
+            .await
+            .iter()
+            .find(|v| v.id == first.id)
+            .unwrap()
+            .pinned
+    );
+}
