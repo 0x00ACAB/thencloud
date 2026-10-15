@@ -7,7 +7,7 @@ A thencloud server is one binary, a SQLite database and a folder of encrypted bl
 Each release is on GitHub's registry, for amd64 and arm64:
 
 ```sh
-docker run -p 127.0.0.1:8080:8080 -v thencloud-data:/data ghcr.io/0x00acab/thencloud:v1.1.1
+docker run -p 127.0.0.1:8080:8080 -v thencloud-data:/data ghcr.io/0x00acab/thencloud:v1.2.0
 ```
 
 Builds of `main` between releases are there too, as `edge` and `sha-<commit>` (the first 12 characters of the commit), when a maintainer runs the edge workflow, so `edge` may lag behind `main`. They're untested beyond the test suite and not covered by `verify-web`; pin a `sha-` tag rather than following `edge` if you run one. Both are signed by the `edge.yml` workflow:
@@ -36,7 +36,7 @@ The compose file lists the common settings as commented-out environment variable
 Each [release](https://github.com/0x00ACAB/thencloud/releases) has server binaries for Linux (x86_64, arm64) and macOS (arm64), and the web client as `thencloud-web-<version>.tar.gz`. Unpack the web client and point the server at it:
 
 ```sh
-tar xf thencloud-web-v1.1.1.tar.gz
+tar xf thencloud-web-v1.2.0.tar.gz
 ./thencloud-server --bind 127.0.0.1:8080 --data-dir /var/lib/thencloud --web-dir ./dist
 ```
 

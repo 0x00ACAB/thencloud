@@ -4,7 +4,7 @@ Each release's section here is also its release notes on GitHub. From 1.0 on,
 everything an earlier release wrote keeps working: databases, files, links and
 the apps (see "Keeping existing data working" in CLAUDE.md).
 
-## Unreleased
+## v1.2.0 (2026-10-15)
 
 Three new database migrations, all additive (pinned versions, how each
 session signed in, and dates for automatic trashing); nothing an older
@@ -27,6 +27,7 @@ build wrote changes.
 - **Google Takeout import:** `thencloud import-takeout` copies an extracted
   Takeout, with each photo's real date from Takeout's JSON files, so the
   Photos timeline is right.
+- The Android app has its own icon.
 
 ### Self-hosting
 
