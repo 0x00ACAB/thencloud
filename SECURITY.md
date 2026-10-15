@@ -23,4 +23,4 @@ Known limitations are listed under "Threat model" in the [README](README.md#thre
 
 ## Supported versions
 
-thencloud is early and has no stable releases yet; fixes go to `main`.
+Fixes go to `main` and into a release of the latest 1.x line. Older releases don't get backports, so please update to the newest one.

@@ -2,7 +2,9 @@ name: CI
 
 # Pull requests only: a merge to main is the code its pull request already
 # tested, so nothing runs again on main (CI minutes are limited), and
-# documentation alone doesn't run it. Caches saved in a pull request can't
+# documentation alone doesn't run it: `changes` skips the other jobs then.
+# Not paths-ignore, since these are required checks, and a workflow that
+# never starts leaves them pending; a skipped job counts as passed. Caches saved in a pull request can't
 # be used by the next one, only those saved on main, so once a week the Rust
 # and Web jobs run on main to keep those warm (GitHub drops caches unused
 # for 7 days).
@@ -10,12 +12,6 @@ on:
   schedule:
     - cron: '23 5 * * 1'
   pull_request:
-    paths-ignore:
-      - '**.md'
-      - docs/**
-      - LICENSE
-      - .github/scripts/roadmap.js
-      - .github/workflows/roadmap.yml
   workflow_dispatch:
 
 permissions:
@@ -29,13 +25,56 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  rust:
-    name: Rust (fmt, clippy, test)
+  changes:
+    name: What changed
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - id: diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          # Not a pull request, or the file list can't be read: run everything.
+          if [ -z "$PR" ] || ! files="$(gh pr diff "$PR" --name-only -R "$GITHUB_REPOSITORY")"; then
+            echo code=true >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if grep -qvE '\.md$|^docs/|^LICENSE$|^\.github/scripts/roadmap\.js$|^\.github/workflows/roadmap\.yml$' <<< "$files"; then
+            echo code=true >> "$GITHUB_OUTPUT"
+          else
+            echo code=false >> "$GITHUB_OUTPUT"
+          fi
+
+  # The workflows themselves: injection, unpinned or impostor actions,
+  # credentials left in checkouts, caches in release builds.
+  zizmor:
+    name: Workflows (zizmor)
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
         with:
+          persist-credentials: false
+      - run: pipx run zizmor==1.31.0 --format=github .github/workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  rust:
+    name: Rust (fmt, clippy, test)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
+        with:
+          toolchain: stable
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - run: cargo fmt --all --check
@@ -46,11 +85,16 @@ jobs:
 
   web:
     name: Web (WASM, svelte-check, build)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
         with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
+        with:
+          toolchain: stable
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
@@ -77,13 +121,17 @@ jobs:
 
   browser:
     name: Browser tests (Playwright)
+    needs: changes
     # Nothing to cache here that the other jobs don't.
-    if: github.event_name != 'schedule'
+    if: github.event_name != 'schedule' && needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
         with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
+        with:
+          toolchain: stable
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
       - uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
