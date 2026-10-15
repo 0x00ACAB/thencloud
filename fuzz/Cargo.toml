@@ -78,6 +78,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "takeout-sidecar"
+path = "fuzz_targets/takeout_sidecar.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "sigstore-bundle"
 path = "fuzz_targets/sigstore_bundle.rs"
 test = false

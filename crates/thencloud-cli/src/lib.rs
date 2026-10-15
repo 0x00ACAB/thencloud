@@ -14,6 +14,7 @@ pub mod mount;
 pub mod nextcloud;
 pub mod serve;
 pub mod sigstore;
+pub mod takeout;
 pub mod verify;
 
 use serde::Serialize;
@@ -425,6 +426,22 @@ impl Client {
         name: &str,
         existing: Option<&Entry>,
     ) -> Result<Entry> {
+        self.upload_taken(src, size, mtime, None, parent, name, existing)
+    }
+
+    /// [`Client::upload_from`], also recording when a photo was taken
+    /// (milliseconds), which the Photos timeline sorts by.
+    #[allow(clippy::too_many_arguments)]
+    pub fn upload_taken(
+        &self,
+        src: &mut dyn Read,
+        size: u64,
+        mtime: i64,
+        taken: Option<i64>,
+        parent: &Entry,
+        name: &str,
+        existing: Option<&Entry>,
+    ) -> Result<Entry> {
         let (node_id, node_key) = match existing {
             Some(e) => (e.node.id.clone(), e.key.clone()),
             None => (c::new_id(), Key::generate()),
@@ -439,7 +456,7 @@ impl Client {
             size,
             mtime,
             changed: Some(now_ms()),
-            taken: None,
+            taken,
         };
         let req = CreateUploadRequest {
             node_id: node_id.clone(),
