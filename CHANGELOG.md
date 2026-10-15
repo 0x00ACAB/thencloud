@@ -4,6 +4,19 @@ Each release's section here is also its release notes on GitHub. From 1.0 on,
 everything an earlier release wrote keeps working: databases, files, links and
 the apps (see "Keeping existing data working" in CLAUDE.md).
 
+## Unreleased
+
+- **Music:** the next track in the queue is fetched, decrypted and loaded
+  while the current one plays, so there's no wait between tracks.
+- **Android:** the app pauses when headphones or Bluetooth disconnect even
+  when its background playback service isn't running (it used to listen
+  only from inside that service), and logs it (`adb logcat -s thencloud`).
+- **Android and desktop apps:** Settings > About shows the release's
+  version instead of "dev".
+- **F-Droid repo** for the Android app at `https://docs.kkaii.xyz/fdroid/repo`
+  (F-Droid, Neo Store, Obtainium); see the apps page in the docs for the
+  fingerprint.
+
 ## v1.1.0 (2026-10-14)
 
 Everything 1.0 wrote keeps working: no format changed, the new database

@@ -104,6 +104,8 @@ jobs:
       - run: scripts/build-app.sh
         env:
           TAURI: npx --yes @tauri-apps/cli@2
+          # The version its About section shows (the bundled web client's), not "dev".
+          THENCLOUD_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}
       - name: Collect
         run: |
           mkdir out
@@ -140,6 +142,8 @@ jobs:
       - run: NDK_HOME="$ANDROID_NDK_LATEST_HOME" scripts/build-app.sh android --apk
         env:
           TAURI: cargo tauri
+          # The version its About section shows (the bundled web client's), not "dev".
+          THENCLOUD_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || 'dev' }}
       # Aligned for 16 KB pages (Android 15 and later), then signed with the
       # release key. Only on a tag: pull requests don't get the secrets.
       - name: Sign

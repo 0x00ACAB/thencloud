@@ -1,8 +1,12 @@
 package org.thencloud.plugin
 
 import android.app.Activity
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.ContentValues
 import android.content.Intent
+import android.content.IntentFilter
+import android.media.AudioManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.graphics.BitmapFactory
@@ -21,6 +25,7 @@ import android.webkit.WebView
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.ActivityResult
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.core.content.IntentCompat
 import androidx.core.view.ViewCompat
@@ -438,8 +443,33 @@ class ThencloudPlugin(private val activity: Activity) : Plugin(activity) {
 
   private var insetsScript: ScriptHandler? = null
 
+  // Headphones unplugged or Bluetooth gone: pause rather than play out loud.
+  // Registered for as long as the page is here, not only while
+  // PlaybackService runs, so it still works if that service never started
+  // or was stopped. The page ignores a pause when nothing plays. Logged, so
+  // `adb logcat -s thencloud` shows what happened on a phone where it fails.
+  private val becomingNoisy = object : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+      if (intent.action != AudioManager.ACTION_AUDIO_BECOMING_NOISY) return
+      val webView = sharedWebView
+      android.util.Log.i("thencloud", "Audio becoming noisy (playing=${NowPlaying.playing}, page=${webView != null}): pausing")
+      webView?.evaluateJavascript(
+        "(function(){try{return !!(window.thencloudMedia&&window.thencloudMedia({action:'pause'}))}catch(e){return false}})()",
+      ) { taken -> android.util.Log.i("thencloud", "Pause on becoming noisy taken by the page: $taken") }
+    }
+  }
+
+  private var listeningForNoisy = false
+
   override fun load(webView: WebView) {
     sharedWebView = webView
+    if (!listeningForNoisy) ContextCompat.registerReceiver(
+      activity.applicationContext,
+      becomingNoisy,
+      IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY),
+      ContextCompat.RECEIVER_NOT_EXPORTED,
+    )
+    listeningForNoisy = true
     // A share that opened the app fresh: onNewIntent isn't called for the
     // intent an activity was started with, only for ones delivered later.
     queueIntent(activity.intent)

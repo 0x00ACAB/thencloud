@@ -5,13 +5,10 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.graphics.drawable.Icon
-import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -63,14 +60,6 @@ class PlaybackService : Service() {
   }
 
   private var foreground = false
-  private var noisy = false
-
-  // Headphones unplugged or Bluetooth gone: pause rather than play out loud.
-  private val becomingNoisy = object : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
-      if (intent.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY && NowPlaying.playing) NowPlaying.action("pause")
-    }
-  }
 
   override fun onBind(intent: Intent?): IBinder? = null
 
@@ -110,8 +99,6 @@ class PlaybackService : Service() {
 
   override fun onDestroy() {
     handler.removeCallbacks(demote)
-    if (noisy) unregisterReceiver(becomingNoisy)
-    noisy = false
     running = null
     super.onDestroy()
   }
@@ -151,11 +138,7 @@ class PlaybackService : Service() {
     handler.removeCallbacks(demote)
     if (NowPlaying.playing) {
       promote(n)
-      if (!noisy) registerReceiver(becomingNoisy, IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY))
-      noisy = true
     } else {
-      if (noisy) unregisterReceiver(becomingNoisy)
-      noisy = false
       getSystemService(NotificationManager::class.java).notify(ID, n)
       if (foreground) handler.postDelayed(demote, PAUSED_GRACE_MS)
     }
