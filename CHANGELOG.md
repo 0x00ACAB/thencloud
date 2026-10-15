@@ -4,7 +4,9 @@ Each release's section here is also its release notes on GitHub. From 1.0 on,
 everything an earlier release wrote keeps working: databases, files, links and
 the apps (see "Keeping existing data working" in CLAUDE.md).
 
-## Unreleased
+## v1.1.1 (2026-10-15)
+
+No format, database or API changes: a drop-in update for 1.1.0.
 
 - **Music:** the next track in the queue is fetched, decrypted and loaded
   while the current one plays, so there's no wait between tracks.
