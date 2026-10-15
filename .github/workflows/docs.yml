@@ -6,7 +6,9 @@ name: Docs
 # index signed with the repo's own key). A deploy replaces the whole site,
 # so every deploy rebuilds both; publishing a release runs it too (on main,
 # see on-release). Pull requests only build them, the repo with a throwaway
-# key, to catch breakage.
+# key, to catch breakage. The real key is in the `fdroid` environment's
+# secrets (FDROID_KEYSTORE, base64; FDROID_KEYSTORE_PASS), which only main
+# may use.
 on:
   push:
     branches: [main]
@@ -50,6 +52,9 @@ jobs:
 
   build:
     if: github.event_name != 'release'
+    # The index key's environment, off pull requests: they build with a
+    # throwaway key and wouldn't be allowed in.
+    environment: ${{ github.event_name != 'pull_request' && 'fdroid' || '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
