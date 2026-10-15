@@ -40,12 +40,11 @@ case "$target" in
   android)
     if [ ! -d gen/android ]; then
       tauri android init
-      # The Android icons go into gen/android; the desktop and iOS ones it
-      # also makes are thrown away (icons/ holds the ones in use).
-      icons="$(mktemp -d)"
-      tauri icon ../../web/public/icons/icon-512.png -o "$icons"
-      rm -rf "$icons"
     fi
+    # Our launcher icon (android-res/: adaptive, with a monochrome layer for
+    # Android 13's themed icons, and PNGs for Android 7) over the template's
+    # Tauri one. Every build, since gen/ isn't kept in git.
+    cp -r android-res/. gen/android/app/src/main/res/
     tauri android build "$@"
     ;;
   *) echo "usage: $0 [desktop|android|dev] [args...]" >&2; exit 1 ;;
