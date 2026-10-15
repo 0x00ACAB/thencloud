@@ -9,6 +9,7 @@
 // list is also polled until the new account shows up.
 
 import { storageInfo, linkGoogleDrive, moveStorage } from './cloud.svelte.js';
+import { consentUrlAllowed } from './consent.js';
 
 // `moving`: { id, to, done, total } while files move to or from an account.
 export const storage = $state({ info: null, moving: null });
@@ -82,6 +83,10 @@ export async function linkDrive(mode) {
   } catch (e) {
     popup?.close();
     throw e;
+  }
+  if (!consentUrlAllowed(url)) {
+    popup.close();
+    return 'failed';
   }
   popup.location.href = url;
 
