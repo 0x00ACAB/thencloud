@@ -117,11 +117,14 @@ pub async fn restore(
     // A new parent or name needs a new name tag; in place, the old one holds.
     let retag = moved || req.enc_metadata.is_some() || req.name_tag.is_some();
     sqlx::query(
+        // A date that already passed would send it straight back.
         "UPDATE nodes SET trashed_at = NULL, trashed_by = NULL, parent_id = ?, \
+         trash_at = CASE WHEN trash_at <= ? THEN NULL ELSE trash_at END, \
          enc_key = COALESCE(?, enc_key), enc_metadata = COALESCE(?, enc_metadata), \
          name_tag = CASE WHEN ? THEN ? ELSE name_tag END, revision = revision + 1, updated_at = ? WHERE id = ?",
     )
     .bind(&parent)
+    .bind(now())
     .bind(enc_key)
     .bind(req.enc_metadata.as_ref().map(|m| m.0.clone()))
     .bind(retag)

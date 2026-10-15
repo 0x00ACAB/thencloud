@@ -443,6 +443,16 @@ pub struct Node {
     /// Whether the node has a name tag (older ones may not).
     #[serde(default)]
     pub name_tagged: bool,
+    /// When it goes to the trash on its own, if its owner set a date.
+    #[serde(default)]
+    pub trash_at: Option<i64>,
+}
+
+/// `PUT /api/nodes/{id}/trash-at`: a date (Unix seconds) for the node to go
+/// to the trash on its own, or none. The server learns the date, not the name.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SetTrashAtRequest {
+    pub trash_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

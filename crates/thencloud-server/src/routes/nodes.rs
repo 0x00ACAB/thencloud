@@ -283,6 +283,55 @@ pub async fn delete(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Set (or clear) the date a node goes to the trash on its own. Owner only,
+/// and not a root folder. Rounded up to the hour, like other node times.
+pub async fn set_trash_at(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<String>,
+    Json(req): Json<SetTrashAtRequest>,
+) -> Result<StatusCode> {
+    access::require(&state.db, &user.id, &id, Access::Read).await?;
+    let node = get_node(&state.db, &id).await?.ok_or(AppError::NotFound)?;
+    if node.owner_id != user.id {
+        return Err(AppError::Forbidden);
+    }
+    if node.parent_id.is_none() {
+        return Err(AppError::bad("a root folder can't go to the trash"));
+    }
+    let at = match req.trash_at {
+        None => None,
+        Some(t) if t <= now() => return Err(AppError::bad("the date is in the past")),
+        Some(t) if t > now() + 10 * 366 * 86400 => {
+            return Err(AppError::bad("the date is more than ten years away"));
+        }
+        Some(t) => Some((t + 3599).div_euclid(3600) * 3600),
+    };
+    sqlx::query("UPDATE nodes SET trash_at = ?, revision = revision + 1 WHERE id = ?")
+        .bind(at)
+        .bind(&id)
+        .execute(&state.db)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Move nodes whose date has come to their owner's trash, as if the owner
+/// had deleted them. Returns how many went.
+pub async fn trash_due(state: &AppState) -> Result<usize> {
+    let due: Vec<(String, String)> = sqlx::query_as(
+        "UPDATE nodes SET trashed_at = ?, trashed_by = owner_id, trash_at = NULL, revision = revision + 1 \
+         WHERE trash_at IS NOT NULL AND trash_at <= ? AND trashed_at IS NULL RETURNING id, owner_id",
+    )
+    .bind(coarse_now())
+    .bind(now())
+    .fetch_all(&state.db)
+    .await?;
+    for (id, owner) in &due {
+        activity::note(state, owner, id, Event::Trashed, None).await;
+    }
+    Ok(due.len())
+}
+
 /// Permanently delete a node and everything below it, including pending
 /// uploads into it, and release the owner's quota.
 pub async fn delete_subtree(state: &AppState, node_id: &str, owner_id: &str) -> Result<()> {

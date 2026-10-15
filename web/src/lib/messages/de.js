@@ -1555,6 +1555,24 @@ export default {
   'It was me': 'Das war ich',
   'Sign it out': 'Abmelden',
 
+  // Deleting automatically
+  'In 1 day': 'In 1 Tag',
+  'In a week': 'In einer Woche',
+  'In a month': 'In einem Monat',
+  'In three months': 'In drei Monaten',
+  'On a date': 'An einem Datum',
+  "{name} won't be deleted automatically": '{name} wird nicht automatisch gelöscht',
+  '{name} goes to the trash on {date}': '{name} kommt am {date} in den Papierkorb',
+  'Delete automatically': 'Automatisch löschen',
+  Date: 'Datum',
+  'It goes to the trash then, where it stays for {count} days like anything you delete. To do this while none of your devices is online, the server is told the date; it never learns the name.': {
+    one: 'Dann kommt es in den Papierkorb und bleibt dort {count} Tag, wie alles, was du löschst. Damit das auch geht, wenn keines deiner Geräte online ist, kennt der Server das Datum; den Namen erfährt er nie.',
+    other: 'Dann kommt es in den Papierkorb und bleibt dort {count} Tage, wie alles, was du löschst. Damit das auch geht, wenn keines deiner Geräte online ist, kennt der Server das Datum; den Namen erfährt er nie.',
+  },
+  "Don't delete it": 'Nicht löschen',
+  'Deleting automatically': 'Wird automatisch gelöscht',
+  'Goes to the trash on its own': 'Kommt von selbst in den Papierkorb',
+
   // Duplicate files
   'Duplicate files': 'Doppelte Dateien',
   'Find duplicates': 'Duplikate finden',

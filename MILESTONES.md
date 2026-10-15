@@ -142,7 +142,7 @@ Smaller things:
 - [x] Drag rows onto a folder (or the breadcrumb) to move them
 - [x] Paste to upload (Ctrl+V a screenshot or copied files)
 - [x] **Tags**: labels with colours, kept encrypted in the app data by node id; filter by tag in any folder and Everywhere. Colours are picked in the Tags view and shown as a dot on the tag (`tagColours` in the `files` app data)
-- [ ] **Self-destructing files**: an optional date after which a file or folder goes to the trash on its own (run by the client that set it, or by the janitor on a server-visible date the owner chose to reveal)
+- [x] **Self-destructing files**: an optional date after which a file or folder goes to the trash on its own (run by the client that set it, or by the janitor on a server-visible date the owner chose to reveal). The janitor variant: "Delete automatically" in the menu (owner only), the date (rounded to the hour) in `nodes.trash_at`, which the dialog says the server learns; the janitor trashes it as the owner and clears the date, so a restore keeps it
 - [x] **Secure Send**: share a short encrypted text (a password, a note) as a one-time public link, reusing counted links. Kept as an encrypted file in a "Secure Send" folder in My files (not invisible to the owner), same as anything else uploaded
 - [ ] **Photos: Live Photos and bursts** grouped as one item (HEIC + MOV pairs by name and content identifier)
 
