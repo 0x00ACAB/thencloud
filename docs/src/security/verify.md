@@ -13,7 +13,7 @@ The web client builds reproducibly, byte for byte, so a release can list the SHA
 1. Download `thencloud-web-<version>.json`, `.json.sigstore.json` and `.json.minisig` from the [release](https://github.com/0x00ACAB/thencloud/releases) into one folder.
 2. Run:
    ```sh
-   thencloud verify-web https://cloud.example.com --manifest thencloud-web-v1.1.1.json
+   thencloud verify-web https://cloud.example.com --manifest thencloud-web-v1.2.0.json
    ```
 
 It checks both signatures, then fetches every file in every encoding the server offers (plain, gzip, Brotli) and compares. Settings > About in the web client shows the running version and this command for it.
@@ -27,8 +27,8 @@ To compare with a web client you built yourself, use `--unsigned`. To build one 
 Each release's notes have the `cosign` commands for the binaries, apps and image. For example:
 
 ```sh
-cosign verify-blob thencloud-v1.1.1-x86_64-unknown-linux-gnu.tar.gz \
-  --bundle thencloud-v1.1.1-x86_64-unknown-linux-gnu.tar.gz.sigstore.json \
-  --certificate-identity https://github.com/0x00ACAB/thencloud/.github/workflows/release.yml@refs/tags/v1.1.1 \
+cosign verify-blob thencloud-v1.2.0-x86_64-unknown-linux-gnu.tar.gz \
+  --bundle thencloud-v1.2.0-x86_64-unknown-linux-gnu.tar.gz.sigstore.json \
+  --certificate-identity https://github.com/0x00ACAB/thencloud/.github/workflows/release.yml@refs/tags/v1.2.0 \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```

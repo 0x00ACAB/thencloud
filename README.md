@@ -66,7 +66,7 @@ The first account to register becomes the admin. So that nobody else can claim a
 Each release is on GitHub's registry, for amd64 and arm64:
 
 ```sh
-docker run -p 127.0.0.1:8080:8080 -v thencloud-data:/data ghcr.io/0x00acab/thencloud:v1.1.1
+docker run -p 127.0.0.1:8080:8080 -v thencloud-data:/data ghcr.io/0x00acab/thencloud:v1.2.0
 ```
 
 Or build it yourself: `docker build -t thencloud .`
