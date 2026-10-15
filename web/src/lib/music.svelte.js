@@ -13,6 +13,7 @@ import { putFolderImage } from './cover.js';
 import { previewKind } from './preview.js';
 import { parseTags } from './tags.js';
 import { readChapters } from './chapters.js';
+import { upcomingIndex, piecesAhead } from './precache.js';
 import { toast, errorMessage } from './ui.svelte.js';
 import { t } from './i18n.svelte.js';
 import { showNowPlaying, syncNowPlaying } from './nowplaying.svelte.js';
@@ -379,42 +380,54 @@ let loadSeq = 0;
 let failures = 0;
 
 function element() {
-  if (audio) return audio;
-  audio = new Audio();
-  audio.preload = 'auto';
-  audio.volume = player.volume;
-  audio.addEventListener('timeupdate', () => {
-    player.time = audio.currentTime;
-    if (Date.now() - lastRemembered > 60_000) remember();
-  });
-  audio.addEventListener('loadedmetadata', resume);
-  audio.addEventListener('durationchange', () => {
-    player.duration = Number.isFinite(audio.duration) ? audio.duration : 0;
-    updatePosition();
-  });
-  audio.addEventListener('play', () => (player.playing = true));
-  audio.addEventListener('pause', () => {
-    player.playing = false;
-    remember();
-  });
-  audio.addEventListener('waiting', () => (player.buffering = true));
-  audio.addEventListener('playing', () => {
-    player.buffering = false;
-    failures = 0;
-  });
-  audio.addEventListener('ended', ended);
-  audio.addEventListener('error', () => audio.getAttribute('src') && failed());
-  audio.addEventListener('seeked', updatePosition);
-  if ('mediaSession' in navigator) {
-    for (const [action, fn] of Object.entries(sessionActions)) {
-      try {
-        navigator.mediaSession.setActionHandler(action, fn);
-      } catch {
-        /* not supported here */
+  if (!audio) {
+    audio = makeElement();
+    if ('mediaSession' in navigator) {
+      for (const [action, fn] of Object.entries(sessionActions)) {
+        try {
+          navigator.mediaSession.setActionHandler(action, fn);
+        } catch {
+          /* not supported here */
+        }
       }
     }
   }
   return audio;
+}
+
+// An audio element. There are two at most: the one playing (`audio`) and
+// the next track's, loading ahead (`ahead.el`); the handlers only act for
+// the one playing, so the other can load quietly and take over.
+function makeElement() {
+  const el = new Audio();
+  el.preload = 'auto';
+  el.volume = player.volume;
+  el.muted = player.muted;
+  const on = (type, fn) => el.addEventListener(type, (e) => el === audio && fn(e));
+  on('timeupdate', () => {
+    player.time = el.currentTime;
+    if (Date.now() - lastRemembered > 60_000) remember();
+  });
+  on('loadedmetadata', resume);
+  on('durationchange', () => {
+    player.duration = Number.isFinite(el.duration) ? el.duration : 0;
+    updatePosition();
+  });
+  on('play', () => (player.playing = true));
+  on('pause', () => {
+    player.playing = false;
+    remember();
+  });
+  on('waiting', () => (player.buffering = true));
+  on('playing', () => {
+    player.buffering = false;
+    failures = 0;
+    getReady();
+  });
+  on('ended', ended);
+  on('error', () => el.getAttribute('src') && failed());
+  on('seeked', updatePosition);
+  return el;
 }
 
 // The media keys, the browser's media controls and, in the Android app, the
@@ -446,20 +459,174 @@ function release() {
   served = null;
 }
 
+// ------------------------------------------------- getting the next track ready
+
+// A few seconds into a track, the next one in the queue is opened and
+// decrypted ahead (lib/precache.js says how much), and loaded into a second
+// audio element; when the current track ends, that element takes over, so
+// there's no wait for the network or the decoder in between. Pieces go to
+// the stream worker once each (they're transferred), so each is taken out
+// of `pieces` as it's handed over; one asked for again is read afresh.
+let ahead = null; // { track, file, pieces: Map<i, Promise<Uint8Array>>, taken: Set, aborted, el, served }
+let readyTimer = null;
+const READY_DELAY = 3000;
+
+/** The track that plays when the current one ends, or null. */
+function upcoming() {
+  return player.queue[upcomingIndex(player.queue.length, player.index, player.repeat)] ?? null;
+}
+
+/** Forget whatever was got ready. */
+function dropAhead() {
+  clearTimeout(readyTimer);
+  const a = ahead;
+  ahead = null;
+  if (!a) return;
+  a.aborted = true;
+  if (a.el) {
+    a.el.pause();
+    a.el.removeAttribute('src');
+    a.el.load();
+  }
+  a.served?.close();
+  a.pieces.clear();
+}
+
+/** The current track started playing, or the queue changed: get the next one ready. */
+function getReady() {
+  clearTimeout(readyTimer);
+  const next = upcoming();
+  if (ahead && ahead.track !== next) dropAhead();
+  if (!next || ahead) return;
+  // Leave the current track's own start the network to itself.
+  readyTimer = setTimeout(() => {
+    if (player.playing && upcoming() === next && !ahead) prepare(next);
+  }, READY_DELAY);
+}
+
+/** A piece of `a`'s file: the one decrypted ahead if it's there (handed over once), else read now. */
+function pieceOf(a, i) {
+  a.taken.add(i);
+  const ready = a.pieces.get(i);
+  if (ready) {
+    a.pieces.delete(i);
+    return ready;
+  }
+  return a.file.read(i);
+}
+
+async function prepare(track) {
+  const a = { track, file: null, pieces: new Map(), taken: new Set(), aborted: false, el: null, served: null };
+  ahead = a;
+  try {
+    a.file = await openEntry(track.entry);
+    const want = piecesAhead(a.file, { saveData: !!navigator.connection?.saveData });
+    for (let i = 0; i < want && !a.aborted; i++) {
+      if (a.taken.has(i)) continue; // the ahead element already asked for it
+      const piece = a.file.read(i);
+      a.pieces.set(i, piece);
+      const bytes = await piece;
+      if (i === 0) {
+        learn(track, bytes);
+        if (!a.aborted) await loadAhead(a);
+      }
+    }
+  } catch {
+    // Nothing lost: the track loads the usual way when its turn comes.
+    if (ahead === a) dropAhead();
+  }
+}
+
+// The second audio element, loading the next track from the pieces decrypted ahead.
+async function loadAhead(a) {
+  const { streamsAvailable, serveFile } = await import('./stream.js');
+  if (a.aborted || !(await streamsAvailable())) return;
+  const s = serveFile({
+    size: a.file.size,
+    chunkSize: a.file.chunkSize,
+    type: previewKind(a.track.entry.meta).type,
+    read: (i) => pieceOf(a, i),
+  });
+  if (a.aborted) return s.close();
+  a.served = s;
+  a.el = makeElement();
+  a.el.defaultPlaybackRate = a.el.playbackRate = player.rate;
+  a.el.src = s.url;
+}
+
+/** Take what was got ready for `track`, if anything was: { file, read, el, served }, or null. */
+function takeAhead(track) {
+  const a = ahead?.track === track && ahead.file ? ahead : null;
+  if (!a) {
+    dropAhead();
+    return null;
+  }
+  clearTimeout(readyTimer);
+  ahead = null;
+  // From here the pieces belong to the track being loaded; an element that
+  // failed while loading ahead isn't used, only the pieces.
+  const usable = a.el && !a.el.error;
+  if (!usable && a.el) {
+    a.el.removeAttribute('src');
+    a.el.load();
+    a.served?.close();
+  }
+  // Once the track is left, stop decrypting ahead for it and let its pieces go.
+  const done = () => {
+    a.aborted = true;
+    a.pieces.clear();
+  };
+  return { file: a.file, read: (i) => pieceOf(a, i), el: usable ? a.el : null, served: usable ? a.served : null, done };
+}
+
 async function load(autoplay = true) {
   remember(); // the track being left, before anything changes
   const track = current();
   const seq = ++loadSeq;
-  const a = element();
+  const ready = takeAhead(track);
+  const old = element();
   loaded = track;
   player.chapters = [];
   // Detach the old stream first, or its closing reads as an error here.
-  a.pause();
-  a.removeAttribute('src');
-  a.load();
+  old.pause();
+  old.removeAttribute('src');
+  old.load();
   release();
   Object.assign(player, { time: 0, duration: 0, buffering: true });
   updateSession();
+  if (ready?.el && autoplay) {
+    // The next track's element, already loaded: it takes over.
+    audio = ready.el;
+    served = { close: () => (ready.served.close(), ready.done()) };
+    audio.volume = player.volume;
+    audio.muted = player.muted;
+    audio.defaultPlaybackRate = audio.playbackRate = player.rate;
+    if (audio.readyState >= 1) {
+      // Its metadata came in while it was waiting, unheard by the handlers.
+      player.duration = Number.isFinite(audio.duration) ? audio.duration : 0;
+      updatePosition();
+      await loadSaved();
+      if (seq === loadSeq) resume();
+    }
+    findChapters(track, seq);
+    try {
+      await audio.play();
+      return;
+    } catch (e) {
+      if (seq !== loadSeq || e?.name === 'AbortError') return;
+      // Some browsers only let an element play that was started by a tap:
+      // go back to the usual one, which was.
+      release();
+      audio.removeAttribute('src');
+      audio.load();
+      audio = old;
+    }
+  } else if (ready?.el) {
+    ready.served.close();
+    ready.el.removeAttribute('src');
+    ready.el.load();
+  }
+  const a = audio;
   try {
     const type = previewKind(track.entry.meta).type;
     // Where long tracks were left off (also when playing from My files).
@@ -467,21 +634,23 @@ async function load(autoplay = true) {
     const { streamsAvailable, serveFile } = await import('./stream.js');
     let src;
     if (await streamsAvailable()) {
-      const f = await openEntry(track.entry);
+      const f = ready?.file ?? (await openEntry(track.entry));
+      const read = ready?.read ?? ((i) => f.read(i));
       const s = serveFile({
         size: f.size,
         chunkSize: f.chunkSize,
         type,
         read: async (i) => {
-          const piece = await f.read(i);
+          const piece = await read(i);
           if (i === 0) learn(track, piece); // before the piece is handed on
           return piece;
         },
       });
       src = s.url;
-      served = s;
+      served = ready ? { close: () => (s.close(), ready.done()) } : s;
     } else {
       // No stream worker: the whole file in memory.
+      ready?.done();
       const { blob } = await fetchEntry(track.entry);
       learn(track, new Uint8Array(await blob.slice(0, 4 << 20).arrayBuffer()));
       src = URL.createObjectURL(new Blob([blob], { type }));
@@ -609,10 +778,12 @@ export function toggleShuffle() {
     player.queue = original.filter((track) => kept.has(track));
     player.index = player.queue.indexOf(now);
   }
+  getReady();
 }
 
 export function cycleRepeat() {
   player.repeat = { off: 'all', all: 'one', one: 'off' }[player.repeat];
+  getReady();
 }
 
 /** Play `tracks` right after the current one. */
@@ -620,12 +791,14 @@ export function playNext(tracks) {
   if (!current()) return play(tracks);
   player.queue = player.queue.toSpliced(player.index + 1, 0, ...tracks);
   original.push(...tracks);
+  getReady();
 }
 
 export function enqueue(tracks) {
   if (!current()) return play(tracks);
   player.queue = [...player.queue, ...tracks];
   original.push(...tracks);
+  getReady();
 }
 
 export function removeFromQueue(i) {
@@ -633,6 +806,7 @@ export function removeFromQueue(i) {
   original = original.filter((track) => track !== player.queue[i]);
   player.queue = player.queue.toSpliced(i, 1);
   if (i < player.index) player.index--;
+  getReady();
 }
 
 /** Stop and empty the queue. */
@@ -640,6 +814,7 @@ export function stop() {
   remember();
   loaded = null;
   loadSeq++;
+  dropAhead();
   release();
   if (audio) {
     audio.pause();
