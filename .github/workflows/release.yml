@@ -11,10 +11,11 @@ name: Release
 # rebuilds the web client locally, adds a minisign signature of the
 # manifest and publishes.
 #
-# The Android APK is signed with the release key in the repository's
-# secrets (ANDROID_KEYSTORE, base64; ANDROID_KEYSTORE_PASSWORD,
-# ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD). Every APK must be signed with the
-# same key, or it can't update the one already installed.
+# The Android APK is signed with the release key in the `release`
+# environment's secrets (ANDROID_KEYSTORE, base64; ANDROID_KEYSTORE_PASSWORD,
+# ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD). Only v* tags may use that
+# environment, and a maintainer approves each run. Every APK must be signed
+# with the same key, or it can't update the one already installed.
 
 on:
   push:
@@ -133,6 +134,9 @@ jobs:
 
   android:
     name: App (Android)
+    # The signing key's environment, on a tag only: a run by hand on a branch
+    # builds an unsigned APK and wouldn't be allowed in.
+    environment: ${{ github.ref_type == 'tag' && 'release' || '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
