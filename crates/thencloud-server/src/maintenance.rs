@@ -98,6 +98,25 @@ impl BackupDest {
         )))
     }
 
+    /// Lock every object this backup writes for `days` (S3 only).
+    pub fn with_retention(self, days: u32, compliance: bool) -> Result<Self> {
+        match self {
+            BackupDest::Dir(_) => Err(AppError::bad(
+                "--retain-days only applies to an s3:// destination",
+            )),
+            BackupDest::S3(mut t) => {
+                if days == 0 {
+                    return Err(AppError::bad("--retain-days must be at least 1"));
+                }
+                t.retention = Some(crate::s3::Retention {
+                    compliance,
+                    until: crate::util::now() + i64::from(days) * 86400,
+                });
+                Ok(BackupDest::S3(t))
+            }
+        }
+    }
+
     fn describe(&self) -> String {
         match self {
             BackupDest::Dir(p) => p.display().to_string(),

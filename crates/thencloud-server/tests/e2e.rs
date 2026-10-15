@@ -6437,6 +6437,11 @@ mod fake_s3 {
     /// Objects by "bucket/key".
     pub type Store = Arc<Mutex<BTreeMap<String, Vec<u8>>>>;
 
+    /// Object Lock headers each object was written with, by "bucket/key":
+    /// (mode, retain-until date, whether a correct SHA-256 checksum came with it).
+    type Locks = std::sync::Mutex<BTreeMap<String, (String, String, bool)>>;
+    pub static LOCKS: std::sync::LazyLock<Locks> = std::sync::LazyLock::new(Default::default);
+
     /// Start the server; returns its store and endpoint URL.
     pub async fn spawn() -> (Store, String) {
         let store: Store = Arc::new(Mutex::new(BTreeMap::new()));
@@ -6584,6 +6589,27 @@ mod fake_s3 {
         let map_key = format!("{bucket}/{key}");
         match parts.method {
             Method::PUT => {
+                let h = |n: &str| {
+                    parts
+                        .headers
+                        .get(n)
+                        .and_then(|v| v.to_str().ok())
+                        .map(str::to_string)
+                };
+                if let Some(mode) = h("x-amz-object-lock-mode") {
+                    let until = h("x-amz-object-lock-retain-until-date").unwrap_or_default();
+                    // Only a checksum that matches the body counts, as S3 checks it.
+                    let summed = h("x-amz-checksum-sha256").is_some_and(|v| {
+                        use base64::Engine as _;
+                        use sha2::Digest as _;
+                        v == base64::engine::general_purpose::STANDARD
+                            .encode(sha2::Sha256::digest(&body))
+                    });
+                    LOCKS
+                        .lock()
+                        .unwrap()
+                        .insert(map_key.clone(), (mode, until, summed));
+                }
                 store.lock().await.insert(map_key, body);
                 (StatusCode::OK, [(header::ETAG, "\"fake\"")]).into_response()
             }
@@ -8726,4 +8752,113 @@ async fn pinned_versions_are_kept() {
             .unwrap()
             .pinned
     );
+}
+
+#[tokio::test]
+async fn s3_backups_can_be_locked_against_deletion() {
+    use thencloud_server::maintenance::{self, BackupDest};
+
+    let (store, endpoint) = fake_s3::spawn().await;
+    let h = Harness::with_config(|c| {
+        c.s3_endpoint = Some(endpoint.clone());
+        c.s3_bucket = Some("locksrc".into());
+        c.s3_access_key = Some("access".into());
+        c.s3_secret_key = Some("secret".into());
+    })
+    .await;
+    let alice = register(&h, "alice", "pw").await;
+    alice
+        .upload(
+            &h,
+            &alice.root,
+            None,
+            "keep.bin",
+            &secret_payload(c::CHUNK_SIZE + 5),
+        )
+        .await
+        .unwrap();
+
+    // Only an s3:// destination can be locked, and for a day at least.
+    let cfg = &h.state.config;
+    assert!(
+        BackupDest::parse("/tmp/x", cfg)
+            .unwrap()
+            .with_retention(30, false)
+            .is_err()
+    );
+    assert!(
+        BackupDest::parse("s3://locked/b", cfg)
+            .unwrap()
+            .with_retention(0, false)
+            .is_err()
+    );
+
+    let dest = BackupDest::parse("s3://locked/b1", cfg)
+        .unwrap()
+        .with_retention(30, false)
+        .unwrap();
+    let r = maintenance::backup(&h.state.db, &h.state.blobs, &dest)
+        .await
+        .unwrap();
+    assert_eq!(r.chunks, 2);
+
+    // Every object the backup wrote is locked in Governance mode for 30
+    // days, and went with the checksum S3 asks for.
+    let keys: Vec<String> = store
+        .lock()
+        .await
+        .keys()
+        .filter(|k| k.starts_with("locked/b1/"))
+        .cloned()
+        .collect();
+    assert!(keys.iter().any(|k| k.ends_with("thencloud.db")), "{keys:?}");
+    assert_eq!(keys.len(), 3, "the database and two chunks: {keys:?}");
+    let locks = fake_s3::LOCKS.lock().unwrap().clone();
+    let soon = thencloud_server::util::now() + 30 * 86400;
+    for k in &keys {
+        let (mode, until, summed) = locks.get(k).unwrap_or_else(|| panic!("{k} isn't locked"));
+        assert_eq!(mode, "GOVERNANCE");
+        assert!(*summed, "{k} went without a checksum");
+        let at = chrono_free_parse(until);
+        assert!((at - soon).abs() < 120, "{k} locked until {until}");
+    }
+
+    // Compliance mode, when asked for.
+    let dest = BackupDest::parse("s3://locked/b2", cfg)
+        .unwrap()
+        .with_retention(7, true)
+        .unwrap();
+    maintenance::backup(&h.state.db, &h.state.blobs, &dest)
+        .await
+        .unwrap();
+    let locks = fake_s3::LOCKS.lock().unwrap().clone();
+    assert_eq!(locks["locked/b2/thencloud.db"].0, "COMPLIANCE");
+
+    // Without --retain-days nothing is locked, as before.
+    let dest = BackupDest::parse("s3://locked/b3", cfg).unwrap();
+    maintenance::backup(&h.state.db, &h.state.blobs, &dest)
+        .await
+        .unwrap();
+    assert!(
+        !fake_s3::LOCKS
+            .lock()
+            .unwrap()
+            .keys()
+            .any(|k| k.starts_with("locked/b3/"))
+    );
+}
+
+/// An RFC 3339 UTC time like 2026-11-14T09:00:00Z as Unix seconds.
+fn chrono_free_parse(s: &str) -> i64 {
+    let n = |a: usize, b: usize| s[a..b].parse::<i64>().unwrap();
+    let (y, m, d) = (n(0, 4), n(5, 7), n(8, 10));
+    let (hh, mm, ss) = (n(11, 13), n(14, 16), n(17, 19));
+    // Days from civil (Howard Hinnant's algorithm).
+    let y2 = if m <= 2 { y - 1 } else { y };
+    let era = y2.div_euclid(400);
+    let yoe = y2 - era * 400;
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146097 + doe - 719468;
+    days * 86400 + hh * 3600 + mm * 60 + ss
 }
