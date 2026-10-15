@@ -51,7 +51,7 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           workspaces: crates/thencloud-app
-      - uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
+      - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
         with:
           tool: wasm-pack
       - if: runner.os == 'Linux'
@@ -93,7 +93,7 @@ jobs:
       # The real binary, not npx: `android init` writes the command it was
       # run with into the Gradle project, and `npm run tauri` needs a
       # package.json there.
-      - uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
+      - uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2.87.26
         with:
           tool: wasm-pack,cargo-binstall
       - run: cargo binstall -y --locked tauri-cli@^2
