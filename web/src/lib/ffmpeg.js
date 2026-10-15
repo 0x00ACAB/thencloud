@@ -22,6 +22,11 @@ const ARGS = {
   opus: ['-vn', '-c:a', 'libopus', '-b:a', '128k'],
   flac: ['-vn', '-c:a', 'flac'],
   wav: ['-vn', '-c:a', 'pcm_s16le'],
+  // For watching a video the browser can't play (lib/playable.js): as fast
+  // as WASM allows, at most 720p, nothing kept afterwards.
+  view: ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '26', '-vf', "scale='min(1280,iw)':-2", '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart'],
+  // The same for browsers without H.264 (open-source Chromium, some Linux builds).
+  viewWebm: ['-c:v', 'libvpx', '-deadline', 'realtime', '-cpu-used', '8', '-b:v', '1500k', '-vf', "scale='min(1280,iw)':-2", '-c:a', 'libvorbis', '-q:a', '3'],
 };
 
 /**
@@ -62,9 +67,10 @@ function stop() {
 /**
  * Convert `blob` (whose file extension is `inputExt`) to `target`.
  * `onStage('loading' | 'converting')`, `onProgress(0..1)`, and `signal`
- * to cancel. Resolves to a Blob of `target.type`.
+ * to cancel; `copy: false` skips trying to copy the streams as they are.
+ * Resolves to a Blob of `target.type`.
  */
-export async function transcode(blob, inputExt, target, { trim, onProgress, onStage, signal } = {}) {
+export async function transcode(blob, inputExt, target, { trim, onProgress, onStage, signal, copy = true } = {}) {
   const f = await ffmpeg(onStage);
   if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
   const onAbort = () => stop();
@@ -88,7 +94,7 @@ export async function transcode(blob, inputExt, target, { trim, onProgress, onSt
     let code = 1;
     // Copying streams can only cut at keyframes, so trims are re-encoded.
     const trimmed = start != null || end != null;
-    if (!trimmed && REMUX_FROM.has(inputExt) && REMUX_TO.has(target.id)) {
+    if (copy && !trimmed && REMUX_FROM.has(inputExt) && REMUX_TO.has(target.id)) {
       code = await run(['-c', 'copy', ...(target.id === 'mp4' ? ['-movflags', '+faststart'] : [])]);
     }
     if (code !== 0) code = await run(ARGS[target.id]);

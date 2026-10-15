@@ -12,6 +12,8 @@
   import { player as music, toggle as toggleMusic } from '../lib/music.svelte.js';
   import { errorMessage } from '../lib/ui.svelte.js';
   import { inAndroidApp } from '../lib/native.js';
+  import CodecFallback from './CodecFallback.svelte';
+  import { noPicture } from '../lib/playable.js';
 
   let { video, onclose } = $props();
 
@@ -22,6 +24,15 @@
   let countdown = $state(null); // seconds until the next episode plays
   let served = null;
   let seq = 0;
+  // A video the browser can't show, and the copy converted for watching here.
+  let cantPlay = $state(false);
+  let converted = $state(null);
+  const dropConverted = () => {
+    if (converted) URL.revokeObjectURL(converted);
+    converted = null;
+    cantPlay = false;
+  };
+  onDestroy(dropConverted);
   let lastSave = 0;
 
   const d = $derived(details(v));
@@ -62,6 +73,7 @@
     served = null;
     src = null;
     error = '';
+    dropConverted();
     countdown = null;
     try {
       const s = await openVideo(cur);
@@ -96,6 +108,11 @@
   }
 
   function onloadedmetadata() {
+    if (!converted && noPicture(el)) {
+      el.pause();
+      cantPlay = true;
+      return;
+    }
     const at = resumeAt(v);
     if (at) el.currentTime = at;
   }
@@ -140,9 +157,11 @@
         <p class="font-medium">{t("This video can't be played here")}</p>
         <p class="text-[13px] text-fg-muted">{error}</p>
       </div>
+    {:else if cantPlay && !converted}
+      <CodecFallback entry={v.entry} onready={(u) => (converted = u)} />
     {:else if src}
       <!-- svelte-ignore a11y_media_has_caption -->
-      <video bind:this={el} {src} controls controlslist={inAndroidApp ? 'nofullscreen' : undefined} autoplay playsinline class="size-full object-contain" {ontimeupdate} {onloadedmetadata} {onended} onpause={save}>
+      <video bind:this={el} src={converted ?? src} onerror={() => !converted && (cantPlay = true)} controls controlslist={inAndroidApp ? 'nofullscreen' : undefined} autoplay playsinline class="size-full object-contain" {ontimeupdate} {onloadedmetadata} {onended} onpause={save}>
         {#each subtitles as sub (sub.url)}<track kind="subtitles" src={sub.url} srclang={sub.lang || undefined} label={sub.label} />{/each}
       </video>
     {:else}

@@ -1584,6 +1584,18 @@ export default {
   'Colour of {tag}': 'Kolor tagu {tag}',
   'No colour': 'Bez koloru',
 
+  // Codec fallback
+  'Decrypting the video...': 'Odszyfrowywanie wideo...',
+  'Loading the converter...': 'Wczytywanie konwertera...',
+  'Repackaging the video...': 'Przepakowywanie wideo...',
+  'Converting the video. This can take as long as the video itself, or longer.': 'Konwertowanie wideo. Może to potrwać tyle, ile trwa samo wideo, albo dłużej.',
+  "Your browser can't play this video's format.": 'Twoja przeglądarka nie odtwarza formatu tego wideo.',
+  'It could be converted here for watching, but at {size} it is too large to convert in the browser. Download it and use a video player instead.':
+    'Można by je tu przekonwertować do obejrzenia, ale przy {size} jest za duże na konwersję w przeglądarce. Pobierz je i użyj odtwarzacza wideo.',
+  'It can be converted here, in your browser, into a format it plays. Nothing is uploaded or saved; the converted copy is gone when you close it.':
+    'Można je tu, w przeglądarce, przekonwertować do formatu, który odtwarza. Nic nie jest wysyłane ani zapisywane; przekonwertowana kopia znika po zamknięciu.',
+  'Convert to watch': 'Przekonwertuj, aby obejrzeć',
+
   // Duplicate files
   'Duplicate files': 'Duplikaty plików',
   'Find duplicates': 'Znajdź duplikaty',
