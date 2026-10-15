@@ -1539,6 +1539,22 @@ export default {
   'Final draft': 'Endfassung',
   "Only you see the name. It's kept encrypted with your other library data.": 'Den Namen siehst nur du. Er wird verschlüsselt mit deinen anderen Bibliotheksdaten gespeichert.',
 
+  // New sign-in alerts
+  'with your password': 'mit deinem Passwort',
+  'with your password and a code': 'mit deinem Passwort und einem Code',
+  'with your password and a passkey': 'mit deinem Passwort und einem Passkey',
+  'with a passkey': 'mit einem Passkey',
+  'with your recovery key, which also set a new password': 'mit deinem Wiederherstellungsschlüssel, wobei auch ein neues Passwort gesetzt wurde',
+  'with an app password': 'mit einem App-Passwort',
+  'Signed out {device}': '{device} abgemeldet',
+  'New sign-ins': 'Neue Anmeldungen',
+  'New sign-in to your account': 'Neue Anmeldung bei deinem Konto',
+  '{device}, {how}, {when}.': '{device}, {how}, {when}.',
+  '{device}, {when}.': '{device}, {when}.',
+  "If it wasn't you, sign it out and change your password.": 'Wenn du das nicht warst, melde es ab und ändere dein Passwort.',
+  'It was me': 'Das war ich',
+  'Sign it out': 'Abmelden',
+
   // Duplicate files
   'Duplicate files': 'Doppelte Dateien',
   'Find duplicates': 'Duplikate finden',

@@ -341,6 +341,11 @@ pub struct DeviceSession {
     /// Name of the app password it signed in with, if any.
     #[serde(default)]
     pub app_password: Option<String>,
+    /// How it signed in: `password`, `password+code`, `password+passkey`,
+    /// `passkey`, `recovery`, `register` or `app_password`. None for
+    /// sessions from before the server recorded it.
+    #[serde(default)]
+    pub method: Option<String>,
 }
 
 // ---------------------------------------------------------------------------

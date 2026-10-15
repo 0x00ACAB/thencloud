@@ -309,7 +309,14 @@ pub async fn login(
     if user.disabled_at.is_some() {
         return Err(AppError::AccountDisabled);
     }
-    let token = create_session(&state, &user.id, req.device_name.as_deref(), None).await?;
+    let token = create_session(
+        &state,
+        &user.id,
+        req.device_name.as_deref(),
+        None,
+        "passkey",
+    )
+    .await?;
     Ok(Json(PasskeyLoginResponse {
         token,
         me: user.into_me(&state.config)?,

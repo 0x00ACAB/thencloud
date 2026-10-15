@@ -124,6 +124,8 @@ Smaller things:
 - [ ] **Emergency access**: name a verified contact who can request access to your files; it's granted after a waiting period you choose unless you deny it. A copy of the master key (or chosen folders' keys) is sealed to their hybrid key ahead of time and the server releases it only when the wait runs out
 - [ ] **Social recovery**: split the recovery key with Shamir's secret sharing among verified contacts (for example any 3 of 5), each share sealed to their key; they approve a recovery from their own client
 - [ ] **New sign-in alerts**: a notice in the app (and by push, once notifications exist) when a new device, passkey or app password signs in, with a link to sign it out
+  - [x] In the app: a banner for each session that signed in since you last looked (device, how it signed in, when), with "It was me" and "Sign it out"; a recovery-key sign-in is called out. Sessions record how they signed in (`sessions.method`); which alerts you've seen is in the encrypted `prefs` app data
+  - [ ] By push, once notifications exist
 
 ## Milestone 6: Everyday files
 

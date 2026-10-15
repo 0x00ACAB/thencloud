@@ -34,6 +34,7 @@
   import { storage, loadStorage, dropStorage } from '../lib/storage.svelte.js';
   import { shareImport, refreshPendingShares } from '../lib/shareImport.svelte.js';
   import ShareImportDialog from './dialogs/ShareImportDialog.svelte';
+  import SignInAlerts from './SignInAlerts.svelte';
 
   const rootId = session.me.keys.root_node_id;
   loadMyAvatar().catch(() => {});
@@ -286,6 +287,7 @@
     </aside>
 
     <main class="min-w-0 flex-1 px-4 pt-6 pb-[calc(var(--bottom-bar)+1.5rem)] md:px-8 md:pt-8 md:pb-[calc(var(--bottom-bar)+2rem)]">
+      <div class="mx-auto max-w-5xl"><SignInAlerts /></div>
       {#key view.name}
       <div class="mx-auto max-w-5xl animate-enter">
         {#if view.name === 'files'}

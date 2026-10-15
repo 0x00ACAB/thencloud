@@ -269,7 +269,14 @@ pub async fn register(
         crate::setup::done(&state).await;
     }
 
-    let token = create_session(&state, &user_id, req.device_name.as_deref(), None).await?;
+    let token = create_session(
+        &state,
+        &user_id,
+        req.device_name.as_deref(),
+        None,
+        "register",
+    )
+    .await?;
     let me = user_by_id(&state, &user_id).await?.into_me(&state.config)?;
     Ok((StatusCode::CREATED, Json(SessionResponse { token, me })))
 }
@@ -310,7 +317,14 @@ pub async fn login(
     {
         return Ok(Json(LoginResponse::SecondFactor { second_factor }));
     }
-    let token = create_session(&state, &user.id, req.device_name.as_deref(), None).await?;
+    let token = create_session(
+        &state,
+        &user.id,
+        req.device_name.as_deref(),
+        None,
+        "password",
+    )
+    .await?;
     Ok(Json(LoginResponse::Session(Box::new(SessionResponse {
         token,
         me: user.into_me(&state.config)?,
@@ -618,7 +632,7 @@ pub async fn recovery_reset(
         .await?;
     tx.commit().await?;
     tracing::info!(username = %u.username, "password reset with a recovery key");
-    let token = create_session(&state, &u.id, req.device_name.as_deref(), None).await?;
+    let token = create_session(&state, &u.id, req.device_name.as_deref(), None, "recovery").await?;
     Ok(Json(SessionResponse {
         token,
         me: user_by_id(&state, &u.id).await?.into_me(&state.config)?,

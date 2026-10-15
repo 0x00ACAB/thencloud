@@ -156,7 +156,12 @@ pub async fn verify(
         return Err(AppError::AccountDisabled);
     }
     let device = ch.data.map(|d| String::from_utf8_lossy(&d).into_owned());
-    let token = create_session(&state, &user.id, device.as_deref(), None).await?;
+    let method = if req.passkey.is_some() {
+        "password+passkey"
+    } else {
+        "password+code"
+    };
+    let token = create_session(&state, &user.id, device.as_deref(), None, method).await?;
     Ok(Json(SessionResponse {
         token,
         me: user.into_me(&state.config)?,
