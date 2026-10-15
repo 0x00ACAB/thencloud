@@ -1,7 +1,7 @@
 <script>
   import { t } from '../../lib/i18n.svelte.js';
   import { onMount } from 'svelte';
-  import { session, trashItems, restoreFromTrash, purgeFromTrash, emptyTrash, refreshMe } from '../../lib/cloud.svelte.js';
+  import { session, trashItems, restoreFromTrash, purgeFromTrash, emptyTrash, refreshMe, avatar } from '../../lib/cloud.svelte.js';
   import { toast, toastError } from '../../lib/ui.svelte.js';
   import { formatSize, formatWhen, fullDate } from '../../lib/format.js';
   import { fade, flip, flipParams } from '../../lib/motion.js';
@@ -71,7 +71,7 @@
     <div class="grid place-items-center gap-1 px-6 py-20 text-center animate-enter">
       <div class="mb-3 grid size-11 place-items-center rounded-lg border border-line bg-subtle"><Icon name="trash-2" class="size-5 text-fg-muted" /></div>
       <p class="font-medium">{t('Trash is empty')}</p>
-      <p class="text-[13px] text-fg-muted">{t('Things you delete show up here, in case you change your mind.')}</p>
+      <p class="text-[13px] text-fg-muted">{t('Things you delete show up here, in case you change your mind.', { gender: avatar.details?.gender })}</p>
     </div>
   {:else}
     <table class="table animate-enter">
