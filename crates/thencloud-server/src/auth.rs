@@ -146,19 +146,20 @@ impl ClientIp {
 }
 
 /// Create a session and return its bearer token. Only the token's hash is
-/// stored.
+/// stored. `method` is how it signed in (see `DeviceSession::method`).
 pub async fn create_session(
     state: &AppState,
     user_id: &str,
     device: Option<&str>,
     app_password_id: Option<&str>,
+    method: &str,
 ) -> Result<String> {
     let token = random_token(32);
     let t = now();
     let device: String = device.unwrap_or("unknown").chars().take(100).collect();
     sqlx::query(
         "INSERT INTO sessions (token_hash, id, user_id, device_name, created_at, last_seen, expires_at, \
-         app_password_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+         app_password_id, method) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(sha256(token.as_bytes()))
     .bind(random_token(16))
@@ -168,6 +169,7 @@ pub async fn create_session(
     .bind(t)
     .bind(t + state.config.session_days * 86400)
     .bind(app_password_id)
+    .bind(method)
     .execute(&state.db)
     .await?;
     Ok(token)

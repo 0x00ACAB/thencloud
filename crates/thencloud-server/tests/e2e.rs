@@ -2128,6 +2128,10 @@ async fn app_passwords_are_scoped_revocable_and_opaque() {
         .await;
     assert_eq!(r.status, StatusCode::FORBIDDEN);
     let others: Vec<DeviceSession> = h.get("/api/sessions", &full.token).await.json();
+    assert_eq!(
+        others.iter().find(|s| s.current).unwrap().method.as_deref(),
+        Some("app_password")
+    );
     let browser = others.iter().find(|s| s.app_password.is_none()).unwrap();
     let r = h
         .call(
@@ -3113,6 +3117,10 @@ async fn sessions_list_and_revoke() {
     let list: Vec<DeviceSession> = r.json();
     assert_eq!(list.len(), 2);
     assert_eq!(list.iter().filter(|s| s.current).count(), 1);
+    // How each one signed in, for new sign-in alerts.
+    let mut methods: Vec<_> = list.iter().map(|s| s.method.as_deref()).collect();
+    methods.sort();
+    assert_eq!(methods, [Some("password"), Some("register")]);
     let phone_id = {
         let from_phone: Vec<DeviceSession> = h.get("/api/sessions", &phone.token).await.json();
         from_phone.into_iter().find(|s| s.current).unwrap().id

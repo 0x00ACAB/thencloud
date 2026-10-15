@@ -10,12 +10,24 @@ use crate::auth::AuthUser;
 use crate::error::{AppError, Result};
 use crate::util::now;
 
+#[derive(sqlx::FromRow)]
+struct SessionRow {
+    id: String,
+    device_name: String,
+    created_at: i64,
+    last_seen: i64,
+    current: bool,
+    app_password: Option<String>,
+    method: Option<String>,
+}
+
 pub async fn list(
     State(state): State<AppState>,
     user: AuthUser,
 ) -> Result<Json<Vec<DeviceSession>>> {
-    let rows: Vec<(String, String, i64, i64, bool, Option<String>)> = sqlx::query_as(
-        "SELECT s.id, s.device_name, s.created_at, s.last_seen, s.token_hash = ?, a.name FROM sessions s \
+    let rows: Vec<SessionRow> = sqlx::query_as(
+        "SELECT s.id, s.device_name, s.created_at, s.last_seen, s.token_hash = ? AS current, \
+         a.name AS app_password, s.method FROM sessions s \
          LEFT JOIN app_passwords a ON a.id = s.app_password_id \
          WHERE s.user_id = ? AND s.expires_at > ? ORDER BY s.last_seen DESC",
     )
@@ -26,16 +38,15 @@ pub async fn list(
     .await?;
     Ok(Json(
         rows.into_iter()
-            .map(
-                |(id, device_name, created_at, last_seen, current, app_password)| DeviceSession {
-                    id,
-                    device_name,
-                    created_at,
-                    last_seen,
-                    current,
-                    app_password,
-                },
-            )
+            .map(|r| DeviceSession {
+                id: r.id,
+                device_name: r.device_name,
+                created_at: r.created_at,
+                last_seen: r.last_seen,
+                current: r.current,
+                app_password: r.app_password,
+                method: r.method,
+            })
             .collect(),
     ))
 }

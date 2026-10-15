@@ -163,7 +163,14 @@ pub async fn login(
         .bind(&id)
         .execute(&state.db)
         .await?;
-    let token = create_session(&state, &user_id, req.device_name.as_deref(), Some(&id)).await?;
+    let token = create_session(
+        &state,
+        &user_id,
+        req.device_name.as_deref(),
+        Some(&id),
+        "app_password",
+    )
+    .await?;
     Ok(Json(AppLoginResponse {
         token,
         me: u.into_me(&state.config)?,
