@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The thencloud cloud (web/public/favicon.svg's path, 32 units across)
+     on the 108 dp adaptive-icon canvas: scaled 2.5 times, centred in the
+     66 dp safe zone. Also the monochrome layer Android tints for themed
+     icons, so it's one solid shape. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="2.5"
+        android:scaleY="2.5"
+        android:translateX="13.5"
+        android:translateY="12">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M21.6,23H13a6,6 0,1 1,5.75 -7.7h1.5a3.85,3.85 0,1 1,1.35 7.7Z" />
+    </group>
+</vector>
