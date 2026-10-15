@@ -4,8 +4,9 @@ name: Docs
 # (docs.kkaii.xyz), together with the F-Droid repo at /fdroid/repo
 # (scripts/fdroid-repo.sh: the APKs of the latest releases, listed in an
 # index signed with the repo's own key). A deploy replaces the whole site,
-# so every deploy rebuilds both; publishing a release runs it too. Pull
-# requests only build them, the repo with a throwaway key, to catch breakage.
+# so every deploy rebuilds both; publishing a release runs it too (on main,
+# see on-release). Pull requests only build them, the repo with a throwaway
+# key, to catch breakage.
 on:
   push:
     branches: [main]
@@ -34,7 +35,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # A published release runs this on its tag, which the github-pages
+  # environment doesn't deploy from (only main may). So it just starts this
+  # workflow again on main, which picks up the new release's APK.
+  on-release:
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run docs.yml --repo "$GITHUB_REPOSITORY" --ref main
+
   build:
+    if: github.event_name != 'release'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -67,7 +82,7 @@ jobs:
           path: docs/book
 
   deploy:
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && github.event_name != 'release'
     needs: build
     runs-on: ubuntu-latest
     permissions:
