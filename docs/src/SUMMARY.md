@@ -25,6 +25,7 @@
 - [Backup and restore](host/backups.md)
 - [Upgrading](host/upgrading.md)
 - [Tor onion service](host/tor.md)
+- [Behind Cloudflare](host/cloudflare.md)
 - [Bot check (Turnstile)](host/turnstile.md)
 - [Monitoring](host/monitoring.md)
 - [Video downloader](host/downloader.md)

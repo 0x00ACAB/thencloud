@@ -40,7 +40,7 @@ tar xf thencloud-web-v1.1.1.tar.gz
 ./thencloud-server --bind 127.0.0.1:8080 --data-dir /var/lib/thencloud --web-dir ./dist
 ```
 
-Run it under systemd or similar, behind a reverse proxy that terminates TLS. Turn on `--trust-proxy` when only the proxy can reach the server.
+Run it under systemd or similar, behind a reverse proxy that terminates TLS. Turn on `--trust-proxy` when only the proxy can reach the server. Behind Cloudflare, see [Behind Cloudflare](cloudflare.md): two of its features must be off.
 
 ## From source
 
