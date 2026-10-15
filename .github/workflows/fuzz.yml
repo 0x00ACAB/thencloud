@@ -15,6 +15,7 @@ on:
       - crates/thencloud-server/src/util.rs
       - crates/thencloud-cli/src/backup.rs
       - crates/thencloud-cli/src/nextcloud.rs
+      - crates/thencloud-cli/src/takeout.rs
       - crates/thencloud-cli/src/sigstore.rs
       - .github/workflows/fuzz.yml
   schedule:
@@ -33,7 +34,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  TARGETS: crypto-decode sealed-box webauthn-register webauthn-assert api-json server-input backup-read nextcloud-listing sigstore-bundle
+  TARGETS: crypto-decode sealed-box webauthn-register webauthn-assert api-json server-input backup-read nextcloud-listing takeout-sidecar sigstore-bundle
   SECONDS_EACH: ${{ github.event_name == 'schedule' && 240 || github.event_name == 'workflow_dispatch' && inputs.seconds || 20 }}
 
 jobs:

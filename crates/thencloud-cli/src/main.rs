@@ -74,6 +74,16 @@ enum Command {
         #[arg(long, default_value = "")]
         from: String,
     },
+    /// Copy an extracted Google Takeout into a folder ("" is My files),
+    /// encrypting it here. Photos get the date they were taken from
+    /// Takeout's JSON files, which aren't copied themselves. Safe to run
+    /// again: files already copied are skipped.
+    ImportTakeout {
+        /// The extracted Takeout folder.
+        dir: PathBuf,
+        #[arg(default_value = "")]
+        remote: String,
+    },
     /// Restore a backup into a folder, on this server or any other. Reads
     /// the backup key from THENCLOUD_BACKUP_KEY or stdin.
     Restore { file: PathBuf, remote: String },
@@ -441,6 +451,14 @@ fn run(cmd: Command) -> Result<()> {
                     println!("restored {p}")
                 })?;
                 println!("{} files restored", s.transferred);
+            }
+            Command::ImportTakeout { dir, remote } => {
+                let folder = client.resolve(&remote)?;
+                if !folder.is_folder() {
+                    return Err(Error::Usage(format!("{remote} is a file")));
+                }
+                let s = client.import_takeout(&dir, &folder, &mut |p| println!("copied {p}"))?;
+                println!("{} copied, {} already here", s.transferred, s.unchanged);
             }
             Command::ImportNextcloud {
                 server,

@@ -159,6 +159,8 @@ Smaller things:
 - [x] **Translations**: move UI strings into message files and pick the language from the browser. English, Polish and German (`lib/messages/`), loaded on demand, with plural and grammatical-gender forms; a test fails on any string missing a translation. Dates, numbers, 12/24-hour time and units follow a separate region setting
 - [x] **Accessibility pass**: screen reader labels, focus handling in dialogs and menus, and colour contrast checked in both themes and with the tint on. Every text element on the main pages and dialogs measured in the browser against WCAG AA in dark, light and both tinted themes: the faint grey and danger buttons were below 4.5:1 and are fixed. Menus take Home/End, and Tab closes them; icon-only buttons all have names
 - [ ] **Import from other services**: Google Drive, Dropbox and OneDrive through the CLI (like the Nextcloud import), and Google Takeout archives with photo dates taken from Takeout's JSON sidecars
+  - [x] Google Takeout: `thencloud import-takeout DIR [FOLDER]` copies an extracted Takeout, folders kept, each photo's `photoTakenTime` (or `creationTime`) from its sidecar as the file time and `taken`; sidecars (`x.jpg.json`, `.supplemental-metadata.json`, cut to 46 characters, `x.jpg(1).json`) and album `metadata.json` aren't copied; reruns skip files already there
+  - [ ] Google Drive, Dropbox and OneDrive directly
 - [ ] **Public API docs**: an OpenAPI spec of every route, generated and checked in CI, alongside the format spec
 - [ ] **Packaging**: a Helm chart, a NixOS module, and TrueNAS / Unraid app templates
 

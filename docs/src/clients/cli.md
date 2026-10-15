@@ -38,9 +38,20 @@ thencloud push ~/Notes Notes                # new and changed files up, nothing 
 | `backup`, `restore` | Encrypted backups you can restore to any server (below) |
 | `mount`, `serve` | Your files as a drive ([Drive: FUSE and WebDAV](drive.md)) |
 | `import-nextcloud` | Copy files from Nextcloud ([Moving from Nextcloud](nextcloud.md)) |
+| `import-takeout` | Copy an extracted Google Takeout, with photo dates (below) |
 | `verify-web` | Check a server's web client against a signed release ([Checking a release](../security/verify.md)) |
 
 `thencloud <command> --help` lists every option.
+
+## Google Takeout
+
+[Google Takeout](https://takeout.google.com) exports your Google Photos and Drive as zip files. Extract them into one folder, then:
+
+```sh
+thencloud import-takeout ~/Downloads/Takeout "From Google"
+```
+
+Folders are kept as they are (`Google Photos/<album>`, `Drive/My Drive/...`). Google puts each photo's date in a small JSON file next to it, since the photo file itself carries the date of the export; those are read for the file's date and the Photos timeline, and not copied. Everything is encrypted on your computer before upload. It's safe to run again: files already copied (same name and size) are skipped.
 
 ## Backups
 

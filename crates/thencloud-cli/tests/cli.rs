@@ -1180,3 +1180,94 @@ fn webdav_saving_over_a_file_keeps_it() {
     );
     assert_eq!(st, 412);
 }
+
+#[test]
+fn import_from_a_google_takeout() {
+    let s = start();
+    let cl = client(&s);
+    let root = cl.resolve("").unwrap();
+    let t = tempfile::tempdir().unwrap();
+    let album = t.path().join("Takeout/Google Photos/Holiday 2026");
+    let drive = t.path().join("Takeout/Drive/My Drive");
+    fs::create_dir_all(&album).unwrap();
+    fs::create_dir_all(&drive).unwrap();
+    let photo = content(3000, 7);
+    fs::write(album.join("IMG_0001.jpg"), &photo).unwrap();
+    fs::write(
+        album.join("IMG_0001.jpg.supplemental-metadata.json"),
+        br#"{"title":"IMG_0001.jpg","photoTakenTime":{"timestamp":"1600000000"},"creationTime":{"timestamp":"1700000000"}}"#,
+    )
+    .unwrap();
+    fs::write(album.join("IMG_0001(1).jpg"), content(10, 8)).unwrap();
+    fs::write(
+        album.join("IMG_0001.jpg(1).json"),
+        br#"{"photoTakenTime":{"timestamp":"1600000100"}}"#,
+    )
+    .unwrap();
+    fs::write(album.join("metadata.json"), br#"{"title":"Holiday 2026"}"#).unwrap();
+    fs::write(drive.join("plan.json"), b"{\"my\": \"own json\"}").unwrap();
+
+    let mut seen = Vec::new();
+    let st = cl
+        .import_takeout(&t.path().join("Takeout"), &root, &mut |p| {
+            seen.push(p.to_string())
+        })
+        .unwrap();
+    assert_eq!((st.transferred, st.unchanged), (3, 0), "{seen:?}");
+    seen.sort();
+    assert_eq!(
+        seen,
+        [
+            "Drive/My Drive/plan.json",
+            "Google Photos/Holiday 2026/IMG_0001(1).jpg",
+            "Google Photos/Holiday 2026/IMG_0001.jpg",
+        ]
+    );
+
+    let photos = child(
+        &cl,
+        &child(&cl, &root, "Google Photos").unwrap(),
+        "Holiday 2026",
+    )
+    .unwrap();
+    let img = child(&cl, &photos, "IMG_0001.jpg").unwrap();
+    assert!(fetch(&cl, &img) == photo);
+    assert_eq!(
+        img.meta.taken,
+        Some(1_600_000_000_000),
+        "taken from the sidecar"
+    );
+    assert_eq!(img.meta.mtime, 1_600_000_000_000);
+    assert_eq!(
+        child(&cl, &photos, "IMG_0001(1).jpg").unwrap().meta.taken,
+        Some(1_600_000_100_000)
+    );
+    // Sidecars and the album description aren't copied; a JSON of your own is.
+    let names: Vec<String> = cl
+        .list(&photos)
+        .unwrap()
+        .into_iter()
+        .map(|e| e.meta.name)
+        .collect();
+    assert_eq!(names.len(), 2, "{names:?}");
+    let plan = child(
+        &cl,
+        &child(&cl, &child(&cl, &root, "Drive").unwrap(), "My Drive").unwrap(),
+        "plan.json",
+    )
+    .unwrap();
+    assert_eq!(plan.meta.taken, None);
+
+    // Again: nothing to copy.
+    let st = cl
+        .import_takeout(&t.path().join("Takeout"), &root, &mut |_| {})
+        .unwrap();
+    assert_eq!((st.transferred, st.unchanged), (0, 3));
+    assert!(
+        cl.import_takeout(&t.path().join("missing"), &root, &mut |_| {})
+            .is_err()
+    );
+
+    cl.logout().unwrap();
+    assert_no_plaintext(&s, &[MARKER, b"Holiday 2026", b"IMG_0001", b"own json"]);
+}
