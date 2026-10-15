@@ -226,6 +226,7 @@ fn aad(label: &str, parts: &[&str]) -> Vec<u8> {
 /// Argon2id cost parameters. Stored (in the clear) by the server so the
 /// client can re-derive keys on login.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct KdfParams {
     /// Memory in KiB.
     pub m_cost: u32,

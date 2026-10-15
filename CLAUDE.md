@@ -43,7 +43,7 @@ scripts/build-app.sh [android|dev]   # the Tauri app (crates/thencloud-app/READM
 
 ## Layout
 
-- `crates/thencloud-crypto`: key derivation, key wrapping, sealed boxes, metadata and chunk encryption. `api.rs` holds the JSON wire types shared by the server and clients.
+- `crates/thencloud-crypto`: key derivation, key wrapping, sealed boxes, metadata and chunk encryption. `api.rs` holds the JSON wire types shared by the server and clients; with the `openapi` feature (only the server's tests turn it on) they derive the schemas of `docs/src/reference/openapi.json`. A new route or a changed wire type means a line in the table in `crates/thencloud-server/tests/openapi.rs` (which fails on a route the router has and it doesn't) and `UPDATE_OPENAPI=1 cargo test -p thencloud-server --test openapi`.
   - Shares sealed to X25519 alone (from before the recipient had an ML-KEM key) are sealed again by the recipient's client when it lists incoming shares (`resealIfClassic` in `cloud.svelte.js`, `shares::reseal`: recipient only, hybrid-size boxes only).
   - Sealed boxes are hybrid X25519 + ML-KEM-768 when the recipient has an ML-KEM key (`KeyPair::sealing_key` is `x25519 || mlkem`); plain X25519 otherwise, and `open_sealed` takes both. Fingerprints and verified-contact pins cover `identity()`: the X25519 key plus the ML-KEM key's hash. In the web client `sk` is the X25519 secret followed by the ML-KEM seed.
 - `crates/thencloud-wasm`: thin `wasm-bindgen` wrappers. JS does networking only, never crypto.
