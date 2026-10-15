@@ -1,11 +1,15 @@
 # Monthly, grouped: every update pull request runs CI, and minutes are
-# limited. Security updates don't wait for this schedule.
+# limited. Security updates don't wait for this schedule. A release must be a
+# week old before it's offered, so a hijacked one has time to be caught and
+# pulled first (security updates skip that too).
 version: 2
 updates:
   - package-ecosystem: cargo
     directory: /
     schedule:
       interval: monthly
+    cooldown:
+      default-days: 7
     groups:
       cargo:
         update-types: [minor, patch]
@@ -14,6 +18,8 @@ updates:
     directory: /web
     schedule:
       interval: monthly
+    cooldown:
+      default-days: 7
     groups:
       npm:
         update-types: [minor, patch]
@@ -22,6 +28,8 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    cooldown:
+      default-days: 7
     groups:
       actions:
         patterns: ["*"]

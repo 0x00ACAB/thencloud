@@ -11,10 +11,11 @@ name: Release
 # rebuilds the web client locally, adds a minisign signature of the
 # manifest and publishes.
 #
-# The Android APK is signed with the release key in the repository's
-# secrets (ANDROID_KEYSTORE, base64; ANDROID_KEYSTORE_PASSWORD,
-# ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD). Every APK must be signed with the
-# same key, or it can't update the one already installed.
+# The Android APK is signed with the release key in the `release`
+# environment's secrets (ANDROID_KEYSTORE, base64; ANDROID_KEYSTORE_PASSWORD,
+# ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD). Only v* tags may use that
+# environment, and a maintainer approves each run. Every APK must be signed
+# with the same key, or it can't update the one already installed.
 
 on:
   push:
@@ -33,9 +34,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
+          # No cache: a release builds from nothing.
+          package-manager-cache: false
       - uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
         with:
           tool: wasm-pack
@@ -59,7 +64,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
+        with:
+          toolchain: stable
       - run: cargo build --release --locked -p thencloud-server -p thencloud-cli
       - name: Package
         env:
@@ -88,11 +97,16 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+          # No cache: a release builds from nothing.
+          package-manager-cache: false
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
         with:
+          toolchain: stable
           targets: wasm32-unknown-unknown
       - uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
         with:
@@ -120,18 +134,26 @@ jobs:
 
   android:
     name: App (Android)
+    # The signing key's environment, on a tag only: a run by hand on a branch
+    # builds an unsigned APK and wouldn't be allowed in.
+    environment: ${{ github.ref_type == 'tag' && 'release' || '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
+          # No cache: a release builds from nothing.
+          package-manager-cache: false
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
           java-version: 17
-      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master
         with:
+          toolchain: stable
           targets: wasm32-unknown-unknown, aarch64-linux-android, armv7-linux-androideabi, i686-linux-android, x86_64-linux-android
       - uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
         with:
@@ -186,6 +208,8 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Build and push by digest
         env:
           VERSION: ${{ github.ref_name }}
@@ -280,6 +304,7 @@ jobs:
           path: src
           sparse-checkout: CHANGELOG.md
           sparse-checkout-cone-mode: false
+          persist-credentials: false
       - name: Draft the release
         if: github.ref_type == 'tag'
         env:
