@@ -190,7 +190,7 @@ Smaller things:
 - [x] **PDF tools**: merge, split, rotate and reorder pages in the browser, saved as a new encrypted file. Also remove or extract pages; pdf-lib is loaded only when the dialog opens, and new documents carry no producer or dates
 - [x] **Notes view**: a folder of Markdown files as a notebook, with a list, search and pinned notes. Saved as you type as new versions, with a choice when a note changed elsewhere; search reads notes' text in the browser; pins are kept in the encrypted app data
 - [ ] **HEIC/HEIF and RAW previews**: decoded in WASM (libheif, LibRaw or the embedded JPEG), with thumbnails and EXIF dates like other photos, and HEIC in Convert
-- [ ] **Codec fallback**: when the browser can't play a video (HEVC, some MKVs), offer to transcode it for viewing with the existing ffmpeg WASM
+- [x] **Codec fallback**: when the browser can't play a video (HEVC, some MKVs), offer to transcode it for viewing with the existing ffmpeg WASM. In the preview and the Videos player: a video that errors or loads with no picture gets "Convert to watch"; the streams are copied into MP4 first (seconds), and re-encoded (H.264, or VP8 WebM where there's no H.264, at most 720p) only if that still doesn't show. In memory only, up to 700 MB (`lib/playable.js`)
 - [ ] **Archive browsing**: look inside zip, tar(.gz) and 7z files in the preview and download or save single entries, with the bounds-checked zip reader and the same zip-bomb caps
   - [x] zip, tar and tar.gz (`lib/untar.js`: checksummed headers, GNU long names and pax paths, gunzip capped at 512 MiB; told apart by their bytes)
   - [ ] 7z
