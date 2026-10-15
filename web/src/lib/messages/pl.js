@@ -1624,6 +1624,26 @@ export default {
   'It was me': 'To ja',
   'Sign it out': 'Wyloguj',
 
+  // Deleting automatically
+  'In 1 day': 'Za 1 dzień',
+  'In a week': 'Za tydzień',
+  'In a month': 'Za miesiąc',
+  'In three months': 'Za trzy miesiące',
+  'On a date': 'W wybranym dniu',
+  "{name} won't be deleted automatically": 'Automatyczne usuwanie wyłączone: {name}',
+  '{name} goes to the trash on {date}': '{name} trafi do kosza {date}',
+  'Delete automatically': 'Usuń automatycznie',
+  Date: 'Data',
+  'It goes to the trash then, where it stays for {count} days like anything you delete. To do this while none of your devices is online, the server is told the date; it never learns the name.': {
+    one: 'Wtedy trafi do kosza i zostanie w nim przez {count} dzień, jak wszystko, co usuwasz. Żeby mogło się to stać, gdy żadne z twoich urządzeń nie jest online, serwer zna tę datę; nazwy nigdy nie poznaje.',
+    few: 'Wtedy trafi do kosza i zostanie w nim przez {count} dni, jak wszystko, co usuwasz. Żeby mogło się to stać, gdy żadne z twoich urządzeń nie jest online, serwer zna tę datę; nazwy nigdy nie poznaje.',
+    many: 'Wtedy trafi do kosza i zostanie w nim przez {count} dni, jak wszystko, co usuwasz. Żeby mogło się to stać, gdy żadne z twoich urządzeń nie jest online, serwer zna tę datę; nazwy nigdy nie poznaje.',
+    other: 'Wtedy trafi do kosza i zostanie w nim przez {count} dnia, jak wszystko, co usuwasz. Żeby mogło się to stać, gdy żadne z twoich urządzeń nie jest online, serwer zna tę datę; nazwy nigdy nie poznaje.',
+  },
+  "Don't delete it": 'Nie usuwaj',
+  'Deleting automatically': 'Usuwanie automatyczne',
+  'Goes to the trash on its own': 'Sam trafi do kosza',
+
   // Duplicate files
   'Duplicate files': 'Duplikaty plików',
   'Find duplicates': 'Znajdź duplikaty',

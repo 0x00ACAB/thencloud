@@ -3,6 +3,10 @@
 export default {
   '{count} files': { one: '{count} file', other: '{count} files' },
   '{count} folders': { one: '{count} folder', other: '{count} folders' },
+  'It goes to the trash then, where it stays for {count} days like anything you delete. To do this while none of your devices is online, the server is told the date; it never learns the name.': {
+    one: 'It goes to the trash then, where it stays for 1 day like anything you delete. To do this while none of your devices is online, the server is told the date; it never learns the name.',
+    other: 'It goes to the trash then, where it stays for {count} days like anything you delete. To do this while none of your devices is online, the server is told the date; it never learns the name.',
+  },
   '{size} in {count} files': { one: '{size} in 1 file', other: '{size} in {count} files' },
   '{count} smaller items': { one: '1 smaller item', other: '{count} smaller items' },
   'Looking through My files: {count} items so far': { one: 'Looking through My files: 1 item so far', other: 'Looking through My files: {count} items so far' },

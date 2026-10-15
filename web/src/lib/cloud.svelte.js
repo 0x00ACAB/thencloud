@@ -1069,6 +1069,8 @@ export async function restoreVersion(entry, v) {
   });
 }
 
+/** A date (Unix seconds) for a node to go to the trash on its own, or null for none. The server learns the date. */
+export const setTrashAt = (entry, at) => api('PUT', `/api/nodes/${entry.node.id}/trash-at`, { body: { trash_at: at } });
 export const deleteVersion = (entry, v) => api('DELETE', `/api/nodes/${entry.node.id}/versions/${v.id}`);
 /** Keep a version out of the per-file limit, thinning and pruning for space (or stop keeping it). */
 export const pinVersion = (entry, v, pinned) => api('PUT', `/api/nodes/${entry.node.id}/versions/${v.id}/pinned`, { body: { pinned } });

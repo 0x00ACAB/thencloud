@@ -8870,3 +8870,115 @@ fn chrono_free_parse(s: &str) -> i64 {
     let days = era * 146097 + doe - 719468;
     days * 86400 + hh * 3600 + mm * 60 + ss
 }
+
+#[tokio::test]
+async fn files_go_to_the_trash_on_the_date_their_owner_set() {
+    let h = Harness::new().await;
+    let a = register(&h, "alice", "pw").await;
+    let bob = register(&h, "bob", "pw").await;
+    let f = a
+        .upload(&h, &a.root, None, "note.txt", b"bye")
+        .await
+        .unwrap();
+    let set = |user: &Client, id: &str, at: Option<i64>| {
+        let (h, token, uri) = (&h, user.token.clone(), format!("/api/nodes/{id}/trash-at"));
+        async move {
+            h.call(
+                Method::PUT,
+                &uri,
+                Some(&token),
+                Some(SetTrashAtRequest { trash_at: at }),
+            )
+            .await
+            .status
+        }
+    };
+    let now = thencloud_server::util::now();
+
+    // Only the owner sets it, never in the past, and never on a root folder.
+    assert_eq!(
+        set(&bob, &f.id, Some(now + 3600)).await,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        set(&a, &f.id, Some(now - 10)).await,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        set(&a, &a.root, Some(now + 3600)).await,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(set(&a, &f.id, Some(now + 90)).await, StatusCode::NO_CONTENT);
+    let node: Node = h
+        .get(&format!("/api/nodes/{}", f.id), &a.token)
+        .await
+        .json();
+    let at = node.trash_at.expect("the date is on the node");
+    assert!(
+        at % 3600 == 0 && at >= now + 90,
+        "rounded up to the hour: {at}"
+    );
+
+    // Not yet: the janitor leaves it.
+    thencloud_server::janitor::run_once(&h.state).await.unwrap();
+    assert_eq!(
+        h.get(&format!("/api/nodes/{}", f.id), &a.token)
+            .await
+            .status,
+        StatusCode::OK
+    );
+
+    // Once the date has come, it's in the trash, as if its owner had deleted it.
+    sqlx::query("UPDATE nodes SET trash_at = ? WHERE id = ?")
+        .bind(now - 60)
+        .bind(&f.id)
+        .execute(&h.state.db)
+        .await
+        .unwrap();
+    thencloud_server::janitor::run_once(&h.state).await.unwrap();
+    assert_eq!(
+        h.get(&format!("/api/nodes/{}", f.id), &a.token)
+            .await
+            .status,
+        StatusCode::NOT_FOUND
+    );
+    let trash = a.trash(&h).await;
+    assert!(
+        trash
+            .iter()
+            .any(|t| t.node.id == f.id && t.trashed_by == "alice"),
+        "{trash:?}"
+    );
+
+    // Restored, it stays: the date was used up.
+    let r = h
+        .call(
+            Method::POST,
+            &format!("/api/trash/{}/restore", f.id),
+            Some(&a.token),
+            Some(RestoreTrashRequest::default()),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::OK, "{r:?}");
+    let restored: Node = r.json();
+    assert_eq!(restored.trash_at, None);
+    thencloud_server::janitor::run_once(&h.state).await.unwrap();
+    assert_eq!(
+        h.get(&format!("/api/nodes/{}", f.id), &a.token)
+            .await
+            .status,
+        StatusCode::OK
+    );
+
+    // A date can be taken back.
+    assert_eq!(
+        set(&a, &f.id, Some(now + 7200)).await,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(set(&a, &f.id, None).await, StatusCode::NO_CONTENT);
+    let node: Node = h
+        .get(&format!("/api/nodes/{}", f.id), &a.token)
+        .await
+        .json();
+    assert_eq!(node.trash_at, None);
+}

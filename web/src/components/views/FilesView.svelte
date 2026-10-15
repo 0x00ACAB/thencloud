@@ -9,6 +9,7 @@
   import FileIcon from '../FileIcon.svelte';
   import FolderIcon from '../FolderIcon.svelte';
   import TagBadge from '../TagBadge.svelte';
+  import AutoTrashDialog from '../dialogs/AutoTrashDialog.svelte';
   import Thumb from '../Thumb.svelte';
   import Menu from '../Menu.svelte';
   import NameDialog from '../dialogs/NameDialog.svelte';
@@ -769,6 +770,7 @@
       ...(!folder ? [{ label: t('Version history'), icon: 'refresh-cw', onclick: () => (dialog = { type: 'versions', entry }) }] : []),
       { label: t('Comments'), icon: 'message-square', onclick: () => (dialog = { type: 'comments', entry }) },
       ...(folder ? [{ label: t('Activity'), icon: 'history', onclick: () => (dialog = { type: 'activity', entry }) }] : []),
+      ...(isOwner ? [{ label: entry.node.trash_at ? t('Deleting automatically') : t('Delete automatically'), icon: 'clock', onclick: () => (dialog = { type: 'autotrash', entry }) }] : []),
       ...(canWrite ? ['sep', { label: t('Move to trash'), icon: 'trash-2', danger: true, onclick: () => moveToTrash(entry) }] : []),
     ];
   }
@@ -1221,6 +1223,7 @@
                     <span class="flex min-w-0 items-center gap-1.5">
                       <span class="truncate font-medium group-hover:underline group-hover:underline-offset-4 group-hover:decoration-line-strong">{entry.meta.name}</span>
                       {#each tagsOf(entry.node.id).slice(0, 3) as tag (tag)}<TagBadge {tag} class="hidden shrink-0 text-[11px] sm:inline-flex" />{/each}
+                      {#if entry.node.trash_at}<span class="badge hidden shrink-0 text-[11px] sm:inline-flex" title={t('Goes to the trash on its own')}><Icon name="clock" />{t('In {count} days', { count: Math.max(1, Math.round((entry.node.trash_at * 1000 - Date.now()) / 86400_000)) })}</span>{/if}
                     </span>
                     <span class="truncate text-xs text-fg-muted md:hidden">
                       {#if !folder}<span class="sm:hidden">{formatSize(entry.meta.size)}{' · '}</span>{/if}{formatWhen(changedAt(entry))}
@@ -1393,6 +1396,8 @@
     onclose={() => (dialog = null)} />
 {:else if dialog?.type === 'storage'}
   <StorageDialog entry={dialog.entry} onclose={() => (dialog = null)} />
+{:else if dialog?.type === 'autotrash'}
+  <AutoTrashDialog entry={dialog.entry} onclose={() => (dialog = null)} onsaved={() => load()} />
 {:else if dialog?.type === 'tags'}
   <TagsDialog entry={dialog.entry} onclose={() => (dialog = null)} />
 {:else if dialog?.type === 'comments'}

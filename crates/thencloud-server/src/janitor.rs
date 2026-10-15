@@ -61,6 +61,7 @@ pub async fn run_once(state: &AppState) -> Result<()> {
         .bind(t)
         .execute(&state.db)
         .await?;
+    let due = crate::routes::nodes::trash_due(state).await?;
     let trashed = trash::purge_expired(state, state.config.trash_days).await?;
     let thinned = if state.config.version_thinning {
         versions::thin_all(state).await?
@@ -75,6 +76,7 @@ pub async fn run_once(state: &AppState) -> Result<()> {
         || sessions.rows_affected() > 0
         || links.rows_affected() > 0
         || !ended.is_empty()
+        || due > 0
         || trashed > 0
         || thinned > 0
         || activity > 0
@@ -84,6 +86,7 @@ pub async fn run_once(state: &AppState) -> Result<()> {
             sessions = sessions.rows_affected(),
             links = links.rows_affected(),
             shares = ended.len(),
+            auto_trashed = due,
             trashed,
             thinned,
             activity,

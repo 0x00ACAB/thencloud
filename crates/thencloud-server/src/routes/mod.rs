@@ -214,6 +214,7 @@ pub fn router(state: AppState) -> Router {
                 .delete(drafts::delete)
                 .layer(DefaultBodyLimit::max(8 * 1024 * 1024)),
         )
+        .route("/nodes/{id}/trash-at", put(nodes::set_trash_at))
         .route("/nodes/{id}/versions", get(versions::list))
         .route("/nodes/{id}/versions/{vid}", delete(versions::delete))
         .route(
