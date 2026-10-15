@@ -4,6 +4,38 @@ Each release's section here is also its release notes on GitHub. From 1.0 on,
 everything an earlier release wrote keeps working: databases, files, links and
 the apps (see "Keeping existing data working" in CLAUDE.md).
 
+## Unreleased
+
+Three new database migrations, all additive (pinned versions, how each
+session signed in, and dates for automatic trashing); nothing an older
+build wrote changes.
+
+### New
+
+- **Pinned versions:** pin a version in its file's history, with a name only
+  you see ("Final draft"). It's kept whatever the version limit, thinning or
+  running out of space would do. The server stores only that it's pinned.
+- **New sign-in alerts:** a banner when your account signs in somewhere new:
+  the device, how (password, a code, a passkey, the recovery key) and when,
+  with "It was me" and "Sign it out". Which alerts you've seen stays in your
+  encrypted app data.
+- **Delete automatically:** give a file or folder a date to go to the trash
+  on its own. The server is told the date (so it can act while your devices
+  are off), never the name.
+- **Videos your browser can't play** (HEVC, some MKVs) can be converted for
+  watching, in the browser, without uploading or saving anything.
+- **Google Takeout import:** `thencloud import-takeout` copies an extracted
+  Takeout, with each photo's real date from Takeout's JSON files, so the
+  Photos timeline is right.
+
+### Self-hosting
+
+- `backup s3://... --retain-days N` locks every object of a backup with S3
+  Object Lock, so a compromised server can't delete older backups
+  (`--retain-mode governance` or `compliance`).
+- The docs explain running behind Cloudflare: Rocket Loader and bot
+  JavaScript detections have to be off for thencloud's address.
+
 ## v1.1.1 (2026-10-15)
 
 No format, database or API changes: a drop-in update for 1.1.0.
