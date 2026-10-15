@@ -2896,6 +2896,7 @@ dependencies = [
  "aws-sdk-s3",
  "aws-smithy-http-client",
  "axum",
+ "base64 0.23.1",
  "ciborium",
  "clap",
  "futures-core",

@@ -14,6 +14,12 @@ struct Cli {
     command: Option<Command>,
 }
 
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum RetainMode {
+    Governance,
+    Compliance,
+}
+
 #[derive(Subcommand)]
 enum Command {
     /// Serve thencloud (the default).
@@ -25,7 +31,19 @@ enum Command {
     /// the server and start it with --data-dir pointing at a copy of DEST.
     /// To restore an S3 DEST, put its thencloud.db in a data directory and
     /// point --s3-prefix at the backup's blobs/ prefix.
-    Backup { dest: String },
+    Backup {
+        dest: String,
+        /// With an s3:// DEST in a bucket with Object Lock on: keep every
+        /// object of this backup from being deleted or overwritten for this
+        /// many days, so a compromised server can't destroy it.
+        #[arg(long)]
+        retain_days: Option<u32>,
+        /// governance: accounts with the right to bypass it still can;
+        /// compliance: nobody can, the bucket's owner included, until the
+        /// date.
+        #[arg(long, value_enum, default_value_t = RetainMode::Governance, requires = "retain_days")]
+        retain_mode: RetainMode,
+    },
     /// Check that every blob the database expects exists with the right
     /// size, and list blob directories nothing refers to. With
     /// --s3-mirror, each copy is checked on its own.
@@ -48,7 +66,14 @@ async fn main() -> Result<ExitCode, Box<dyn std::error::Error + Send + Sync>> {
 
     let Cli { config, command } = Cli::parse();
     match command {
-        Some(Command::Backup { dest }) => return backup(config, dest).await,
+        Some(Command::Backup {
+            dest,
+            retain_days,
+            retain_mode,
+        }) => {
+            let lock = retain_days.map(|d| (d, matches!(retain_mode, RetainMode::Compliance)));
+            return backup(config, dest, lock).await;
+        }
         Some(Command::Check) => return check(config).await,
         Some(Command::RestoreSnapshot) => return restore_snapshot(config).await,
         Some(Command::Serve) | None => {}
@@ -130,8 +155,12 @@ async fn open(config: Config) -> Result<AppState, Box<dyn std::error::Error + Se
 async fn backup(
     config: Config,
     dest: String,
+    lock: Option<(u32, bool)>,
 ) -> Result<ExitCode, Box<dyn std::error::Error + Send + Sync>> {
-    let parsed = maintenance::BackupDest::parse(&dest, &config)?;
+    let mut parsed = maintenance::BackupDest::parse(&dest, &config)?;
+    if let Some((days, compliance)) = lock {
+        parsed = parsed.with_retention(days, compliance)?;
+    }
     let data_dir = config.data_dir.clone();
     let state = open(config).await?;
     let r = maintenance::backup(&state.db, &state.blobs, &parsed).await?;

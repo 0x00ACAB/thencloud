@@ -29,6 +29,19 @@ pub struct S3Target {
     pub bucket: String,
     /// Normalised: empty, or ends with '/'.
     pub prefix: String,
+    /// Object Lock retention for every object written (backups only).
+    pub retention: Option<Retention>,
+}
+
+/// S3 Object Lock: objects that can't be deleted or overwritten until a
+/// date, even with the credentials that wrote them (Compliance), or only
+/// with the right to bypass it (Governance). The bucket must have Object
+/// Lock turned on.
+#[derive(Debug, Clone, Copy)]
+pub struct Retention {
+    pub compliance: bool,
+    /// Unix seconds.
+    pub until: i64,
 }
 
 /// Build the blob-store target from the command line, or `None` when S3
@@ -106,6 +119,7 @@ pub fn target(
         client: Client::from_conf(conf),
         bucket,
         prefix,
+        retention: None,
     }
 }
 
@@ -128,14 +142,30 @@ impl S3Target {
     }
 
     pub async fn put(&self, key: &str, data: &[u8]) -> io::Result<()> {
-        self.client
+        let mut req = self
+            .client
             .put_object()
             .bucket(&self.bucket)
             .key(key)
-            .body(data.to_vec().into())
-            .send()
-            .await
-            .map_err(other)?;
+            .body(data.to_vec().into());
+        if let Some(r) = self.retention {
+            use aws_sdk_s3::types::{ChecksumAlgorithm, ObjectLockMode};
+            req = req
+                .object_lock_mode(if r.compliance {
+                    ObjectLockMode::Compliance
+                } else {
+                    ObjectLockMode::Governance
+                })
+                .object_lock_retain_until_date(aws_sdk_s3::primitives::DateTime::from_secs(r.until))
+                // S3 refuses an Object Lock write without a checksum, and
+                // the client only computes one when an operation needs it.
+                .checksum_algorithm(ChecksumAlgorithm::Sha256)
+                .checksum_sha256({
+                    use base64::Engine as _;
+                    base64::engine::general_purpose::STANDARD.encode(crate::util::sha256(data))
+                });
+        }
+        req.send().await.map_err(other)?;
         Ok(())
     }
 
