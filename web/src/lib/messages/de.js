@@ -1714,4 +1714,6 @@ export default {
   "Where it is kept": "Wo es gespeichert ist",
   "Unlink Google Drive?": "Google Drive trennen?",
   "The copies in it are deleted and thencloud loses access. Your files here stay as they are.": "Die Kopien darin werden gelöscht und thencloud verliert den Zugriff. Deine Dateien hier bleiben, wie sie sind.",
+  "This archive is protected with a password, so it can't be opened here.": "Dieses Archiv ist mit einem Passwort geschützt und lässt sich hier nicht öffnen.",
+  "This file is packed in a way the preview can't unpack. Download the whole archive and open it with 7-Zip.": "Diese Datei ist auf eine Art gepackt, die die Vorschau nicht entpacken kann. Lade das ganze Archiv herunter und öffne es mit 7-Zip.",
 };

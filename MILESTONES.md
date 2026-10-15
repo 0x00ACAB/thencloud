@@ -195,9 +195,9 @@ Smaller things:
 - [x] **Notes view**: a folder of Markdown files as a notebook, with a list, search and pinned notes. Saved as you type as new versions, with a choice when a note changed elsewhere; search reads notes' text in the browser; pins are kept in the encrypted app data
 - [ ] **HEIC/HEIF and RAW previews**: decoded in WASM (libheif, LibRaw or the embedded JPEG), with thumbnails and EXIF dates like other photos, and HEIC in Convert
 - [x] **Codec fallback**: when the browser can't play a video (HEVC, some MKVs), offer to transcode it for viewing with the existing ffmpeg WASM. In the preview and the Videos player: a video that errors or loads with no picture gets "Convert to watch"; the streams are copied into MP4 first (seconds), and re-encoded (H.264, or VP8 WebM where there's no H.264, at most 720p) only if that still doesn't show. In memory only, up to 700 MB (`lib/playable.js`)
-- [ ] **Archive browsing**: look inside zip, tar(.gz) and 7z files in the preview and download or save single entries, with the bounds-checked zip reader and the same zip-bomb caps
+- [x] **Archive browsing**: look inside zip, tar(.gz) and 7z files in the preview and download or save single entries, with the bounds-checked zip reader and the same zip-bomb caps
   - [x] zip, tar and tar.gz (`lib/untar.js`: checksummed headers, GNU long names and pax paths, gunzip capped at 512 MiB; told apart by their bytes)
-  - [ ] 7z
+  - [x] 7z (`lib/un7z.js` with our own LZMA/LZMA2 decoder in `lib/lzma.js`, plus Deflate, stored, BCJ, BCJ2 and Delta; header and file CRCs checked, a block unpacked only when one of its entries is downloaded, capped at 512 MiB; PPMd, BZip2 and passwords still list, and say why an entry can't be read)
 - [x] **Version diff**: compare any two versions of a text, Markdown or code file, from the versions list (`DiffDialog`, inline hunks)
 
 ## Milestone 11: People and organisations
