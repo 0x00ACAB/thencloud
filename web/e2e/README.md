@@ -26,7 +26,7 @@ node web/e2e/fake-google.mjs 8094 &
 target/debug/thencloud-server --bind 127.0.0.1:8093 --data-dir target/e2e-data --web-dir web/dist \
   --google-client-id e2e --google-client-secret e2e --google-test-base http://127.0.0.1:8094 &
 docker run --rm --network host --user "$(id -u):$(id -g)" -e HOME=/tmp -v "$PWD/web:/work" -w /work \
-  mcr.microsoft.com/playwright:v1.63.0-noble \
+  mcr.microsoft.com/playwright:v1.64.0-noble \
   npx playwright test
 ```
 
