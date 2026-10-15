@@ -1070,6 +1070,8 @@ export async function restoreVersion(entry, v) {
 }
 
 export const deleteVersion = (entry, v) => api('DELETE', `/api/nodes/${entry.node.id}/versions/${v.id}`);
+/** Keep a version out of the per-file limit, thinning and pruning for space (or stop keeping it). */
+export const pinVersion = (entry, v, pinned) => api('PUT', `/api/nodes/${entry.node.id}/versions/${v.id}/pinned`, { body: { pinned } });
 
 /** Download and decrypt a file's current version into memory. */
 export async function fetchEntry(entry, onProgress) {

@@ -1596,6 +1596,18 @@ export default {
     'Można je tu, w przeglądarce, przekonwertować do formatu, który odtwarza. Nic nie jest wysyłane ani zapisywane; przekonwertowana kopia znika po zamknięciu.',
   'Convert to watch': 'Przekonwertuj, aby obejrzeć',
 
+  // Pinned versions
+  'Pinned versions are always kept.': 'Przypięte wersje są zawsze zachowywane.',
+  Pinned: 'Przypięta',
+  'Unpin this version': 'Odepnij tę wersję',
+  'Pin this version': 'Przypnij tę wersję',
+  Pin: 'Przypnij',
+  "A pinned version is kept however many newer ones there are, and isn't removed to make space. It still counts toward your storage.":
+    'Przypięta wersja zostaje bez względu na to, ile jest nowszych, i nie jest usuwana, by zrobić miejsce. Nadal liczy się do zajętego miejsca.',
+  'Name (optional)': 'Nazwa (opcjonalna)',
+  'Final draft': 'Wersja ostateczna',
+  "Only you see the name. It's kept encrypted with your other library data.": 'Nazwę widzisz tylko ty. Jest przechowywana zaszyfrowana razem z innymi danymi biblioteki.',
+
   // Duplicate files
   'Duplicate files': 'Duplikaty plików',
   'Find duplicates': 'Znajdź duplikaty',

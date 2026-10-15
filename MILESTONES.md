@@ -237,7 +237,7 @@ Smaller things:
 
 - [ ] **Point-in-time restore**: roll a whole folder (or My files) back to how it was at a chosen moment, from versions and the trash, as one undoable step. Recovery from ransomware or a bad sync
 - [ ] **Mass-change detection**: when many files are rewritten, renamed or deleted in a short time, pause that session's writes and ask the owner to confirm, with a one-click point-in-time restore. Judged from the server's own event counts, no plaintext needed
-- [ ] **Pinned versions**: name a version ("Final draft") and keep it out of thinning and quota pruning
+- [x] **Pinned versions**: name a version ("Final draft") and keep it out of thinning and quota pruning. The server stores only a `pinned` flag (and keeps the version out of the per-file limit, thinning and pruning for space); the name is in the pinner's encrypted `files` app data
 - [ ] **Immutable backups**: `backup` to an S3 bucket with Object Lock, so a compromised server can't delete or overwrite older backups
 
 ## Later

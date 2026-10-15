@@ -9,9 +9,10 @@ const MAX_RECENT = 30;
 /**
  * `favourites`: [node id]; `recent`: [{ id, at }], newest first; `tags`: { node id: [tag] };
  * `tagColours`: { tag in lower case: colour from TAG_COLOURS } (no entry is no colour);
+ * `versionNames`: { version id: name } for pinned versions (the server only knows they're pinned);
  * `searches`: [{ id, name, query, scope }] (scope 'all' or 'contents').
  */
-export const places = $state({ favourites: [], recent: [], tags: {}, tagColours: {}, searches: [], loaded: false });
+export const places = $state({ favourites: [], recent: [], tags: {}, tagColours: {}, versionNames: {}, searches: [], loaded: false });
 
 let loading = null;
 
@@ -22,6 +23,7 @@ export function loadPlaces() {
       places.recent = d.recent ?? [];
       places.tags = d.tags ?? {};
       places.tagColours = d.tagColours ?? {};
+      places.versionNames = d.versionNames ?? {};
       places.searches = d.searches ?? [];
       places.loaded = true;
     },
@@ -97,12 +99,17 @@ const MAX_TAGS_PER_ITEM = 20;
 
 /** A tag as kept: trimmed, inner spaces collapsed, no control characters. '' if nothing's left. */
 export function cleanTag(tag) {
+  return cleanText(tag, MAX_TAG);
+}
+
+// Trimmed, inner spaces collapsed, no control characters, at most `max` characters.
+function cleanText(tag, max) {
   return String(tag)
     .normalize('NFC')
     .replace(/[\p{Cc}\p{Cf}]/gu, '')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, MAX_TAG);
+    .slice(0, max);
 }
 
 const same = (a, b) => a.localeCompare(b, undefined, { sensitivity: 'accent' }) === 0;
@@ -180,6 +187,38 @@ export async function setTagColour(tag, colour) {
     places.tagColours = d.tagColours;
   } catch (e) {
     places.tagColours = before;
+    throw e;
+  }
+}
+
+// ---------------------------------------------------------------- pinned versions' names
+
+export const MAX_VERSION_NAME = 60;
+const MAX_VERSION_NAMES = 500;
+
+/** A pinned version's name, or ''. */
+export const versionName = (id) => places.versionNames[id] ?? '';
+
+/** Name a version (or forget its name with ''). */
+export async function setVersionName(id, name) {
+  const clean = cleanText(name, MAX_VERSION_NAME);
+  const apply = (all = {}) => {
+    const next = { ...all };
+    delete next[id];
+    if (clean) {
+      next[id] = clean;
+      const keys = Object.keys(next);
+      for (const k of keys.slice(0, Math.max(0, keys.length - MAX_VERSION_NAMES))) delete next[k];
+    }
+    return next;
+  };
+  const before = places.versionNames;
+  places.versionNames = apply(places.versionNames);
+  try {
+    const d = await saveAppData('files', (d) => (d.versionNames = apply(d.versionNames)));
+    places.versionNames = d.versionNames;
+  } catch (e) {
+    places.versionNames = before;
     throw e;
   }
 }
