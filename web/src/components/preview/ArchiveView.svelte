@@ -1,7 +1,8 @@
 <script>
-  // Looking inside a .zip, .tar or .tar.gz: a zip is read with the same
+  // Looking inside a .zip, .7z, .tar or .tar.gz: a zip is read with the same
   // bounds-checked reader as EPUB/CBZ and office documents (lib/unzip.js),
-  // so the same entry, size and zip-bomb caps apply; a tar with
+  // so the same entry, size and zip-bomb caps apply; a 7z with lib/un7z.js
+  // (unpacking a block only when an entry in it is downloaded); a tar with
   // lib/untar.js, gunzipped first (up to its cap) when it's compressed.
   // Which one it is comes from the bytes, not the name. Nothing is
   // extracted until a single entry is downloaded.
@@ -43,17 +44,20 @@
     (async () => {
       try {
         let bytes = new Uint8Array(await blob.arrayBuffer());
+        const { is7z, open7z } = await import('../../lib/un7z.js');
         const { openTar, isTar, isGzip, gunzip } = await import('../../lib/untar.js');
         if (isGzip(bytes)) bytes = await gunzip(bytes);
-        if (isTar(bytes)) {
+        if (is7z(bytes)) {
+          archive = await open7z(bytes);
+        } else if (isTar(bytes)) {
           archive = openTar(bytes);
         } else {
           const { openZip } = await import('../../lib/unzip.js');
           archive = openZip(bytes);
         }
         root = buildTree(archive.list());
-      } catch {
-        error = t("This file couldn't be opened.");
+      } catch (e) {
+        error = e?.reason === 'password' ? t("This archive is protected with a password, so it can't be opened here.") : t("This file couldn't be opened.");
       }
     })();
   });
@@ -73,7 +77,9 @@
       const bytes = await archive.read(entry.path);
       saveBlob(new Blob([bytes], { type: 'application/octet-stream' }), entry.name);
     } catch (e) {
-      toastError(e);
+      if (e?.reason === 'password') toastError(new Error(t("This archive is protected with a password, so it can't be opened here.")));
+      else if (e?.reason === 'method') toastError(new Error(t("This file is packed in a way the preview can't unpack. Download the whole archive and open it with 7-Zip.")));
+      else toastError(e);
     } finally {
       saving = new Set(saving);
       saving.delete(entry.path);
