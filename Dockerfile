@@ -43,7 +43,7 @@ COPY crates crates
 RUN cargo build --release --locked -p thencloud-server
 
 # --- runtime --------------------------------------------------------------
-FROM debian:bookworm-slim AS base
+FROM debian:trixie-slim AS base
 # curl is for the health check.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates curl \
