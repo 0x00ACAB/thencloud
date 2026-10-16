@@ -19,6 +19,12 @@ hkdf = "0.13"
 argon2 = { version = "0.6", default-features = false, features = ["alloc"] }
 zeroize = { version = "1", features = ["derive"] }
 ml-kem = { version = "0.3", features = ["zeroize", "hazmat"] }
+# Schemas of the wire types for the OpenAPI spec (`docs/src/reference/openapi.json`),
+# used only by the server's tests; never in the WASM or the binaries.
+utoipa = { version = "5", optional = true }
+
+[features]
+openapi = ["dep:utoipa"]
 
 # NFC for passwords and name tags. The browser has it built in, which keeps
 # the tables out of the WASM.

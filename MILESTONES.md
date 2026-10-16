@@ -161,7 +161,7 @@ Smaller things:
 - [ ] **Import from other services**: Google Drive, Dropbox and OneDrive through the CLI (like the Nextcloud import), and Google Takeout archives with photo dates taken from Takeout's JSON sidecars
   - [x] Google Takeout: `thencloud import-takeout DIR [FOLDER]` copies an extracted Takeout, folders kept, each photo's `photoTakenTime` (or `creationTime`) from its sidecar as the file time and `taken`; sidecars (`x.jpg.json`, `.supplemental-metadata.json`, cut to 46 characters, `x.jpg(1).json`) and album `metadata.json` aren't copied; reruns skip files already there
   - [ ] Google Drive, Dropbox and OneDrive directly
-- [ ] **Public API docs**: an OpenAPI spec of every route, generated and checked in CI, alongside the format spec
+- [x] **Public API docs**: an OpenAPI spec of every route, generated and checked in CI, alongside the format spec. `docs/src/reference/openapi.json` (OpenAPI 3.1, schemas from the wire types in `api.rs`), rewritten by `UPDATE_OPENAPI=1 cargo test -p thencloud-server --test openapi`; the test fails when a route in the router isn't in it or the file is stale. The docs page covers signing in, errors and the upload flow
 - [ ] **Packaging**: a Helm chart, a NixOS module, and TrueNAS / Unraid app templates
 
 ## Milestone 8: Hardening

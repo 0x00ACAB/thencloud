@@ -46,7 +46,22 @@ impl<'de> Deserialize<'de> for B64 {
     }
 }
 
+#[cfg(feature = "openapi")]
+impl utoipa::PartialSchema for B64 {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        utoipa::openapi::ObjectBuilder::new()
+            .schema_type(utoipa::openapi::schema::Type::String)
+            .content_encoding("base64url")
+            .description(Some("Bytes as unpadded base64url."))
+            .into()
+    }
+}
+
+#[cfg(feature = "openapi")]
+impl utoipa::ToSchema for B64 {}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, PartialOrd, Ord)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum Permission {
     Read,
@@ -54,6 +69,7 @@ pub enum Permission {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum NodeKind {
     File,
@@ -65,17 +81,20 @@ pub enum NodeKind {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PreloginRequest {
     pub username: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PreloginResponse {
     pub kdf_salt: B64,
     pub kdf_params: KdfParams,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct NewRootFolder {
     pub id: String,
     /// Root folder key wrapped under the master key.
@@ -84,6 +103,7 @@ pub struct NewRootFolder {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct RegisterRequest {
     pub username: String,
     pub auth_key: B64,
@@ -113,6 +133,7 @@ pub struct RegisterRequest {
 
 /// Who may create an account.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum Registration {
     Open,
@@ -122,6 +143,7 @@ pub enum Registration {
 
 /// What the sign-in screen needs to know before anyone is signed in.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AuthOptions {
     pub registration: Registration,
     /// The first account on this new server needs the setup code.
@@ -138,6 +160,7 @@ pub struct AuthOptions {
 /// Where a Turnstile token is needed. The check runs on `/auth`, a page of
 /// its own; the token then goes with the request as `turnstile`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct TurnstileOptions {
     pub site_key: String,
     /// Signing in with a password.
@@ -147,6 +170,7 @@ pub struct TurnstileOptions {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LoginRequest {
     pub username: String,
     pub auth_key: B64,
@@ -159,6 +183,7 @@ pub struct LoginRequest {
 
 /// Encrypted key material the client needs after login.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct KeyBundle {
     pub kdf_salt: B64,
     pub kdf_params: KdfParams,
@@ -175,12 +200,14 @@ pub struct KeyBundle {
 
 /// Give an older account its post-quantum key. Only once.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SetPqKeyRequest {
     pub pq_public_key: B64,
     pub enc_pq_private_key: B64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Me {
     pub user_id: String,
     pub username: String,
@@ -201,6 +228,7 @@ pub struct Me {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SessionResponse {
     pub token: String,
     pub me: Me,
@@ -209,6 +237,7 @@ pub struct SessionResponse {
 /// What signing in with a password returns: a session, or, when the account
 /// has two-factor sign-in, a ticket to finish it with a second factor.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(untagged)]
 pub enum LoginResponse {
     Session(Box<SessionResponse>),
@@ -218,6 +247,7 @@ pub enum LoginResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SecondFactorChallenge {
     /// Pass back with the second factor. Valid for a few minutes.
     pub ticket: String,
@@ -230,6 +260,7 @@ pub struct SecondFactorChallenge {
 
 /// What `navigator.credentials.get` needs.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PasskeyRequest {
     pub challenge: B64,
     /// The account's credentials (empty for a sign-in with a passkey alone).
@@ -239,6 +270,7 @@ pub struct PasskeyRequest {
 
 /// A WebAuthn assertion, as the browser returns it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PasskeyAssertion {
     pub credential_id: B64,
     pub client_data_json: B64,
@@ -250,6 +282,7 @@ pub struct PasskeyAssertion {
 
 /// Finish a password sign-in with a TOTP code or a passkey.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SecondFactorRequest {
     pub ticket: String,
     #[serde(default)]
@@ -259,12 +292,14 @@ pub struct SecondFactorRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CurrentPassword {
     pub current_auth_key: B64,
 }
 
 /// A new TOTP secret, waiting to be confirmed with a code from the app.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct TotpSetup {
     pub setup_id: String,
     /// Base32, as authenticator apps take it.
@@ -272,6 +307,7 @@ pub struct TotpSetup {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct EnableTotpRequest {
     pub setup_id: String,
     pub code: String,
@@ -279,6 +315,7 @@ pub struct EnableTotpRequest {
 
 /// What `navigator.credentials.create` needs to make a passkey.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PasskeyCreationOptions {
     pub registration_id: String,
     pub challenge: B64,
@@ -287,6 +324,7 @@ pub struct PasskeyCreationOptions {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct RegisterPasskeyRequest {
     pub registration_id: String,
     pub name: String,
@@ -300,6 +338,7 @@ pub struct RegisterPasskeyRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Passkey {
     pub id: String,
     pub name: String,
@@ -313,6 +352,7 @@ pub struct Passkey {
 /// Sign in with a passkey alone. The challenge comes from
 /// `/api/auth/passkey/options`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PasskeyLoginRequest {
     pub challenge: B64,
     pub assertion: PasskeyAssertion,
@@ -321,6 +361,7 @@ pub struct PasskeyLoginRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PasskeyLoginResponse {
     pub token: String,
     pub me: Me,
@@ -331,6 +372,7 @@ pub struct PasskeyLoginResponse {
 
 /// A signed-in device, as listed in Settings. No IP addresses are kept.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DeviceSession {
     pub id: String,
     pub device_name: String,
@@ -353,6 +395,7 @@ pub struct DeviceSession {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum AppScope {
     /// Everything the account can do, except managing credentials.
@@ -362,6 +405,7 @@ pub enum AppScope {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateAppPasswordRequest {
     /// Client-chosen id, bound into `enc_master_key`.
     pub id: String,
@@ -376,6 +420,7 @@ pub struct CreateAppPasswordRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AppPassword {
     pub id: String,
     pub name: String,
@@ -385,6 +430,7 @@ pub struct AppPassword {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AppLoginRequest {
     pub auth_key: B64,
     #[serde(default)]
@@ -392,6 +438,7 @@ pub struct AppLoginRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AppLoginResponse {
     pub token: String,
     pub me: Me,
@@ -401,6 +448,7 @@ pub struct AppLoginResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ChangePasswordRequest {
     pub current_auth_key: B64,
     pub new_auth_key: B64,
@@ -414,6 +462,7 @@ pub struct ChangePasswordRequest {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct VersionInfo {
     pub id: String,
     pub enc_content_key: B64,
@@ -427,6 +476,7 @@ pub struct VersionInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Node {
     pub id: String,
     pub parent_id: Option<String>,
@@ -451,11 +501,13 @@ pub struct Node {
 /// `PUT /api/nodes/{id}/trash-at`: a date (Unix seconds) for the node to go
 /// to the trash on its own, or none. The server learns the date, not the name.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SetTrashAtRequest {
     pub trash_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateFolderRequest {
     pub id: String,
     pub parent_id: String,
@@ -467,6 +519,7 @@ pub struct CreateFolderRequest {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UpdateNodeRequest {
     /// Re-encrypted metadata (rename).
     #[serde(default)]
@@ -488,11 +541,13 @@ pub struct UpdateNodeRequest {
 
 /// Name tags for existing children that don't have one yet.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct NameTags {
     pub tags: Vec<NameTagEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct NameTagEntry {
     pub id: String,
     pub name_tag: B64,
@@ -503,12 +558,14 @@ pub struct NameTagEntry {
 /// a share recipient it starts at the shared node, and `share` carries the
 /// key wrapped for them.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct NodePath {
     pub nodes: Vec<Node>,
     pub share: Option<ShareKey>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ShareKey {
     pub share_id: String,
     pub wrapped_key: B64,
@@ -520,6 +577,7 @@ pub struct ShareKey {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct FileVersion {
     pub id: String,
     pub enc_content_key: B64,
@@ -539,11 +597,13 @@ pub struct FileVersion {
 
 /// `PUT /api/nodes/{id}/versions/{vid}/pinned`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PinVersionRequest {
     pub pinned: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct RestoreVersionRequest {
     /// The node's metadata re-encrypted for the restored version (current
     /// name, the version's size and mtime).
@@ -557,6 +617,7 @@ pub struct RestoreVersionRequest {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct TrashItem {
     pub node: Node,
     /// Chain from the owner's root folder down to (and including) the
@@ -567,6 +628,7 @@ pub struct TrashItem {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct RestoreTrashRequest {
     /// Restore into a different folder (e.g. when the original one is gone).
     /// Requires `enc_key` re-wrapped under that folder's key.
@@ -586,6 +648,7 @@ pub struct RestoreTrashRequest {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateUploadRequest {
     /// Client-chosen id of the new node, or the id of an existing file
     /// node when uploading a new version.
@@ -609,6 +672,7 @@ pub struct CreateUploadRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UploadResponse {
     pub upload_id: String,
     pub max_chunk_bytes: usize,
@@ -620,6 +684,7 @@ pub struct UploadResponse {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UserPublicKey {
     pub username: String,
     pub public_key: B64,
@@ -629,6 +694,7 @@ pub struct UserPublicKey {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateShareRequest {
     pub node_id: String,
     pub recipient: String,
@@ -641,6 +707,7 @@ pub struct CreateShareRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UpdateShareRequest {
     pub permission: Permission,
 }
@@ -648,11 +715,13 @@ pub struct UpdateShareRequest {
 /// A share's node key sealed again by its recipient, to their own
 /// X25519 + ML-KEM-768 key (for shares made before they had one).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ResealShareRequest {
     pub wrapped_key: B64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct IncomingShare {
     pub id: String,
     pub owner: String,
@@ -668,6 +737,7 @@ pub struct IncomingShare {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct OutgoingShare {
     pub id: String,
     pub recipient: String,
@@ -683,6 +753,7 @@ pub struct OutgoingShare {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateLinkRequest {
     pub node_id: String,
     /// For a link with a password: the auth key from
@@ -713,6 +784,7 @@ pub struct CreateLinkRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Link {
     pub id: String,
     pub token: String,
@@ -732,12 +804,14 @@ pub struct Link {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UnlockLinkRequest {
     /// The auth key from `derive_link_password_keys`, not the password.
     pub auth: B64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UnlockLinkResponse {
     /// Pass back in the `X-Link-Token` header.
     pub link_token: String,
@@ -745,6 +819,7 @@ pub struct UnlockLinkResponse {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PublicLinkInfo {
     /// Absent for upload-only links.
     pub node: Option<Node>,
@@ -775,6 +850,7 @@ pub struct PublicLinkInfo {
 /// A file added through an upload-only link, waiting for the folder owner
 /// to open its sealed key and wrap it under the folder key.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DroppedFile {
     pub node: Node,
     /// The node key sealed to the owner's public key (see `seal_drop_key`).
@@ -782,6 +858,7 @@ pub struct DroppedFile {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AdoptDropRequest {
     /// The node key wrapped under the folder's key.
     pub enc_key: B64,
@@ -800,6 +877,7 @@ pub struct AdoptDropRequest {
 /// Optional body for finishing an upload of a new file: a new name (and
 /// its tag) if the one it started with was taken meanwhile.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct FinishUploadRequest {
     #[serde(default)]
     pub enc_metadata: Option<B64>,
@@ -808,6 +886,7 @@ pub struct FinishUploadRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ErrorBody {
     pub error: String,
     pub message: String,
@@ -818,6 +897,7 @@ pub struct ErrorBody {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AdminUser {
     pub id: String,
     pub username: String,
@@ -842,6 +922,7 @@ pub struct AdminUser {
 
 /// The caller's own daily transfer limits and use (`GET /api/me/transfer`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct TransferInfo {
     pub daily_download_limit: Option<i64>,
     pub daily_upload_limit: Option<i64>,
@@ -852,6 +933,7 @@ pub struct TransferInfo {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UpdateUserRequest {
     #[serde(default)]
     pub quota_bytes: Option<i64>,
@@ -869,6 +951,7 @@ pub struct UpdateUserRequest {
 /// Who may use the video downloader, the one tool where the server sees
 /// what it handles (see MILESTONES.md). Off by default.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum DownloaderAccess {
     #[default]
@@ -878,6 +961,7 @@ pub enum DownloaderAccess {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AdminSettings {
     pub registration: Registration,
     /// Quota for new accounts (from the server's configuration).
@@ -897,6 +981,7 @@ pub struct AdminSettings {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UpdateSettingsRequest {
     #[serde(default)]
     pub registration: Option<Registration>,
@@ -907,6 +992,7 @@ pub struct UpdateSettingsRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Invite {
     pub id: String,
     pub created_by: String,
@@ -917,6 +1003,7 @@ pub struct Invite {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateInviteRequest {
     /// How long the invite stays valid, in days (1 to 90).
     pub days: i64,
@@ -924,6 +1011,7 @@ pub struct CreateInviteRequest {
 
 /// A new invite. `token` is shown once; the server keeps only its hash.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreatedInvite {
     pub invite: Invite,
     pub token: String,
@@ -933,6 +1021,7 @@ pub struct CreatedInvite {
 /// it was about, `detail` the new value where there is one (bytes, a mode,
 /// days), both as they were at the time.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AuditEntry {
     pub id: i64,
     pub at: i64,
@@ -944,6 +1033,7 @@ pub struct AuditEntry {
 
 /// Newest first; `more` when there are older ones (ask with `?before=<last id>`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AuditPage {
     pub entries: Vec<AuditEntry>,
     pub more: bool,
@@ -951,6 +1041,7 @@ pub struct AuditPage {
 
 /// Counts only; nothing about what is stored.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ServerStats {
     pub users: i64,
     pub disabled_users: i64,
@@ -967,6 +1058,7 @@ pub struct ServerStats {
 /// `GET /api/admin/alerts`: what an admin should look at. Plain counts,
 /// like the stats.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AdminAlerts {
     /// The data directory's disk, the blob directory's if it's another one,
     /// and the bucket when the server was told its capacity.
@@ -976,6 +1068,7 @@ pub struct AdminAlerts {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct StorageSpace {
     /// `data`, `blobs` or `bucket`.
     pub place: String,
@@ -986,6 +1079,7 @@ pub struct StorageSpace {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct QuotaAlert {
     pub username: String,
     pub used_bytes: i64,
@@ -998,6 +1092,7 @@ pub struct QuotaAlert {
 
 /// Set up (or replace) a recovery key. Needs the current password.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SetRecoveryRequest {
     pub current_auth_key: B64,
     pub recovery_auth_key: B64,
@@ -1005,12 +1100,14 @@ pub struct SetRecoveryRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct RemoveRecoveryRequest {
     pub current_auth_key: B64,
 }
 
 /// Delete your own account, proving the password again.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct DeleteAccountRequest {
     pub current_auth_key: B64,
 }
@@ -1018,18 +1115,21 @@ pub struct DeleteAccountRequest {
 /// Step one of a password reset: prove the recovery key, get the master key
 /// wrapped under it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct RecoveryUnlockRequest {
     pub username: String,
     pub recovery_auth_key: B64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct RecoveryUnlockResponse {
     pub enc_master_key_recovery: B64,
 }
 
 /// Step two: a new password, with the master key re-wrapped under it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct RecoveryResetRequest {
     pub username: String,
     pub recovery_auth_key: B64,
@@ -1046,6 +1146,7 @@ pub struct RecoveryResetRequest {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PrivateData {
     /// None until the client first saves something.
     pub data: Option<B64>,
@@ -1053,6 +1154,7 @@ pub struct PrivateData {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PutPrivateData {
     pub data: B64,
     /// The revision this change is based on; 409 if it moved on.
@@ -1062,6 +1164,7 @@ pub struct PutPrivateData {
 /// Unsaved edits to a text file, encrypted under the editor's master key
 /// (see `encrypt_private_data`, labelled with the node id).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Draft {
     pub data: B64,
     /// The file's revision the draft started from.
@@ -1077,6 +1180,7 @@ pub struct Draft {
 /// Something someone did in a folder. Names aren't here: the client finds
 /// and decrypts the node's, if it can still reach it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ActivityEvent {
     pub id: i64,
     pub node_id: String,
@@ -1092,6 +1196,7 @@ pub struct ActivityEvent {
 /// A page of a folder's children (`GET .../children?limit=<n>&after=<cursor>`);
 /// without `limit` the listing is the whole array instead.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct NodePage {
     pub nodes: Vec<Node>,
     /// Pass as `after` for the next page; `None` on the last one.
@@ -1100,6 +1205,7 @@ pub struct NodePage {
 
 /// One page of the change feed (`GET /api/changes?since=<cursor>`).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ChangeFeed {
     /// Nodes that changed after the cursor, oldest first. A node may appear
     /// more than once. Only ids: fetch the node to see what it is now (a 404
@@ -1115,6 +1221,7 @@ pub struct ChangeFeed {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ChangedNode {
     pub seq: i64,
     pub node_id: String,
@@ -1125,6 +1232,7 @@ pub struct ChangedNode {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct Comment {
     pub id: String,
     pub node_id: String,
@@ -1137,6 +1245,7 @@ pub struct Comment {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateCommentRequest {
     /// Chosen by the client: it's bound into `enc_body`.
     pub id: String,
@@ -1148,6 +1257,7 @@ pub struct CreateCommentRequest {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct SetAvatar {
     /// The picture, encrypted under the avatar key.
     #[serde(default)]
@@ -1163,6 +1273,7 @@ pub struct SetAvatar {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct MyAvatar {
     pub data: Option<B64>,
     #[serde(default)]
@@ -1175,6 +1286,7 @@ pub struct MyAvatar {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct AvatarGrant {
     /// The avatar key sealed to the grantee (see `seal_avatar_key`).
     pub sealed_key: B64,
@@ -1183,6 +1295,7 @@ pub struct AvatarGrant {
 /// Someone else's picture and display name (either may be missing), for a
 /// user they gave their avatar key to.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UserAvatar {
     pub data: Option<B64>,
     #[serde(default)]
@@ -1199,6 +1312,7 @@ pub struct UserAvatar {
 
 /// Which tools this user can use.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ToolsInfo {
     pub video_downloader: bool,
     pub downloader_max_bytes: u64,
@@ -1208,6 +1322,7 @@ pub struct ToolsInfo {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum VideoKind {
     Video,
@@ -1217,6 +1332,7 @@ pub enum VideoKind {
 /// Highest resolution to fetch. Up to 1080p, H.264 is preferred (it plays
 /// everywhere); `Best` takes the tallest there is, whatever the codec.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum VideoQuality {
     #[serde(rename = "480")]
     P480,
@@ -1242,6 +1358,7 @@ impl VideoQuality {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct VideoLinkRequest {
     pub url: String,
     #[serde(default)]
@@ -1253,6 +1370,7 @@ pub struct VideoLinkRequest {
 
 /// One video in a playlist.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct PlaylistEntry {
     pub url: String,
     pub title: String,
@@ -1261,6 +1379,7 @@ pub struct PlaylistEntry {
 
 /// What a link points at, and what the downloader would fetch for it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct VideoInfo {
     pub title: String,
     pub site: String,
@@ -1281,6 +1400,7 @@ pub struct VideoInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct VideoOption {
     pub ext: String,
     pub size: Option<u64>,
@@ -1297,6 +1417,7 @@ pub struct VideoOption {
 
 /// What a linked storage account is for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum StorageMode {
     /// A copy of everything kept on the server.
@@ -1307,6 +1428,7 @@ pub enum StorageMode {
 
 /// Where new files go first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum StoragePrefer {
     Server,
@@ -1315,6 +1437,7 @@ pub enum StoragePrefer {
 
 /// `GET /api/storage`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct StorageInfo {
     /// Whether this server can link Google Drive.
     pub google: bool,
@@ -1326,6 +1449,7 @@ pub struct StorageInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct StorageAccount {
     pub id: String,
     /// `google`.
@@ -1353,18 +1477,21 @@ pub struct StorageAccount {
 
 /// `POST /api/storage/google`: start linking.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LinkStorageRequest {
     pub mode: StorageMode,
 }
 
 /// Where to send the browser to approve access.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct LinkStorageResponse {
     pub url: String,
 }
 
 /// `PATCH /api/storage/accounts/{id}`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct UpdateStorageAccountRequest {
     pub mode: StorageMode,
 }
@@ -1373,11 +1500,13 @@ pub struct UpdateStorageAccountRequest {
 /// between this server and a linked account (`Linked` only for extra space).
 /// Call again while `left` is above zero.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct MoveStorageRequest {
     pub to: StoragePrefer,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct MoveStorageResponse {
     /// Versions moved by this call, and their bytes.
     pub moved: u32,
@@ -1393,11 +1522,13 @@ pub struct MoveStorageResponse {
 /// `GET /api/nodes/{id}/storage` (owner only): where a file's versions, or
 /// those of every file in a folder, are kept.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct NodeStorage {
     pub places: Vec<NodePlace>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct NodePlace {
     /// The linked account, or None for this server.
     pub account_id: Option<String>,
@@ -1410,12 +1541,14 @@ pub struct NodePlace {
 /// extra-space account. Answered with a `MoveStorageResponse`; call again
 /// while `left` is above zero.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct MoveNodeStorageRequest {
     pub to: Option<String>,
 }
 
 /// `PUT /api/storage/prefer`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct StoragePreferRequest {
     pub prefer: StoragePrefer,
 }

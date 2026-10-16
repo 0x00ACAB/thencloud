@@ -41,6 +41,7 @@
 # Reference
 
 - [Formats and test vectors](reference/format.md)
+- [HTTP API](reference/api.md)
 - [Contributing](reference/contributing.md)
 - [Changelog](reference/changelog.md)
 
