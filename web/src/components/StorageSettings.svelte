@@ -110,12 +110,12 @@
         <ul class="divide-y divide-line rounded-md border border-line">
           {#each info.accounts as a (a.id)}
             <li class="grid gap-2 px-3 py-3" out:slide>
-              <div class="flex items-center gap-3">
+              <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
                 <span class="size-2.5 shrink-0 rounded-full bg-place-google" aria-hidden="true"></span>
-                <div class="min-w-0 flex-1">
+                <div class="min-w-48 flex-1">
                   <p class="flex items-center gap-2 text-sm">
-                    <span class="font-medium">{t('Google Drive')}</span>
-                    {#if a.label}<span class="truncate text-fg-muted">{a.label}</span>{/if}
+                    <span class="shrink-0 font-medium whitespace-nowrap">{t('Google Drive')}</span>
+                    {#if a.label}<span class="min-w-0 truncate text-fg-muted">{a.label}</span>{/if}
                   </p>
                   <p class="text-xs text-fg-muted tabular-nums">
                     {#if a.free_bytes != null}
@@ -125,15 +125,17 @@
                     {/if}
                   </p>
                 </div>
-                <select
-                  class="input h-8 w-auto text-[13px]"
-                  aria-label={t('What this Google Drive is for')}
-                  value={a.mode}
-                  onchange={(e) => changeMode(a, e.currentTarget.value)}>
-                  <option value="mirror">{t('Mirror')}</option>
-                  <option value="extra">{t('Extra space')}</option>
-                </select>
-                <button type="button" class="btn btn-secondary h-8 px-2.5 text-[13px]" onclick={() => (unlinking = a)}>{t('Unlink')}</button>
+                <div class="ml-auto flex shrink-0 items-center gap-2">
+                  <select
+                    class="input h-8 w-auto text-[13px]"
+                    aria-label={t('What this Google Drive is for')}
+                    value={a.mode}
+                    onchange={(e) => changeMode(a, e.currentTarget.value)}>
+                    <option value="mirror">{t('Mirror')}</option>
+                    <option value="extra">{t('Extra space')}</option>
+                  </select>
+                  <button type="button" class="btn btn-secondary h-8 px-2.5 text-[13px]" onclick={() => (unlinking = a)}>{t('Unlink')}</button>
+                </div>
               </div>
               {#if a.broken}
                 <p class="flex items-center gap-1.5 text-xs text-danger">
