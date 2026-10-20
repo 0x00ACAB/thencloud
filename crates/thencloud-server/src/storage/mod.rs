@@ -101,6 +101,34 @@ pub async fn accounts_of(db: &SqlitePool, user_id: &str) -> Result<Vec<Account>>
     .await?)
 }
 
+/// The accounts linked to the same Google account as `email` (the labels
+/// are sealed, so each is opened), on this server or only `user_id`'s.
+pub async fn same_address(
+    state: &AppState,
+    user_id: Option<&str>,
+    email: &str,
+) -> Result<Vec<Account>> {
+    let all: Vec<Account> = match user_id {
+        Some(u) => accounts_of(&state.db, u).await?,
+        None => {
+            sqlx::query_as(sqlx::AssertSqlSafe(format!(
+                "{ACCOUNT_SELECT} WHERE provider = 'google' ORDER BY created_at"
+            )))
+            .fetch_all(&state.db)
+            .await?
+        }
+    };
+    Ok(all
+        .into_iter()
+        .filter(|a| {
+            a.enc_label
+                .as_ref()
+                .and_then(|l| state.storage.open(&a.id, "label", l))
+                .is_some_and(|l| l.eq_ignore_ascii_case(email))
+        })
+        .collect())
+}
+
 /// What a provider's error means for whoever asked.
 fn app_error(e: DriveError) -> AppError {
     match e {
@@ -925,11 +953,27 @@ pub async fn unlink(state: &AppState, a: &Account) -> Result<()> {
         }
         let _ = g.delete(&token, &a.folder_id).await;
     }
+    // Revoking a refresh token ends the whole grant, so it would also cut
+    // off another link to the same Google account (a second one made while
+    // this one was broken, or someone else's on this server).
+    let label = a
+        .enc_label
+        .as_ref()
+        .and_then(|l| state.storage.open(&a.id, "label", l));
+    let shared = match &label {
+        Some(email) => same_address(state, None, email)
+            .await?
+            .iter()
+            .any(|o| o.id != a.id),
+        None => false,
+    };
     if let (Some(g), Some(refresh)) = (
         &state.storage.google,
         state.storage.open(&a.id, "refresh-token", &a.enc_token),
     ) {
-        g.revoke(&refresh).await;
+        if !shared {
+            g.revoke(&refresh).await;
+        }
         g.forget_access(&a.id);
     }
     let mut tx = state.db.begin().await?;

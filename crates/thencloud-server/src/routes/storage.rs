@@ -139,10 +139,14 @@ pub async fn google_start(
             "linking Google Drive is turned off on this server".into(),
         ));
     }
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM storage_accounts WHERE user_id = ?")
-        .bind(&user.id)
-        .fetch_one(&state.db)
-        .await?;
+    // A broken account doesn't count here: linking it again replaces its
+    // token. The callback checks the limit for a new one.
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM storage_accounts WHERE user_id = ? AND broken_at IS NULL",
+    )
+    .bind(&user.id)
+    .fetch_one(&state.db)
+    .await?;
     if count >= MAX_ACCOUNTS {
         return Err(AppError::bad(format!(
             "you can link at most {MAX_ACCOUNTS} storage accounts"
@@ -213,6 +217,36 @@ async fn finish_link(state: &AppState, q: &CallbackQuery) -> std::result::Result
     };
     let tokens = g.exchange(code, redirect).await.map_err(fail)?;
     let about = g.about(&tokens.access).await.map_err(fail)?;
+    // Linking an account that's already linked (most often one Google
+    // stopped accepting) gives that one the new token, keeping its folder,
+    // its chunks there and its mode, instead of adding a second.
+    let same = storage::same_address(state, Some(&user_id), &about.email)
+        .await
+        .map_err(|_| Outcome::Failed)?;
+    if let Some(a) = same.iter().find(|a| a.broken_at.is_some()).or(same.first()) {
+        sqlx::query(
+            "UPDATE storage_accounts SET enc_token = ?, broken_at = NULL, free_bytes = ?, \
+             checked_at = ? WHERE id = ?",
+        )
+        .bind(state.storage.seal(&a.id, "refresh-token", &tokens.refresh))
+        .bind(about.free)
+        .bind(now())
+        .bind(&a.id)
+        .execute(&state.db)
+        .await
+        .map_err(|_| Outcome::Failed)?;
+        g.keep_access(&a.id, &tokens.access, tokens.expires_in);
+        return Ok(());
+    }
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM storage_accounts WHERE user_id = ?")
+        .bind(&user_id)
+        .fetch_one(&state.db)
+        .await
+        .map_err(|_| Outcome::Failed)?;
+    if count >= MAX_ACCOUNTS {
+        // No revoke: the grant may be shared with someone else's link.
+        return Err(Outcome::Failed);
+    }
     let folder = g.create_folder(&tokens.access).await.map_err(fail)?;
     let id = new_uuid();
     sqlx::query(
