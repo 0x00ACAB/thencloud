@@ -1678,7 +1678,7 @@ export default {
   "Mirror": "Spiegel",
   "Extra space": "Zusätzlicher Platz",
   "Unlink": "Trennen",
-  "Google stopped letting thencloud in. Unlink it and link it again.": "Google lässt thencloud nicht mehr herein. Trenne es und verbinde es neu.",
+  "Google stopped letting thencloud in. Link the same Google account again to fix it.": "Google lässt thencloud nicht mehr herein. Verbinde dasselbe Google-Konto neu, um das zu beheben.",
   "A copy of everything here is in this Drive.": "Eine Kopie von allem hier liegt in diesem Drive.",
   "Copying: {done} of {total}": "Wird kopiert: {done} von {total}",
   "New files can be kept here instead of on this server.": "Neue Dateien können hier statt auf diesem Server liegen.",

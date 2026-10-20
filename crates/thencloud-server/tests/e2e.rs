@@ -7644,6 +7644,9 @@ mod fake_google {
         pub rate_limit: u32,
         /// How long each download takes.
         pub download_delay: std::time::Duration,
+        /// Hand out access tokens the server won't cache, so it asks with
+        /// the refresh token every time.
+        pub short_tokens: bool,
     }
 
     pub type Shared = Arc<Mutex<Drive>>;
@@ -7745,8 +7748,9 @@ mod fake_google {
                 d.next += 1;
                 let access = format!("access-{}", d.next);
                 d.access = Some(access.clone());
+                let expires_in = if d.short_tokens { 60 } else { 3600 };
                 json(
-                    serde_json::json!({ "access_token": access, "refresh_token": REFRESH, "expires_in": 3600 }),
+                    serde_json::json!({ "access_token": access, "refresh_token": REFRESH, "expires_in": expires_in }),
                 )
             }
             (Method::POST, "/revoke") => {
@@ -8037,6 +8041,82 @@ async fn linked_drive_as_extra_space() {
     assert!(drive.lock().await.revoked);
     let info: StorageInfo = h.get("/api/storage", &alice.token).await.json();
     assert!(info.accounts.is_empty());
+}
+
+/// When Google stops accepting the token, linking the same Google account
+/// again repairs that account (same folder, same files there) instead of
+/// adding a second, and unlinking one of two links to the same Google
+/// account doesn't revoke the grant the other one still uses.
+#[tokio::test]
+async fn linking_a_broken_drive_again_repairs_it() {
+    let (h, drive) = storage_harness().await;
+    drive.lock().await.short_tokens = true;
+    let alice = register(&h, "alice", "pw").await;
+    let a = link_drive(&h, &alice.token, "extra").await;
+    let r = h
+        .call(
+            Method::PUT,
+            "/api/storage/prefer",
+            Some(&alice.token),
+            Some(json!({ "prefer": "linked" })),
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    let data: Vec<u8> = [MARKER, &[7u8; 1 << 20][..]].concat();
+    alice
+        .upload(&h, &alice.root, None, "there.bin", &data)
+        .await
+        .unwrap();
+    let root_key = alice.key_of(&h, &alice.root).await;
+    let kids: Vec<Node> = alice.children(&h, &alice.root).await.json();
+    let f = find_by_name(&kids, &root_key, "there.bin").clone();
+    let fk = c::unwrap_node_key(&root_key, &f.enc_key, &f.id).unwrap();
+
+    // Google cuts thencloud off; the next read finds out.
+    {
+        let mut d = drive.lock().await;
+        d.revoked = true;
+        d.access = None;
+    }
+    let r = h
+        .call(
+            Method::GET,
+            &format!("/api/nodes/{}/chunks/0", f.id),
+            Some(&alice.token),
+            None::<()>,
+        )
+        .await;
+    assert_ne!(r.status, StatusCode::OK);
+    let info: StorageInfo = h.get("/api/storage", &alice.token).await.json();
+    assert!(info.accounts[0].broken);
+
+    // Linking it again gives it a new grant.
+    drive.lock().await.revoked = false;
+    let folders = drive.lock().await.files.len();
+    let again = link_drive(&h, &alice.token, "mirror").await;
+    let info: StorageInfo = h.get("/api/storage", &alice.token).await.json();
+    assert_eq!(info.accounts.len(), 1);
+    assert_eq!(again.id, a.id);
+    assert!(!again.broken);
+    assert_eq!(again.mode, StorageMode::Extra, "the mode stays");
+    assert_eq!(drive.lock().await.files.len(), folders, "no new folder");
+    assert_eq!(alice.download(&h, &f, &fk).await.1, data);
+
+    // Someone else links the same Google account; unlinking theirs leaves
+    // Alice's grant alone.
+    let bob = register(&h, "bob", "pw").await;
+    let b = link_drive(&h, &bob.token, "mirror").await;
+    let r = h
+        .call(
+            Method::DELETE,
+            &format!("/api/storage/accounts/{}", b.id),
+            Some(&bob.token),
+            None::<()>,
+        )
+        .await;
+    assert_eq!(r.status, StatusCode::NO_CONTENT);
+    assert!(!drive.lock().await.revoked);
+    assert_eq!(alice.download(&h, &f, &fk).await.1, data);
 }
 
 /// A mirror gets a copy of everything kept here, filled in the background,

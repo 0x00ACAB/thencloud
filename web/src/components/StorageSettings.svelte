@@ -140,7 +140,7 @@
               {#if a.broken}
                 <p class="flex items-center gap-1.5 text-xs text-danger">
                   <Icon name="circle-alert" class="size-3.5 shrink-0" />
-                  {t('Google stopped letting thencloud in. Unlink it and link it again.')}
+                  {t('Google stopped letting thencloud in. Link the same Google account again to fix it.')}
                 </p>
               {:else if a.mode === 'mirror' && a.mirror_total != null}
                 {#if a.mirror_done >= a.mirror_total}

@@ -1763,7 +1763,7 @@ export default {
   "Mirror": "Kopia lustrzana",
   "Extra space": "Dodatkowe miejsce",
   "Unlink": "Odłącz",
-  "Google stopped letting thencloud in. Unlink it and link it again.": "Google przestał wpuszczać thencloud. Odłącz go i połącz ponownie.",
+  "Google stopped letting thencloud in. Link the same Google account again to fix it.": "Google przestał wpuszczać thencloud. Połącz to samo konto Google ponownie, żeby to naprawić.",
   "A copy of everything here is in this Drive.": "Na tym Dysku jest kopia wszystkiego, co jest tutaj.",
   "Copying: {done} of {total}": "Kopiowanie: {done} z {total}",
   "New files can be kept here instead of on this server.": "Nowe pliki mogą trafiać tutaj zamiast na ten serwer.",
