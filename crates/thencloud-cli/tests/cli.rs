@@ -26,6 +26,7 @@ struct Server {
     token: String,
     app_password: Key,
     read_only_password: Key,
+    alice: Account,
 }
 
 fn call<B: Serialize, T: DeserializeOwned>(url: &str, token: Option<&str>, body: &B) -> T {
@@ -77,11 +78,35 @@ fn start() -> Server {
     });
     let url = format!("http://{}", rx.recv().unwrap());
 
+    let alice = register(&url, "alice");
+    Server {
+        url,
+        dir,
+        token: alice.token.clone(),
+        app_password: alice.app_password.clone(),
+        read_only_password: alice.read_only_password.clone(),
+        alice,
+    }
+}
+
+struct Account {
+    token: String,
+    app_password: Key,
+    read_only_password: Key,
+    mk: Key,
+    user_id: String,
+    sealing_key: Vec<u8>,
+}
+
+/// A new account (with an ML-KEM key) and a full and a read-only app password.
+fn register(url: &str, username: &str) -> Account {
     let password = "correct horse battery staple";
     let salt = c::random_bytes(c::SALT_LEN);
     let ak = c::derive_account_keys(password, &salt, FAST_KDF).unwrap();
     let mk = Key::generate();
     let kp = KeyPair::generate();
+    let pq = c::PqKeyPair::generate();
+    let pq_public = pq.public.clone();
     let root_id = c::new_id();
     let root_key = Key::generate();
     let root_meta = Metadata {
@@ -98,15 +123,15 @@ fn start() -> Server {
         &RegisterRequest {
             turnstile: None,
             setup_code: None,
-            username: "alice".into(),
+            username: username.into(),
             auth_key: B64(ak.auth_key.as_bytes().to_vec()),
             kdf_salt: B64(salt),
             kdf_params: FAST_KDF,
             enc_master_key: B64(c::wrap_master_key(&ak.kek, &mk)),
             public_key: B64(kp.public.to_vec()),
             enc_private_key: B64(c::wrap_private_key(&mk, &kp.secret)),
-            pq_public_key: None,
-            enc_pq_private_key: None,
+            pq_public_key: Some(B64(pq_public)),
+            enc_pq_private_key: Some(B64(c::wrap_pq_private_key(&mk, &pq))),
             root: NewRootFolder {
                 id: root_id.clone(),
                 enc_key: B64(c::wrap_node_key(&mk, &root_key, &root_id)),
@@ -134,14 +159,13 @@ fn start() -> Server {
         );
         secret
     };
-    let full = app_password(AppScope::Full);
-    let read = app_password(AppScope::Read);
-    Server {
-        url,
-        dir,
+    Account {
+        app_password: app_password(AppScope::Full),
+        read_only_password: app_password(AppScope::Read),
         token: session.token,
-        app_password: full,
-        read_only_password: read,
+        mk,
+        user_id: session.me.user_id,
+        sealing_key: kp.with_pq(pq).sealing_key(),
     }
 }
 
@@ -1270,4 +1294,177 @@ fn import_from_a_google_takeout() {
 
     cl.logout().unwrap();
     assert_no_plaintext(&s, &[MARKER, b"Holiday 2026", b"IMG_0001", b"own json"]);
+}
+
+/// Bob shares "Uni notes" (with a lecture in it) with alice, who asks for
+/// it in My files, as the web client's "Show in My files" does. Alice
+/// already has a folder of that name, so it shows as "Uni notes (bob)".
+fn share_into_home(s: &Server, permission: Permission) -> (Client, Entry) {
+    let bob = register(&s.url, "bob");
+    let cb = Client::login(&s.url, &bob.app_password, "test").unwrap();
+    let notes = cb.mkdir(&cb.root().unwrap(), "Uni notes").unwrap();
+    let local = tempfile::tempdir().unwrap();
+    fs::write(local.path().join("l.md"), b"# Lecture one").unwrap();
+    cb.upload(&local.path().join("l.md"), &notes, "lecture.md", None)
+        .unwrap();
+    let _: serde_json::Value = call(
+        &format!("{}/api/shares", s.url),
+        Some(&bob.token),
+        &CreateShareRequest {
+            node_id: notes.node.id.clone(),
+            recipient: "alice".into(),
+            wrapped_key: B64(
+                c::seal_share_key(&s.alice.sealing_key, &notes.key, &notes.node.id).unwrap(),
+            ),
+            permission,
+            expires_at: None,
+        },
+    );
+    let ca = client(s);
+    ca.mkdir(&ca.root().unwrap(), "Uni notes").unwrap();
+    set_home(s, &[&notes.node.id]);
+    (cb, notes)
+}
+
+/// Write `home` in alice's "files" app data, keeping a field already there.
+fn set_home(s: &Server, ids: &[&str]) {
+    let a = &s.alice;
+    let cur: PrivateData = get(s, "/api/me/data/files");
+    let mut data = match &cur.data {
+        Some(d) => {
+            serde_json::from_slice(&c::decrypt_private_data(&a.mk, &a.user_id, "files", d).unwrap())
+                .unwrap()
+        }
+        None => serde_json::json!({ "favourites": [] }),
+    };
+    data["home"] = serde_json::json!(ids);
+    let body = PutPrivateData {
+        data: B64(c::encrypt_private_data(
+            &a.mk,
+            &a.user_id,
+            "files",
+            data.to_string().as_bytes(),
+        )),
+        if_revision: cur.revision,
+    };
+    let res = ureq::put(format!("{}/api/me/data/files", s.url))
+        .header("Authorization", format!("Bearer {}", s.token))
+        .send_json(&body)
+        .unwrap();
+    assert!(res.status().is_success());
+}
+
+fn names_in(p: &Path) -> Vec<String> {
+    let mut names: Vec<_> = fs::read_dir(p)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .collect();
+    names.sort();
+    names
+}
+
+#[test]
+fn mount_shows_shared_folders_asked_for_in_my_files() {
+    if !fuse_available() {
+        return;
+    }
+    let s = start();
+    let (cb, notes) = share_into_home(&s, Permission::Write);
+    let (mp, bg) = mount_at(&s, &s.app_password, false);
+    let m = mp.path();
+    assert_eq!(names_in(m), ["Uni notes", "Uni notes (bob)"]);
+    let shared = m.join("Uni notes (bob)");
+    assert_eq!(
+        fs::read(shared.join("lecture.md")).unwrap(),
+        b"# Lecture one"
+    );
+
+    // Writing inside lands in bob's folder.
+    fs::write(shared.join("questions.md"), b"why").unwrap();
+    let q = child(&cb, &notes, "questions.md").unwrap();
+    assert_eq!(fetch(&cb, &q), b"why");
+
+    // The folder itself is bob's: not renamed, removed or moved into.
+    let e = fs::rename(&shared, m.join("Mine now")).unwrap_err();
+    assert_eq!(e.raw_os_error(), Some(libc::EPERM));
+    let e = fs::remove_dir(&shared).unwrap_err();
+    assert_eq!(e.raw_os_error(), Some(libc::EPERM));
+    assert!(child(&cb, &cb.root().unwrap(), "Uni notes").is_some());
+    // Moving between alice's files and bob's folder copies (EXDEV).
+    fs::write(m.join("draft.md"), b"mine").unwrap();
+    let e = fs::rename(m.join("draft.md"), shared.join("draft.md")).unwrap_err();
+    assert_eq!(e.raw_os_error(), Some(libc::EXDEV));
+    let e = fs::rename(shared.join("questions.md"), m.join("questions.md")).unwrap_err();
+    assert_eq!(e.raw_os_error(), Some(libc::EXDEV));
+    // Within bob's folder, renames work.
+    fs::rename(shared.join("questions.md"), shared.join("answers.md")).unwrap();
+    assert!(child(&cb, &notes, "answers.md").is_some());
+
+    // Taken out of My files (in the web client), it goes from the mount
+    // once the ids are read again.
+    set_home(&s, &[]);
+    let gone = (0..40).any(|_| {
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        names_in(m) == ["Uni notes", "draft.md"]
+    });
+    assert!(gone, "{:?}", names_in(m));
+
+    drop(bg);
+    assert_no_plaintext(&s, &[b"Lecture one", b"Uni notes", b"questions.md"]);
+}
+
+#[test]
+fn webdav_bridge_shows_shared_folders_asked_for_in_my_files() {
+    let s = start();
+    let (cb, notes) = share_into_home(&s, Permission::Write);
+    let b = bridge(&s, &s.app_password);
+    let base = b.url();
+    let (st, xml) = dav("PROPFIND", &base, &[("Depth", "1")], b"");
+    assert_eq!(st, 207);
+    let xml = String::from_utf8(xml).unwrap();
+    assert!(xml.contains("Uni%20notes%20%28bob%29"), "{xml}");
+    let shared = format!("{base}Uni%20notes%20%28bob%29/");
+    assert_eq!(
+        dav("GET", &format!("{shared}lecture.md"), &[], b"").1,
+        b"# Lecture one"
+    );
+
+    assert_eq!(
+        dav("PUT", &format!("{shared}questions.md"), &[], b"why").0,
+        201
+    );
+    assert_eq!(
+        fetch(&cb, &child(&cb, &notes, "questions.md").unwrap()),
+        b"why"
+    );
+
+    // Not renamed, removed or moved across.
+    let elsewhere = format!("{base}Mine%20now/");
+    assert_eq!(
+        dav("MOVE", &shared, &[("Destination", &elsewhere)], b"").0,
+        403
+    );
+    assert_eq!(dav("DELETE", &shared, &[], b"").0, 403);
+    let out = format!("{base}questions.md");
+    assert_eq!(
+        dav(
+            "MOVE",
+            &format!("{shared}questions.md"),
+            &[("Destination", &out)],
+            b""
+        )
+        .0,
+        403
+    );
+    assert!(child(&cb, &cb.root().unwrap(), "Uni notes").is_some());
+    assert!(child(&cb, &notes, "questions.md").is_some());
+
+    // Taken out of My files, it goes once the ids are read again.
+    set_home(&s, &[]);
+    let gone = (0..40).any(|_| {
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        let (_, xml) = dav("PROPFIND", &base, &[("Depth", "1")], b"");
+        !String::from_utf8(xml).unwrap().contains("%28bob%29")
+    });
+    assert!(gone);
 }

@@ -9,6 +9,7 @@
   import FileIcon from '../FileIcon.svelte';
   import FolderIcon from '../FolderIcon.svelte';
   import TagBadge from '../TagBadge.svelte';
+  import HomeShares from '../HomeShares.svelte';
   import AutoTrashDialog from '../dialogs/AutoTrashDialog.svelte';
   import Thumb from '../Thumb.svelte';
   import Menu from '../Menu.svelte';
@@ -968,6 +969,10 @@
     </p>
     <button type="button" class="btn btn-secondary h-7 px-2.5 text-[13px]" onclick={() => (dialog = { type: 'stray-drops' })}>{t('Review')}</button>
   </div>
+{/if}
+
+{#if path.length === 1 && !share && !query.trim()}
+  <HomeShares {go} />
 {/if}
 
 <div class="card relative mt-6 overflow-hidden">

@@ -21,6 +21,7 @@ How it behaves:
 - Deleting moves things to the trash.
 - Saving from an editor (write a temporary file, rename it over the original) makes a new version of the original, so its history and shares stay.
 - Folder listings are kept until the server's change feed says they changed.
+- Folders other people shared with you appear in My files once you pick "Show in My files" for them in the web client (in Shared with me, from the folder's actions menu). If you already have something with the same name, the owner's username is added: `Uni notes (sam)`. You can read them, and change what's inside if the share lets you, but the folder itself stays its owner's: renaming or deleting it is refused, and moving a file between it and your own files copies it instead.
 
 ## Finder and Explorer: `thencloud serve`
 
@@ -37,4 +38,4 @@ It prints an address like `http://127.0.0.1:4918/<secret>/`. Connect to it:
 
 It only listens on 127.0.0.1, every path is under the random secret, and requests for other host names are refused, so web pages you visit can't reach it. The secret is new each time; set `--secret` (or `THENCLOUD_SERVE_SECRET`, at least 32 characters) to keep a mapped drive working across restarts. `--port` changes the port.
 
-Like the mount, it reads a chunk at a time, stages writes in an unlinked temporary file and uploads them on close, and moves deleted folders to the trash whole. Finder's `.DS_Store` and `._*` files are kept in memory only and never uploaded.
+Like the mount, it reads a chunk at a time, stages writes in an unlinked temporary file and uploads them on close, and moves deleted folders to the trash whole. Finder's `.DS_Store` and `._*` files are kept in memory only and never uploaded. Shared folders picked with "Show in My files" appear here too, the same way.
