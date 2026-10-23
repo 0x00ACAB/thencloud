@@ -10,9 +10,10 @@ const MAX_RECENT = 30;
  * `favourites`: [node id]; `recent`: [{ id, at }], newest first; `tags`: { node id: [tag] };
  * `tagColours`: { tag in lower case: colour from TAG_COLOURS } (no entry is no colour);
  * `versionNames`: { version id: name } for pinned versions (the server only knows they're pinned);
- * `searches`: [{ id, name, query, scope }] (scope 'all' or 'contents').
+ * `searches`: [{ id, name, query, scope }] (scope 'all' or 'contents');
+ * `home`: [node id] of folders shared with us to show in My files (the CLI's mount and WebDAV bridge show them too).
  */
-export const places = $state({ favourites: [], recent: [], tags: {}, tagColours: {}, versionNames: {}, searches: [], loaded: false });
+export const places = $state({ favourites: [], recent: [], tags: {}, tagColours: {}, versionNames: {}, searches: [], home: [], loaded: false });
 
 let loading = null;
 
@@ -25,6 +26,7 @@ export function loadPlaces() {
       places.tagColours = d.tagColours ?? {};
       places.versionNames = d.versionNames ?? {};
       places.searches = d.searches ?? [];
+      places.home = d.home ?? [];
       places.loaded = true;
     },
     (e) => {
@@ -47,6 +49,24 @@ export async function toggleFavourite(id) {
     places.favourites = d.favourites;
   } catch (e) {
     places.favourites = on ? places.favourites.filter((x) => x !== id) : [...places.favourites, id];
+    throw e;
+  }
+  return on;
+}
+
+export const inHome = (id) => places.home.includes(id);
+
+/** Show a folder shared with us in My files, or stop. Resolves to whether it's shown now. */
+export async function toggleHome(id) {
+  const on = !inHome(id);
+  const apply = (list = []) => (on ? [...list.filter((x) => x !== id), id] : list.filter((x) => x !== id));
+  const before = places.home;
+  places.home = apply(places.home);
+  try {
+    const d = await saveAppData('files', (d) => (d.home = apply(d.home)));
+    places.home = d.home;
+  } catch (e) {
+    places.home = before;
     throw e;
   }
   return on;

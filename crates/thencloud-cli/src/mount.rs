@@ -89,6 +89,10 @@ struct State {
     handles: HashMap<u64, u64>,
     /// Nodes this mount created, safe to delete for good when replaced.
     created: HashSet<String>,
+    /// Folders shared with us shown in the root (My files): their inodes,
+    /// and the ids asked for and when that was last checked.
+    pinned: HashSet<u64>,
+    home: Option<(Instant, Vec<String>)>,
     next_ino: u64,
     next_fh: u64,
     quota: Option<(Instant, i64, i64)>,
@@ -163,6 +167,15 @@ impl State {
     fn open_count(&self, ino: u64) -> usize {
         self.handles.values().filter(|&&i| i == ino).count()
     }
+
+    /// The tree `ino` is in: the shared folder it's under, or the root.
+    /// Nothing moves between two, since they have different owners.
+    fn tree_of(&self, mut ino: u64) -> Result<u64, Errno> {
+        while ino != ROOT && !self.pinned.contains(&ino) {
+            ino = self.inode(ino)?.parent;
+        }
+        Ok(ino)
+    }
 }
 
 /// (version id, index, plaintext)
@@ -170,6 +183,8 @@ type CachedChunk = (String, u32, Arc<Vec<u8>>);
 
 pub struct CloudFs {
     client: Client,
+    /// The root is My files, so shares asked for there are shown in it.
+    home: bool,
     st: Mutex<State>,
     chunks: Mutex<VecDeque<CachedChunk>>,
     opts: MountOptions,
@@ -238,6 +253,7 @@ fn conflict_name(name: &str, n: u32) -> String {
 impl CloudFs {
     pub fn new(client: Client, root: Entry, mut opts: MountOptions) -> CloudFs {
         opts.read_only |= client.scope == AppScope::Read;
+        let home = root.node.id == client.me.keys.root_node_id;
         let mut st = State {
             next_ino: ROOT,
             next_fh: 0,
@@ -261,6 +277,7 @@ impl CloudFs {
             .map(|f| (f.cursor, Instant::now()));
         CloudFs {
             client,
+            home,
             st: Mutex::new(st),
             chunks: Mutex::new(VecDeque::new()),
             opts,
@@ -387,6 +404,9 @@ impl CloudFs {
     /// A folder's children, from the server if the cached listing is stale.
     fn children(&self, ino: u64, fresh: bool) -> Result<Vec<u64>, Errno> {
         let following = !fresh && self.follow_changes();
+        if ino == ROOT && self.home && !fresh {
+            self.check_home();
+        }
         let folder = {
             let st = self.lock();
             if let Some((t, kids, stale)) = st.dirs.get(&ino)
@@ -403,8 +423,38 @@ impl CloudFs {
             i.entry().ok_or(Errno::ENOENT)?
         };
         let list = self.client.list(&folder).map_err(|e| self.fail(e))?;
+        let shared = if ino == ROOT && self.home {
+            let asked = self.client.home_ids();
+            match asked.and_then(|ids| Ok((self.client.shares_among(&ids)?, ids))) {
+                Ok(s) => Some(s),
+                Err(e) => {
+                    self.fail(e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
         let mut st = self.lock();
+        let mut taken: Vec<String> = list.iter().map(|e| e.meta.name.to_lowercase()).collect();
         let mut kids: Vec<u64> = list.into_iter().map(|e| st.upsert(ino, e)).collect();
+        match shared {
+            Some((shared, ids)) => {
+                st.pinned.clear();
+                for s in shared {
+                    let name = s.name_among(&taken);
+                    taken.push(name.to_lowercase());
+                    let mut e = s.entry;
+                    e.meta.name = name;
+                    let k = st.upsert(ROOT, e);
+                    st.pinned.insert(k);
+                    kids.push(k);
+                }
+                st.home = Some((Instant::now(), ids));
+            }
+            // Couldn't ask: keep showing the ones we had.
+            None => kids.extend(st.pinned.iter().copied()),
+        }
         // New files that aren't on the server yet.
         if let Some((_, old, _)) = st.dirs.get(&ino) {
             kids.extend(old.iter().filter(|k| {
@@ -415,6 +465,35 @@ impl CloudFs {
         }
         st.dirs.insert(ino, (Instant::now(), kids.clone(), false));
         Ok(kids)
+    }
+
+    /// The shares to show in My files are in app data, which the change
+    /// feed doesn't cover, so while the root is in use their ids are read
+    /// again every `LIST_TTL`, and the root listed again if they changed.
+    fn check_home(&self) {
+        let shown = {
+            let st = self.lock();
+            match &st.home {
+                Some((at, _)) if at.elapsed() < LIST_TTL => return,
+                Some((_, ids)) => ids.clone(),
+                None => return,
+            }
+        };
+        let Ok(mut now) = self.client.home_ids() else {
+            return;
+        };
+        let mut st = self.lock();
+        let mut shown = shown;
+        shown.sort();
+        shown.dedup();
+        now.sort();
+        now.dedup();
+        if shown != now {
+            st.stale(ROOT);
+        }
+        if let Some(h) = &mut st.home {
+            h.0 = Instant::now();
+        }
     }
 
     fn find(&self, parent: u64, name: &str) -> Result<Option<u64>, Errno> {
@@ -590,6 +669,10 @@ impl CloudFs {
     fn remove(&self, parent: u64, name: &str, dir: bool) -> Result<(), Errno> {
         self.writable()?;
         let ino = self.find(parent, name)?.ok_or(Errno::ENOENT)?;
+        // Someone else's folder: they decide when it goes.
+        if self.lock().pinned.contains(&ino) {
+            return Err(Errno::EPERM);
+        }
         let folder = self.lock().inode(ino)?.folder;
         match (folder, dir) {
             (true, false) => return Err(Errno::EISDIR),
@@ -632,6 +715,16 @@ impl CloudFs {
             return Ok(());
         }
         {
+            let st = self.lock();
+            if st.pinned.contains(&src) {
+                return Err(Errno::EPERM);
+            }
+            // Between our files and someone else's folder, `mv` copies.
+            if st.tree_of(src)? != st.tree_of(newparent)? {
+                return Err(Errno::EXDEV);
+            }
+        }
+        {
             // Not into itself.
             let st = self.lock();
             let mut at = newparent;
@@ -658,6 +751,9 @@ impl CloudFs {
             };
             if noreplace || t_name != newname {
                 return Err(Errno::EEXIST);
+            }
+            if self.lock().pinned.contains(&t) {
+                return Err(Errno::EPERM);
             }
             match (src_folder, t_folder) {
                 (true, false) => return Err(Errno::ENOTDIR),
@@ -830,7 +926,8 @@ impl Filesystem for CloudFs {
         let ino = ino.0;
         // Modes and owners aren't stored; accept them so `cp -p` works.
         let res = (|| {
-            if size.is_none() && mtime.is_none() {
+            // A shared folder's own time is its owner's to change.
+            if size.is_none() && (mtime.is_none() || self.lock().pinned.contains(&ino)) {
                 return Ok(());
             }
             self.writable()?;

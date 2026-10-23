@@ -110,6 +110,12 @@ struct Tree {
     /// Files this bridge created: safe to delete for good once they've
     /// been moved over another file (an editor's temporary copy).
     created: Mutex<std::collections::HashSet<String>>,
+    /// The root is My files, so shares asked for there are shown in it.
+    home: bool,
+    /// Those shares' node ids, and the ids asked for and when that was
+    /// last checked.
+    pinned: Mutex<std::collections::HashSet<String>>,
+    home_ids: Mutex<Option<(Instant, Vec<String>)>>,
 }
 
 fn fs_error(e: &Error) -> FsError {
@@ -191,17 +197,104 @@ impl Tree {
     fn list(&self, folder: &Entry) -> FsResult<Arc<Vec<Entry>>> {
         let id = &folder.node.id;
         let following = self.follow();
+        let at_home = self.home && *id == self.root.node.id;
+        if at_home {
+            self.check_home();
+        }
         if let Some((at, kids)) = self.dirs.lock().unwrap().get(id)
             && (following || at.elapsed() < LIST_TTL)
         {
             return Ok(kids.clone());
         }
-        let kids = Arc::new(self.client.list(folder).map_err(|e| self.fail(e))?);
+        let mut kids = self.client.list(folder).map_err(|e| self.fail(e))?;
+        if at_home {
+            self.add_home(&mut kids);
+        }
+        let kids = Arc::new(kids);
         self.dirs
             .lock()
             .unwrap()
             .insert(id.clone(), (Instant::now(), kids.clone()));
         Ok(kids)
+    }
+
+    /// Add the folders shared with us that are asked for in My files,
+    /// under names that don't clash. If they can't be read, the ones shown
+    /// before stay.
+    fn add_home(&self, kids: &mut Vec<Entry>) {
+        let found = self
+            .client
+            .home_ids()
+            .and_then(|ids| Ok((self.client.shares_among(&ids)?, ids)));
+        let (shared, ids) = match found {
+            Ok(f) => f,
+            Err(e) => {
+                self.fail(e);
+                let old = self.dirs.lock().unwrap().get(&self.root.node.id).cloned();
+                let pinned = self.pinned.lock().unwrap();
+                if let Some((_, old)) = old {
+                    kids.extend(old.iter().filter(|e| pinned.contains(&e.node.id)).cloned());
+                }
+                return;
+            }
+        };
+        let mut taken: Vec<String> = kids.iter().map(|e| e.meta.name.to_lowercase()).collect();
+        let mut pinned = self.pinned.lock().unwrap();
+        pinned.clear();
+        for s in shared {
+            let name = s.name_among(&taken);
+            taken.push(name.to_lowercase());
+            let mut e = s.entry;
+            e.meta.name = name;
+            pinned.insert(e.node.id.clone());
+            kids.push(e);
+        }
+        *self.home_ids.lock().unwrap() = Some((Instant::now(), ids));
+    }
+
+    /// The shares to show in My files are in app data, which the change
+    /// feed doesn't cover, so while the root is in use their ids are read
+    /// again every `LIST_TTL`, and the root listed again if they changed.
+    fn check_home(&self) {
+        let shown = match &*self.home_ids.lock().unwrap() {
+            Some((at, _)) if at.elapsed() < LIST_TTL => return,
+            Some((_, ids)) => ids.clone(),
+            None => return,
+        };
+        let Ok(mut now) = self.client.home_ids() else {
+            return;
+        };
+        let mut shown = shown;
+        shown.sort();
+        shown.dedup();
+        now.sort();
+        now.dedup();
+        if shown != now {
+            self.stale(&self.root.node.id);
+        }
+        if let Some(h) = &mut *self.home_ids.lock().unwrap() {
+            h.0 = Instant::now();
+        }
+    }
+
+    /// Whether `e` is someone else's folder shown in My files.
+    fn is_pinned(&self, e: &Entry) -> bool {
+        self.pinned.lock().unwrap().contains(&e.node.id)
+    }
+
+    /// The tree `path` is in: the shared folder shown in My files it's
+    /// under, or `None` for our own. Nothing moves between two.
+    fn tree_of(&self, path: &DavPath) -> FsResult<Option<String>> {
+        if !self.home {
+            return Ok(None);
+        }
+        let Some(first) = segments(path)?.into_iter().next() else {
+            return Ok(None);
+        };
+        Ok(self
+            .child(&self.root, &first)?
+            .filter(|e| self.is_pinned(e))
+            .map(|e| e.node.id))
     }
 
     fn stale(&self, folder_id: &str) {
@@ -892,7 +985,10 @@ impl DavFileSystem for CloudDav {
                 return Err(FsError::Forbidden);
             }
             let e = tree.resolve(&from)?;
-            if e.node.id == tree.root.node.id {
+            if e.node.id == tree.root.node.id
+                || tree.is_pinned(&e)
+                || tree.tree_of(&from)? != tree.tree_of(&to)?
+            {
                 return Err(FsError::Forbidden);
             }
             let (parent, name) = tree.parent(&to)?;
@@ -977,6 +1073,10 @@ impl DavFileSystem for CloudDav {
                 return Ok(());
             }
             let e = tree.resolve(&path)?;
+            // A shared folder's own time is its owner's to change.
+            if tree.is_pinned(&e) {
+                return Ok(());
+            }
             let (parent, _) = tree.parent(&path)?;
             let mut meta = e.meta.clone();
             meta.mtime = ms;
@@ -1004,7 +1104,7 @@ impl CloudDav {
                 return Ok(());
             }
             let e = tree.resolve(&path)?;
-            if e.node.id == tree.root.node.id {
+            if e.node.id == tree.root.node.id || tree.is_pinned(&e) {
                 return Err(FsError::Forbidden);
             }
             let r = tree.client.trash(&e);
@@ -1069,7 +1169,7 @@ async fn delete_folder(
             return Ok(false);
         }
         tree.writable()?;
-        if e.node.id == tree.root.node.id {
+        if e.node.id == tree.root.node.id || tree.is_pinned(&e) {
             return Err(FsError::Forbidden);
         }
         let r = tree.client.trash(&e);
@@ -1265,9 +1365,13 @@ async fn run(
         .changes(None)
         .ok()
         .map(|f| (f.cursor, Instant::now()));
+    let home = root.node.id == client.me.keys.root_node_id;
     let tree = Arc::new(Tree {
         client,
         root,
+        home,
+        pinned: Mutex::default(),
+        home_ids: Mutex::new(None),
         read_only,
         temp_dir: opts.temp_dir,
         dirs: Mutex::new(HashMap::new()),

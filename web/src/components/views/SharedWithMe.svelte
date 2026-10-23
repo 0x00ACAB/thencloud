@@ -11,6 +11,7 @@
   import FolderIcon from '../FolderIcon.svelte';
   import Menu from '../Menu.svelte';
   import ConfirmDialog from '../dialogs/ConfirmDialog.svelte';
+  import { inHome, toggleHome, loadPlaces } from '../../lib/places.svelte.js';
 
   let { go } = $props();
 
@@ -28,7 +29,17 @@
 
   $effect(() => {
     load();
+    loadPlaces().catch(() => {});
   });
+
+  async function pin(s) {
+    try {
+      const on = await toggleHome(s.node.id);
+      toast(on ? t('{name} now shows in My files', { name: s.entry.meta.name }) : t('{name} no longer shows in My files', { name: s.entry.meta.name }), { icon: on ? 'pin' : 'pin-off' });
+    } catch (e) {
+      toastError(e);
+    }
+  }
 
   async function open(s) {
     if (s.node.kind === 'folder') return go({ name: 'files', folderId: s.node.id });
@@ -106,6 +117,9 @@
                 label={t('Actions')}
                 items={[
                   ...(s.error ? [] : [folder ? { label: t('Open'), icon: 'folder-open', onclick: () => open(s) } : { label: t('Download'), icon: 'download', onclick: () => open(s) }]),
+                  ...(s.error || !folder
+                    ? []
+                    : [inHome(s.node.id) ? { label: t('Remove from My files'), icon: 'pin-off', onclick: () => pin(s) } : { label: t('Show in My files'), icon: 'pin', onclick: () => pin(s) }]),
                   { label: t('Remove from my list'), icon: 'door-open', danger: true, onclick: () => (leaving = s) },
                 ]} />
             </td>

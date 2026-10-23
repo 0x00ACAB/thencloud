@@ -74,6 +74,35 @@ pub struct Entry {
     pub meta: Metadata,
 }
 
+/// A folder shared with us, shown in My files.
+#[derive(Clone)]
+pub struct HomeShare {
+    pub entry: Entry,
+    pub owner: String,
+}
+
+impl HomeShare {
+    /// The name it shows under in a folder that already has `taken` (lower
+    /// case): its own, or with the owner's username after it.
+    pub fn name_among(&self, taken: &[String]) -> String {
+        let name = &self.entry.meta.name;
+        if !taken.contains(&name.to_lowercase()) {
+            return name.clone();
+        }
+        let mut n = 1;
+        loop {
+            let alt = match n {
+                1 => format!("{name} ({})", self.owner),
+                _ => format!("{name} ({} {n})", self.owner),
+            };
+            if !taken.contains(&alt.to_lowercase()) {
+                return alt;
+            }
+            n += 1;
+        }
+    }
+}
+
 impl Entry {
     pub fn is_folder(&self) -> bool {
         matches!(self.node.kind, NodeKind::Folder)
@@ -85,6 +114,8 @@ pub struct Client {
     agent: ureq::Agent,
     token: String,
     mk: Key,
+    /// For opening what's shared with us.
+    kp: c::KeyPair,
     pub me: Me,
     /// Read-only app passwords can only list and download.
     pub scope: AppScope,
@@ -135,7 +166,10 @@ impl Client {
             })?;
         let r: AppLoginResponse = check(res)?.body_mut().read_json()?;
         let mk = c::unwrap_master_key_app(&keys.kek, &r.enc_master_key, &r.app_password_id)?;
-        let kp = c::unwrap_private_key(&mk, &r.me.keys.enc_private_key)?;
+        let mut kp = c::unwrap_private_key(&mk, &r.me.keys.enc_private_key)?;
+        if let Some(pq) = &r.me.keys.enc_pq_private_key {
+            kp.pq = Some(c::unwrap_pq_private_key(&mk, pq)?);
+        }
         if kp.public.as_slice() != r.me.keys.public_key.as_ref() {
             return Err(Error::Usage(
                 "the public key on the server doesn't match your private key; refusing to continue"
@@ -147,6 +181,7 @@ impl Client {
             agent,
             token: r.token,
             mk,
+            kp,
             me: r.me,
             scope: r.scope,
         })
@@ -218,6 +253,67 @@ impl Client {
         let key = c::unwrap_node_key(&self.mk, &node.enc_key, &id)?;
         let meta = c::decrypt_metadata(&key, &id, &node.enc_metadata)?;
         Ok(Entry { node, key, meta })
+    }
+
+    /// Folders shared with us that we asked to see in My files (`home` in
+    /// the encrypted "files" app data, set in the web client), named as
+    /// they are in Shared with me. Shares that are gone or can't be opened
+    /// are left out.
+    pub fn home_shares(&self) -> Result<Vec<HomeShare>> {
+        self.shares_among(&self.home_ids()?)
+    }
+
+    /// The folders shared with us out of `home` (node ids).
+    pub fn shares_among(&self, home: &[String]) -> Result<Vec<HomeShare>> {
+        if home.is_empty() {
+            return Ok(Vec::new());
+        }
+        let shares: Vec<IncomingShare> = self.get_json("/api/shares/incoming")?;
+        let mut out = Vec::new();
+        for s in shares {
+            if !matches!(s.node.kind, NodeKind::Folder) || !home.contains(&s.node.id) {
+                continue;
+            }
+            let Ok(key) = c::open_share_key(&self.kp, &s.wrapped_key, &s.node.id) else {
+                continue;
+            };
+            let Ok(meta) = c::decrypt_metadata(&key, &s.node.id, &s.node.enc_metadata) else {
+                continue;
+            };
+            // The same folder can come through more than one share.
+            if out.iter().any(|h: &HomeShare| h.entry.node.id == s.node.id) {
+                continue;
+            }
+            out.push(HomeShare {
+                entry: Entry {
+                    node: s.node,
+                    key,
+                    meta,
+                },
+                owner: s.owner,
+            });
+        }
+        Ok(out)
+    }
+
+    /// The node ids in `home`, in the order they were added.
+    pub fn home_ids(&self) -> Result<Vec<String>> {
+        let r: PrivateData = self.get_json("/api/me/data/files")?;
+        let Some(sealed) = r.data else {
+            return Ok(Vec::new());
+        };
+        let plain = c::decrypt_private_data(&self.mk, &self.me.user_id, "files", &sealed)?;
+        let data: serde_json::Value = serde_json::from_slice(&plain)
+            .map_err(|_| Error::Usage("your files app data isn't valid JSON".into()))?;
+        Ok(data
+            .get("home")
+            .and_then(|h| h.as_array())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(String::from))
+                    .collect()
+            })
+            .unwrap_or_default())
     }
 
     /// One page of the change feed: node ids that changed in our tree and
