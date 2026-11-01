@@ -21,7 +21,7 @@ zeroize = { version = "1", features = ["derive"] }
 ml-kem = { version = "0.3", features = ["zeroize", "hazmat"] }
 # Schemas of the wire types for the OpenAPI spec (`docs/src/reference/openapi.json`),
 # used only by the server's tests; never in the WASM or the binaries.
-utoipa = { version = "5", optional = true }
+utoipa = { version = "6", optional = true }
 
 [features]
 openapi = ["dep:utoipa"]
